@@ -21,80 +21,48 @@ int main() {
         qc::Color{40, 120, 210, 255}
     );
 
-    qc::Model model = qc::LoadModel("lantern/lantern.obj");
-    
-    float modelRotationY = 0.0f;
-    float modelScale = 1.0f;
-    float speed = 260.0f;
-    int resizeCount = 0;
+    qc::Camera2D camera2d = { 0 };
+    camera2d.target = { 220.0f, 340.0f };
+    camera2d.offset = { 1280 / 2.0f, 720 / 2.0f };
+    camera2d.zoom = 1.0f;
 
-    qc::Vec2 player{220.0f, 340.0f};
+    qc::Camera3D camera3d;
+    camera3d.position = { 0.0f, 10.0f, 10.0f };
+    camera3d.target = { 0.0f, 0.0f, 0.0f };
+    camera3d.up = { 0.0f, 1.0f, 0.0f };
+    camera3d.fovy = 45.0f;
+    camera3d.projection = qc::CAMERA_PERSPECTIVE;
 
     while (!qc::WindowShouldClose()) {
-        const float dt = qc::GetDeltaTime();
-
-        modelRotationY += dt;
-
-        if (qc::IsKeyDown(qc::KeyboardKey::A) || qc::IsKeyDown(qc::KeyboardKey::Left)) {
-            player.x -= speed * dt;
-        }
-        if (qc::IsKeyDown(qc::KeyboardKey::D) || qc::IsKeyDown(qc::KeyboardKey::Right)) {
-            player.x += speed * dt;
-        }
-        if (qc::IsKeyDown(qc::KeyboardKey::W) || qc::IsKeyDown(qc::KeyboardKey::Up)) {
-            player.y -= speed * dt;
-        }
-        if (qc::IsKeyDown(qc::KeyboardKey::S) || qc::IsKeyDown(qc::KeyboardKey::Down)) {
-            player.y += speed * dt;
-        }
-
         if (qc::IsKeyPressed(qc::KeyboardKey::Space)) {
-            qc::SetWindowTitle(qc::TextFormat("QuarkCore Sandbox | FPS %d | Resizes %d", qc::GetFPS(), resizeCount));
             qc::TraceLog(
                 qc::LogLevel::Info,
                 "INPUT",
                 qc::TextFormat("Space pressed | fps=%d dt=%.4f", qc::GetFPS(), qc::GetDeltaTime())
             );
         }
-        if (qc::IsKeyPressed(qc::KeyboardKey::Escape)) {
-            qc::ToggleFullscreen();
-        }
-
-        const qc::Vec2 mouse = qc::GetMousePosition();
-        const qc::Color orbColor = qc::IsMouseButtonDown(qc::MouseButton::Left) ? qc::RED : qc::ORANGE;
 
         qc::BeginDrawing();
         qc::ClearBackground(qc::Color{20, 24, 32, 255});
 
-        qc::DrawRectangle(60.0f, 60.0f, 520.0f, 180.0f, qc::SKYBLUE);
-        qc::DrawRectangle(qc::Rectangle{84.0f, 84.0f, 472.0f, 132.0f}, qc::Color{14, 33, 55, 255});
-        qc::DrawTexture(checker, player.x, player.y, qc::WHITE);
-        qc::DrawCircle(mouse.x, mouse.y, 26.0f, orbColor);
-        qc::DrawCircle(980.0f, 180.0f, 72.0f, qc::GREEN);
+        qc::BeginMode2D(camera2d);
+            qc::DrawGrid(100, 64);
+            qc::DrawRectangleV(camera2d.target, { 50, 50 }, qc::RED);
+            qc::DrawCircle(600, 400, 40, qc::BLUE);
+            qc::DrawRectangle(800, 200, 120, 80, qc::GREEN);
+        qc::EndMode2D();
 
-        qc::Begin3D();
-        qc::Mat4 view = qc::Mat4::lookAt(
-            qc::Vec3{0.0f, 2.0f, 3.0f},
-            qc::Vec3{0.0f, 0.0f, 0.0f},
-            qc::Vec3{0.0f, 1.0f, 0.0f}
-        );
-        qc::Mat4 projection = qc::Mat4::perspective(
-            3.14159f / 4.0f,
-            static_cast<float>(qc::GetScreenWidth()) / static_cast<float>(qc::GetScreenHeight()),
-            0.1f,
-            100.0f
-        );
-        qc::Set3DView(view, projection);
-        qc::DrawModel(model, qc::Vec3{0.0f, 0.0f, 0.0f}, modelScale, 0.0f, modelRotationY, 0.0f);
-        qc::End3D();
+        qc::BeginMode3D(camera3d);
+            qc::DrawPlane({ 0, 0, 0 }, { 32, 32 }, qc::LIGHTGRAY);
+            qc::DrawCube({ 0, 1, 0 }, 2, 2, 2, qc::RED);
+            qc::DrawGrid(20, 1.0f);
+        qc::EndMode3D();
 
         qc::EndDrawing();
-        qc::SetWindowTitle(qc::TextFormat("QuarkCore Sandbox | FPS %d | Resizes %d", qc::GetFPS(), resizeCount));
     }
 
     qc::StopTextInput();
     qc::UnloadTexture(checker);
-    qc::UnloadModel(model);
     qc::CloseWindow();
     return 0;
 }

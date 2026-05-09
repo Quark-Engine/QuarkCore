@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include <GL/glew.h>
 #include <png.h>
+#include <algorithm>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -25,17 +26,6 @@
 
 namespace qc {
 namespace {
-
-struct Vertex {
-    float x;
-    float y;
-    float u;
-    float v;
-    float r;
-    float g;
-    float b;
-    float a;
-};
 
 struct RendererState {
     SDL_Window* window = nullptr;
@@ -61,11 +51,17 @@ struct RendererState {
     std::array<bool, SDL_SCANCODE_COUNT> currentKeys{};
     std::array<bool, SDL_SCANCODE_COUNT> previousKeys{};
     std::array<bool, 8> mouseButtons{};
+    std::array<bool, 8> previousMouseButtons{};
     Vec2 mousePosition{};
+    Vec2 mouseWheel{};
     std::vector<Event> events;
     std::size_t nextEventIndex = 0;
     bool eventsReady = false;
 };
+
+Camera2D gCamera2D;
+bool gCamera2DActive = false;
+Vec2 WorldToScreen2D(const Camera2D& camera, Vec2 worldPos);
 
 struct PngImageData {
     int width = 0;
@@ -74,6 +70,42 @@ struct PngImageData {
 };
 
 RendererState gRenderer;
+
+namespace {
+struct Model3DState {
+    std::vector<Model> loadedModels;
+    unsigned int nextModelId = 1;
+    Mat4 viewMatrix = Mat4::identity();
+    Mat4 projectionMatrix = Mat4::identity();
+    GLuint shader3D = 0;
+    GLint modelLoc = -1;
+    GLint viewLoc = -1;
+    GLint projLoc = -1;
+    GLint samplerLoc = -1;
+    GLint lightPosLoc = -1;
+    GLint colorLoc = -1;
+    GLuint whiteTexture = 0;
+
+    GLuint planeVAO = 0, planeVBO = 0, planeEBO = 0;
+    int planeIndexCount = 0;
+    GLuint cubeVAO = 0, cubeVBO = 0, cubeEBO = 0;
+    int cubeIndexCount = 0;
+    GLuint sphereVAO = 0, sphereVBO = 0, sphereEBO = 0;
+    int sphereIndexCount = 0;
+
+    GLuint lineVAO = 0, lineVBO = 0;
+    std::vector<Vertex3D> lineVertices;
+    Vec3 lightPosition{5.0f, 5.0f, 5.0f};
+    bool initialized = false;
+};
+Model3DState g3DState;
+
+static bool PngSafeInit(png_structp png, FILE* file) {
+    if (setjmp(png_jmpbuf(png))) return false;
+    png_init_io(png, file);
+    return true;
+}
+} // namespace
 
 constexpr std::size_t kMaxBatchVertices = 8192;
 
@@ -550,6 +582,7 @@ Event TranslateEvent(const SDL_Event& sdlEvent) {
 
 void PumpSystemEvents() {
     gRenderer.previousKeys = gRenderer.currentKeys;
+    gRenderer.mouseWheel = { 0.0f, 0.0f };
     gRenderer.events.clear();
     gRenderer.nextEventIndex = 0;
     gRenderer.shouldClose = false;
@@ -561,6 +594,10 @@ void PumpSystemEvents() {
         }
         if (sdlEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
             RefreshViewport();
+        }
+        if (sdlEvent.type == SDL_EVENT_MOUSE_WHEEL) {
+            gRenderer.mouseWheel.x += sdlEvent.wheel.x;
+            gRenderer.mouseWheel.y += sdlEvent.wheel.y;
         }
 
         gRenderer.events.push_back(TranslateEvent(sdlEvent));
@@ -695,7 +732,31 @@ void PushVertex(const Vertex& vertex) {
         FlushBatch();
     }
 
-    gRenderer.batchVertices.push_back(vertex);
+    Vertex v = vertex;
+    if (gCamera2DActive) {
+        Vec2 screenPos = WorldToScreen2D(gCamera2D, {v.x, v.y});
+        v.x = screenPos.x;
+        v.y = screenPos.y;
+    }
+    gRenderer.batchVertices.push_back(v);
+}
+
+void WorldToScreen2D(const Camera2D& camera, Vec2 worldPos, float* outX, float* outY) {
+    float angle = camera.rotation * 3.14159265359f / 180.0f;
+    float cos_a = std::cos(angle);
+    float sin_a = std::sin(angle);
+
+    float x = worldPos.x - camera.target.x;
+    float y = worldPos.y - camera.target.y;
+
+    *outX = (x * cos_a - y * sin_a) * camera.zoom + camera.offset.x;
+    *outY = (x * sin_a + y * cos_a) * camera.zoom + camera.offset.y;
+}
+
+Vec2 WorldToScreen2D(const Camera2D& camera, Vec2 worldPos) {
+    Vec2 result;
+    WorldToScreen2D(camera, worldPos, &result.x, &result.y);
+    return result;
 }
 
 void PushQuad(GLuint textureId, float x, float y, float width, float height, Color color) {
@@ -783,13 +844,12 @@ bool LoadPngImage(const char* filePath, PngImageData& image) {
         return false;
     }
 
-    if (setjmp(png_jmpbuf(png))) {
+    if (!PngSafeInit(png, file)) {
         png_destroy_read_struct(&png, &info, nullptr);
         std::fclose(file);
         return false;
     }
 
-    png_init_io(png, file);
     png_read_info(png, info);
 
     const png_uint_32 width = png_get_image_width(png, info);
@@ -837,6 +897,7 @@ bool LoadPngImage(const char* filePath, PngImageData& image) {
 
 void UpdateInputFromEvents() {
     gRenderer.previousKeys = gRenderer.currentKeys;
+    gRenderer.previousMouseButtons = gRenderer.mouseButtons;
 
     float mouseX = 0.0f;
     float mouseY = 0.0f;
@@ -1052,6 +1113,27 @@ const char* GetEventTypeName(EventType type) {
 }
 
 void CloseWindow() {
+    if (g3DState.planeVAO != 0) {
+        glDeleteVertexArrays(1, &g3DState.planeVAO);
+        glDeleteBuffers(1, &g3DState.planeVBO);
+        glDeleteBuffers(1, &g3DState.planeEBO);
+    }
+    if (g3DState.cubeVAO != 0) {
+        glDeleteVertexArrays(1, &g3DState.cubeVAO);
+        glDeleteBuffers(1, &g3DState.cubeVBO);
+        glDeleteBuffers(1, &g3DState.cubeEBO);
+    }
+    if (g3DState.sphereVAO != 0) {
+        glDeleteVertexArrays(1, &g3DState.sphereVAO);
+        glDeleteBuffers(1, &g3DState.sphereVBO);
+        glDeleteBuffers(1, &g3DState.sphereEBO);
+    }
+    if (g3DState.lineVAO != 0) {
+        glDeleteVertexArrays(1, &g3DState.lineVAO);
+        glDeleteBuffers(1, &g3DState.lineVBO);
+    }
+    g3DState = Model3DState();
+
     if (gRenderer.whiteTexture != 0) {
         glDeleteTextures(1, &gRenderer.whiteTexture);
         gRenderer.whiteTexture = 0;
@@ -1405,9 +1487,37 @@ bool IsMouseButtonDown(MouseButton button) {
     return index < gRenderer.mouseButtons.size() ? gRenderer.mouseButtons[index] : false;
 }
 
+bool IsMouseButtonPressed(MouseButton button) {
+    EnsureInitialized();
+    const std::size_t index = static_cast<std::size_t>(button);
+    if (index >= gRenderer.mouseButtons.size()) return false;
+    return gRenderer.mouseButtons[index] && !gRenderer.previousMouseButtons[index];
+}
+
+bool IsMouseButtonReleased(MouseButton button) {
+    EnsureInitialized();
+    const std::size_t index = static_cast<std::size_t>(button);
+    if (index >= gRenderer.mouseButtons.size()) return false;
+    return !gRenderer.mouseButtons[index] && gRenderer.previousMouseButtons[index];
+}
+
+bool IsMouseButtonUp(MouseButton button) {
+    return !IsMouseButtonDown(button);
+}
+
 Vec2 GetMousePosition() {
     EnsureInitialized();
     return gRenderer.mousePosition;
+}
+
+Vec2 GetMouseWheelMoveV() {
+    EnsureInitialized();
+    return gRenderer.mouseWheel;
+}
+
+float GetMouseWheelMove() {
+    EnsureInitialized();
+    return gRenderer.mouseWheel.y;
 }
 
 void BeginDrawing() {
@@ -1465,6 +1575,10 @@ void DrawRectangle(float x, float y, float width, float height, Color color) {
 
 void DrawRectangle(const Rectangle& rectangle, Color color) {
     DrawRectangle(rectangle.x, rectangle.y, rectangle.width, rectangle.height, color);
+}
+
+void DrawRectangleV(Vec2 position, Vec2 size, Color color) {
+    DrawRectangle(position.x, position.y, size.x, size.y, color);
 }
 
 void DrawCircle(float centerX, float centerY, float radius, Color color) {
@@ -1756,25 +1870,6 @@ void UnloadShader(Shader& shader) {
 }
 
 namespace {
-
-struct Model3DState {
-    std::vector<Model> loadedModels;
-    unsigned int nextModelId = 1;
-    Mat4 viewMatrix = Mat4::identity();
-    Mat4 projectionMatrix = Mat4::identity();
-    GLuint shader3D = 0;
-    GLint modelLoc = -1;
-    GLint viewLoc = -1;
-    GLint projLoc = -1;
-    GLint samplerLoc = -1;
-    GLint lightPosLoc = -1;
-    GLuint whiteTexture = 0;
-    Vec3 lightPosition{5.0f, 5.0f, 5.0f};
-    bool initialized = false;
-};
-
-Model3DState g3DState;
-
 const char* kVertex3DShaderSource = R"(
 #version 330 core
 layout (location = 0) in vec3 aPosition;
@@ -1807,6 +1902,7 @@ out vec4 FragColor;
 
 uniform sampler2D uTexture;
 uniform vec3 uLightPos;
+uniform vec4 uColor;
 
 void main() {
     vec3 norm = normalize(vNormal);
@@ -1819,8 +1915,8 @@ void main() {
     vec3 diffuse = diff * vec3(1.0, 1.0, 1.0);
     
     vec4 texColor = texture(uTexture, vTexCoord);
-    vec3 result = (ambient + diffuse) * texColor.rgb;
-    FragColor = vec4(result, texColor.a);
+    vec3 result = (ambient + diffuse) * texColor.rgb * uColor.rgb;
+    FragColor = vec4(result, texColor.a * uColor.a);
 }
 )";
 
@@ -1869,7 +1965,12 @@ GLuint Compile3DShader() {
     return program;
 }
 
+void FlushLines3D() {
+    // forward
+}
+
 void ProcessMesh(const aiMesh* aiMesh, const aiScene* scene, Mesh& mesh) {
+    (void)scene;
     mesh.vertices.clear();
     mesh.indices.clear();
 
@@ -2023,7 +2124,7 @@ void UnloadModel(Model& model) {
     model.id = 0;
 }
 
-void Begin3D() {
+void BeginMode3D(const Camera3D& camera) {
     if (!g3DState.initialized) {
         g3DState.shader3D = Compile3DShader();
         g3DState.modelLoc = glGetUniformLocation(g3DState.shader3D, "uModel");
@@ -2031,6 +2132,7 @@ void Begin3D() {
         g3DState.projLoc = glGetUniformLocation(g3DState.shader3D, "uProjection");
         g3DState.samplerLoc = glGetUniformLocation(g3DState.shader3D, "uTexture");
         g3DState.lightPosLoc = glGetUniformLocation(g3DState.shader3D, "uLightPos");
+        g3DState.colorLoc = glGetUniformLocation(g3DState.shader3D, "uColor");
         g3DState.initialized = true;
 
         std::vector<std::uint8_t> whitePixels(4, 255);
@@ -2040,13 +2142,103 @@ void Begin3D() {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     }
+    
+    if (g3DState.planeVAO == 0) {
+        float plane_v[] = { 
+            -0.5f, 0, -0.5f, 0,1,0, 0,0,  
+             0.5f, 0, -0.5f, 0,1,0, 1,0,  
+             0.5f, 0,  0.5f, 0,1,0, 1,1, 
+            -0.5f, 0,  0.5f, 0,1,0, 0,1 
+        };
+        unsigned int plane_i[] = { 0, 1, 2, 0, 2, 3 };
+        g3DState.planeIndexCount = 6;
+        glGenVertexArrays(1, &g3DState.planeVAO); glGenBuffers(1, &g3DState.planeVBO); glGenBuffers(1, &g3DState.planeEBO);
+        glBindVertexArray(g3DState.planeVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, g3DState.planeVBO); glBufferData(GL_ARRAY_BUFFER, sizeof(plane_v), plane_v, GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g3DState.planeEBO); glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(plane_i), plane_i, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8*4, 0);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8*4, (void*)(3*4));
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8*4, (void*)(6*4));
+        glBindVertexArray(0);
+
+        float cube_v[] = {
+            -0.5f, -0.5f,  0.5f,  0, 0, 1,  0, 0,   0.5f, -0.5f,  0.5f,  0, 0, 1,  1, 0,   0.5f,  0.5f,  0.5f,  0, 0, 1,  1, 1,  -0.5f,  0.5f,  0.5f,  0, 0, 1,  0, 1,
+            -0.5f, -0.5f, -0.5f,  0, 0,-1,  0, 0,  -0.5f,  0.5f, -0.5f,  0, 0,-1,  1, 0,   0.5f,  0.5f, -0.5f,  0, 0,-1,  1, 1,   0.5f, -0.5f, -0.5f,  0, 0,-1,  0, 1,
+            -0.5f,  0.5f, -0.5f,  0, 1, 0,  0, 0,  -0.5f,  0.5f,  0.5f,  0, 1, 0,  1, 0,   0.5f,  0.5f,  0.5f,  0, 1, 0,  1, 1,   0.5f,  0.5f, -0.5f,  0, 1, 0,  0, 1,
+            -0.5f, -0.5f, -0.5f,  0,-1, 0,  0, 0,   0.5f, -0.5f, -0.5f,  0,-1, 0,  1, 0,   0.5f, -0.5f,  0.5f,  0,-1, 0,  1, 1,  -0.5f, -0.5f,  0.5f,  0,-1, 0,  0, 1,
+             0.5f, -0.5f, -0.5f,  1, 0, 0,  0, 0,   0.5f,  0.5f, -0.5f,  1, 0, 0,  1, 0,   0.5f,  0.5f,  0.5f,  1, 0, 0,  1, 1,   0.5f, -0.5f,  0.5f,  1, 0, 0,  0, 1,
+            -0.5f, -0.5f, -0.5f, -1, 0, 0,  0, 0,  -0.5f, -0.5f,  0.5f, -1, 0, 0,  1, 0,  -0.5f,  0.5f,  0.5f, -1, 0, 0,  1, 1,  -0.5f,  0.5f, -0.5f, -1, 0, 0,  0, 1
+        };
+        unsigned int cube_i[] = {
+            0, 1, 2, 0, 2, 3,      4, 5, 6, 4, 6, 7,      8, 9, 10, 8, 10, 11,
+            12, 13, 14, 12, 14, 15, 16, 17, 18, 16, 18, 19, 20, 21, 22, 20, 22, 23
+        };
+        g3DState.cubeIndexCount = 36;
+        glGenVertexArrays(1, &g3DState.cubeVAO); glGenBuffers(1, &g3DState.cubeVBO); glGenBuffers(1, &g3DState.cubeEBO);
+        glBindVertexArray(g3DState.cubeVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, g3DState.cubeVBO); glBufferData(GL_ARRAY_BUFFER, sizeof(cube_v), cube_v, GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g3DState.cubeEBO); glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(cube_i), cube_i, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8*4, 0);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8*4, (void*)(3*4));
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8*4, (void*)(6*4));
+        glBindVertexArray(0);
+
+        std::vector<float> sphere_vertices;
+        std::vector<unsigned int> sphere_indices;
+        const int rings = 16, sectors = 16;
+        for (int r = 0; r <= rings; ++r) {
+            float phi = 3.14159f * (float)r / rings;
+            for (int s = 0; s <= sectors; ++s) {
+                float theta = 2.0f * 3.14159f * (float)s / sectors;
+                float x = std::sin(phi) * std::cos(theta), y = std::cos(phi), z = std::sin(phi) * std::sin(theta);
+                sphere_vertices.insert(sphere_vertices.end(), { x, y, z, x, y, z, (float)s/sectors, (float)r/rings });
+            }
+        }
+        for (int r = 0; r < rings; ++r) {
+            for (int s = 0; s < sectors; ++s) {
+                sphere_indices.push_back(r * (sectors + 1) + s); sphere_indices.push_back((r + 1) * (sectors + 1) + s); sphere_indices.push_back((r + 1) * (sectors + 1) + (s + 1));
+                sphere_indices.push_back(r * (sectors + 1) + s); sphere_indices.push_back((r + 1) * (sectors + 1) + (s + 1)); sphere_indices.push_back(r * (sectors + 1) + (s + 1));
+            }
+        }
+        g3DState.sphereIndexCount = (int)sphere_indices.size();
+        glGenVertexArrays(1, &g3DState.sphereVAO); glGenBuffers(1, &g3DState.sphereVBO); glGenBuffers(1, &g3DState.sphereEBO);
+        glBindVertexArray(g3DState.sphereVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, g3DState.sphereVBO); glBufferData(GL_ARRAY_BUFFER, sphere_vertices.size()*4, sphere_vertices.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g3DState.sphereEBO); glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphere_indices.size()*4, sphere_indices.data(), GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8*4, 0);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8*4, (void*)(3*4));
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8*4, (void*)(6*4));
+        glBindVertexArray(0);
+
+        glGenVertexArrays(1, &g3DState.lineVAO);
+        glGenBuffers(1, &g3DState.lineVBO);
+        glBindVertexArray(g3DState.lineVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, g3DState.lineVBO);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), (void*)offsetof(Vertex3D, position));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), (void*)offsetof(Vertex3D, normal));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), (void*)offsetof(Vertex3D, texCoord));
+        glBindVertexArray(0);
+    }
 
     glClear(GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     glUseProgram(g3DState.shader3D);
 
+    Mat4 view = Mat4::lookAt(camera.position, camera.target, camera.up);
+    float aspect = (float)gRenderer.width / (float)gRenderer.height;
+    Mat4 proj = Mat4::perspective(camera.fovy * 3.14159f / 180.0f, aspect, 0.1f, 1000.0f);
+
+    Set3DView(view, proj);
+
     if (g3DState.samplerLoc >= 0) {
         glUniform1i(g3DState.samplerLoc, 0);
+    }
+
+    if (g3DState.colorLoc >= 0) {
+        glUniform4f(g3DState.colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
     }
     
     if (g3DState.lightPosLoc >= 0) {
@@ -2054,7 +2246,8 @@ void Begin3D() {
     }
 }
 
-void End3D() {
+void EndMode3D() {
+    FlushLines3D();
     glDisable(GL_DEPTH_TEST);
     glUseProgram(0);
 }
@@ -2085,6 +2278,10 @@ void DrawModelEx(const Model& model, const Mat4& transform) {
         glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, transform.m);
     }
 
+    if (g3DState.colorLoc >= 0) {
+        glUniform4f(g3DState.colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
     for (const auto& mesh : model.meshes) {
         glActiveTexture(GL_TEXTURE0);
         
@@ -2101,6 +2298,156 @@ void DrawModelEx(const Model& model, const Mat4& transform) {
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
     }
+}
+
+void FlushLines3D() {
+    if (g3DState.lineVertices.empty()) return;
+
+    Mat4 identity = Mat4::identity();
+    if (g3DState.modelLoc >= 0) glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, identity.m);
+    glBindTexture(GL_TEXTURE_2D, g3DState.whiteTexture);
+
+    glBindVertexArray(g3DState.lineVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, g3DState.lineVBO);
+    glBufferData(GL_ARRAY_BUFFER, g3DState.lineVertices.size() * sizeof(Vertex3D), g3DState.lineVertices.data(), GL_DYNAMIC_DRAW);
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(g3DState.lineVertices.size()));
+    glBindVertexArray(0);
+
+    g3DState.lineVertices.clear();
+}
+
+void DrawPlane(Vec3 center, Vec2 size, Color color) {
+    Mat4 transform = Mat4::translation(center.x, center.y, center.z);
+    transform = transform * Mat4::scale(size.x, 1.0f, size.y);
+    if (g3DState.modelLoc >= 0) glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, transform.m);
+    
+    if (g3DState.colorLoc >= 0) {
+        glUniform4f(g3DState.colorLoc, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
+    }
+
+    glBindTexture(GL_TEXTURE_2D, g3DState.whiteTexture);
+    glBindVertexArray(g3DState.planeVAO);
+    glDrawElements(GL_TRIANGLES, g3DState.planeIndexCount, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+}
+
+void DrawCube(Vec3 position, float width, float height, float length, Color color) {
+    Mat4 transform = Mat4::translation(position.x, position.y, position.z);
+    transform = transform * Mat4::scale(width, height, length);
+    if (g3DState.modelLoc >= 0) glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, transform.m);
+    
+    if (g3DState.colorLoc >= 0) {
+        glUniform4f(g3DState.colorLoc, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
+    }
+
+    glBindTexture(GL_TEXTURE_2D, g3DState.whiteTexture);
+    glBindVertexArray(g3DState.cubeVAO);
+    glDrawElements(GL_TRIANGLES, g3DState.cubeIndexCount, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+}
+
+void DrawSphere(Vec3 centerPos, float radius, Color color) {
+    Mat4 transform = Mat4::translation(centerPos.x, centerPos.y, centerPos.z);
+    transform = transform * Mat4::scale(radius, radius, radius);
+    if (g3DState.modelLoc >= 0) glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, transform.m);
+    if (g3DState.colorLoc >= 0) {
+        glUniform4f(g3DState.colorLoc, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
+    }
+    glBindTexture(GL_TEXTURE_2D, g3DState.whiteTexture);
+
+    glBindVertexArray(g3DState.sphereVAO);
+    glDrawElements(GL_TRIANGLES, g3DState.sphereIndexCount, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+}
+
+void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color) {
+    if (g3DState.colorLoc >= 0) {
+        glUniform4f(g3DState.colorLoc, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
+    }
+
+    g3DState.lineVertices.push_back({startPos, {0,1,0}, {0,0}});
+    g3DState.lineVertices.push_back({endPos, {0,1,0}, {0,0}});
+}
+
+void DrawGrid(int slices, float spacing) {
+    if (gCamera2DActive) {
+    } else {
+        float halfSize = (float)slices * spacing / 2.0f;
+        for (int i = 0; i <= slices; ++i) {
+            float f = -halfSize + (float)i * spacing;
+            DrawLine3D({ f, 0.0f, -halfSize }, { f, 0.0f, halfSize }, DARKGRAY);
+            DrawLine3D({ -halfSize, 0.0f, f }, { halfSize, 0.0f, f }, DARKGRAY);
+        }
+    }
+}
+
+Camera2D CreateCamera2D() {
+    Camera2D camera{};
+    camera.offset = {0.0f, 0.0f};
+    camera.target = {0.0f, 0.0f};
+    camera.rotation = 0.0f;
+    camera.zoom = 1.0f;
+    return camera;
+}
+
+void BeginMode2D(const Camera2D& camera) {
+    gCamera2D = camera;
+    gCamera2DActive = true;
+}
+
+void EndMode2D() {
+    gCamera2DActive = false;
+}
+
+Camera2D GetCamera2D() {
+    return gCamera2D;
+}
+
+void UpdateCamera2D(Camera2D& camera, float targetX, float targetY, float smoothness) {
+    smoothness = std::clamp(smoothness, 0.0f, 1.0f);
+    camera.target.x = camera.target.x * (1.0f - smoothness) + targetX * smoothness;
+    camera.target.y = camera.target.y * (1.0f - smoothness) + targetY * smoothness;
+}
+
+Vec2 WorldToScreen2D(const Camera2D& camera, Vec2 worldPos) {
+    float angle = camera.rotation * 3.14159265359f / 180.0f;
+    float cos_a = std::cos(angle);
+    float sin_a = std::sin(angle);
+
+    float x = worldPos.x - camera.target.x;
+    float y = worldPos.y - camera.target.y;
+
+    return {
+        (x * cos_a - y * sin_a) * camera.zoom + camera.offset.x,
+        (x * sin_a + y * cos_a) * camera.zoom + camera.offset.y
+    };
+}
+
+Vec2 ScreenToWorld2D(const Camera2D& camera, Vec2 screenPos) {
+    float angle = -camera.rotation * 3.14159265359f / 180.0f;
+    float cos_a = std::cos(angle);
+    float sin_a = std::sin(angle);
+
+    float x = (screenPos.x - camera.offset.x) / camera.zoom;
+    float y = (screenPos.y - camera.offset.y) / camera.zoom;
+
+    return {
+        (x * cos_a - y * sin_a) + camera.target.x,
+        (x * sin_a + y * cos_a) + camera.target.y
+    };
+}
+
+namespace {
+    Camera3D gCamera3D;
+    bool gCamera3DActive = false;
+}  // namespace
+
+Camera3D CreateCamera3D() {
+    Camera3D camera{};
+    camera.position = {0.0f, 0.0f, 10.0f};
+    camera.target = {0.0f, 0.0f, 0.0f};
+    camera.up = {0.0f, 1.0f, 0.0f};
+    return camera;
 }
 
 }  // namespace qc

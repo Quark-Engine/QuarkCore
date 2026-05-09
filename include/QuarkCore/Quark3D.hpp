@@ -32,7 +32,7 @@ namespace qc {
 struct Vertex3D {
     Vec3 position;
     Vec3 normal;
-    Vec3 texCoord;  // x, y for UV, z unused
+    Vec2 texCoord;
 };
 
 /**
@@ -117,15 +117,44 @@ void DrawModelEx(const Model& model, const Mat4& transform);
 void Set3DView(const Mat4& view, const Mat4& projection);
 
 /**
- * @brief Begin 3D rendering mode.
- *
- * Sets up OpenGL state for 3D rendering.
+ * @brief Draw a plane.
+ * @param center Center position.
+ * @param size Plane size.
+ * @param color Plane color.
  */
-void Begin3D();
+void DrawPlane(Vec3 center, Vec2 size, Color color);
 
 /**
- * @brief End 3D rendering mode.
+ * @brief Draw a cube.
+ * @param position Center position.
+ * @param width Width.
+ * @param height Height.
+ * @param length Length.
+ * @param color Cube color.
  */
-void End3D();
+void DrawCube(Vec3 position, float width, float height, float length, Color color);
+
+/**
+ * @brief Draw a sphere.
+ * @param centerPos Center position.
+ * @param radius Sphere radius.
+ * @param color Sphere color.
+ */
+void DrawSphere(Vec3 centerPos, float radius, Color color);
+
+/**
+ * @brief Draw a line in 3D space.
+ * @param startPos Start position.
+ * @param endPos End position.
+ * @param color Line color.
+ */
+void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color);
+
+/**
+ * @brief Draw a grid.
+ * @param slices Number of slices.
+ * @param spacing Spacing between slices.
+ */
+void DrawGrid(int slices, float spacing);
 
 }  // namespace qc

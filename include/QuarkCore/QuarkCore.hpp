@@ -41,16 +41,6 @@
 namespace qc {
 
 /**
- * @brief Color structure.
- */
-struct Color {
-    std::uint8_t r = 255;
-    std::uint8_t g = 255;
-    std::uint8_t b = 255;
-    std::uint8_t a = 255;
-};
-
-/**
  * @brief Texture structure.
  */
 struct Texture2D {
@@ -92,6 +82,39 @@ struct Shader {
     unsigned int id = 0;               // Program ID
     int* locs = nullptr;               // Uniform locations array
     std::size_t locCount = 0;          // Number of stored locations
+};
+
+/**
+ * @brief Camera projection type.
+ */
+enum CameraProjection {
+    CAMERA_PERSPECTIVE = 0,
+    CAMERA_ORTHOGRAPHIC
+};
+
+/**
+ * @brief 2D Camera for orthographic projection.
+ * 
+ * Controls view transformation for 2D rendering with pan and zoom.
+ */
+struct Camera2D {
+    Vec2 offset{0.0f, 0.0f};          // Camera screen offset (center of viewport)
+    Vec2 target{0.0f, 0.0f};          // Target position to look at
+    float rotation{0.0f};              // Camera rotation in degrees
+    float zoom{1.0f};                  // Zoom level (1.0 = default)
+};
+
+/**
+ * @brief 3D Camera for perspective projection.
+ * 
+ * Controls view and projection transformation for 3D rendering.
+ */
+struct Camera3D {
+    Vec3 position{0.0f, 0.0f, 10.0f}; // Camera position in 3D space
+    Vec3 target{0.0f, 0.0f, 0.0f};    // Target position to look at
+    Vec3 up{0.0f, 1.0f, 0.0f};        // Camera up vector
+    float fovy{45.0f};                 // Camera field-of-view Y in degrees
+    int projection{0};                 // Camera projection: CAMERA_PERSPECTIVE or CAMERA_ORTHOGRAPHIC
 };
 
 /**
@@ -320,20 +343,6 @@ struct Event {
     bool repeat = false;
     char text[256]{};
 };
-
-inline constexpr Color LIGHTGRAY{200, 200, 200, 255};
-inline constexpr Color GRAY{130, 130, 130, 255};
-inline constexpr Color DARKGRAY{80, 80, 80, 255};
-inline constexpr Color YELLOW{253, 249, 0, 255};
-inline constexpr Color ORANGE{255, 161, 0, 255};
-inline constexpr Color RED{230, 41, 55, 255};
-inline constexpr Color GREEN{0, 228, 48, 255};
-inline constexpr Color BLUE{0, 121, 241, 255};
-inline constexpr Color SKYBLUE{102, 191, 255, 255};
-inline constexpr Color PURPLE{200, 122, 255, 255};
-inline constexpr Color WHITE{255, 255, 255, 255};
-inline constexpr Color BLACK{0, 0, 0, 255};
-inline constexpr Color BLANK{0, 0, 0, 0};
 
 /**
  * @brief Initialize the main application window.
@@ -744,11 +753,47 @@ bool IsKeyPressed(KeyboardKey key);
  */
 bool IsMouseButtonDown(MouseButton button);
 /**
+ * @brief Check if a mouse button was just pressed.
+ *
+ * @param button Button to check.
+ * @return true if the button was just pressed.
+ * @return false otherwise.
+ */
+bool IsMouseButtonPressed(MouseButton button);
+/**
+ * @brief Check if a mouse button was just released.
+ *
+ * @param button Button to check.
+ * @return true if the button was just released.
+ * @return false otherwise.
+ */
+bool IsMouseButtonReleased(MouseButton button);
+/**
+ * @brief Check if a mouse button is NOT pressed.
+ *
+ * @param button Button to check.
+ * @return true if the button is NOT pressed.
+ * @return false otherwise.
+ */
+bool IsMouseButtonUp(MouseButton button);
+/**
  * @brief Get the mouse position.
  *
  * @return Mouse position as a Vec2.
  */
 Vec2 GetMousePosition();
+/**
+ * @brief Get mouse wheel movement for both axes.
+ *
+ * @return Mouse wheel movement as a Vec2.
+ */
+Vec2 GetMouseWheelMoveV();
+/**
+ * @brief Get vertical mouse wheel movement.
+ *
+ * @return Vertical mouse wheel movement as a float.
+ */
+float GetMouseWheelMove();
 
 /**
  * @brief Begin drawing.
@@ -788,6 +833,13 @@ void DrawRectangle(float x, float y, float width, float height, Color color);
  * @param color Rectangle color.
  */
 void DrawRectangle(const Rectangle& rectangle, Color color);
+/**
+ * @brief Draw a rectangle using vectors.
+ * @param position Top-left corner position.
+ * @param size Rectangle size.
+ * @param color Rectangle color.
+ */
+void DrawRectangleV(Vec2 position, Vec2 size, Color color);
 /**
  * @brief Draw a circle.
  * @param centerX X coordinate of the center.
@@ -943,5 +995,29 @@ void EndShaderMode();
  * @param shader Shader to unload.
  */
 void UnloadShader(Shader& shader);
+
+/**
+ * @brief Create a default 2D camera.
+ * @return Camera2D with default settings.
+ */
+Camera2D CreateCamera2D();
+
+/**
+ * @brief Begin 2D mode with custom camera.
+ */
+void BeginMode2D(const Camera2D& camera);
+void EndMode2D();
+
+/**
+ * @brief Create a default 3D camera.
+ * @return Camera3D with default settings.
+ */
+Camera3D CreateCamera3D();
+
+/**
+ * @brief Begin 3D mode with custom camera.
+ */
+void BeginMode3D(const Camera3D& camera);
+void EndMode3D();
 
 }  // namespace qc

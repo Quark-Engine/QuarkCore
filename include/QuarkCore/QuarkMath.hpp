@@ -15,9 +15,34 @@
 
 #pragma once
 
+#include <cstdint>
 #include <cmath>
 
 namespace qc {
+
+/**
+ * @brief Color structure.
+ */
+struct Color {
+    std::uint8_t r = 255;
+    std::uint8_t g = 255;
+    std::uint8_t b = 255;
+    std::uint8_t a = 255;
+};
+
+inline constexpr Color LIGHTGRAY{200, 200, 200, 255};
+inline constexpr Color GRAY{130, 130, 130, 255};
+inline constexpr Color DARKGRAY{80, 80, 80, 255};
+inline constexpr Color YELLOW{253, 249, 0, 255};
+inline constexpr Color ORANGE{255, 161, 0, 255};
+inline constexpr Color RED{230, 41, 55, 255};
+inline constexpr Color GREEN{0, 228, 48, 255};
+inline constexpr Color BLUE{0, 121, 241, 255};
+inline constexpr Color SKYBLUE{102, 191, 255, 255};
+inline constexpr Color PURPLE{200, 122, 255, 255};
+inline constexpr Color WHITE{255, 255, 255, 255};
+inline constexpr Color BLACK{0, 0, 0, 255};
+inline constexpr Color BLANK{0, 0, 0, 0};
 
 /**
  * @brief 2D vector structure.
@@ -91,6 +116,20 @@ struct Vec3 {
         }
         return *this;
     }
+};
+
+/**
+ * @brief Vertex structure for rendering.
+ */
+struct Vertex {
+    float x;
+    float y;
+    float u;
+    float v;
+    float r;
+    float g;
+    float b;
+    float a;
 };
 
 /**
