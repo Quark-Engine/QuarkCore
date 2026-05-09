@@ -33,6 +33,8 @@ int main() {
     camera3d.fovy = 45.0f;
     camera3d.projection = qc::CAMERA_PERSPECTIVE;
 
+    qc::RenderTexture2D target = qc::LoadRenderTexture(320, 240);
+
     while (!qc::WindowShouldClose()) {
         if (qc::IsKeyPressed(qc::KeyboardKey::Space)) {
             qc::TraceLog(
@@ -44,6 +46,12 @@ int main() {
 
         qc::BeginDrawing();
         qc::ClearBackground(qc::Color{20, 24, 32, 255});
+
+        qc::BeginTextureMode(target);
+            qc::ClearBackground(qc::WHITE);
+            qc::DrawRectangle(10, 10, 100, 100, qc::RED);
+            qc::DrawCircle(160, 120, 40, qc::BLUE);
+        qc::EndTextureMode();
 
         qc::BeginMode2D(camera2d);
             qc::DrawGrid(100, 64);
@@ -58,11 +66,32 @@ int main() {
             qc::DrawGrid(20, 1.0f);
         qc::EndMode3D();
 
+        
+        qc::DrawTexturePro(
+            target.texture,
+            qc::Rectangle{ 0, (float)target.texture.height, (float)target.texture.width, -(float)target.texture.height },
+            qc::Rectangle{ 20, 20, 320, 240 },
+            qc::Vec2{ 0, 0 },
+            0.0f,
+            qc::WHITE
+        );
+
+        qc::DrawText("Hello, QuarkCore!", 360, 40, 32, qc::WHITE);
+
+        qc::Font defaultFont = qc::GetDefaultFont();
+        qc::Vec2 textSize = qc::MeasureTextEx(defaultFont, "DrawTextEx example", 24.0f, 2.0f);
+        qc::DrawRectangle(360.0f, 80.0f, textSize.x + 16.0f, textSize.y + 12.0f, qc::Color{20, 20, 40, 180});
+        qc::DrawTextEx(defaultFont, "DrawTextEx example", qc::Vec2{372.0f, 88.0f}, 24.0f, 2.0f, qc::YELLOW);
+
+        int measuredWidth = qc::MeasureText("Measured text", 20);
+        qc::DrawText(qc::TextFormat("Measured width: %d", measuredWidth), 360, 140, 20, qc::LIGHTGRAY);
+
         qc::EndDrawing();
     }
 
     qc::StopTextInput();
     qc::UnloadTexture(checker);
+    qc::UnloadRenderTexture(target);
     qc::CloseWindow();
     return 0;
 }

@@ -97,13 +97,30 @@ if(TARGET png_shared AND TARGET zlibstatic)
     target_link_libraries(png_shared PRIVATE zlibstatic)
 endif()
 
-foreach(t SDL3 SDL_uclibc libglew_shared png16 png_shared zlib zlibstatic assimp)
+find_package(OpenGL REQUIRED)
+
+FetchContent_Declare(freetype
+    GIT_REPOSITORY https://github.com/freetype/freetype.git
+    GIT_TAG        VER-2-13-3
+    GIT_SHALLOW    TRUE
+    SYSTEM
+)
+set(FT_DISABLE_ZLIB     ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BZIP2    ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG      ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BROTLI   ON CACHE BOOL "" FORCE)
+set(FT_REQUIRE_ZLIB     OFF CACHE BOOL "" FORCE)
+set(FT_REQUIRE_PNG      OFF CACHE BOOL "" FORCE)
+set(CMAKE_SKIP_INSTALL_RULES TRUE)
+FetchContent_MakeAvailable(freetype)
+set(CMAKE_SKIP_INSTALL_RULES FALSE)
+
+foreach(t SDL3 SDL_uclibc libglew_shared png16 png_shared zlib zlibstatic assimp freetype)
     if(TARGET ${t})
         target_compile_options(${t} PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>)
     endif()
 endforeach()
-
-find_package(OpenGL REQUIRED)
 
 add_library(QuarkCore STATIC
     src/QuarkCore.cpp
@@ -119,6 +136,7 @@ target_link_libraries(QuarkCore PUBLIC
     png_shared
     OpenGL::GL
     assimp::assimp
+    freetype
 )
 
 target_compile_definitions(QuarkCore PRIVATE NOMINMAX)

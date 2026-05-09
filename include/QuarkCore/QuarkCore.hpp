@@ -51,6 +51,41 @@ struct Texture2D {
 };
 
 /**
+ * @brief Render texture structure.
+ */
+struct RenderTexture2D {
+    unsigned int id = 0;               // Framebuffer ID
+    Texture2D texture;                 // Color buffer texture
+    unsigned int depthId = 0;          // Depth buffer ID
+};
+
+/**
+ * @brief Font glyph metrics.
+ */
+struct FontGlyph {
+    Rectangle uv{0.0f, 0.0f, 0.0f, 0.0f};
+    float advanceX = 0.0f;
+    float offsetX = 0.0f;
+    float offsetY = 0.0f;
+    int width = 0;
+    int height = 0;
+};
+
+/**
+ * @brief Font structure.
+ */
+struct Font {
+    unsigned int textureId = 0;
+    int baseSize = 0;
+    int ascent = 0;
+    int descent = 0;
+    int lineGap = 0;
+    int lineHeight = 0;
+    bool valid = false;
+    FontGlyph glyphs[95];
+};
+
+/**
  * @brief Shader uniform data type enumeration.
  */
 enum class ShaderUniformDataType {
@@ -197,6 +232,23 @@ enum class MouseButton {
     Left = 1,
     Middle = 2,
     Right = 3,
+};
+
+/**
+ * @brief Mouse cursor type enumeration.
+ */
+enum class MouseCursor {
+    Default = 0,
+    Arrow,
+    Ibeam,
+    Crosshair,
+    PointingHand,
+    ResizeEW,
+    ResizeNS,
+    ResizeNWSE,
+    ResizeNESW,
+    ResizeAll,
+    NotAllowed,
 };
 
 /**
@@ -390,6 +442,7 @@ bool WaitEvent(Event& event);
  * @return false if timeout was reached.
  */
 bool WaitEventTimeout(Event& event, int timeoutMs);
+
 /**
  * @brief Get event type name as string.
  *
@@ -858,12 +911,104 @@ void DrawCircle(float centerX, float centerY, float radius, Color color);
 void DrawTexture(const Texture2D& texture, float x, float y, Color tint = WHITE);
 
 /**
+ * @brief Draw a part of a texture (transformed).
+ * @param texture Texture to draw.
+ * @param source Source rectangle in pixels.
+ * @param dest Destination rectangle in pixels.
+ * @param origin Origin point for rotation/scale.
+ * @param rotation Rotation in degrees.
+ * @param tint Tint color.
+ */
+void DrawTexturePro(Texture2D texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint = WHITE);
+
+/**
+ * @brief Get the default font.
+ * 
+ * @return Default font object.
+ */
+Font GetDefaultFont();
+
+/**
+ * @brief Draw text using the default font.
+ *
+ * @param text Text to draw.
+ * @param x X coordinate.
+ * @param y Y coordinate.
+ * @param fontSize Font size in pixels.
+ * @param color Text tint color.
+ */
+void DrawText(const char* text, int x, int y, int fontSize, Color color);
+
+/**
+ * @brief Draw text with a custom font.
+ *
+ * @param font Font object.
+ * @param text Text to draw.
+ * @param position Screen position.
+ * @param fontSize Font size in pixels.
+ * @param spacing Additional character spacing in pixels.
+ * @param tint Text tint color.
+ */
+void DrawTextEx(Font font, const char* text, Vec2 position,
+                float fontSize, float spacing, Color tint);
+
+/**
+ * @brief Measure text with a custom font.
+ *
+ * @param font Font object.
+ * @param text Text to measure.
+ * @param fontSize Font size in pixels.
+ * @param spacing Additional character spacing in pixels.
+ * @return Text size as Vec2.
+ */
+Vec2 MeasureTextEx(Font font, const char* text,
+                   float fontSize, float spacing);
+
+/**
+ * @brief Measure text using the default font.
+ *
+ * @param text Text to measure.
+ * @param fontSize Font size in pixels.
+ * @return Text width in pixels.
+ */
+int MeasureText(const char* text, int fontSize);
+
+/**
+ * @brief Load a font from file.
+ * 
+ * @param filePath Path to the font file (.ttf, .otf, etc.).
+ * @param fontSize Font size in pixels.
+ * @return Loaded font object.
+ * @return Invalid font (valid=false) on failure.
+ */
+Font LoadFont(const char* filePath, int fontSize);
+
+/**
+ * @brief Unload a font and free resources.
+ * 
+ * @param font Font object to unload.
+ */
+void UnloadFont(Font& font);
+
+/**
  * @brief Load a texture from a file.
  * @param filePath Path to the texture file.
  * @return Loaded texture.
  * @return Empty texture on failure.
  */
 Texture2D LoadTexture(const char* filePath);
+/**
+ * @brief Load a render texture.
+ * @param width Texture width.
+ * @param height Texture height.
+ * @return Loaded render texture.
+ */
+RenderTexture2D LoadRenderTexture(int width, int height);
+/**
+ * @brief Unload a render texture.
+ * @param target Render texture to unload.
+ */
+void UnloadRenderTexture(RenderTexture2D target);
 /**
  * @brief Generate a checker texture.
  * @param width Texture width.
@@ -1009,6 +1154,16 @@ void BeginMode2D(const Camera2D& camera);
 void EndMode2D();
 
 /**
+ * @brief Begin drawing to render texture.
+ * @param target Target render texture.
+ */
+void BeginTextureMode(RenderTexture2D target);
+/**
+ * @brief End drawing to render texture.
+ */
+void EndTextureMode();
+
+/**
  * @brief Create a default 3D camera.
  * @return Camera3D with default settings.
  */
@@ -1020,4 +1175,411 @@ Camera3D CreateCamera3D();
 void BeginMode3D(const Camera3D& camera);
 void EndMode3D();
 
+/**
+ * @brief Convert screen coordinates to world coordinates (2D).
+ * @param position Screen position.
+ * @param camera 2D camera.
+ * @return World position.
+ */
+Vec2 GetScreenToWorld2D(Vec2 position, Camera2D camera);
+
+/**
+ * @brief Convert world coordinates to screen coordinates (2D).
+ * @param position World position.
+ * @param camera 2D camera.
+ * @return Screen position.
+ */
+Vec2 GetWorldToScreen2D(Vec2 position, Camera2D camera);
+
+/**
+ * @brief Convert world coordinates to screen coordinates (3D).
+ * @param position World position.
+ * @param camera 3D camera.
+ * @return Screen position (as Vec3, z component is depth).
+ */
+Vec3 GetWorldToScreen(Vec3 position, Camera3D camera);
+
+/**
+ * @brief Get a ray from screen coordinates through the camera (3D).
+ * @param mousePosition Screen mouse position.
+ * @param camera 3D camera.
+ * @return Ray starting from camera position.
+ */
+Ray GetScreenToWorldRay(Vec2 mousePosition, Camera3D camera);
+
+/**
+ * @brief Check if a key was just released.
+ * @param key Key to check.
+ * @return true if the key was just released.
+ * @return false otherwise.
+ */
+bool IsKeyReleased(KeyboardKey key);
+
+/**
+ * @brief Check if a key is NOT pressed.
+ * @param key Key to check.
+ * @return true if the key is NOT pressed.
+ * @return false otherwise.
+ */
+bool IsKeyUp(KeyboardKey key);
+
+/**
+ * @brief Get the last key pressed.
+ * @return Key code of the last pressed key, or 0 if no key was pressed this frame.
+ */
+int GetKeyPressed();
+
+/**
+ * @brief Get the last character pressed.
+ * @return Character code of the last pressed character.
+ */
+int GetCharPressed();
+
+/**
+ * @brief Set the key that exits the application.
+ * @param key Exit key.
+ */
+void SetExitKey(KeyboardKey key);
+
+/**
+ * @brief Get mouse movement delta for this frame.
+ * @return Mouse delta movement.
+ */
+Vec2 GetMouseDelta();
+
+/**
+ * @brief Set mouse position.
+ * @param x Mouse X coordinate.
+ * @param y Mouse Y coordinate.
+ */
+void SetMousePosition(int x, int y);
+
+/**
+ * @brief Hide the mouse cursor.
+ */
+void DisableCursor();
+
+/**
+ * @brief Show the mouse cursor.
+ */
+void EnableCursor();
+
+/**
+ * @brief Check if the cursor is hidden.
+ * @return true if cursor is hidden.
+ * @return false otherwise.
+ */
+bool IsCursorHidden();
+
+/**
+ * @brief Set the mouse cursor type.
+ * @param cursor Cursor type.
+ */
+void SetMouseCursor(MouseCursor cursor);
+
+/**
+ * @brief Check if a gamepad is available.
+ * @param gamepad Gamepad index.
+ * @return true if gamepad is available.
+ * @return false otherwise.
+ */
+bool IsGamepadAvailable(int gamepad);
+
+/**
+ * @brief Get gamepad name.
+ * @param gamepad Gamepad index.
+ * @return Gamepad name string.
+ */
+const char* GetGamepadName(int gamepad);
+
+/**
+ * @brief Get gamepad axis movement value.
+ * @param gamepad Gamepad index.
+ * @param axis Gamepad axis.
+ * @return Axis value (-1.0 to 1.0).
+ */
+float GetGamepadAxisMovement(int gamepad, int axis);
+
+/**
+ * @brief Check if a gamepad button was just pressed.
+ * @param gamepad Gamepad index.
+ * @param button Gamepad button.
+ * @return true if button was just pressed.
+ * @return false otherwise.
+ */
+bool IsGamepadButtonPressed(int gamepad, int button);
+
+/**
+ * @brief Check if a texture is valid.
+ * @param texture Texture to check.
+ * @return true if texture is valid.
+ * @return false otherwise.
+ */
+bool IsTextureValid(Texture2D texture);
+
+/**
+ * @brief Draw a texture at position.
+ * @param texture Texture to draw.
+ * @param position Position to draw at.
+ * @param tint Tint color.
+ */
+void DrawTextureV(Texture2D texture, Vec2 position, Color tint);
+
+/**
+ * @brief Draw a texture at position with rotation and scale.
+ * @param texture Texture to draw.
+ * @param position Position to draw at.
+ * @param rotation Rotation in degrees.
+ * @param scale Scale factor.
+ * @param tint Tint color.
+ */
+void DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale, Color tint);
+
+/**
+ * @brief Draw part of a texture at position.
+ * @param texture Texture to draw.
+ * @param source Source rectangle in texture.
+ * @param position Destination position.
+ * @param tint Tint color.
+ */
+void DrawTextureRec(Texture2D texture, Rectangle source, Vec2 position, Color tint);
+
+/**
+ * @brief Draw a tiled texture.
+ * @param texture Texture to draw.
+ * @param scale Texture scale.
+ * @param offset Texture offset.
+ * @param tint Tint color.
+ */
+void DrawTextureTiled(Texture2D texture, float scale, Vec2 offset, Color tint);
+
+/**
+ * @brief Draw a textured polygon (n-patch).
+ * @param texture Texture to draw.
+ * @param source Source rectangle.
+ * @param dest Destination rectangle.
+ * @param origin Origin point.
+ * @param rotation Rotation in degrees.
+ * @param tint Tint color.
+ */
+void DrawTextureNPatch(Texture2D texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint);
+
+/**
+ * @brief Check if a render texture is valid.
+ * @param target Render texture to check.
+ * @return true if render texture is valid.
+ * @return false otherwise.
+ */
+bool IsRenderTextureValid(RenderTexture2D target);
+
+/**
+ * @brief Get the color texture from a render texture.
+ * @param target Render texture.
+ * @return Color texture.
+ */
+Texture2D GetRenderTextureTexture(RenderTexture2D target);
+
+/**
+ * @brief Draw a line.
+ * @param x1 Start X coordinate.
+ * @param y1 Start Y coordinate.
+ * @param x2 End X coordinate.
+ * @param y2 End Y coordinate.
+ * @param color Line color.
+ */
+void DrawLine(float x1, float y1, float x2, float y2, Color color);
+
+/**
+ * @brief Draw a line using vectors.
+ * @param start Start position.
+ * @param end End position.
+ * @param color Line color.
+ */
+void DrawLineV(Vec2 start, Vec2 end, Color color);
+
+/**
+ * @brief Draw rectangle outline.
+ * @param rectangle Rectangle to outline.
+ * @param lineWidth Line width.
+ * @param color Line color.
+ */
+void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color);
+
+/**
+ * @brief Draw a triangle.
+ * @param v1 First vertex.
+ * @param v2 Second vertex.
+ * @param v3 Third vertex.
+ * @param color Triangle color.
+ */
+void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
+
+/**
+ * @brief Draw circle outline.
+ * @param centerX Center X coordinate.
+ * @param centerY Center Y coordinate.
+ * @param radius Circle radius.
+ * @param color Circle color.
+ */
+void DrawCircleLines(float centerX, float centerY, float radius, Color color);
+
+/**
+ * @brief Draw an ellipse.
+ * @param centerX Center X coordinate.
+ * @param centerY Center Y coordinate.
+ * @param radiusH Horizontal radius.
+ * @param radiusV Vertical radius.
+ * @param color Ellipse color.
+ */
+void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Color color);
+
+/**
+ * @brief Draw a polygon.
+ * @param center Center position.
+ * @param sides Number of sides.
+ * @param radius Polygon radius.
+ * @param rotation Rotation in degrees.
+ * @param color Polygon color.
+ */
+void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color);
+
+/**
+ * @brief Draw a rounded rectangle.
+ * @param rectangle Rectangle bounds.
+ * @param roundness Roundness value (0.0 to 1.0).
+ * @param segments Number of segments for corners.
+ * @param color Rectangle color.
+ */
+void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments, Color color);
+
+/**
+ * @brief Fade a color by alpha.
+ * @param color Color to fade.
+ * @param alpha Alpha value (0.0 to 1.0).
+ * @return Faded color.
+ */
+Color Fade(Color color, float alpha);
+
+/**
+ * @brief Apply alpha to a color.
+ * @param color Color to modify.
+ * @param alpha Alpha value.
+ * @return Color with alpha applied.
+ */
+Color ColorAlpha(Color color, float alpha);
+
+/**
+ * @brief Tint a color by another color.
+ * @param color Color to tint.
+ * @param tint Tint color.
+ * @return Tinted color.
+ */
+Color ColorTint(Color color, Color tint);
+
+/**
+ * @brief Adjust color brightness.
+ * @param color Color to adjust.
+ * @param factor Brightness factor.
+ * @return Adjusted color.
+ */
+Color ColorBrightness(Color color, float factor);
+
+/**
+ * @brief Adjust color contrast.
+ * @param color Color to adjust.
+ * @param contrast Contrast factor.
+ * @return Adjusted color.
+ */
+Color ColorContrast(Color color, float contrast);
+
+/**
+ * @brief Get color from hex value.
+ * @param hexValue Hex color value (0xRRGGBB).
+ * @return Color.
+ */
+Color GetColor(unsigned int hexValue);
+
+/**
+ * @brief Check collision between two rectangles.
+ * @param a First rectangle.
+ * @param b Second rectangle.
+ * @return true if rectangles collide.
+ * @return false otherwise.
+ */
+bool CheckCollisionRecs(Rectangle a, Rectangle b);
+
+/**
+ * @brief Check collision between two circles.
+ * @param center1 Center of first circle.
+ * @param radius1 Radius of first circle.
+ * @param center2 Center of second circle.
+ * @param radius2 Radius of second circle.
+ * @return true if circles collide.
+ * @return false otherwise.
+ */
+bool CheckCollisionCircles(Vec2 center1, float radius1, Vec2 center2, float radius2);
+
+/**
+ * @brief Check collision between point and rectangle.
+ * @param point Point position.
+ * @param rect Rectangle.
+ * @return true if point is in rectangle.
+ * @return false otherwise.
+ */
+bool CheckCollisionPointRec(Vec2 point, Rectangle rect);
+
+/**
+ * @brief Check collision between point and circle.
+ * @param point Point position.
+ * @param center Circle center.
+ * @param radius Circle radius.
+ * @return true if point is in circle.
+ * @return false otherwise.
+ */
+bool CheckCollisionPointCircle(Vec2 point, Vec2 center, float radius);
+
+/**
+ * @brief Wait for a specified time duration.
+ * @param seconds Time to wait in seconds.
+ */
+void WaitTime(double seconds);
+
+/**
+ * @brief Get a random integer value.
+ * @param min Minimum value (inclusive).
+ * @param max Maximum value (inclusive).
+ * @return Random integer value.
+ */
+int GetRandomValue(int min, int max);
+
+/**
+ * @brief Set the random number generator seed.
+ * @param seed Random seed value.
+ */
+void SetRandomSeed(unsigned int seed);
+
+/**
+ * @brief Check if the window is ready for drawing.
+ * @return true if window is ready.
+ * @return false otherwise.
+ */
+bool IsWindowReady();
+
+/**
+ * @brief Check if a texture is ready for use.
+ * @param texture Texture to check.
+ * @return true if texture is ready.
+ * @return false otherwise.
+ */
+bool IsTextureReady(Texture2D texture);
+
+/**
+ * @brief Check if a shader is ready for use.
+ * @param shader Shader to check.
+ * @return true if shader is ready.
+ * @return false otherwise.
+ */
+bool IsShaderReady(Shader shader);
+
 }  // namespace qc
+

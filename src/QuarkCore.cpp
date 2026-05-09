@@ -8,6 +8,8 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 #include <array>
 #include <chrono>
@@ -17,11 +19,13 @@
 #include <cstring>
 #include <cstdio>
 #include <ctime>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace qc {
@@ -39,6 +43,7 @@ struct RendererState {
     GLuint defaultShaderProgram = 0;
     GLint screenSizeLocation = -1;
     GLint samplerLocation = -1;
+    GLuint currentFbo = 0;
     int width = 0;
     int height = 0;
     int targetFps = 60;
@@ -100,11 +105,28 @@ struct Model3DState {
 };
 Model3DState g3DState;
 
+Font gDefaultFont;
+FT_Library gFreeTypeLibrary = nullptr;
+bool gFreeTypeInitialized = false;
+
+int gLastKeyPressed = 0;
+int gLastCharPressed = 0;
+KeyboardKey gExitKey = KeyboardKey::Escape;
+Vec2 gMousePreviousPosition = {0.0f, 0.0f};
+bool gCursorHidden = false;
+
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable:4611)
+#endif
 static bool PngSafeInit(png_structp png, FILE* file) {
     if (setjmp(png_jmpbuf(png))) return false;
     png_init_io(png, file);
     return true;
 }
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 } // namespace
 
 constexpr std::size_t kMaxBatchVertices = 8192;
@@ -112,6 +134,9 @@ constexpr std::size_t kMaxBatchVertices = 8192;
 void RefreshViewport();
 void UpdateInputFromEvents();
 bool LoadPngImage(const char* filePath, PngImageData& image);
+GLuint CreateTextureFromRgba(const std::uint8_t* pixels, int width, int height);
+void EnsureBatchTexture(GLuint textureId);
+void PushVertex(const Vertex& vertex);
 
 [[noreturn]] void Fail(const std::string& message) {
     throw std::runtime_error(message);
@@ -586,6 +611,8 @@ void PumpSystemEvents() {
     gRenderer.events.clear();
     gRenderer.nextEventIndex = 0;
     gRenderer.shouldClose = false;
+    gLastKeyPressed = 0;
+    gLastCharPressed = 0;
 
     SDL_Event sdlEvent;
     while (SDL_PollEvent(&sdlEvent)) {
@@ -598,6 +625,14 @@ void PumpSystemEvents() {
         if (sdlEvent.type == SDL_EVENT_MOUSE_WHEEL) {
             gRenderer.mouseWheel.x += sdlEvent.wheel.x;
             gRenderer.mouseWheel.y += sdlEvent.wheel.y;
+        }
+        if (sdlEvent.type == SDL_EVENT_KEY_DOWN) {
+            gLastKeyPressed = sdlEvent.key.key;
+        }
+        if (sdlEvent.type == SDL_EVENT_TEXT_INPUT) {
+            if (sdlEvent.text.text[0] != '\0') {
+                gLastCharPressed = static_cast<unsigned char>(sdlEvent.text.text[0]);
+            }
         }
 
         gRenderer.events.push_back(TranslateEvent(sdlEvent));
@@ -670,6 +705,182 @@ void RefreshViewport() {
     gRenderer.width = width;
     gRenderer.height = height;
     glViewport(0, 0, width, height);
+}
+
+bool FileExists(const char* filePath) {
+    if (filePath == nullptr) {
+        return false;
+    }
+    std::ifstream file(filePath, std::ios::binary);
+    return file.good();
+}
+
+bool InitializeFreeType() {
+    if (gFreeTypeInitialized) {
+        return true;
+    }
+
+    if (FT_Init_FreeType(&gFreeTypeLibrary) != 0) {
+        WriteLog(LogLevel::Error, "FREETYPE", "Failed to initialize FreeType library");
+        return false;
+    }
+
+    gFreeTypeInitialized = true;
+    return true;
+}
+
+const char* GetDefaultSystemFontPath() {
+#if defined(_WIN32)
+    static const char* paths[] = {
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/verdana.ttf",
+    };
+#elif defined(__APPLE__)
+    static const char* paths[] = {
+        "/System/Library/Fonts/SFNS.ttf",
+        "/Library/Fonts/Arial.ttf",
+        "/Library/Fonts/Helvetica.ttf",
+    };
+#else
+    static const char* paths[] = {
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    };
+#endif
+
+    for (const char* path : paths) {
+        if (FileExists(path)) {
+            return path;
+        }
+    }
+
+    return nullptr;
+}
+
+bool LoadFontFromFile(Font& font, const char* filePath, int pointSize) {
+    if (!InitializeFreeType()) {
+        return false;
+    }
+
+    FT_Face face = nullptr;
+    if (FT_New_Face(gFreeTypeLibrary, filePath, 0, &face) != 0) {
+        WriteLog(LogLevel::Error, "FREETYPE", std::string("Failed to open font file: ") + filePath);
+        return false;
+    }
+
+    if (FT_Select_Charmap(face, FT_ENCODING_UNICODE) != 0) {
+        WriteLog(LogLevel::Error, "FREETYPE", "Failed to select Unicode charmap");
+        FT_Done_Face(face);
+        return false;
+    }
+
+    if (FT_Set_Pixel_Sizes(face, 0, pointSize) != 0) {
+        WriteLog(LogLevel::Error, "FREETYPE", "Failed to set font pixel size");
+        FT_Done_Face(face);
+        return false;
+    }
+
+    constexpr int textureWidth = 1024;
+    constexpr int textureHeight = 1024;
+    std::vector<std::uint8_t> pixels(textureWidth * textureHeight * 4, 0);
+    int penX = 1;
+    int penY = 1;
+    int rowHeight = 0;
+
+    for (unsigned char c = 32; c < 127; ++c) {
+        if (FT_Load_Char(face, c, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0) {
+            continue;
+        }
+
+        FT_GlyphSlot slot = face->glyph;
+        int glyphWidth = static_cast<int>(slot->bitmap.width);
+        int glyphHeight = static_cast<int>(slot->bitmap.rows);
+
+        if (penX + glyphWidth + 1 > textureWidth) {
+            penX = 1;
+            penY += rowHeight + 1;
+            rowHeight = 0;
+        }
+
+        if (penY + glyphHeight + 1 > textureHeight) {
+            WriteLog(LogLevel::Error, "FREETYPE", "Font atlas overflow for default font");
+            FT_Done_Face(face);
+            return false;
+        }
+
+        for (int row = 0; row < glyphHeight; ++row) {
+            for (int col = 0; col < glyphWidth; ++col) {
+                const std::size_t dst = ((penY + row) * textureWidth + (penX + col)) * 4;
+                const std::uint8_t alpha = slot->bitmap.buffer[row * slot->bitmap.pitch + col];
+                pixels[dst + 0] = 255;
+                pixels[dst + 1] = 255;
+                pixels[dst + 2] = 255;
+                pixels[dst + 3] = alpha;
+            }
+        }
+
+        const float u = static_cast<float>(penX) / textureWidth;
+        const float v = static_cast<float>(penY) / textureHeight;
+        const float uWidth = glyphWidth > 0 ? static_cast<float>(glyphWidth) / textureWidth : 0.0f;
+        const float vHeight = glyphHeight > 0 ? static_cast<float>(glyphHeight) / textureHeight : 0.0f;
+
+        FontGlyph& glyph = font.glyphs[c - 32];
+        glyph.uv = Rectangle{u, v, uWidth, vHeight};
+        glyph.advanceX = static_cast<float>(slot->advance.x) / 64.0f;
+        glyph.offsetX = static_cast<float>(slot->bitmap_left);
+        glyph.offsetY = static_cast<float>(slot->bitmap_top);
+        glyph.width = glyphWidth;
+        glyph.height = glyphHeight;
+
+        penX += glyphWidth + 1;
+        rowHeight = std::max(rowHeight, glyphHeight);
+    }
+
+    const unsigned int textureId = CreateTextureFromRgba(pixels.data(), textureWidth, textureHeight);
+    if (textureId == 0) {
+        WriteLog(LogLevel::Error, "FREETYPE", "Failed to create font atlas texture");
+        FT_Done_Face(face);
+        return false;
+    }
+
+    font.textureId = textureId;
+    font.baseSize = pointSize;
+    font.ascent = static_cast<int>(face->size->metrics.ascender / 64);
+    font.descent = static_cast<int>(face->size->metrics.descender / 64);
+    font.lineHeight = static_cast<int>(face->size->metrics.height / 64);
+    font.lineGap = font.lineHeight - (font.ascent - font.descent);
+    font.valid = true;
+
+    FT_Done_Face(face);
+    return true;
+}
+
+bool EnsureDefaultFontLoaded() {
+    if (gDefaultFont.valid) {
+        return true;
+    }
+
+    const char* fontPath = GetDefaultSystemFontPath();
+    if (fontPath == nullptr) {
+        WriteLog(LogLevel::Warn, "FREETYPE", "Default system font not found");
+        return false;
+    }
+
+    return LoadFontFromFile(gDefaultFont, fontPath, 32);
+}
+
+void PushTexturedQuad(GLuint textureId, Rectangle uv, float x, float y, float width, float height, Color color) {
+    EnsureBatchTexture(textureId);
+    const auto normalized = ToNormalizedColor(color);
+
+    PushVertex({x, y, uv.x, uv.y, normalized[0], normalized[1], normalized[2], normalized[3]});
+    PushVertex({x + width, y, uv.x + uv.width, uv.y, normalized[0], normalized[1], normalized[2], normalized[3]});
+    PushVertex({x + width, y + height, uv.x + uv.width, uv.y + uv.height, normalized[0], normalized[1], normalized[2], normalized[3]});
+    PushVertex({x, y, uv.x, uv.y, normalized[0], normalized[1], normalized[2], normalized[3]});
+    PushVertex({x + width, y + height, uv.x + uv.width, uv.y + uv.height, normalized[0], normalized[1], normalized[2], normalized[3]});
+    PushVertex({x, y + height, uv.x, uv.y + uv.height, normalized[0], normalized[1], normalized[2], normalized[3]});
 }
 
 GLuint CreateTextureFromRgba(const std::uint8_t* pixels, int width, int height) {
@@ -1138,6 +1349,10 @@ void CloseWindow() {
         glDeleteTextures(1, &gRenderer.whiteTexture);
         gRenderer.whiteTexture = 0;
     }
+    if (gDefaultFont.textureId != 0) {
+        glDeleteTextures(1, &gDefaultFont.textureId);
+        gDefaultFont = {};
+    }
     if (gRenderer.vbo != 0) {
         glDeleteBuffers(1, &gRenderer.vbo);
         gRenderer.vbo = 0;
@@ -1157,6 +1372,12 @@ void CloseWindow() {
     if (gRenderer.window != nullptr) {
         SDL_DestroyWindow(gRenderer.window);
         gRenderer.window = nullptr;
+    }
+
+    if (gFreeTypeInitialized) {
+        FT_Done_FreeType(gFreeTypeLibrary);
+        gFreeTypeLibrary = nullptr;
+        gFreeTypeInitialized = false;
     }
 
     SDL_Quit();
@@ -1595,6 +1816,156 @@ void DrawTexture(const Texture2D& texture, float x, float y, Color tint) {
     PushQuad(texture.id, x, y, static_cast<float>(texture.width), static_cast<float>(texture.height), tint);
 }
 
+void DrawTexturePro(Texture2D texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint) {
+    EnsureInitialized();
+    if (!texture.valid || texture.id == 0) return;
+
+    EnsureBatchTexture(texture.id);
+    const auto normalized = ToNormalizedColor(tint);
+
+    float tw = (float)texture.width;
+    float th = (float)texture.height;
+
+    float u0 = source.x / tw;
+    float v0 = source.y / th;
+    float u1 = (source.x + source.width) / tw;
+    float v1 = (source.y + source.height) / th;
+
+    Vec2 v[4] = {
+        { -origin.x, -origin.y },
+        { dest.width - origin.x, -origin.y },
+        { dest.width - origin.x, dest.height - origin.y },
+        { -origin.x, dest.height - origin.y }
+    };
+
+    if (rotation != 0.0f) {
+        float rad = rotation * (3.1415926535f / 180.0f);
+        float cosA = std::cos(rad);
+        float sinA = std::sin(rad);
+
+        for (int i = 0; i < 4; i++) {
+            float rx = v[i].x * cosA - v[i].y * sinA;
+            float ry = v[i].x * sinA + v[i].y * cosA;
+            v[i].x = rx;
+            v[i].y = ry;
+        }
+    }
+
+    for (int i = 0; i < 4; i++) {
+        v[i].x += dest.x;
+        v[i].y += dest.y;
+    }
+
+    PushVertex({ v[0].x, v[0].y, u0, v0, normalized[0], normalized[1], normalized[2], normalized[3] });
+    PushVertex({ v[1].x, v[1].y, u1, v0, normalized[0], normalized[1], normalized[2], normalized[3] });
+    PushVertex({ v[2].x, v[2].y, u1, v1, normalized[0], normalized[1], normalized[2], normalized[3] });
+
+    PushVertex({ v[0].x, v[0].y, u0, v0, normalized[0], normalized[1], normalized[2], normalized[3] });
+    PushVertex({ v[2].x, v[2].y, u1, v1, normalized[0], normalized[1], normalized[2], normalized[3] });
+    PushVertex({ v[3].x, v[3].y, u0, v1, normalized[0], normalized[1], normalized[2], normalized[3] });
+}
+
+Font GetDefaultFont() {
+    EnsureInitialized();
+    EnsureDefaultFontLoaded();
+    return gDefaultFont;
+}
+
+void DrawText(const char* text, int x, int y, int fontSize, Color color) {
+    DrawTextEx(GetDefaultFont(), text, Vec2{static_cast<float>(x), static_cast<float>(y)}, static_cast<float>(fontSize), 0.0f, color);
+}
+
+void DrawTextEx(Font font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) {
+    EnsureInitialized();
+    if (text == nullptr || !font.valid) {
+        return;
+    }
+
+    const float scale = fontSize / static_cast<float>(font.baseSize);
+    const float lineHeight = static_cast<float>(font.lineHeight) * scale;
+    const float baselineOffset = static_cast<float>(font.ascent) * scale;
+
+    float x = position.x;
+    float y = position.y;
+    bool firstChar = true;
+
+    for (const char* c = text; *c != '\0'; ++c) {
+        if (*c == '\n') {
+            x = position.x;
+            y += lineHeight;
+            firstChar = true;
+            continue;
+        }
+
+        unsigned char uc = static_cast<unsigned char>(*c);
+        if (uc < 32 || uc >= 127) {
+            continue;
+        }
+
+        const FontGlyph& glyph = font.glyphs[uc - 32];
+        if (!firstChar) {
+            x += spacing;
+        }
+        firstChar = false;
+
+        const float glyphX = x + glyph.offsetX * scale;
+        const float glyphY = y + baselineOffset - glyph.offsetY * scale;
+        const float glyphWidth = static_cast<float>(glyph.width) * scale;
+        const float glyphHeight = static_cast<float>(glyph.height) * scale;
+
+        if (glyphWidth > 0.0f && glyphHeight > 0.0f) {
+            PushTexturedQuad(font.textureId, glyph.uv, glyphX, glyphY, glyphWidth, glyphHeight, tint);
+        }
+
+        x += glyph.advanceX * scale;
+    }
+}
+
+Vec2 MeasureTextEx(Font font, const char* text, float fontSize, float spacing) {
+    Vec2 result{0.0f, 0.0f};
+    if (text == nullptr || !font.valid) {
+        return result;
+    }
+
+    const float scale = fontSize / static_cast<float>(font.baseSize);
+    const float lineHeight = static_cast<float>(font.lineHeight) * scale;
+    float x = 0.0f;
+    float maxWidth = 0.0f;
+    bool firstChar = true;
+
+    for (const char* c = text; *c != '\0'; ++c) {
+        if (*c == '\n') {
+            maxWidth = std::max(maxWidth, x);
+            x = 0.0f;
+            firstChar = true;
+            continue;
+        }
+
+        unsigned char uc = static_cast<unsigned char>(*c);
+        if (uc < 32 || uc >= 127) {
+            continue;
+        }
+
+        const FontGlyph& glyph = font.glyphs[uc - 32];
+        if (!firstChar) {
+            x += spacing;
+        }
+        firstChar = false;
+        x += glyph.advanceX * scale;
+    }
+
+    maxWidth = std::max(maxWidth, x);
+    result.x = maxWidth;
+    result.y = lineHeight * (1 + static_cast<int>(std::count(text, text + std::strlen(text), '\n')));
+    return result;
+}
+
+int MeasureText(const char* text, int fontSize) {
+    const Font font = GetDefaultFont();
+    const Vec2 measure = MeasureTextEx(font, text, static_cast<float>(fontSize), 0.0f);
+    return static_cast<int>(std::round(measure.x));
+}
+
 Texture2D LoadTexture(const char* filePath) {
     EnsureInitialized();
     Texture2D texture = LoadPngTexture(filePath);
@@ -1604,6 +1975,45 @@ Texture2D LoadTexture(const char* filePath) {
         WriteLog(LogLevel::Warn, "ASSETS", std::string("Failed to load texture: ") + filePath);
     }
     return texture;
+}
+
+RenderTexture2D LoadRenderTexture(int width, int height) {
+    EnsureInitialized();
+    RenderTexture2D target = {};
+
+    glGenFramebuffers(1, &target.id);
+    glBindFramebuffer(GL_FRAMEBUFFER, target.id);
+
+    glGenTextures(1, &target.texture.id);
+    glBindTexture(GL_TEXTURE_2D, target.texture.id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target.texture.id, 0);
+
+    glGenRenderbuffers(1, &target.depthId);
+    glBindRenderbuffer(GL_RENDERBUFFER, target.depthId);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, target.depthId);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        WriteLog(LogLevel::Error, "RENDERER", "Failed to create render texture");
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    target.texture.width = width;
+    target.texture.height = height;
+    target.texture.valid = true;
+
+    return target;
+}
+
+void UnloadRenderTexture(RenderTexture2D target) {
+    if (target.id != 0) glDeleteFramebuffers(1, &target.id);
+    if (target.depthId != 0) glDeleteRenderbuffers(1, &target.depthId);
+    UnloadTexture(target.texture);
 }
 
 Texture2D GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB) {
@@ -1641,6 +2051,36 @@ void UnloadTexture(Texture2D& texture) {
     }
 
     texture = {};
+}
+
+Font LoadFont(const char* filePath, int fontSize) {
+    Font font{};
+    if (filePath == nullptr || fontSize <= 0) {
+        WriteLog(LogLevel::Error, "ASSETS", "Invalid font parameters");
+        return font;
+    }
+
+    if (!FileExists(filePath)) {
+        WriteLog(LogLevel::Error, "ASSETS", std::string("Font file not found: ") + filePath);
+        return font;
+    }
+
+    if (LoadFontFromFile(font, filePath, fontSize)) {
+        WriteLog(LogLevel::Info, "ASSETS", std::string("Font loaded: ") + filePath);
+    } else {
+        WriteLog(LogLevel::Error, "ASSETS", std::string("Failed to load font: ") + filePath);
+    }
+
+    return font;
+}
+
+void UnloadFont(Font& font) {
+    if (font.textureId != 0) {
+        glDeleteTextures(1, &font.textureId);
+        WriteLog(LogLevel::Info, "ASSETS", "Font unloaded");
+    }
+
+    font = {};
 }
 
 namespace {
@@ -2106,6 +2546,516 @@ Model LoadModel(const char* filePath) {
     return model;
 }
 
+Vec2 GetScreenToWorld2D(Vec2 position, Camera2D camera) {
+    float cosA = std::cos(camera.rotation * 3.14159265359f / 180.0f);
+    float sinA = std::sin(camera.rotation * 3.14159265359f / 180.0f);
+    
+    float scale = camera.zoom;
+    float tx = camera.offset.x - camera.target.x * scale * cosA - camera.target.y * scale * sinA;
+    float ty = camera.offset.y + camera.target.x * scale * sinA - camera.target.y * scale * cosA;
+    
+    float x = (position.x - tx) * scale * cosA - (position.y - ty) * scale * sinA;
+    float y = (position.x - tx) * scale * sinA + (position.y - ty) * scale * cosA;
+    
+    return Vec2{camera.target.x + x / (scale * scale), camera.target.y + y / (scale * scale)};
+}
+
+Vec2 GetWorldToScreen2D(Vec2 position, Camera2D camera) {
+    float dx = position.x - camera.target.x;
+    float dy = position.y - camera.target.y;
+    
+    float cosA = std::cos(camera.rotation * 3.14159265359f / 180.0f);
+    float sinA = std::sin(camera.rotation * 3.14159265359f / 180.0f);
+    
+    float screenX = camera.offset.x + (dx * cosA - dy * sinA) * camera.zoom;
+    float screenY = camera.offset.y + (dx * sinA + dy * cosA) * camera.zoom;
+    
+    return Vec2{screenX, screenY};
+}
+
+Vec3 GetWorldToScreen(Vec3 position, Camera3D camera) {
+    Vec3 forward = camera.target - camera.position;
+    forward = forward.normalized();
+
+    Vec3 right = forward.cross(camera.up);
+    right = right.normalized();
+
+    Vec3 up = right.cross(forward);
+
+    Vec3 relative = position - camera.position;
+    float cameraX = relative.dot(right);
+    float cameraY = relative.dot(up);
+    float cameraZ = relative.dot(forward);
+
+    const float screenWidth = static_cast<float>(GetScreenWidth());
+    const float screenHeight = static_cast<float>(GetScreenHeight());
+    if (screenWidth <= 0.0f || screenHeight <= 0.0f) {
+        return Vec3{0.0f, 0.0f, cameraZ};
+    }
+
+    const float aspect = screenWidth / screenHeight;
+    const float fovRad = camera.fovy * 3.14159265359f / 180.0f;
+    const float halfHeight = std::tan(fovRad * 0.5f);
+    const float halfWidth = halfHeight * aspect;
+
+    float ndcX;
+    float ndcY;
+
+    if (camera.projection == CAMERA_ORTHOGRAPHIC) {
+        const float orthoScale = camera.fovy > 0.0f ? camera.fovy : 1.0f;
+        ndcX = cameraX / (orthoScale * aspect);
+        ndcY = cameraY / orthoScale;
+    } else {
+        if (cameraZ == 0.0f) {
+            cameraZ = 1e-6f;
+        }
+        ndcX = cameraX / (cameraZ * halfWidth);
+        ndcY = cameraY / (cameraZ * halfHeight);
+    }
+
+    float screenX = (ndcX * 0.5f + 0.5f) * screenWidth;
+    float screenY = (0.5f - ndcY * 0.5f) * screenHeight;
+
+    return Vec3{screenX, screenY, cameraZ};
+}
+
+Ray GetScreenToWorldRay(Vec2 mousePosition, Camera3D camera) {
+    Ray ray;
+    ray.origin = camera.position;
+    
+    Vec3 forward = camera.target - camera.position;
+    float forwardLen = std::sqrt(forward.x * forward.x + forward.y * forward.y + forward.z * forward.z);
+    if (forwardLen > 0) forward = Vec3{forward.x / forwardLen, forward.y / forwardLen, forward.z / forwardLen};
+    
+    Vec3 right = Vec3{forward.y * camera.up.z - forward.z * camera.up.y,
+                      forward.z * camera.up.x - forward.x * camera.up.z,
+                      forward.x * camera.up.y - forward.y * camera.up.x};
+    float rightLen = std::sqrt(right.x * right.x + right.y * right.y + right.z * right.z);
+    if (rightLen > 0) right = Vec3{right.x / rightLen, right.y / rightLen, right.z / rightLen};
+    
+    Vec3 up = Vec3{right.y * forward.z - right.z * forward.y,
+                   right.z * forward.x - right.x * forward.z,
+                   right.x * forward.y - right.y * forward.x};
+    
+    float screenWidth = static_cast<float>(GetScreenWidth());
+    float screenHeight = static_cast<float>(GetScreenHeight());
+    float aspect = screenWidth / screenHeight;
+    float fovRad = camera.fovy * 3.14159265359f / 180.0f;
+    float fovHeight = 2.0f * std::tan(fovRad / 2.0f);
+    float fovWidth = fovHeight * aspect;
+    
+    float x = (mousePosition.x / screenWidth - 0.5f) * fovWidth;
+    float y = (0.5f - mousePosition.y / screenHeight) * fovHeight;
+    
+    ray.direction = Vec3{
+        forward.x + right.x * x + up.x * y,
+        forward.y + right.y * x + up.y * y,
+        forward.z + right.z * x + up.z * y
+    };
+    float rayLen = std::sqrt(ray.direction.x * ray.direction.x + ray.direction.y * ray.direction.y + ray.direction.z * ray.direction.z);
+    if (rayLen > 0) ray.direction = Vec3{ray.direction.x / rayLen, ray.direction.y / rayLen, ray.direction.z / rayLen};
+    
+    return ray;
+}
+
+bool IsKeyReleased(KeyboardKey key) {
+    int scancode = static_cast<int>(key);
+    if (scancode < 0 || scancode >= SDL_SCANCODE_COUNT) return false;
+    
+    return gRenderer.previousKeys[scancode] && !gRenderer.currentKeys[scancode];
+}
+
+bool IsKeyUp(KeyboardKey key) {
+    int scancode = static_cast<int>(key);
+    if (scancode < 0 || scancode >= SDL_SCANCODE_COUNT) return false;
+    
+    return !gRenderer.currentKeys[scancode];
+}
+
+int GetKeyPressed() {
+    int key = gLastKeyPressed;
+    gLastKeyPressed = 0;
+    return key;
+}
+
+int GetCharPressed() {
+    int ch = gLastCharPressed;
+    gLastCharPressed = 0;
+    return ch;
+}
+
+void SetExitKey(KeyboardKey key) {
+    gExitKey = key;
+}
+
+Vec2 GetMouseDelta() {
+    Vec2 delta = Vec2{gRenderer.mousePosition.x - gMousePreviousPosition.x, 
+                      gRenderer.mousePosition.y - gMousePreviousPosition.y};
+    gMousePreviousPosition = gRenderer.mousePosition;
+    return delta;
+}
+
+void SetMousePosition(int x, int y) {
+    if (gRenderer.window) {
+        SDL_WarpMouseInWindow(gRenderer.window, x, y);
+        gRenderer.mousePosition = Vec2{static_cast<float>(x), static_cast<float>(y)};
+        gMousePreviousPosition = gRenderer.mousePosition;
+    }
+}
+
+void DisableCursor() {
+    if (gRenderer.window) {
+        SDL_HideCursor();
+        gCursorHidden = true;
+    }
+}
+
+void EnableCursor() {
+    if (gRenderer.window) {
+        SDL_ShowCursor();
+        gCursorHidden = false;
+    }
+}
+
+bool IsCursorHidden() {
+    return gCursorHidden;
+}
+
+void SetMouseCursor(MouseCursor cursor) {
+    if (!gRenderer.window) return;
+    
+    SDL_SystemCursor sdlCursor;
+    switch (cursor) {
+        case MouseCursor::Arrow: sdlCursor = SDL_SYSTEM_CURSOR_DEFAULT; break;
+        case MouseCursor::Ibeam: sdlCursor = SDL_SYSTEM_CURSOR_TEXT; break;
+        case MouseCursor::Crosshair: sdlCursor = SDL_SYSTEM_CURSOR_CROSSHAIR; break;
+        case MouseCursor::PointingHand: sdlCursor = SDL_SYSTEM_CURSOR_POINTER; break;
+        case MouseCursor::ResizeEW: sdlCursor = SDL_SYSTEM_CURSOR_EW_RESIZE; break;
+        case MouseCursor::ResizeNS: sdlCursor = SDL_SYSTEM_CURSOR_NS_RESIZE; break;
+        case MouseCursor::ResizeNWSE: sdlCursor = SDL_SYSTEM_CURSOR_NWSE_RESIZE; break;
+        case MouseCursor::ResizeNESW: sdlCursor = SDL_SYSTEM_CURSOR_NESW_RESIZE; break;
+        case MouseCursor::ResizeAll: sdlCursor = SDL_SYSTEM_CURSOR_MOVE; break;
+        case MouseCursor::NotAllowed: sdlCursor = SDL_SYSTEM_CURSOR_NOT_ALLOWED; break;
+        default: sdlCursor = SDL_SYSTEM_CURSOR_DEFAULT; break;
+    }
+    
+    SDL_Cursor* sdlCustomCursor = SDL_CreateSystemCursor(sdlCursor);
+    if (sdlCustomCursor) {
+        SDL_SetCursor(sdlCustomCursor);
+        SDL_DestroyCursor(sdlCustomCursor);
+    }
+}
+
+bool IsGamepadAvailable(int gamepad) {
+    // Check if gamepad is available via SDL3
+    SDL_Joystick* joy = SDL_OpenJoystick(gamepad);
+    if (joy) {
+        SDL_CloseJoystick(joy);
+        return true;
+    }
+    return false;
+}
+
+const char* GetGamepadName(int gamepad) {
+    SDL_Joystick* joy = SDL_OpenJoystick(gamepad);
+    if (!joy) return "UNKNOWN";
+    
+    const char* name = SDL_GetJoystickName(joy);
+    SDL_CloseJoystick(joy);
+    return name ? name : "UNKNOWN";
+}
+
+float GetGamepadAxisMovement(int gamepad, int axis) {
+    SDL_Joystick* joy = SDL_OpenJoystick(gamepad);
+    if (!joy) return 0.0f;
+    
+    float value = 0.0f;
+    if (axis >= 0 && axis < SDL_GetNumJoystickAxes(joy)) {
+        Sint16 axisValue = SDL_GetJoystickAxis(joy, axis);
+        value = axisValue / 32768.0f;
+    }
+    
+    SDL_CloseJoystick(joy);
+    return value;
+}
+
+bool IsGamepadButtonPressed(int gamepad, int button) {
+    SDL_Joystick* joy = SDL_OpenJoystick(gamepad);
+    if (!joy) return false;
+    
+    bool pressed = SDL_GetJoystickButton(joy, button) != 0;
+    SDL_CloseJoystick(joy);
+    return pressed;
+}
+
+bool IsTextureValid(Texture2D texture) {
+    return texture.valid && texture.id != 0;
+}
+
+void DrawTextureV(Texture2D texture, Vec2 position, Color tint) {
+    DrawTexture(texture, position.x, position.y, tint);
+}
+
+void DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale, Color tint) {
+    Rectangle source = {0.0f, 0.0f, static_cast<float>(texture.width), static_cast<float>(texture.height)};
+    Rectangle dest = {position.x, position.y, texture.width * scale, texture.height * scale};
+    Vec2 origin = {texture.width * scale / 2.0f, texture.height * scale / 2.0f};
+    DrawTexturePro(texture, source, dest, origin, rotation, tint);
+}
+
+void DrawTextureRec(Texture2D texture, Rectangle source, Vec2 position, Color tint) {
+    Rectangle dest = {position.x, position.y, source.width, source.height};
+    DrawTexturePro(texture, source, dest, Vec2{0.0f, 0.0f}, 0.0f, tint);
+}
+
+void DrawTextureTiled(Texture2D texture, float scale, Vec2 offset, Color tint) {
+    if (!IsTextureValid(texture)) return;
+    
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
+    
+    int tilesX = static_cast<int>(std::ceil(screenWidth / (texture.width * scale))) + 1;
+    int tilesY = static_cast<int>(std::ceil(screenHeight / (texture.height * scale))) + 1;
+    
+    for (int y = -1; y < tilesY; ++y) {
+        for (int x = -1; x < tilesX; ++x) {
+            float posX = offset.x + x * texture.width * scale;
+            float posY = offset.y + y * texture.height * scale;
+            DrawTexture(texture, posX, posY, tint);
+        }
+    }
+}
+
+void DrawTextureNPatch(Texture2D texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint) {
+    DrawTexturePro(texture, source, dest, origin, rotation, tint);
+}
+
+bool IsRenderTextureValid(RenderTexture2D target) {
+    return target.id != 0 && IsTextureValid(target.texture);
+}
+
+Texture2D GetRenderTextureTexture(RenderTexture2D target) {
+    return target.texture;
+}
+
+void DrawLine(float x1, float y1, float x2, float y2, Color color) {
+    DrawLineV(Vec2{x1, y1}, Vec2{x2, y2}, color);
+}
+
+void DrawLineV(Vec2 start, Vec2 end, Color color) {
+    if (!gRenderer.drawing) return;
+    
+    glDisable(GL_TEXTURE_2D);
+    glBegin(GL_LINES);
+    glColor4ub(color.r, color.g, color.b, color.a);
+    glVertex2f(start.x, start.y);
+    glVertex2f(end.x, end.y);
+    glEnd();
+    glEnable(GL_TEXTURE_2D);
+    
+    if (gRenderer.drawing && gRenderer.batchVertices.size() > 0) {
+        glBindBuffer(GL_ARRAY_BUFFER, gRenderer.vbo);
+        glBufferData(GL_ARRAY_BUFFER, gRenderer.batchVertices.size() * sizeof(Vertex), gRenderer.batchVertices.data(), GL_DYNAMIC_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(gRenderer.batchVertices.size()));
+        gRenderer.batchVertices.clear();
+    }
+}
+
+void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color) {
+    DrawLine(rectangle.x, rectangle.y, rectangle.x + rectangle.width, rectangle.y, color);
+    DrawLine(rectangle.x + rectangle.width, rectangle.y, rectangle.x + rectangle.width, rectangle.y + rectangle.height, color);
+    DrawLine(rectangle.x + rectangle.width, rectangle.y + rectangle.height, rectangle.x, rectangle.y + rectangle.height, color);
+    DrawLine(rectangle.x, rectangle.y + rectangle.height, rectangle.x, rectangle.y, color);
+}
+
+void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color) {
+    if (!gRenderer.drawing) return;
+    
+    glDisable(GL_TEXTURE_2D);
+    glBegin(GL_TRIANGLES);
+    glColor4ub(color.r, color.g, color.b, color.a);
+    glVertex2f(v1.x, v1.y);
+    glVertex2f(v2.x, v2.y);
+    glVertex2f(v3.x, v3.y);
+    glEnd();
+    glEnable(GL_TEXTURE_2D);
+}
+
+void DrawCircleLines(float centerX, float centerY, float radius, Color color) {
+    constexpr int segments = 36;
+    constexpr float pi2 = 6.28318530718f;
+    
+    if (!gRenderer.drawing) return;
+    
+    glDisable(GL_TEXTURE_2D);
+    glBegin(GL_LINE_LOOP);
+    glColor4ub(color.r, color.g, color.b, color.a);
+    
+    for (int i = 0; i < segments; ++i) {
+        float angle = (i / static_cast<float>(segments)) * pi2;
+        glVertex2f(centerX + radius * std::cos(angle), centerY + radius * std::sin(angle));
+    }
+    
+    glEnd();
+    glEnable(GL_TEXTURE_2D);
+}
+
+void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Color color) {
+    constexpr int segments = 36;
+    constexpr float pi2 = 6.28318530718f;
+    
+    if (!gRenderer.drawing) return;
+    
+    glDisable(GL_TEXTURE_2D);
+    glBegin(GL_POLYGON);
+    glColor4ub(color.r, color.g, color.b, color.a);
+    
+    for (int i = 0; i < segments; ++i) {
+        float angle = (i / static_cast<float>(segments)) * pi2;
+        glVertex2f(centerX + radiusH * std::cos(angle), centerY + radiusV * std::sin(angle));
+    }
+    
+    glEnd();
+    glEnable(GL_TEXTURE_2D);
+}
+
+void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color) {
+    if (sides < 3 || !gRenderer.drawing) return;
+    
+    constexpr float pi2 = 6.28318530718f;
+    
+    glDisable(GL_TEXTURE_2D);
+    glBegin(GL_POLYGON);
+    glColor4ub(color.r, color.g, color.b, color.a);
+    
+    for (int i = 0; i < sides; ++i) {
+        float angle = (i / static_cast<float>(sides)) * pi2 + rotation * 3.14159265359f / 180.0f;
+        glVertex2f(center.x + radius * std::cos(angle), center.y + radius * std::sin(angle));
+    }
+    
+    glEnd();
+    glEnable(GL_TEXTURE_2D);
+}
+
+void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments, Color color) {
+    if (!gRenderer.drawing) return;
+    
+    float radius = roundness * std::min(rectangle.width, rectangle.height) / 2.0f;
+    
+    DrawCircle(rectangle.x + radius, rectangle.y + radius, radius, color);
+    DrawCircle(rectangle.x + rectangle.width - radius, rectangle.y + radius, radius, color);
+    DrawCircle(rectangle.x + rectangle.width - radius, rectangle.y + rectangle.height - radius, radius, color);
+    DrawCircle(rectangle.x + radius, rectangle.y + rectangle.height - radius, radius, color);
+    
+    DrawRectangle(rectangle.x + radius, rectangle.y, rectangle.width - 2.0f * radius, rectangle.height, color);
+    DrawRectangle(rectangle.x, rectangle.y + radius, rectangle.width, rectangle.height - 2.0f * radius, color);
+}
+
+Color Fade(Color color, float alpha) {
+    Color result = color;
+    result.a = static_cast<unsigned char>(color.a * alpha);
+    return result;
+}
+
+Color ColorAlpha(Color color, float alpha) {
+    color.a = static_cast<unsigned char>(255.0f * alpha);
+    return color;
+}
+
+Color ColorTint(Color color, Color tint) {
+    Color result;
+    result.r = static_cast<unsigned char>((color.r / 255.0f) * (tint.r / 255.0f) * 255.0f);
+    result.g = static_cast<unsigned char>((color.g / 255.0f) * (tint.g / 255.0f) * 255.0f);
+    result.b = static_cast<unsigned char>((color.b / 255.0f) * (tint.b / 255.0f) * 255.0f);
+    result.a = color.a;
+    return result;
+}
+
+Color ColorBrightness(Color color, float factor) {
+    Color result;
+    result.r = static_cast<unsigned char>(std::clamp(color.r * factor, 0.0f, 255.0f));
+    result.g = static_cast<unsigned char>(std::clamp(color.g * factor, 0.0f, 255.0f));
+    result.b = static_cast<unsigned char>(std::clamp(color.b * factor, 0.0f, 255.0f));
+    result.a = color.a;
+    return result;
+}
+
+Color ColorContrast(Color color, float contrast) {
+    float r = color.r / 255.0f;
+    float g = color.g / 255.0f;
+    float b = color.b / 255.0f;
+    
+    r = (r - 0.5f) * contrast + 0.5f;
+    g = (g - 0.5f) * contrast + 0.5f;
+    b = (b - 0.5f) * contrast + 0.5f;
+    
+    Color result;
+    result.r = static_cast<unsigned char>(std::clamp(r * 255.0f, 0.0f, 255.0f));
+    result.g = static_cast<unsigned char>(std::clamp(g * 255.0f, 0.0f, 255.0f));
+    result.b = static_cast<unsigned char>(std::clamp(b * 255.0f, 0.0f, 255.0f));
+    result.a = color.a;
+    return result;
+}
+
+Color GetColor(unsigned int hexValue) {
+    Color color;
+    color.r = (hexValue >> 16) & 0xFF;
+    color.g = (hexValue >> 8) & 0xFF;
+    color.b = hexValue & 0xFF;
+    color.a = 255;
+    return color;
+}
+
+bool CheckCollisionRecs(Rectangle a, Rectangle b) {
+    return !(a.x + a.width < b.x || b.x + b.width < a.x ||
+             a.y + a.height < b.y || b.y + b.height < a.y);
+}
+
+bool CheckCollisionCircles(Vec2 center1, float radius1, Vec2 center2, float radius2) {
+    float dx = center2.x - center1.x;
+    float dy = center2.y - center1.y;
+    float distance = std::sqrt(dx * dx + dy * dy);
+    return distance < (radius1 + radius2);
+}
+
+bool CheckCollisionPointRec(Vec2 point, Rectangle rect) {
+    return point.x >= rect.x && point.x <= rect.x + rect.width &&
+           point.y >= rect.y && point.y <= rect.y + rect.height;
+}
+
+bool CheckCollisionPointCircle(Vec2 point, Vec2 center, float radius) {
+    float dx = point.x - center.x;
+    float dy = point.y - center.y;
+    float distance = std::sqrt(dx * dx + dy * dy);
+    return distance <= radius;
+}
+
+void WaitTime(double seconds) {
+    std::chrono::milliseconds duration(static_cast<int>(seconds * 1000.0));
+    std::this_thread::sleep_for(duration);
+}
+
+int GetRandomValue(int min, int max) {
+    if (min > max) std::swap(min, max);
+    return min + (std::rand() % (max - min + 1));
+}
+
+void SetRandomSeed(unsigned int seed) {
+    std::srand(seed);
+}
+
+bool IsWindowReady() {
+    return gRenderer.window != nullptr && gRenderer.context != nullptr;
+}
+
+bool IsTextureReady(Texture2D texture) {
+    return IsTextureValid(texture);
+}
+
+bool IsShaderReady(Shader shader) {
+    return IsShaderValid(shader);
+}
+
 void UnloadModel(Model& model) {
     for (auto& mesh : model.meshes) {
         if (mesh.vao != 0) glDeleteVertexArrays(1, &mesh.vao);
@@ -2346,6 +3296,36 @@ void DrawCube(Vec3 position, float width, float height, float length, Color colo
     glBindVertexArray(0);
 }
 
+void DrawCubeWires(Vec3 position, float width, float height, float length, Color color) {
+    float hw = width / 2.0f;
+    float hh = height / 2.0f;
+    float hl = length / 2.0f;
+    
+    Vec3 v0 = position + Vec3{-hw, -hh, -hl};
+    Vec3 v1 = position + Vec3{hw, -hh, -hl};
+    Vec3 v2 = position + Vec3{hw, hh, -hl};
+    Vec3 v3 = position + Vec3{-hw, hh, -hl};
+    Vec3 v4 = position + Vec3{-hw, -hh, hl};
+    Vec3 v5 = position + Vec3{hw, -hh, hl};
+    Vec3 v6 = position + Vec3{hw, hh, hl};
+    Vec3 v7 = position + Vec3{-hw, hh, hl};
+    
+    DrawLine3D(v0, v1, color);
+    DrawLine3D(v1, v2, color);
+    DrawLine3D(v2, v3, color);
+    DrawLine3D(v3, v0, color);
+    
+    DrawLine3D(v4, v5, color);
+    DrawLine3D(v5, v6, color);
+    DrawLine3D(v6, v7, color);
+    DrawLine3D(v7, v4, color);
+    
+    DrawLine3D(v0, v4, color);
+    DrawLine3D(v1, v5, color);
+    DrawLine3D(v2, v6, color);
+    DrawLine3D(v3, v7, color);
+}
+
 void DrawSphere(Vec3 centerPos, float radius, Color color) {
     Mat4 transform = Mat4::translation(centerPos.x, centerPos.y, centerPos.z);
     transform = transform * Mat4::scale(radius, radius, radius);
@@ -2397,6 +3377,24 @@ void BeginMode2D(const Camera2D& camera) {
 
 void EndMode2D() {
     gCamera2DActive = false;
+}
+
+void BeginTextureMode(RenderTexture2D target) {
+    EnsureInitialized();
+    FlushBatch();
+    glBindFramebuffer(GL_FRAMEBUFFER, target.id);
+    gRenderer.currentFbo = target.id;
+    gRenderer.width = target.texture.width;
+    gRenderer.height = target.texture.height;
+    glViewport(0, 0, gRenderer.width, gRenderer.height);
+}
+
+void EndTextureMode() {
+    EnsureInitialized();
+    FlushBatch();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    gRenderer.currentFbo = 0;
+    RefreshViewport();
 }
 
 Camera2D GetCamera2D() {

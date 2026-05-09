@@ -36,6 +36,14 @@ struct Vertex3D {
 };
 
 /**
+ * @brief Ray for raycasting operations.
+ */
+struct Ray {
+    Vec3 origin{0.0f, 0.0f, 0.0f};     // Ray starting point
+    Vec3 direction{0.0f, 0.0f, 1.0f};  // Ray direction (normalized)
+};
+
+/**
  * @brief Material properties.
  */
 struct Material {
@@ -156,5 +164,15 @@ void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color);
  * @param spacing Spacing between slices.
  */
 void DrawGrid(int slices, float spacing);
+
+/**
+ * @brief Draw a cube outline (wireframe).
+ * @param position Center position.
+ * @param width Width.
+ * @param height Height.
+ * @param length Length.
+ * @param color Wire color.
+ */
+void DrawCubeWires(Vec3 position, float width, float height, float length, Color color);
 
 }  // namespace qc
