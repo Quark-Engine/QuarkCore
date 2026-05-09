@@ -2,13 +2,11 @@
 
 # ⚛️ QuarkCore
 
-**A fast, lightweight OpenGL rendering library — the backbone of the Quark Engine.**
+**An OpenGL rendering library built to make lighting easy for the Quark Engine.**
 
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/)
 [![OpenGL](https://img.shields.io/badge/OpenGL-3.3+-green.svg)](https://www.opengl.org/)
 [![License](https://img.shields.io/badge/license-MIT-orange.svg)](#license)
-
-*Inspired by [Raylib](https://www.raylib.com/) — but engineered for speed.*
 
 </div>
 
@@ -16,22 +14,19 @@
 
 ## What is QuarkCore?
 
-QuarkCore is a low-level OpenGL rendering library designed to make graphics programming fast and ergonomic in C++. It powers the **Quark Engine** and is available as a standalone library for projects that need a clean, high-performance foundation without the overhead of larger frameworks.
-
-It takes inspiration from Raylib's friendly API surface, but is built from the ground up with a focus on raw performance — currently benchmarking **~1.5× faster** than Raylib in typical rendering workloads.
+QuarkCore is an OpenGL rendering library built specifically to make implementing lighting straightforward within the **Quark Engine**. Rather than wrestling with raw OpenGL boilerplate, QuarkCore provides a clean C++ API so engine work can stay focused on lighting logic instead of plumbing.
 
 ---
 
 ## Features
 
+- **Shader pipeline** — load shaders from files or memory, set uniforms at runtime
 - **Window & context management** — create windows, set FPS targets, handle events
 - **2D & 3D rendering** — cameras, draw calls, grids, planes, cubes, and more
 - **Texture system** — load, generate, and unload textures; render-to-texture support
-- **Shader pipeline** — load shaders from files or memory, set uniforms at runtime
 - **Text rendering** — built-in font, custom fonts, text measurement utilities
 - **Input handling** — keyboard, mouse, event polling
 - **Logging & formatting** — structured trace logging with `TextFormat`
-- **Lightweight by design** — no hidden allocations, minimal dependencies
 
 ---
 
@@ -121,22 +116,14 @@ The `examples/` directory contains demos for:
 
 ---
 
-## Comparison with Raylib
-
-QuarkCore takes Raylib's API philosophy — simple function calls, no OOP ceremony — and optimises the internals for the Quark Engine's specific rendering pipeline.
-
-| | QuarkCore | Raylib |
-|---|---|---|
-| API style | `qc::` namespace | Global C functions |
-| Performance | ~1.5× faster | Baseline |
-| Integration | Quark Engine native | Standalone |
-| OpenGL target | 3.3 Core | 3.3 / ES2 / ES3 |
-| Custom shaders | First-class | Supported |
-
----
-
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
 
 ---
+
+<div align="center">
+
+Made for the **[Quark Engine](https://github.com/Quark-Engine)**
+
+</div>
