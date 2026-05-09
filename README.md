@@ -126,6 +126,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-Made with ⚛️ for the **[Quark Engine](https://github.com/Quark-Engine)**
+Made for the **[Quark Engine](https://github.com/Quark-Engine)**
 
 </div>
