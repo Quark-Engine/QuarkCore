@@ -21,7 +21,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace qc {
@@ -38,14 +37,6 @@ struct Vertex {
     float a;
 };
 
-struct BatchCommand {
-    GLuint textureId = 0;
-    std::size_t vertexStart = 0;
-    std::size_t vertexCount = 0;
-    std::size_t indexStart = 0;
-    std::size_t indexCount = 0;
-};
-
 struct RendererState {
     SDL_Window* window = nullptr;
     SDL_GLContext context = nullptr;
@@ -58,7 +49,6 @@ struct RendererState {
     GLuint defaultShaderProgram = 0;
     GLint screenSizeLocation = -1;
     GLint samplerLocation = -1;
-    GLuint ebo = 0;
     int width = 0;
     int height = 0;
     int targetFps = 60;
@@ -68,8 +58,6 @@ struct RendererState {
     bool shouldClose = false;
     LogLevel minimumLogLevel = LogLevel::Trace;
     std::vector<Vertex> batchVertices;
-    std::vector<GLuint> batchIndices;
-    std::vector<BatchCommand> batchCommands;
     std::array<bool, SDL_SCANCODE_COUNT> currentKeys{};
     std::array<bool, SDL_SCANCODE_COUNT> previousKeys{};
     std::array<bool, 8> mouseButtons{};
@@ -78,13 +66,6 @@ struct RendererState {
     std::size_t nextEventIndex = 0;
     bool eventsReady = false;
 };
-
-struct ShaderUniformLocations {
-    GLint screenSizeLocation = -1;
-    GLint samplerLocation = -1;
-};
-
-std::unordered_map<GLuint, ShaderUniformLocations> gShaderUniformCache;
 
 struct PngImageData {
     int width = 0;
@@ -95,11 +76,9 @@ struct PngImageData {
 RendererState gRenderer;
 
 constexpr std::size_t kMaxBatchVertices = 8192;
-constexpr std::size_t kMaxBatchIndices = kMaxBatchVertices * 3 / 2;
 
 void RefreshViewport();
 void UpdateInputFromEvents();
-void FlushBatch();
 bool LoadPngImage(const char* filePath, PngImageData& image);
 
 [[noreturn]] void Fail(const std::string& message) {
@@ -656,31 +635,6 @@ void RefreshViewport() {
     glViewport(0, 0, width, height);
 }
 
-const ShaderUniformLocations& GetShaderUniformLocations(GLuint program) {
-    if (program == 0) {
-        static const ShaderUniformLocations emptyLocations;
-        return emptyLocations;
-    }
-
-    auto it = gShaderUniformCache.find(program);
-    if (it != gShaderUniformCache.end()) {
-        return it->second;
-    }
-
-    ShaderUniformLocations locations;
-    locations.screenSizeLocation = glGetUniformLocation(program, "uScreenSize");
-    locations.samplerLocation = glGetUniformLocation(program, "uTexture");
-    auto inserted = gShaderUniformCache.emplace(program, locations);
-    return inserted.first->second;
-}
-
-void EnsureBatchSpace(std::size_t vertexCount, std::size_t indexCount) {
-    if (gRenderer.batchVertices.size() + vertexCount > kMaxBatchVertices ||
-        gRenderer.batchIndices.size() + indexCount > kMaxBatchIndices) {
-        FlushBatch();
-    }
-}
-
 GLuint CreateTextureFromRgba(const std::uint8_t* pixels, int width, int height) {
     GLuint textureId = 0;
     glGenTextures(1, &textureId);
@@ -696,143 +650,97 @@ GLuint CreateTextureFromRgba(const std::uint8_t* pixels, int width, int height) 
 }
 
 void FlushBatch() {
-    if (gRenderer.batchCommands.empty()) {
+    if (gRenderer.batchVertices.empty()) {
         return;
     }
 
-    std::vector<BatchCommand> sortedCommands = gRenderer.batchCommands;
-    std::stable_sort(sortedCommands.begin(), sortedCommands.end(), [](const BatchCommand& a, const BatchCommand& b) {
-        return a.textureId < b.textureId;
-    });
-
-    std::vector<Vertex> vertexData;
-    std::vector<GLuint> indexData;
-    vertexData.reserve(gRenderer.batchVertices.size());
-    indexData.reserve(gRenderer.batchIndices.size());
-
-    for (const auto& command : sortedCommands) {
-        const std::size_t baseVertex = vertexData.size();
-        vertexData.insert(
-            vertexData.end(),
-            gRenderer.batchVertices.begin() + command.vertexStart,
-            gRenderer.batchVertices.begin() + command.vertexStart + command.vertexCount
-        );
-
-        for (std::size_t i = 0; i < command.indexCount; ++i) {
-            const GLuint originalIndex = gRenderer.batchIndices[command.indexStart + i];
-            indexData.push_back(static_cast<GLuint>(baseVertex) + (originalIndex - static_cast<GLuint>(command.vertexStart)));
-        }
-    }
-
     glUseProgram(gRenderer.currentShaderProgram);
-    const ShaderUniformLocations& uniforms = GetShaderUniformLocations(gRenderer.currentShaderProgram);
-    if (uniforms.screenSizeLocation >= 0) {
-        glUniform2f(uniforms.screenSizeLocation, static_cast<float>(gRenderer.width), static_cast<float>(gRenderer.height));
-    }
-    if (uniforms.samplerLocation >= 0) {
-        glUniform1i(uniforms.samplerLocation, 0);
-    }
+
+    GLint screenSizeLoc = glGetUniformLocation(gRenderer.currentShaderProgram, "uScreenSize");
+    GLint samplerLoc    = glGetUniformLocation(gRenderer.currentShaderProgram, "uTexture");
+
+    if (screenSizeLoc >= 0)
+        glUniform2f(screenSizeLoc, static_cast<float>(gRenderer.width), static_cast<float>(gRenderer.height));
+    if (samplerLoc >= 0)
+        glUniform1i(samplerLoc, 0);
 
     glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gRenderer.currentTexture != 0 ? gRenderer.currentTexture : gRenderer.whiteTexture);
     glBindVertexArray(gRenderer.vao);
     glBindBuffer(GL_ARRAY_BUFFER, gRenderer.vbo);
     glBufferData(
         GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(vertexData.size() * sizeof(Vertex)),
-        vertexData.data(),
+        static_cast<GLsizeiptr>(gRenderer.batchVertices.size() * sizeof(Vertex)),
+        gRenderer.batchVertices.data(),
         GL_DYNAMIC_DRAW
     );
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gRenderer.ebo);
-    glBufferData(
-        GL_ELEMENT_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(indexData.size() * sizeof(GLuint)),
-        indexData.data(),
-        GL_DYNAMIC_DRAW
-    );
-
-    GLuint activeTexture = 0;
-    std::size_t indexOffset = 0;
-    std::size_t groupStart = 0;
-    std::size_t groupCount = 0;
-    for (const auto& command : sortedCommands) {
-        if (command.textureId != activeTexture) {
-            if (groupCount > 0) {
-                glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(groupCount), GL_UNSIGNED_INT, reinterpret_cast<const void*>(groupStart * sizeof(GLuint)));
-            }
-            activeTexture = command.textureId;
-            glBindTexture(GL_TEXTURE_2D, activeTexture);
-            groupStart = indexOffset;
-            groupCount = command.indexCount;
-        } else {
-            groupCount += command.indexCount;
-        }
-        indexOffset += command.indexCount;
-    }
-
-    if (groupCount > 0) {
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(groupCount), GL_UNSIGNED_INT, reinterpret_cast<const void*>(groupStart * sizeof(GLuint)));
-    }
-
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(gRenderer.batchVertices.size()));
     gRenderer.batchVertices.clear();
-    gRenderer.batchIndices.clear();
-    gRenderer.batchCommands.clear();
+}
+
+void EnsureBatchTexture(GLuint textureId) {
+    const GLuint resolvedTexture = textureId != 0 ? textureId : gRenderer.whiteTexture;
+    if (gRenderer.currentTexture == 0) {
+        gRenderer.currentTexture = resolvedTexture;
+    }
+
+    if (resolvedTexture != gRenderer.currentTexture || gRenderer.batchVertices.size() >= kMaxBatchVertices) {
+        FlushBatch();
+        gRenderer.currentTexture = resolvedTexture;
+    }
 }
 
 void PushVertex(const Vertex& vertex) {
+    if (gRenderer.batchVertices.size() >= kMaxBatchVertices) {
+        FlushBatch();
+    }
+
     gRenderer.batchVertices.push_back(vertex);
 }
 
 void PushQuad(GLuint textureId, float x, float y, float width, float height, Color color) {
-    const GLuint resolvedTexture = textureId != 0 ? textureId : gRenderer.whiteTexture;
+    EnsureBatchTexture(textureId);
     const auto normalized = ToNormalizedColor(color);
-    EnsureBatchSpace(4, 6);
 
-    const std::size_t vertexStart = gRenderer.batchVertices.size();
     PushVertex({x, y, 0.0f, 0.0f, normalized[0], normalized[1], normalized[2], normalized[3]});
     PushVertex({x + width, y, 1.0f, 0.0f, normalized[0], normalized[1], normalized[2], normalized[3]});
     PushVertex({x + width, y + height, 1.0f, 1.0f, normalized[0], normalized[1], normalized[2], normalized[3]});
+    PushVertex({x, y, 0.0f, 0.0f, normalized[0], normalized[1], normalized[2], normalized[3]});
+    PushVertex({x + width, y + height, 1.0f, 1.0f, normalized[0], normalized[1], normalized[2], normalized[3]});
     PushVertex({x, y + height, 0.0f, 1.0f, normalized[0], normalized[1], normalized[2], normalized[3]});
-
-    const GLuint baseIndex = static_cast<GLuint>(vertexStart);
-    const std::size_t indexStart = gRenderer.batchIndices.size();
-    gRenderer.batchIndices.push_back(baseIndex);
-    gRenderer.batchIndices.push_back(baseIndex + 1);
-    gRenderer.batchIndices.push_back(baseIndex + 2);
-    gRenderer.batchIndices.push_back(baseIndex);
-    gRenderer.batchIndices.push_back(baseIndex + 2);
-    gRenderer.batchIndices.push_back(baseIndex + 3);
-
-    gRenderer.batchCommands.push_back({resolvedTexture, vertexStart, 4, indexStart, 6});
 }
 
 void PushCircle(float centerX, float centerY, float radius, Color color) {
-    const GLuint resolvedTexture = gRenderer.whiteTexture;
+    EnsureBatchTexture(0);
     const auto normalized = ToNormalizedColor(color);
     constexpr int segments = 48;
-    EnsureBatchSpace(static_cast<std::size_t>(segments) + 1, static_cast<std::size_t>(segments) * 3);
-
-    const std::size_t vertexStart = gRenderer.batchVertices.size();
-    PushVertex({centerX, centerY, 0.5f, 0.5f, normalized[0], normalized[1], normalized[2], normalized[3]});
 
     for (int i = 0; i < segments; ++i) {
-        const float angle = static_cast<float>(i) / static_cast<float>(segments) * 6.28318530718f;
-        const float x = centerX + std::cos(angle) * radius;
-        const float y = centerY + std::sin(angle) * radius;
-        const float u = 0.5f + std::cos(angle) * 0.5f;
-        const float v = 0.5f + std::sin(angle) * 0.5f;
-        PushVertex({x, y, u, v, normalized[0], normalized[1], normalized[2], normalized[3]});
-    }
+        const float angleA = static_cast<float>(i) / static_cast<float>(segments) * 6.28318530718f;
+        const float angleB = static_cast<float>(i + 1) / static_cast<float>(segments) * 6.28318530718f;
 
-    const GLuint baseIndex = static_cast<GLuint>(vertexStart);
-    const std::size_t indexStart = gRenderer.batchIndices.size();
-    for (int i = 1; i <= segments; ++i) {
-        gRenderer.batchIndices.push_back(baseIndex);
-        gRenderer.batchIndices.push_back(baseIndex + static_cast<GLuint>(i));
-        gRenderer.batchIndices.push_back(baseIndex + static_cast<GLuint>(i % segments) + 1);
+        PushVertex({centerX, centerY, 0.5f, 0.5f, normalized[0], normalized[1], normalized[2], normalized[3]});
+        PushVertex({
+            centerX + std::cos(angleA) * radius,
+            centerY + std::sin(angleA) * radius,
+            1.0f,
+            0.0f,
+            normalized[0],
+            normalized[1],
+            normalized[2],
+            normalized[3],
+        });
+        PushVertex({
+            centerX + std::cos(angleB) * radius,
+            centerY + std::sin(angleB) * radius,
+            0.0f,
+            1.0f,
+            normalized[0],
+            normalized[1],
+            normalized[2],
+            normalized[3],
+        });
     }
-
-    gRenderer.batchCommands.push_back({resolvedTexture, vertexStart, static_cast<std::size_t>(segments) + 1, indexStart, static_cast<std::size_t>(segments) * 3});
 }
 
 Texture2D LoadPngTexture(const char* filePath) {
@@ -999,10 +907,8 @@ void InitWindow(int width, int height, const char* title) {
     gRenderer.currentShaderProgram = gRenderer.program;
     glGenVertexArrays(1, &gRenderer.vao);
     glGenBuffers(1, &gRenderer.vbo);
-    glGenBuffers(1, &gRenderer.ebo);
     glBindVertexArray(gRenderer.vao);
     glBindBuffer(GL_ARRAY_BUFFER, gRenderer.vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gRenderer.ebo);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, x)));
@@ -1018,8 +924,6 @@ void InitWindow(int width, int height, const char* title) {
     gRenderer.whiteTexture = CreateTextureFromRgba(whitePixel.data(), 1, 1);
     gRenderer.currentTexture = gRenderer.whiteTexture;
     gRenderer.batchVertices.reserve(kMaxBatchVertices);
-    gRenderer.batchIndices.reserve(kMaxBatchIndices);
-    gRenderer.batchCommands.reserve(256);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1155,10 +1059,6 @@ void CloseWindow() {
     if (gRenderer.vbo != 0) {
         glDeleteBuffers(1, &gRenderer.vbo);
         gRenderer.vbo = 0;
-    }
-    if (gRenderer.ebo != 0) {
-        glDeleteBuffers(1, &gRenderer.ebo);
-        gRenderer.ebo = 0;
     }
     if (gRenderer.vao != 0) {
         glDeleteVertexArrays(1, &gRenderer.vao);
@@ -1538,10 +1438,10 @@ void EndDrawing() {
             if (elapsed >= targetTicks) {
                 break;
             }
-
             const std::uint64_t remaining = targetTicks - elapsed;
-            const Uint32 delayMs = static_cast<Uint32>((remaining * 1000 + freq - 1) / freq);
-            SDL_Delay(delayMs > 0 ? delayMs : 0);
+            if (remaining > freq / 500) {
+                SDL_Delay(1);
+            }
         }
     }
 
@@ -1830,19 +1730,15 @@ void SetShaderValueSampler([[maybe_unused]] const Shader& shader, int locIndex, 
 }
 
 void BeginShaderMode(const Shader& shader) {
-    if (shader.id != 0 && gRenderer.currentShaderProgram != shader.id) {
-        FlushBatch();
+    if (shader.id != 0) {
         gRenderer.currentShaderProgram = shader.id;
         glUseProgram(shader.id);
     }
 }
 
 void EndShaderMode() {
-    if (gRenderer.currentShaderProgram != gRenderer.defaultShaderProgram) {
-        FlushBatch();
-        gRenderer.currentShaderProgram = gRenderer.defaultShaderProgram;
-        glUseProgram(gRenderer.defaultShaderProgram);
-    }
+    gRenderer.currentShaderProgram = gRenderer.defaultShaderProgram;
+    glUseProgram(gRenderer.defaultShaderProgram);
 }
 
 void UnloadShader(Shader& shader) {
