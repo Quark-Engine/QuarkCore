@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <SDL3/SDL.h>
 #include <cstdint>
 #include "Quark3D.hpp"
 
@@ -687,6 +688,14 @@ float GetWindowPixelDensity();
  * @return false on failure.
  */
 bool SetWindowIcon(const char* filePath);
+
+/**
+ * @brief Get the underlying SDL window.
+ *
+ * @return Pointer to the SDL window.
+ */
+SDL_Window* GetNativeWindow();
+
 /**
  * @brief Start text input.
  *

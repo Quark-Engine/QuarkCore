@@ -1,7 +1,6 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkCore/Quark3D.hpp"
 
-#include <SDL3/SDL.h>
 #include <GL/glew.h>
 #include <png.h>
 #include <algorithm>
@@ -1578,6 +1577,11 @@ bool SetWindowIcon(const char* filePath) {
     const bool ok = CheckWindowCall(SDL_SetWindowIcon(gRenderer.window, surface), "SDL_SetWindowIcon");
     SDL_DestroySurface(surface);
     return ok;
+}
+
+SDL_Window* GetNativeWindowHandle() {
+    EnsureInitialized();
+    return gRenderer.window;
 }
 
 bool StartTextInput() {
