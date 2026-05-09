@@ -1,0 +1,9 @@
+build/
+build-plugin/
+.vscode/
+/projects
+run.bat
+imgui.ini
+config.json
+todo.todo
+CMakePresets.json
