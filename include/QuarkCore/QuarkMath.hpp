@@ -15,10 +15,72 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cmath>
 
 namespace qc {
+
+/**
+ * @brief Clamp value to range.
+ */
+inline float Clamp(float value, float min, float max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+}
+
+/**
+ * @brief Linear interpolation between two values.
+ */
+inline float Lerp(float start, float end, float amount) {
+    return start + (end - start) * amount;
+}
+
+/**
+ * @brief Smooth step interpolation.
+ */
+inline float SmoothStep(float edge0, float edge1, float x) {
+    float t = Clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+/**
+ * @brief Convert degrees to radians.
+ */
+inline float ToRadians(float degrees) {
+    return degrees * 3.14159265359f / 180.0f;
+}
+
+/**
+ * @brief Convert radians to degrees.
+ */
+inline float ToDegrees(float radians) {
+    return radians * 180.0f / 3.14159265359f;
+}
+
+/**
+ * @brief Normalize a value to the [0, 1] range within [min, max].
+ */
+inline float Normalize(float value, float min, float max) {
+    if (max == min) return 0.0f;
+    return (value - min) / (max - min);
+}
+
+/**
+ * @brief Move a value towards target by a maximum delta.
+ */
+inline float MoveTowards(float value, float target, float maxDelta) {
+    if (std::fabs(target - value) <= maxDelta) return target;
+    return value + (target > value ? maxDelta : -maxDelta);
+}
+
+/**
+ * @brief Sign of a value.
+ */
+inline float Sign(float value) {
+    return (value > 0.0f) - (value < 0.0f);
+}
 
 /**
  * @brief Color structure.
@@ -117,6 +179,21 @@ struct Vec3 {
         return *this;
     }
 };
+
+inline Vec2 Lerp(const Vec2& start, const Vec2& end, float amount) {
+    return Vec2{
+        Lerp(start.x, end.x, amount),
+        Lerp(start.y, end.y, amount)
+    };
+}
+
+inline Vec3 Lerp(const Vec3& start, const Vec3& end, float amount) {
+    return Vec3{
+        Lerp(start.x, end.x, amount),
+        Lerp(start.y, end.y, amount),
+        Lerp(start.z, end.z, amount)
+    };
+}
 
 /**
  * @brief Vertex structure for rendering.

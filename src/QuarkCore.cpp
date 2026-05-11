@@ -1,6 +1,12 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkCore/Quark3D.hpp"
 
+#if defined(USE_IMGUI)
+#include "imgui.h"
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_opengl3.h"
+#endif
+
 #include <GL/glew.h>
 #include <png.h>
 #include <algorithm>
@@ -65,7 +71,6 @@ struct RendererState {
 
 Camera2D gCamera2D;
 bool gCamera2DActive = false;
-Vec2 WorldToScreen2D(const Camera2D& camera, Vec2 worldPos);
 
 struct PngImageData {
     int width = 0;
@@ -74,6 +79,8 @@ struct PngImageData {
 };
 
 RendererState gRenderer;
+
+bool gImGuiInitialized = false;
 
 namespace {
 struct Model3DState {
@@ -103,6 +110,9 @@ struct Model3DState {
     bool initialized = false;
 };
 Model3DState g3DState;
+
+std::vector<Mat4> gMatrixStack;
+Mat4 gCurrentMatrix = Mat4::identity();
 
 Font gDefaultFont;
 FT_Library gFreeTypeLibrary = nullptr;
@@ -615,6 +625,11 @@ void PumpSystemEvents() {
 
     SDL_Event sdlEvent;
     while (SDL_PollEvent(&sdlEvent)) {
+#if defined(USE_IMGUI)
+        if (gImGuiInitialized) {
+            ImGui_ImplSDL3_ProcessEvent(&sdlEvent);
+        }
+#endif
         if (sdlEvent.type == SDL_EVENT_QUIT || sdlEvent.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
             gRenderer.shouldClose = true;
         }
@@ -944,29 +959,11 @@ void PushVertex(const Vertex& vertex) {
 
     Vertex v = vertex;
     if (gCamera2DActive) {
-        Vec2 screenPos = WorldToScreen2D(gCamera2D, {v.x, v.y});
+        Vec2 screenPos = GetWorldToScreen2D({v.x, v.y}, gCamera2D);
         v.x = screenPos.x;
         v.y = screenPos.y;
     }
     gRenderer.batchVertices.push_back(v);
-}
-
-void WorldToScreen2D(const Camera2D& camera, Vec2 worldPos, float* outX, float* outY) {
-    float angle = camera.rotation * 3.14159265359f / 180.0f;
-    float cos_a = std::cos(angle);
-    float sin_a = std::sin(angle);
-
-    float x = worldPos.x - camera.target.x;
-    float y = worldPos.y - camera.target.y;
-
-    *outX = (x * cos_a - y * sin_a) * camera.zoom + camera.offset.x;
-    *outY = (x * sin_a + y * cos_a) * camera.zoom + camera.offset.y;
-}
-
-Vec2 WorldToScreen2D(const Camera2D& camera, Vec2 worldPos) {
-    Vec2 result;
-    WorldToScreen2D(camera, worldPos, &result.x, &result.y);
-    return result;
 }
 
 void PushQuad(GLuint textureId, float x, float y, float width, float height, Color color) {
@@ -2409,10 +2406,6 @@ GLuint Compile3DShader() {
     return program;
 }
 
-void FlushLines3D() {
-    // forward
-}
-
 void ProcessMesh(const aiMesh* aiMesh, const aiScene* scene, Mesh& mesh) {
     (void)scene;
     mesh.vertices.clear();
@@ -2751,7 +2744,6 @@ void SetMouseCursor(MouseCursor cursor) {
 }
 
 bool IsGamepadAvailable(int gamepad) {
-    // Check if gamepad is available via SDL3
     SDL_Joystick* joy = SDL_OpenJoystick(gamepad);
     if (joy) {
         SDL_CloseJoystick(joy);
@@ -3200,10 +3192,102 @@ void BeginMode3D(const Camera3D& camera) {
     }
 }
 
+void FlushLines3D();
+
 void EndMode3D() {
     FlushLines3D();
     glDisable(GL_DEPTH_TEST);
     glUseProgram(0);
+}
+
+void PushMatrix() {
+    gMatrixStack.push_back(gCurrentMatrix);
+}
+
+void PopMatrix() {
+    if (!gMatrixStack.empty()) {
+        gCurrentMatrix = gMatrixStack.back();
+        gMatrixStack.pop_back();
+    } else {
+        gCurrentMatrix = Mat4::identity();
+    }
+}
+
+void Translate(const Vec3& translation) {
+    gCurrentMatrix = gCurrentMatrix * Mat4::translation(translation.x, translation.y, translation.z);
+}
+
+void Translate(float x, float y, float z) {
+    Translate(Vec3{x, y, z});
+}
+
+void Rotate(float angle, const Vec3& axis) {
+    Vec3 normalizedAxis = axis;
+    float length = normalizedAxis.length();
+    if (length <= 0.0f) {
+        return;
+    }
+
+    normalizedAxis = normalizedAxis * (1.0f / length);
+    float c = std::cos(angle);
+    float s = std::sin(angle);
+    float t = 1.0f - c;
+
+    Mat4 rotation = Mat4::identity();
+    rotation.m[0] = c + normalizedAxis.x * normalizedAxis.x * t;
+    rotation.m[1] = normalizedAxis.x * normalizedAxis.y * t + normalizedAxis.z * s;
+    rotation.m[2] = normalizedAxis.x * normalizedAxis.z * t - normalizedAxis.y * s;
+    rotation.m[4] = normalizedAxis.y * normalizedAxis.x * t - normalizedAxis.z * s;
+    rotation.m[5] = c + normalizedAxis.y * normalizedAxis.y * t;
+    rotation.m[6] = normalizedAxis.y * normalizedAxis.z * t + normalizedAxis.x * s;
+    rotation.m[8] = normalizedAxis.z * normalizedAxis.x * t + normalizedAxis.y * s;
+    rotation.m[9] = normalizedAxis.z * normalizedAxis.y * t - normalizedAxis.x * s;
+    rotation.m[10] = c + normalizedAxis.z * normalizedAxis.z * t;
+
+    gCurrentMatrix = gCurrentMatrix * rotation;
+}
+
+void Rotate(float angle) {
+    Rotate(angle, Vec3{0.0f, 0.0f, 1.0f});
+}
+
+void Scale(const Vec3& scale) {
+    gCurrentMatrix = gCurrentMatrix * Mat4::scale(scale.x, scale.y, scale.z);
+}
+
+void Scale(float scale) {
+    Scale(Vec3{scale, scale, scale});
+}
+
+void MultMatrix(const Mat4& matrix) {
+    gCurrentMatrix = gCurrentMatrix * matrix;
+}
+
+void EnableBackfaceCulling() {
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
+}
+
+void DisableBackfaceCulling() {
+    glDisable(GL_CULL_FACE);
+}
+
+Vec3 TransformPoint(const Mat4& matrix, const Vec3& point) {
+    float x = matrix.m[0] * point.x + matrix.m[4] * point.y + matrix.m[8] * point.z + matrix.m[12];
+    float y = matrix.m[1] * point.x + matrix.m[5] * point.y + matrix.m[9] * point.z + matrix.m[13];
+    float z = matrix.m[2] * point.x + matrix.m[6] * point.y + matrix.m[10] * point.z + matrix.m[14];
+    float w = matrix.m[3] * point.x + matrix.m[7] * point.y + matrix.m[11] * point.z + matrix.m[15];
+    if (w != 0.0f) {
+        x /= w;
+        y /= w;
+        z /= w;
+    }
+    return Vec3{x, y, z};
+}
+
+Mat4 ApplyCurrentMatrix(const Mat4& transform) {
+    return gCurrentMatrix * transform;
 }
 
 void Set3DView(const Mat4& view, const Mat4& projection) {
@@ -3228,8 +3312,9 @@ void DrawModel(const Model& model, const Vec3& position, float scale,
 }
 
 void DrawModelEx(const Model& model, const Mat4& transform) {
+    Mat4 finalTransform = ApplyCurrentMatrix(transform);
     if (g3DState.modelLoc >= 0) {
-        glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, transform.m);
+        glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, finalTransform.m);
     }
 
     if (g3DState.colorLoc >= 0) {
@@ -3273,6 +3358,7 @@ void FlushLines3D() {
 void DrawPlane(Vec3 center, Vec2 size, Color color) {
     Mat4 transform = Mat4::translation(center.x, center.y, center.z);
     transform = transform * Mat4::scale(size.x, 1.0f, size.y);
+    transform = ApplyCurrentMatrix(transform);
     if (g3DState.modelLoc >= 0) glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, transform.m);
     
     if (g3DState.colorLoc >= 0) {
@@ -3288,6 +3374,7 @@ void DrawPlane(Vec3 center, Vec2 size, Color color) {
 void DrawCube(Vec3 position, float width, float height, float length, Color color) {
     Mat4 transform = Mat4::translation(position.x, position.y, position.z);
     transform = transform * Mat4::scale(width, height, length);
+    transform = ApplyCurrentMatrix(transform);
     if (g3DState.modelLoc >= 0) glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, transform.m);
     
     if (g3DState.colorLoc >= 0) {
@@ -3333,6 +3420,7 @@ void DrawCubeWires(Vec3 position, float width, float height, float length, Color
 void DrawSphere(Vec3 centerPos, float radius, Color color) {
     Mat4 transform = Mat4::translation(centerPos.x, centerPos.y, centerPos.z);
     transform = transform * Mat4::scale(radius, radius, radius);
+    transform = ApplyCurrentMatrix(transform);
     if (g3DState.modelLoc >= 0) glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, transform.m);
     if (g3DState.colorLoc >= 0) {
         glUniform4f(g3DState.colorLoc, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
@@ -3349,8 +3437,10 @@ void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color) {
         glUniform4f(g3DState.colorLoc, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
     }
 
-    g3DState.lineVertices.push_back({startPos, {0,1,0}, {0,0}});
-    g3DState.lineVertices.push_back({endPos, {0,1,0}, {0,0}});
+    Vec3 transformedStart = TransformPoint(gCurrentMatrix, startPos);
+    Vec3 transformedEnd = TransformPoint(gCurrentMatrix, endPos);
+    g3DState.lineVertices.push_back({transformedStart, {0,1,0}, {0,0}});
+    g3DState.lineVertices.push_back({transformedEnd, {0,1,0}, {0,0}});
 }
 
 void DrawGrid(int slices, float spacing) {
@@ -3411,34 +3501,6 @@ void UpdateCamera2D(Camera2D& camera, float targetX, float targetY, float smooth
     camera.target.y = camera.target.y * (1.0f - smoothness) + targetY * smoothness;
 }
 
-Vec2 WorldToScreen2D(const Camera2D& camera, Vec2 worldPos) {
-    float angle = camera.rotation * 3.14159265359f / 180.0f;
-    float cos_a = std::cos(angle);
-    float sin_a = std::sin(angle);
-
-    float x = worldPos.x - camera.target.x;
-    float y = worldPos.y - camera.target.y;
-
-    return {
-        (x * cos_a - y * sin_a) * camera.zoom + camera.offset.x,
-        (x * sin_a + y * cos_a) * camera.zoom + camera.offset.y
-    };
-}
-
-Vec2 ScreenToWorld2D(const Camera2D& camera, Vec2 screenPos) {
-    float angle = -camera.rotation * 3.14159265359f / 180.0f;
-    float cos_a = std::cos(angle);
-    float sin_a = std::sin(angle);
-
-    float x = (screenPos.x - camera.offset.x) / camera.zoom;
-    float y = (screenPos.y - camera.offset.y) / camera.zoom;
-
-    return {
-        (x * cos_a - y * sin_a) + camera.target.x,
-        (x * sin_a + y * cos_a) + camera.target.y
-    };
-}
-
 namespace {
     Camera3D gCamera3D;
     bool gCamera3DActive = false;
@@ -3450,6 +3512,92 @@ Camera3D CreateCamera3D() {
     camera.target = {0.0f, 0.0f, 0.0f};
     camera.up = {0.0f, 1.0f, 0.0f};
     return camera;
+}
+
+const float* GetMatrixModelview() {
+    return g3DState.viewMatrix.m;
+}
+
+const float* GetMatrixProjection() {
+    return g3DState.projectionMatrix.m;
+}
+
+bool InitImGui() {
+#if defined(USE_IMGUI)
+    EnsureInitialized();
+    if (gImGuiInitialized) {
+        return true;
+    }
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+    ImGui::StyleColorsDark();
+
+    if (!ImGui_ImplSDL3_InitForOpenGL(gRenderer.window, static_cast<void*>(gRenderer.context))) {
+        return false;
+    }
+    if (!ImGui_ImplOpenGL3_Init("#version 330 core")) {
+        ImGui_ImplSDL3_Shutdown();
+        return false;
+    }
+
+    gImGuiInitialized = true;
+    return true;
+#else
+    (void)gRenderer;
+    return false;
+#endif
+}
+
+void ShutdownImGui() {
+#if defined(USE_IMGUI)
+    if (!gImGuiInitialized) {
+        return;
+    }
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+
+    gImGuiInitialized = false;
+#else
+    (void)gRenderer;
+#endif
+}
+
+void BeginImGui() {
+#if defined(USE_IMGUI)
+    if (!gImGuiInitialized) {
+        InitImGui();
+    }
+    ImGui_ImplSDL3_NewFrame();
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui::NewFrame();
+#else
+    (void)gRenderer;
+#endif
+}
+
+void EndImGui() {
+#if defined(USE_IMGUI)
+    if (!gImGuiInitialized) {
+        return;
+    }
+
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+    }
+#else
+    (void)gRenderer;
+#endif
 }
 
 }  // namespace qc

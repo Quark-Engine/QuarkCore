@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(USE_IMGUI "Enable Dear ImGui support" OFF)
+
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "" FORCE)
 
 set(VCPKG_MANIFEST_INSTALL        OFF CACHE BOOL "" FORCE)
@@ -138,6 +140,10 @@ target_link_libraries(QuarkCore PUBLIC
     assimp::assimp
     freetype
 )
+
+if(USE_IMGUI)
+    target_compile_definitions(QuarkCore PRIVATE USE_IMGUI=1)
+endif()
 
 target_compile_definitions(QuarkCore PRIVATE NOMINMAX)
 set_target_properties(QuarkCore PROPERTIES UNITY_BUILD ON)

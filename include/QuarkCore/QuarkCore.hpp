@@ -1184,6 +1184,44 @@ Camera3D CreateCamera3D();
 void BeginMode3D(const Camera3D& camera);
 void EndMode3D();
 
+void PushMatrix();
+void PopMatrix();
+
+void Translate(const Vec3& translation);
+void Translate(float x, float y, float z);
+void Rotate(float angle, const Vec3& axis);
+void Rotate(float angle);
+void Scale(const Vec3& scale);
+void Scale(float scale);
+void MultMatrix(const Mat4& matrix);
+
+void EnableBackfaceCulling();
+void DisableBackfaceCulling();
+
+#if defined(USE_IMGUI)
+/**
+ * @brief Initialize Dear ImGui.
+ *
+ * @return true if initialization succeeded.
+ */
+bool InitImGui();
+
+/**
+ * @brief Shutdown Dear ImGui and free resources.
+ */
+void ShutdownImGui();
+
+/**
+ * @brief Begin an ImGui frame.
+ */
+void BeginImGui();
+
+/**
+ * @brief End the ImGui frame and render draw data.
+ */
+void EndImGui();
+#endif // USE_IMGUI
+
 /**
  * @brief Convert screen coordinates to world coordinates (2D).
  * @param position Screen position.
@@ -1215,6 +1253,18 @@ Vec3 GetWorldToScreen(Vec3 position, Camera3D camera);
  * @return Ray starting from camera position.
  */
 Ray GetScreenToWorldRay(Vec2 mousePosition, Camera3D camera);
+
+/**
+ * @brief Get the current modelview matrix.
+ * @return Pointer to the 4x4 modelview matrix (16 floats).
+ */
+const float* GetMatrixModelview();
+
+/**
+ * @brief Get the current projection matrix.
+ * @return Pointer to the 4x4 projection matrix (16 floats).
+ */
+const float* GetMatrixProjection();
 
 /**
  * @brief Check if a key was just released.
