@@ -44,12 +44,14 @@ namespace qc {
 /**
  * @brief Texture structure.
  */
-struct Texture2D {
+struct Texture {
     unsigned int id = 0;
     int width = 0;
     int height = 0;
     bool valid = false;
 };
+
+using Texture2D = Texture;
 
 /**
  * @brief Render texture structure.
