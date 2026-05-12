@@ -99,6 +99,10 @@ struct Model3DState {
 
     GLuint lineVAO = 0, lineVBO = 0;
     std::vector<Vertex3D> lineVertices;
+    GLuint triVAO = 0, triVBO = 0;
+    std::vector<Vertex3D> triVertices;
+    Color currentLineColor = { 255, 255, 255, 255 };
+    Color currentTriColor = { 255, 255, 255, 255 };
     Vec3 lightPosition{5.0f, 5.0f, 5.0f};
     bool initialized = false;
 };
@@ -3347,9 +3351,11 @@ void BeginMode3D(const Camera3D& camera) {
 }
 
 void FlushLines3D();
+void FlushTriangles3D();
 
 void EndMode3D() {
     FlushLines3D();
+    FlushTriangles3D();
     glDisable(GL_DEPTH_TEST);
     glUseProgram(0);
 }
@@ -3510,6 +3516,39 @@ void FlushLines3D() {
     g3DState.lineVertices.clear();
 }
 
+void FlushTriangles3D() {
+    if (g3DState.triVertices.empty()) return;
+
+    Mat4 identity = Mat4::identity();
+    if (g3DState.modelLoc >= 0) glUniformMatrix4fv(g3DState.modelLoc, 1, GL_FALSE, identity.m);
+    glBindTexture(GL_TEXTURE_2D, g3DState.whiteTexture);
+
+    glBindVertexArray(g3DState.triVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, g3DState.triVBO);
+    glBufferData(GL_ARRAY_BUFFER, g3DState.triVertices.size() * sizeof(Vertex3D), g3DState.triVertices.data(), GL_DYNAMIC_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(g3DState.triVertices.size()));
+    glBindVertexArray(0);
+
+    g3DState.triVertices.clear();
+}
+
+void DrawTriangle3D(Vertex3D v1, Vertex3D v2, Vertex3D v3, Color color) {
+    if (g3DState.triVertices.size() > 0 && 
+        (color.r != g3DState.currentTriColor.r || color.g != g3DState.currentTriColor.g || 
+         color.b != g3DState.currentTriColor.b || color.a != g3DState.currentTriColor.a)) {
+        FlushTriangles3D();
+    }
+
+    g3DState.currentTriColor = color;
+
+    if (g3DState.colorLoc >= 0) {
+        glUniform4f(g3DState.colorLoc, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
+    }
+    g3DState.triVertices.push_back({TransformPoint(gCurrentMatrix, v1.position), v1.normal, v1.texCoord});
+    g3DState.triVertices.push_back({TransformPoint(gCurrentMatrix, v2.position), v2.normal, v2.texCoord});
+    g3DState.triVertices.push_back({TransformPoint(gCurrentMatrix, v3.position), v3.normal, v3.texCoord});
+}
+
 void DrawPlane(Vec3 center, Vec2 size, Color color) {
     Mat4 transform = Mat4::translation(center.x, center.y, center.z);
     transform = transform * Mat4::scale(size.x, 1.0f, size.y);
@@ -3526,6 +3565,10 @@ void DrawPlane(Vec3 center, Vec2 size, Color color) {
     glBindVertexArray(0);
 }
 
+void DrawCubeV(Vec3 position, Vec3 size, Color color) {
+    DrawCube(position, size.x, size.y, size.z, color);
+}
+
 void DrawCube(Vec3 position, float width, float height, float length, Color color) {
     Mat4 transform = Mat4::translation(position.x, position.y, position.z);
     transform = transform * Mat4::scale(width, height, length);
@@ -3540,6 +3583,10 @@ void DrawCube(Vec3 position, float width, float height, float length, Color colo
     glBindVertexArray(g3DState.cubeVAO);
     glDrawElements(GL_TRIANGLES, g3DState.cubeIndexCount, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
+}
+
+void DrawCubeWiresV(Vec3 position, Vec3 size, Color color) {
+    DrawCubeWires(position, size.x, size.y, size.z, color);
 }
 
 void DrawCubeWires(Vec3 position, float width, float height, float length, Color color) {
@@ -3587,7 +3634,110 @@ void DrawSphere(Vec3 centerPos, float radius, Color color) {
     glBindVertexArray(0);
 }
 
+void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color color) {
+    if (rings < 3 || slices < 3) return;
+    for (int r = 0; r < rings; r++) {
+        for (int s = 0; s < slices; s++) {
+            float phi1 = PI * (float)r / rings;
+            float phi2 = PI * (float)(r + 1) / rings;
+            float theta1 = 2.0f * PI * (float)s / slices;
+            float theta2 = 2.0f * PI * (float)(s + 1) / slices;
+            Vec3 p1{ radius * sinf(phi1) * cosf(theta1), radius * cosf(phi1), radius * sinf(phi1) * sinf(theta1) };
+            Vec3 p2{ radius * sinf(phi1) * cosf(theta2), radius * cosf(phi1), radius * sinf(phi1) * sinf(theta2) };
+            Vec3 p3{ radius * sinf(phi2) * cosf(theta2), radius * cosf(phi2), radius * sinf(phi2) * sinf(theta2) };
+            Vec3 p4{ radius * sinf(phi2) * cosf(theta1), radius * cosf(phi2), radius * sinf(phi2) * sinf(theta1) };
+            DrawTriangle3D({ centerPos + p1, p1.normalized(), {0,0} }, { centerPos + p2, p2.normalized(), {0,0} }, { centerPos + p3, p3.normalized(), {0,0} }, color);
+            DrawTriangle3D({ centerPos + p1, p1.normalized(), {0,0} }, { centerPos + p3, p3.normalized(), {0,0} }, { centerPos + p4, p4.normalized(), {0,0} }, color);
+        }
+    }
+}
+
+void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color color) {
+    if (rings < 2 || slices < 3) return;
+    for (int r = 0; r <= rings; r++) {
+        float phi = PI * (float)r / rings;
+        for (int s = 0; s < slices; s++) {
+            float theta1 = 2.0f * PI * (float)s / slices;
+            float theta2 = 2.0f * PI * (float)(s + 1) / slices;
+            Vec3 p1{ radius * sinf(phi) * cosf(theta1), radius * cosf(phi), radius * sinf(phi) * sinf(theta1) };
+            Vec3 p2{ radius * sinf(phi) * cosf(theta2), radius * cosf(phi), radius * sinf(phi) * sinf(theta2) };
+            DrawLine3D(centerPos + p1, centerPos + p2, color);
+        }
+    }
+    for (int s = 0; s < slices; s++) {
+        float theta = 2.0f * PI * (float)s / slices;
+        for (int r = 0; r < rings; r++) {
+            float phi1 = PI * (float)r / rings;
+            float phi2 = PI * (float)(r + 1) / rings;
+            Vec3 p1{ radius * sinf(phi1) * cosf(theta), radius * cosf(phi1), radius * sinf(phi1) * sinf(theta) };
+            Vec3 p2{ radius * sinf(phi2) * cosf(theta), radius * cosf(phi2), radius * sinf(phi2) * sinf(theta) };
+            DrawLine3D(centerPos + p1, centerPos + p2, color);
+        }
+    }
+}
+
+void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) {
+    DrawCylinderEx(position + Vec3{0, -height/2, 0}, position + Vec3{0, height/2, 0}, radiusBottom, radiusTop, slices, color);
+}
+
+void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color) {
+    if (sides < 3) return;
+    Vec3 direction = (endPos - startPos);
+    float length = direction.length();
+    if (length < EPSILON) return;
+    direction = direction * (1.0f / length);
+    Vec3 up{0, 1, 0};
+    if (fabsf(direction.dot(up)) > 0.99f) up = {1, 0, 0};
+    Vec3 xDir = direction.cross(up).normalized();
+    Vec3 yDir = direction.cross(xDir).normalized();
+    for (int i = 0; i < sides; i++) {
+        float angle1 = 2.0f * PI * (float)i / sides;
+        float angle2 = 2.0f * PI * (float)(i + 1) / sides;
+        Vec3 p1 = startPos + xDir * cosf(angle1) * startRadius + yDir * sinf(angle1) * startRadius;
+        Vec3 p2 = startPos + xDir * cosf(angle2) * startRadius + yDir * sinf(angle2) * startRadius;
+        Vec3 p3 = endPos + xDir * cosf(angle2) * endRadius + yDir * sinf(angle2) * endRadius;
+        Vec3 p4 = endPos + xDir * cosf(angle1) * endRadius + yDir * sinf(angle1) * endRadius;
+        DrawTriangle3D({p1, (p1-startPos).normalized(), {0,0}}, {p2, (p2-startPos).normalized(), {0,0}}, {p3, (p3-endPos).normalized(), {0,0}}, color);
+        DrawTriangle3D({p1, (p1-startPos).normalized(), {0,0}}, {p3, (p3-endPos).normalized(), {0,0}}, {p4, (p4-endPos).normalized(), {0,0}}, color);
+        DrawTriangle3D({startPos, direction*-1.0f, {0,0}}, {p2, direction*-1.0f, {0,0}}, {p1, direction*-1.0f, {0,0}}, color);
+        DrawTriangle3D({endPos, direction, {0,0}}, {p3, direction, {0,0}}, {p4, direction, {0,0}}, color);
+    }
+}
+
+void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) {
+    DrawCylinderWiresEx(position + Vec3{0, -height/2, 0}, position + Vec3{0, height/2, 0}, radiusBottom, radiusTop, slices, color);
+}
+
+void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) {
+    if (slices < 3) return;
+    Vec3 direction = (endPos - startPos);
+    float length = direction.length();
+    if (length < EPSILON) return;
+    direction = direction * (1.0f / length);
+    Vec3 up{0, 1, 0};
+    if (fabsf(direction.dot(up)) > 0.99f) up = {1, 0, 0};
+    Vec3 xDir = direction.cross(up).normalized();
+    Vec3 yDir = direction.cross(xDir).normalized();
+    for (int i = 0; i < slices; i++) {
+        float angle1 = 2.0f * PI * (float)i / slices;
+        float angle2 = 2.0f * PI * (float)(i + 1) / slices;
+        Vec3 p1 = startPos + xDir * cosf(angle1) * startRadius + yDir * sinf(angle1) * startRadius;
+        Vec3 p2 = startPos + xDir * cosf(angle2) * startRadius + yDir * sinf(angle2) * startRadius;
+        Vec3 p3 = endPos + xDir * cosf(angle1) * endRadius + yDir * sinf(angle1) * endRadius;
+        Vec3 p4 = endPos + xDir * cosf(angle2) * endRadius + yDir * sinf(angle2) * endRadius;
+        DrawLine3D(p1, p2, color); DrawLine3D(p3, p4, color); DrawLine3D(p1, p3, color);
+    }
+}
+
 void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color) {
+    if (g3DState.lineVertices.size() > 0 && 
+        (color.r != g3DState.currentLineColor.r || color.g != g3DState.currentLineColor.g || 
+         color.b != g3DState.currentLineColor.b || color.a != g3DState.currentLineColor.a)) {
+        FlushLines3D();
+    }
+
+    g3DState.currentLineColor = color;
+
     if (g3DState.colorLoc >= 0) {
         glUniform4f(g3DState.colorLoc, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
     }

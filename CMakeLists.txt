@@ -156,6 +156,10 @@ add_executable(quarkcore_textures_and_shaders examples/textures_and_shaders.cpp)
 target_link_libraries(quarkcore_textures_and_shaders PRIVATE QuarkCore)
 set_target_properties(quarkcore_textures_and_shaders PROPERTIES UNITY_BUILD ON)
 
+add_executable(quarkcore_3d_primitives examples/primitives_3d.cpp)
+target_link_libraries(quarkcore_3d_primitives PRIVATE QuarkCore)
+set_target_properties(quarkcore_3d_primitives PROPERTIES UNITY_BUILD ON)
+
 if(WIN32)
     add_custom_command(TARGET quarkcore_sandbox POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

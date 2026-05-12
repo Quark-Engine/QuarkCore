@@ -214,6 +214,14 @@ void DrawPlane(Vec3 center, Vec2 size, Color color);
 /**
  * @brief Draw a cube.
  * @param position Center position.
+ * @param size Cube size.
+ * @param color Cube color.
+ */
+void DrawCubeV(Vec3 position, Vec3 size, Color color);
+
+/**
+ * @brief Draw a cube.
+ * @param position Center position.
  * @param width Width.
  * @param height Height.
  * @param length Length.
@@ -228,6 +236,26 @@ void DrawCube(Vec3 position, float width, float height, float length, Color colo
  * @param color Sphere color.
  */
 void DrawSphere(Vec3 centerPos, float radius, Color color);
+
+/**
+ * @brief Draw a sphere with extended parameters.
+ * @param centerPos Center position.
+ * @param radius Sphere radius.
+ * @param rings Number of rings.
+ * @param slices Number of slices.
+ * @param color Sphere color.
+ */
+void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color color);
+
+/**
+ * @brief Draw a sphere wireframe.
+ * @param centerPos Center position.
+ * @param radius Sphere radius.
+ * @param rings Number of rings.
+ * @param slices Number of slices.
+ * @param color Sphere color.
+ */
+void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color color);
 
 /**
  * @brief Draw a line in 3D space.
@@ -253,5 +281,57 @@ void DrawGrid(int slices, float spacing);
  * @param color Wire color.
  */
 void DrawCubeWires(Vec3 position, float width, float height, float length, Color color);
+
+/**
+ * @brief Draw a cube wireframe.
+ * @param position Center position.
+ * @param size Cube size.
+ * @param color Cube color.
+ */
+void DrawCubeWiresV(Vec3 position, Vec3 size, Color color);
+
+/**
+ * @brief Draw a cylinder.
+ * @param position Center position.
+ * @param radiusTop Top radius.
+ * @param radiusBottom Bottom radius.
+ * @param height Cylinder height.
+ * @param slices Number of slices.
+ * @param color Cylinder color.
+ */
+void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color);
+
+/**
+ * @brief Draw a cylinder with start and end positions.
+ * @param startPos Start position.
+ * @param endPos End position.
+ * @param startRadius Start radius.
+ * @param endRadius End radius.
+ * @param sides Number of sides.
+ * @param color Cylinder color.
+ */
+void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color);
+
+/**
+ * @brief Draw a cylinder wireframe.
+ * @param position Center position.
+ * @param radiusTop Top radius.
+ * @param radiusBottom Bottom radius.
+ * @param height Cylinder height.
+ * @param slices Number of slices.
+ * @param color Cylinder color.
+ */
+void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color);
+
+/**
+ * @brief Draw a cylinder wireframe with start and end positions.
+ * @param startPos Start position.
+ * @param endPos End position.
+ * @param startRadius Start radius.
+ * @param endRadius End radius.
+ * @param slices Number of slices.
+ * @param color Cylinder color.
+ */
+void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color);
 
 }  // namespace qc
