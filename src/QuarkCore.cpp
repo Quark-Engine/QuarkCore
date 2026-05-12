@@ -2408,66 +2408,104 @@ GLuint Compile3DShader() {
     return program;
 }
 
-void ProcessMesh(const aiMesh* aiMesh, const aiScene* scene, Mesh& mesh) {
+Mesh ProcessMesh(const aiMesh* aiMesh, const aiScene* scene) {
     (void)scene;
-    mesh.vertices.clear();
-    mesh.indices.clear();
 
-    for (unsigned int i = 0; i < aiMesh->mNumVertices; ++i) {
-        Vertex3D vertex{};
-        vertex.position = Vec3(aiMesh->mVertices[i].x, aiMesh->mVertices[i].y, aiMesh->mVertices[i].z);
+    Mesh mesh{};
+    mesh.vertexCount = static_cast<int>(aiMesh->mNumVertices);
+    mesh.triangleCount = static_cast<int>(aiMesh->mNumFaces);
 
-        if (aiMesh->HasNormals()) {
-            vertex.normal = Vec3(aiMesh->mNormals[i].x, aiMesh->mNormals[i].y, aiMesh->mNormals[i].z);
-            vertex.normal = vertex.normal.normalized();
-        } else {
-            vertex.normal = Vec3(0.0f, 1.0f, 0.0f);
+    if (mesh.vertexCount > 0) {
+        mesh.vertices = new float[mesh.vertexCount * 3];
+        mesh.normals = new float[mesh.vertexCount * 3];
+        mesh.texcoords = new float[mesh.vertexCount * 2];
+        mesh.texcoords2 = nullptr;
+        mesh.tangents = nullptr;
+        mesh.colors = nullptr;
+        mesh.boneCount = 0;
+        mesh.boneIndices = nullptr;
+        mesh.boneWeights = nullptr;
+        mesh.animVertices = nullptr;
+        mesh.animNormals = nullptr;
+
+        for (int i = 0; i < mesh.vertexCount; ++i) {
+            mesh.vertices[i * 3 + 0] = aiMesh->mVertices[i].x;
+            mesh.vertices[i * 3 + 1] = aiMesh->mVertices[i].y;
+            mesh.vertices[i * 3 + 2] = aiMesh->mVertices[i].z;
+
+            if (aiMesh->HasNormals()) {
+                Vec3 normal = Vec3(aiMesh->mNormals[i].x, aiMesh->mNormals[i].y, aiMesh->mNormals[i].z).normalized();
+                mesh.normals[i * 3 + 0] = normal.x;
+                mesh.normals[i * 3 + 1] = normal.y;
+                mesh.normals[i * 3 + 2] = normal.z;
+            } else {
+                mesh.normals[i * 3 + 0] = 0.0f;
+                mesh.normals[i * 3 + 1] = 1.0f;
+                mesh.normals[i * 3 + 2] = 0.0f;
+            }
+
+            if (aiMesh->mTextureCoords[0]) {
+                mesh.texcoords[i * 2 + 0] = aiMesh->mTextureCoords[0][i].x;
+                mesh.texcoords[i * 2 + 1] = aiMesh->mTextureCoords[0][i].y;
+            } else {
+                mesh.texcoords[i * 2 + 0] = 0.0f;
+                mesh.texcoords[i * 2 + 1] = 0.0f;
+            }
         }
-
-        if (aiMesh->mTextureCoords[0]) {
-            vertex.texCoord.x = aiMesh->mTextureCoords[0][i].x;
-            vertex.texCoord.y = aiMesh->mTextureCoords[0][i].y;
-        }
-
-        mesh.vertices.push_back(vertex);
     }
 
-    for (unsigned int i = 0; i < aiMesh->mNumFaces; ++i) {
-        const aiFace& face = aiMesh->mFaces[i];
-        for (unsigned int j = 0; j < face.mNumIndices; ++j) {
-            mesh.indices.push_back(face.mIndices[j]);
+    if (mesh.triangleCount > 0) {
+        mesh.indices = new unsigned short[mesh.triangleCount * 3];
+        for (int i = 0; i < mesh.triangleCount; ++i) {
+            const aiFace& face = aiMesh->mFaces[i];
+            for (int j = 0; j < 3; ++j) {
+                unsigned int index = (j < face.mNumIndices) ? face.mIndices[j] : 0u;
+                mesh.indices[i * 3 + j] = static_cast<unsigned short>(index);
+            }
         }
     }
 
-    mesh.materialIndex = aiMesh->mMaterialIndex;
+    mesh.vboId = new unsigned int[2]{0, 0};
+    glGenVertexArrays(1, &mesh.vaoId);
+    glGenBuffers(2, mesh.vboId);
 
-    glGenVertexArrays(1, &mesh.vao);
-    glGenBuffers(1, &mesh.vbo);
-    glGenBuffers(1, &mesh.ebo);
+    std::vector<float> vertexData;
+    vertexData.reserve(mesh.vertexCount * 8);
+    for (int i = 0; i < mesh.vertexCount; ++i) {
+        vertexData.push_back(mesh.vertices[i * 3 + 0]);
+        vertexData.push_back(mesh.vertices[i * 3 + 1]);
+        vertexData.push_back(mesh.vertices[i * 3 + 2]);
+        vertexData.push_back(mesh.normals[i * 3 + 0]);
+        vertexData.push_back(mesh.normals[i * 3 + 1]);
+        vertexData.push_back(mesh.normals[i * 3 + 2]);
+        vertexData.push_back(mesh.texcoords[i * 2 + 0]);
+        vertexData.push_back(mesh.texcoords[i * 2 + 1]);
+    }
 
-    glBindVertexArray(mesh.vao);
+    glBindVertexArray(mesh.vaoId);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh.vboId[0]);
+    glBufferData(GL_ARRAY_BUFFER, vertexData.size() * sizeof(float), vertexData.data(), GL_STATIC_DRAW);
 
-    glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-    glBufferData(GL_ARRAY_BUFFER, mesh.vertices.size() * sizeof(Vertex3D), mesh.vertices.data(), GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.indices.size() * sizeof(unsigned int), mesh.indices.data(), GL_STATIC_DRAW);
+    if (mesh.indices) {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.vboId[1]);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.triangleCount * 3 * sizeof(unsigned short), mesh.indices, GL_STATIC_DRAW);
+    }
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), (void*)offsetof(Vertex3D, position));
-
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), (void*)offsetof(Vertex3D, normal));
-
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), (void*)offsetof(Vertex3D, texCoord));
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
+
+    return mesh;
 }
 
-void ProcessMaterials(const aiScene* scene, Model& model, const char* directory) {
-    model.materials.clear();
+void ProcessMaterials(const aiScene* scene, std::vector<Material>& materials, const char* directory) {
+    materials.clear();
 
     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
         const aiMaterial* mat = scene->mMaterials[i];
@@ -2496,20 +2534,19 @@ void ProcessMaterials(const aiScene* scene, Model& model, const char* directory)
             }
         }
 
-        model.materials.push_back(material);
+        materials.push_back(material);
     }
 }
 
-void ProcessNode(const aiNode* node, const aiScene* scene, Model& model) {
+void ProcessNode(const aiNode* node, const aiScene* scene, std::vector<Mesh>& meshes, std::vector<int>& meshMaterial) {
     for (unsigned int i = 0; i < node->mNumMeshes; ++i) {
         const aiMesh* aiMesh = scene->mMeshes[node->mMeshes[i]];
-        Mesh mesh{};
-        ProcessMesh(aiMesh, scene, mesh);
-        model.meshes.push_back(mesh);
+        meshes.push_back(ProcessMesh(aiMesh, scene));
+        meshMaterial.push_back(static_cast<int>(aiMesh->mMaterialIndex));
     }
 
     for (unsigned int i = 0; i < node->mNumChildren; ++i) {
-        ProcessNode(node->mChildren[i], scene, model);
+        ProcessNode(node->mChildren[i], scene, meshes, meshMaterial);
     }
 }
 
@@ -2518,6 +2555,12 @@ void ProcessNode(const aiNode* node, const aiScene* scene, Model& model) {
 Model LoadModel(const char* filePath) {
     Model model{};
     model.id = g3DState.nextModelId++;
+    model.transform = Matrix::identity();
+    model.skeleton.boneCount = 0;
+    model.skeleton.bones = nullptr;
+    model.skeleton.bindPose.transform = nullptr;
+    model.currentPose.transform = nullptr;
+    model.boneMatrices = nullptr;
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(filePath,
@@ -2537,11 +2580,32 @@ Model LoadModel(const char* filePath) {
         model.directory = fullPath.substr(0, lastSlash);
     }
 
-    ProcessMaterials(scene, model, model.directory.c_str());
+    std::vector<Material> tempMaterials;
+    std::vector<Mesh> tempMeshes;
+    std::vector<int> tempMeshMaterial;
 
-    ProcessNode(scene->mRootNode, scene, model);
+    ProcessMaterials(scene, tempMaterials, model.directory.c_str());
+    ProcessNode(scene->mRootNode, scene, tempMeshes, tempMeshMaterial);
 
-    WriteLog(LogLevel::Info, "ASSIMP", TextFormat("Loaded model '%s' with %zu meshes", filePath, model.meshes.size()));
+    model.materialCount = static_cast<int>(tempMaterials.size());
+    if (model.materialCount > 0) {
+        model.materials = new Material[model.materialCount];
+        for (int i = 0; i < model.materialCount; ++i) {
+            model.materials[i] = std::move(tempMaterials[i]);
+        }
+    }
+
+    model.meshCount = static_cast<int>(tempMeshes.size());
+    if (model.meshCount > 0) {
+        model.meshes = new Mesh[model.meshCount];
+        model.meshMaterial = new int[model.meshCount];
+        for (int i = 0; i < model.meshCount; ++i) {
+            model.meshes[i] = std::move(tempMeshes[i]);
+            model.meshMaterial[i] = tempMeshMaterial[i];
+        }
+    }
+
+    WriteLog(LogLevel::Info, "ASSIMP", TextFormat("Loaded model '%s' with %d meshes", filePath, model.meshCount));
     return model;
 }
 
@@ -3055,20 +3119,71 @@ bool IsShaderReady(Shader shader) {
 }
 
 void UnloadModel(Model& model) {
-    for (auto& mesh : model.meshes) {
-        if (mesh.vao != 0) glDeleteVertexArrays(1, &mesh.vao);
-        if (mesh.vbo != 0) glDeleteBuffers(1, &mesh.vbo);
-        if (mesh.ebo != 0) glDeleteBuffers(1, &mesh.ebo);
+    for (int i = 0; i < model.meshCount; ++i) {
+        Mesh& mesh = model.meshes[i];
+        if (mesh.vaoId != 0) {
+            glDeleteVertexArrays(1, &mesh.vaoId);
+        }
+        if (mesh.vboId != nullptr) {
+            glDeleteBuffers(2, mesh.vboId);
+            delete[] mesh.vboId;
+            mesh.vboId = nullptr;
+        }
+        delete[] mesh.vertices;
+        mesh.vertices = nullptr;
+        delete[] mesh.texcoords;
+        mesh.texcoords = nullptr;
+        delete[] mesh.texcoords2;
+        mesh.texcoords2 = nullptr;
+        delete[] mesh.normals;
+        mesh.normals = nullptr;
+        delete[] mesh.tangents;
+        mesh.tangents = nullptr;
+        delete[] mesh.colors;
+        mesh.colors = nullptr;
+        delete[] mesh.indices;
+        mesh.indices = nullptr;
+        delete[] mesh.boneIndices;
+        mesh.boneIndices = nullptr;
+        delete[] mesh.boneWeights;
+        mesh.boneWeights = nullptr;
+        delete[] mesh.animVertices;
+        mesh.animVertices = nullptr;
+        delete[] mesh.animNormals;
+        mesh.animNormals = nullptr;
     }
 
-    for (auto& material : model.materials) {
-        if (material.diffuseMap != 0) {
-            glDeleteTextures(1, &material.diffuseMap);
+    for (int i = 0; i < model.materialCount; ++i) {
+        if (model.materials[i].diffuseMap != 0) {
+            glDeleteTextures(1, &model.materials[i].diffuseMap);
         }
     }
 
-    model.meshes.clear();
-    model.materials.clear();
+    delete[] model.meshes;
+    model.meshes = nullptr;
+    model.meshCount = 0;
+
+    delete[] model.materials;
+    model.materials = nullptr;
+    model.materialCount = 0;
+
+    delete[] model.meshMaterial;
+    model.meshMaterial = nullptr;
+
+    delete[] model.skeleton.bones;
+    model.skeleton.bones = nullptr;
+    model.skeleton.boneCount = 0;
+
+    delete[] model.skeleton.bindPose.transform;
+    model.skeleton.bindPose.transform = nullptr;
+
+    delete[] model.currentPose.transform;
+    model.currentPose.transform = nullptr;
+
+    delete[] model.boneMatrices;
+    model.boneMatrices = nullptr;
+
+    model.directory.clear();
     model.id = 0;
 }
 
@@ -3323,20 +3438,21 @@ void DrawModelEx(const Model& model, const Mat4& transform) {
         glUniform4f(g3DState.colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 
-    for (const auto& mesh : model.meshes) {
+    for (int i = 0; i < model.meshCount; ++i) {
+        const Mesh& mesh = model.meshes[i];
         glActiveTexture(GL_TEXTURE0);
-        
+
         GLuint textureId = g3DState.whiteTexture;
-        if (mesh.materialIndex < model.materials.size()) {
-            const Material& mat = model.materials[mesh.materialIndex];
+        if (model.meshMaterial && model.meshMaterial[i] >= 0 && model.meshMaterial[i] < model.materialCount) {
+            const Material& mat = model.materials[model.meshMaterial[i]];
             if (mat.diffuseMap != 0) {
                 textureId = mat.diffuseMap;
             }
         }
         glBindTexture(GL_TEXTURE_2D, textureId);
 
-        glBindVertexArray(mesh.vao);
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(mesh.vaoId);
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.triangleCount * 3), GL_UNSIGNED_SHORT, nullptr);
         glBindVertexArray(0);
     }
 }

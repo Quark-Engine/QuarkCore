@@ -152,9 +152,9 @@ add_executable(quarkcore_sandbox examples/sandbox.cpp)
 target_link_libraries(quarkcore_sandbox PRIVATE QuarkCore)
 set_target_properties(quarkcore_sandbox PROPERTIES UNITY_BUILD ON)
 
-add_executable(quarkcore_raylib examples/textures_and_shaders.cpp)
-target_link_libraries(quarkcore_raylib PRIVATE QuarkCore)
-set_target_properties(quarkcore_raylib PROPERTIES UNITY_BUILD ON)
+add_executable(quarkcore_textures_and_shaders examples/textures_and_shaders.cpp)
+target_link_libraries(quarkcore_textures_and_shaders PRIVATE QuarkCore)
+set_target_properties(quarkcore_textures_and_shaders PROPERTIES UNITY_BUILD ON)
 
 if(WIN32)
     add_custom_command(TARGET quarkcore_sandbox POST_BUILD
@@ -166,13 +166,13 @@ if(WIN32)
             $<TARGET_FILE_DIR:quarkcore_sandbox>
         COMMENT "Copying DLLs..."
     )
-    add_custom_command(TARGET quarkcore_raylib POST_BUILD
+    add_custom_command(TARGET quarkcore_textures_and_shaders POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:SDL3::SDL3>
             $<TARGET_FILE:libglew_shared>
             $<TARGET_FILE:png_shared>
             $<TARGET_FILE:assimp::assimp>
-            $<TARGET_FILE_DIR:quarkcore_raylib>
+            $<TARGET_FILE_DIR:quarkcore_textures_and_shaders>
         COMMENT "Copying DLLs..."
     )
 endif()

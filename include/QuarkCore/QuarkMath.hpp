@@ -327,4 +327,6 @@ struct Mat4 {
     }
 };
 
+using Matrix = Mat4;
+
 }; // namespace qc

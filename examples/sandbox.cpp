@@ -33,6 +33,8 @@ int main() {
     camera3d.fovy = 45.0f;
     camera3d.projection = qc::CAMERA_PERSPECTIVE;
 
+    qc::Model model = qc::LoadModel("lantern/lantern.obj");
+
     qc::RenderTexture2D target = qc::LoadRenderTexture(320, 240);
 
     while (!qc::WindowShouldClose()) {
@@ -64,6 +66,7 @@ int main() {
             qc::DrawPlane({ 0, 0, 0 }, { 32, 32 }, qc::LIGHTGRAY);
             qc::DrawCube({ 0, 1, 0 }, 2, 2, 2, qc::RED);
             qc::DrawGrid(20, 1.0f);
+            qc::DrawModelEx(model, qc::Mat4::rotationZ(qc::GetTime()));
         qc::EndMode3D();
 
         

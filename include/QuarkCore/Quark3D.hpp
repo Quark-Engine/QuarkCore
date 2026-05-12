@@ -56,23 +56,72 @@ struct Material {
 };
 
 /**
+ * @brief Bone information.
+ */
+struct BoneInfo {
+    char name[32] = {0};
+    int parent = -1;
+};
+
+/**
+ * @brief Model animation pose data.
+ */
+struct ModelAnimPose {
+    Matrix* transform = nullptr;
+};
+
+/**
+ * @brief Skeleton with bone hierarchy and bind pose.
+ */
+struct ModelSkeleton {
+    int boneCount = 0;
+    BoneInfo* bones = nullptr;
+    ModelAnimPose bindPose;
+};
+
+/**
  * @brief Mesh structure containing vertices and indices.
  */
 struct Mesh {
-    std::vector<Vertex3D> vertices;
-    std::vector<unsigned int> indices;
-    unsigned int materialIndex = 0;
-    unsigned int vao = 0;
-    unsigned int vbo = 0;
-    unsigned int ebo = 0;
+    int vertexCount = 0;        // Number of vertices stored in arrays
+    int triangleCount = 0;      // Number of triangles stored (indexed or not)
+
+    float* vertices = nullptr;  // Vertex position (XYZ - 3 components per vertex)
+    float* texcoords = nullptr; // Vertex texture coordinates (UV - 2 components per vertex)
+    float* texcoords2 = nullptr;
+    float* normals = nullptr;
+    float* tangents = nullptr;
+    unsigned char* colors = nullptr;
+    unsigned short* indices = nullptr;
+
+    int boneCount = 0;          // Number of bones (MAX: 256 bones)
+    unsigned char* boneIndices = nullptr;
+    float* boneWeights = nullptr;
+
+    float* animVertices = nullptr;
+    float* animNormals = nullptr;
+
+    unsigned int vaoId = 0;
+    unsigned int* vboId = nullptr;
 };
 
 /**
  * @brief 3D Model loaded from file.
  */
 struct Model {
-    std::vector<Mesh> meshes;
-    std::vector<Material> materials;
+    Matrix transform = Matrix(); // Local transform matrix
+
+    int meshCount = 0;
+    int materialCount = 0;
+    Mesh* meshes = nullptr;
+    Material* materials = nullptr;
+    int* meshMaterial = nullptr;
+
+    ModelSkeleton skeleton;
+
+    ModelAnimPose currentPose;
+    Matrix* boneMatrices = nullptr;
+
     std::string directory;
     unsigned int id = 0;
 };
