@@ -152,7 +152,7 @@ add_executable(quarkcore_sandbox examples/sandbox.cpp)
 target_link_libraries(quarkcore_sandbox PRIVATE QuarkCore)
 set_target_properties(quarkcore_sandbox PROPERTIES UNITY_BUILD ON)
 
-add_executable(quarkcore_raylib examples/raylib_style.cpp)
+add_executable(quarkcore_raylib examples/textures_and_shaders.cpp)
 target_link_libraries(quarkcore_raylib PRIVATE QuarkCore)
 set_target_properties(quarkcore_raylib PROPERTIES UNITY_BUILD ON)
 

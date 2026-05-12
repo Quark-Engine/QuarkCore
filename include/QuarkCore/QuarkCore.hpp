@@ -698,11 +698,17 @@ bool SetWindowIcon(const char* filePath);
 SDL_Window* GetNativeWindow();
 
 /**
+ * @brief Get the underlying SDL GL context.
+ *
+ * @return Pointer to the SDL GL context.
+ */
+SDL_GLContext GetNativeGLContext();
+
+/**
  * @brief Get the underlying SDL event.
  *
  * @return SDL_Event structure with event data.
 */
-
 SDL_Event GetNativeEvent();
 
 /**

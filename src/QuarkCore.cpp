@@ -1573,6 +1573,11 @@ SDL_Window* GetNativeWindow() {
     return gRenderer.window;
 }
 
+SDL_GLContext GetNativeContext() {
+    EnsureInitialized();
+    return gRenderer.context;
+}
+
 SDL_Event GetNativeEvent() {
     EnsureInitialized();
     return gRenderer.nativeEvent;
