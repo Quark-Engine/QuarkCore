@@ -84,7 +84,7 @@ inline float MoveTowards(float value, float target, float maxDelta) {
  * @brief Sign of a value.
  */
 inline float Sign(float value) {
-    return (value > 0.0f) - (value < 0.0f);
+    return static_cast<float>((value > 0.0f) - (value < 0.0f));
 }
 
 /**

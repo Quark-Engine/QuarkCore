@@ -1493,7 +1493,7 @@ Mesh ProcessMesh(const aiMesh* aiMesh, const aiScene* scene) {
         mesh.indices = new unsigned short[mesh.triangleCount * 3];
         for (int i = 0; i < mesh.triangleCount; ++i) {
             const aiFace& face = aiMesh->mFaces[i];
-            for (int j = 0; j < 3; ++j) {
+            for (unsigned int j = 0u; j < 3u; ++j) {
                 unsigned int index = (j < face.mNumIndices) ? face.mIndices[j] : 0u;
                 mesh.indices[i * 3 + j] = static_cast<unsigned short>(index);
             }
@@ -1831,7 +1831,7 @@ Vec2 GetMouseDelta() {
 
 void SetMousePosition(int x, int y) {
     if (gRenderer.window) {
-        SDL_WarpMouseInWindow(gRenderer.window, x, y);
+        SDL_WarpMouseInWindow(gRenderer.window, (float)x, (float)y);
         gRenderer.mousePosition = Vec2{static_cast<float>(x), static_cast<float>(y)};
         gMousePreviousPosition = gRenderer.mousePosition;
     }
