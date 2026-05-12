@@ -702,7 +702,7 @@ SDL_Window* GetNativeWindow();
  *
  * @return Pointer to the SDL GL context.
  */
-SDL_GLContext GetNativeGLContext();
+SDL_GLContext GetNativeContext();
 
 /**
  * @brief Get the underlying SDL event.
