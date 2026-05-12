@@ -1,0 +1,37 @@
+name: Build and Package
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DQC_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Prepare Artifacts
+        run: |
+          mkdir artifacts
+          copy build\Release\QuarkCore.lib artifacts\
+          copy build\Release\*.exe artifacts\
+          copy build\Release\*.dll artifacts\
+          xcopy /E /I include artifacts\include
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: QuarkCore-Windows-Binary
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 5
