@@ -124,6 +124,8 @@ endforeach()
 
 add_library(QuarkCore STATIC
     src/QuarkCore.cpp
+    src/QuarkEvent.cpp
+    src/QuarkWindow.cpp
 )
 
 target_include_directories(QuarkCore PUBLIC

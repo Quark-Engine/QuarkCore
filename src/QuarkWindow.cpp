@@ -423,5 +423,14 @@ float GetCurrentMonitorRefreshRate() {
     return 0.0f;
 }
 
+bool StartTextInput() {
+    EnsureInitialized();
+    return CheckWindowCall(SDL_StartTextInput(gRenderer.window), "SDL_StartTextInput");
+}
+
+bool StopTextInput() {
+    EnsureInitialized();
+    return CheckWindowCall(SDL_StopTextInput(gRenderer.window), "SDL_StopTextInput");
+}
 
 }

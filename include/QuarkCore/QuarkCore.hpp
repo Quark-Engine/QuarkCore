@@ -58,7 +58,7 @@ using Texture2D = Texture;
 
 namespace qc {
 
-extern struct RendererState;
+struct RendererState;
 /**
  * @brief Render texture structure.
  */
@@ -1640,4 +1640,3 @@ bool IsTextureReady(Texture2D texture);
 bool IsShaderReady(Shader shader);
 
 }  // namespace qc
-

@@ -540,5 +540,4 @@ SDL_Event GetNativeEvent() {
     return gRenderer.nativeEvent;
 }
 
-
 }

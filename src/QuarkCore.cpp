@@ -664,7 +664,7 @@ void UpdateInputFromEvents() {
     gRenderer.mouseButtons[static_cast<std::size_t>(MouseButton::Right)] = (mouseState & SDL_BUTTON_RMASK) != 0;
 
     const bool* keyboardState = SDL_GetKeyboardState(nullptr);
-    for (int i = 0; i < SDL_SCANCODE_COUNT; ++i) {
+    for (int i = 0; i < static_cast<int>(SDL_SCANCODE_COUNT); ++i) {
         gRenderer.currentKeys[static_cast<std::size_t>(i)] = keyboardState[i];
     }
 }
@@ -674,16 +674,6 @@ void UpdateInputFromEvents() {
 SDL_GLContext GetNativeContext() {
     EnsureInitialized();
     return gRenderer.context;
-}
-
-bool StartTextInput() {
-    EnsureInitialized();
-    return CheckWindowCall(SDL_StartTextInput(gRenderer.window), "SDL_StartTextInput");
-}
-
-bool StopTextInput() {
-    EnsureInitialized();
-    return CheckWindowCall(SDL_StopTextInput(gRenderer.window), "SDL_StopTextInput");
 }
 
 bool IsTextInputActive() {
@@ -1941,8 +1931,8 @@ void DrawTextureV(Texture2D texture, Vec2 position, Color tint) {
 
 void DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale, Color tint) {
     Rectangle source = {0.0f, 0.0f, static_cast<float>(texture.width), static_cast<float>(texture.height)};
-    Rectangle dest = {position.x, position.y, texture.width * scale, texture.height * scale};
-    Vec2 origin = {texture.width * scale / 2.0f, texture.height * scale / 2.0f};
+    Rectangle dest = {position.x, position.y, static_cast<float>(texture.width) * scale, static_cast<float>(texture.height) * scale};
+    Vec2 origin = {static_cast<float>(texture.width) * scale / 2.0f, static_cast<float>(texture.height) * scale / 2.0f};
     DrawTexturePro(texture, source, dest, origin, rotation, tint);
 }
 
@@ -2005,6 +1995,8 @@ void DrawLineV(Vec2 start, Vec2 end, Color color) {
 }
 
 void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color) {
+    (void)lineWidth;
+
     DrawLine(rectangle.x, rectangle.y, rectangle.x + rectangle.width, rectangle.y, color);
     DrawLine(rectangle.x + rectangle.width, rectangle.y, rectangle.x + rectangle.width, rectangle.y + rectangle.height, color);
     DrawLine(rectangle.x + rectangle.width, rectangle.y + rectangle.height, rectangle.x, rectangle.y + rectangle.height, color);
@@ -2081,6 +2073,8 @@ void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color)
 }
 
 void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments, Color color) {
+    (void)segments;
+
     if (!gRenderer.drawing) return;
     
     float radius = roundness * std::min(rectangle.width, rectangle.height) / 2.0f;
