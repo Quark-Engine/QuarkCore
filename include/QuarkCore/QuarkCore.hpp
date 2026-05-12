@@ -29,6 +29,16 @@
 
 #pragma once
 
+#if defined(_WIN32)
+    #if defined(QUARKCORE_BUILD_DLL)
+        #define QCAPI __declspec(dllexport)
+    #else
+        #define QCAPI __declspec(dllimport)
+    #endif
+#else
+    #define QCAPI
+#endif
+
 #include <SDL3/SDL.h>
 #include <cstdint>
 
@@ -413,18 +423,18 @@ struct Event {
  * @param height Window height in pixels.
  * @param title Window title text.
  */
-void InitWindow(int width, int height, const char* title);
+QCAPI void InitWindow(int width, int height, const char* title);
 /**
  * @brief Check if the window should close.
  *
  * @return true if close was requested.
  * @return false if the application should continue running.
  */
-bool WindowShouldClose();
+QCAPI bool WindowShouldClose();
 /**
  * @brief Close and destroy the application window.
  */
-void CloseWindow();
+QCAPI void CloseWindow();
 
 /**
  * @brief Poll the next available event.
@@ -433,7 +443,7 @@ void CloseWindow();
  * @return true if an event was received.
  * @return false if no events are available.
  */
-bool PollEvent(Event& event);
+QCAPI bool PollEvent(Event& event);
 /**
  * @brief Wait until an event is received.
  *
@@ -441,7 +451,7 @@ bool PollEvent(Event& event);
  * @return true if an event was received.
  * @return false on failure.
  */
-bool WaitEvent(Event& event);
+QCAPI bool WaitEvent(Event& event);
 
 /**
  * @brief Wait for an event with timeout.
@@ -451,7 +461,7 @@ bool WaitEvent(Event& event);
  * @return true if an event was received.
  * @return false if timeout was reached.
  */
-bool WaitEventTimeout(Event& event, int timeoutMs);
+QCAPI bool WaitEventTimeout(Event& event, int timeoutMs);
 
 /**
  * @brief Get event type name as string.
@@ -459,7 +469,7 @@ bool WaitEventTimeout(Event& event, int timeoutMs);
  * @param type Event type enum value.
  * @return Pointer to event type name string.
  */
-const char* GetEventTypeName(EventType type);
+QCAPI const char* GetEventTypeName(EventType type);
 
 /**
  * @brief Set window title text.
@@ -468,13 +478,13 @@ const char* GetEventTypeName(EventType type);
  * @return true on success.
  * @return false on failure.
  */
-bool SetWindowTitle(const char* title);
+QCAPI bool SetWindowTitle(const char* title);
 /**
  * @brief Get current window title.
  *
  * @return Pointer to window title string.
  */
-const char* GetWindowTitle();
+QCAPI const char* GetWindowTitle();
 /**
  * @brief Set window position.
  *
@@ -483,13 +493,13 @@ const char* GetWindowTitle();
  * @return true on success.
  * @return false on failure.
  */
-bool SetWindowPosition(int x, int y);
+QCAPI bool SetWindowPosition(int x, int y);
 /**
  * @brief Get current window position.
  *
  * @return Window position as IVec2.
  */
-IVec2 GetWindowPosition();
+QCAPI IVec2 GetWindowPosition();
 /**
  * @brief Set window size.
  *
@@ -498,19 +508,19 @@ IVec2 GetWindowPosition();
  * @return true on success.
  * @return false on failure.
  */
-bool SetWindowSize(int width, int height);
+QCAPI bool SetWindowSize(int width, int height);
 /**
  * @brief Get current window size.
  *
  * @return Window size as IVec2.
  */
-IVec2 GetWindowSize();
+QCAPI IVec2 GetWindowSize();
 /**
  * @brief Get current window size in pixels.
  *
  * @return Pixel size as IVec2.
  */
-IVec2 GetWindowSizeInPixels();
+QCAPI IVec2 GetWindowSizeInPixels();
 /**
  * @brief Set minimum allowed window size.
  *
@@ -519,13 +529,13 @@ IVec2 GetWindowSizeInPixels();
  * @return true on success.
  * @return false on failure.
  */
-bool SetWindowMinimumSize(int width, int height);
+QCAPI bool SetWindowMinimumSize(int width, int height);
 /**
  * @brief Get minimum window size.
  *
  * @return Minimum size as IVec2.
  */
-IVec2 GetWindowMinimumSize();
+QCAPI IVec2 GetWindowMinimumSize();
 /**
  * @brief Set maximum allowed window size.
  *
@@ -534,13 +544,13 @@ IVec2 GetWindowMinimumSize();
  * @return true on success.
  * @return false on failure.
  */
-bool SetWindowMaximumSize(int width, int height);
+QCAPI bool SetWindowMaximumSize(int width, int height);
 /**
  * @brief Get maximum window size.
  *
  * @return Maximum size as IVec2.
  */
-IVec2 GetWindowMaximumSize();
+QCAPI IVec2 GetWindowMaximumSize();
 /**
  * @brief Set window resizable flag.
  *
@@ -548,7 +558,7 @@ IVec2 GetWindowMaximumSize();
  * @return true on success.
  * @return false on failure.
  */
-bool SetWindowResizable(bool resizable);
+QCAPI bool SetWindowResizable(bool resizable);
 /**
  * @brief Set window bordered flag.
  *
@@ -556,7 +566,7 @@ bool SetWindowResizable(bool resizable);
  * @return true on success.
  * @return false on failure.
  */
-bool SetWindowBordered(bool bordered);
+QCAPI bool SetWindowBordered(bool bordered);
 /**
  * @brief Set window fullscreen mode.
  *
@@ -564,131 +574,131 @@ bool SetWindowBordered(bool bordered);
  * @return true on success.
  * @return false on failure.
  */
-bool SetWindowFullscreen(bool fullscreen);
+QCAPI bool SetWindowFullscreen(bool fullscreen);
 /**
  * @brief Toggle window fullscreen mode.
  *
  * @return true on success.
  * @return false on failure.
  */
-bool ToggleFullscreen();
+QCAPI bool ToggleFullscreen();
 /**
  * @brief Show the window.
  *
  * @return true on success.
  * @return false on failure.
  */
-bool ShowWindow();
+QCAPI bool ShowWindow();
 /**
  * @brief Hide the window.
  *
  * @return true on success.
  * @return false on failure.
  */
-bool HideWindow();
+QCAPI bool HideWindow();
 /**
  * @brief Raise the window.
  *
  * @return true on success.
  * @return false on failure.
  */
-bool RaiseWindow();
+QCAPI bool RaiseWindow();
 /**
  * @brief Maximize the window.
  *
  * @return true on success.
  * @return false on failure.
  */
-bool MaximizeWindow();
+QCAPI bool MaximizeWindow();
 /**
  * @brief Minimize the window.
  *
  * @return true on success.
  * @return false on failure.
  */
-bool MinimizeWindow();
+QCAPI bool MinimizeWindow();
 /**
  * @brief Restore the window.
  *
  * @return true on success.
  * @return false on failure.
  */
-bool RestoreWindow();
+QCAPI bool RestoreWindow();
 /**
  * @brief Sync the window.
  *
  * @return true on success.
  * @return false on failure.
  */
-bool SyncWindow();
+QCAPI bool SyncWindow();
 /**
  * @brief Check if the window is in fullscreen mode.
  *
  * @return true if the window is fullscreen.
  * @return false otherwise.
  */
-bool IsWindowFullscreen();
+QCAPI bool IsWindowFullscreen();
 /**
  * @brief Check if the window is hidden.
  *
  * @return true if the window is hidden.
  * @return false otherwise.
  */
-bool IsWindowHidden();
+QCAPI bool IsWindowHidden();
 /**
  * @brief Check if the window is minimized.
  *
  * @return true if the window is minimized.
  * @return false otherwise.
  */
-bool IsWindowMinimized();
+QCAPI bool IsWindowMinimized();
 /**
  * @brief Check if the window is maximized.
  *
  * @return true if the window is maximized.
  * @return false otherwise.
  */
-bool IsWindowMaximized();
+QCAPI bool IsWindowMaximized();
 /**
  * @brief Check if the window is focused.
  *
  * @return true if the window is focused.
  * @return false otherwise.
  */
-bool IsWindowFocused();
+QCAPI bool IsWindowFocused();
 /**
  * @brief Check if the window is in focus.
  *
  * @return true if the window is in focus.
  * @return false otherwise.
  */
-bool IsWindowMouseFocused();
+QCAPI bool IsWindowMouseFocused();
 /**
  * @brief Check if the window is resizable.
  *
  * @return true if the window is resizable.
  * @return false otherwise.
  */
-bool IsWindowResizable();
+QCAPI bool IsWindowResizable();
 /**
  * @brief Check if the window is borderless.
  *
  * @return true if the window is borderless.
  * @return false otherwise.
  */
-bool IsWindowBorderless();
+QCAPI bool IsWindowBorderless();
 /**
  * @brief Get the display scale of the window.
  *
  * @return Display scale as a float.
  */
-float GetWindowDisplayScale();
+QCAPI float GetWindowDisplayScale();
 /**
  * @brief Get the pixel density of the window.
  *
  * @return Pixel density as a float.
  */
-float GetWindowPixelDensity();
+QCAPI float GetWindowPixelDensity();
 /**
  * @brief Set the icon for the window.
  *
@@ -696,28 +706,28 @@ float GetWindowPixelDensity();
  * @return true on success.
  * @return false on failure.
  */
-bool SetWindowIcon(const char* filePath);
+QCAPI bool SetWindowIcon(const char* filePath);
 
 /**
  * @brief Get the underlying SDL window.
  *
  * @return Pointer to the SDL window.
  */
-SDL_Window* GetNativeWindow();
+QCAPI SDL_Window* GetNativeWindow();
 
 /**
  * @brief Get the underlying SDL GL context.
  *
  * @return Pointer to the SDL GL context.
  */
-SDL_GLContext GetNativeContext();
+QCAPI SDL_GLContext GetNativeContext();
 
 /**
  * @brief Get the underlying SDL event.
  *
  * @return SDL_Event structure with event data.
 */
-SDL_Event GetNativeEvent();
+QCAPI SDL_Event GetNativeEvent();
 
 /**
  * @brief Start text input.
@@ -725,28 +735,28 @@ SDL_Event GetNativeEvent();
  * @return true on success.
  * @return false on failure.
  */
-bool StartTextInput();
+QCAPI bool StartTextInput();
 /**
  * @brief Stop text input.
  *
  * @return true on success.
  * @return false on failure.
  */
-bool StopTextInput();
+QCAPI bool StopTextInput();
 /**
  * @brief Check if text input is active.
  *
  * @return true if text input is active.
  * @return false otherwise.
  */
-bool IsTextInputActive();
+QCAPI bool IsTextInputActive();
 
 /**
  * @brief Set the log level.
  *
  * @param level Log level.
  */
-void SetLogLevel(LogLevel level);
+QCAPI void SetLogLevel(LogLevel level);
 /**
  * @brief Trace a log message.
  *
@@ -754,7 +764,7 @@ void SetLogLevel(LogLevel level);
  * @param logType Log type.
  * @param message Log message.
  */
-void TraceLog(LogLevel level, const char* logType, const char* message);
+QCAPI void TraceLog(LogLevel level, const char* logType, const char* message);
 /**
  * @brief Format a text string.
  *
@@ -762,56 +772,56 @@ void TraceLog(LogLevel level, const char* logType, const char* message);
  * @param ... Format arguments.
  * @return Pointer to formatted string.
  */
-const char* TextFormat(const char* format, ...);
+QCAPI const char* TextFormat(const char* format, ...);
 
 /**
  * @brief Set the target FPS.
  *
  * @param fps Target FPS.
  */
-void SetTargetFPS(int fps);
+QCAPI void SetTargetFPS(int fps);
 /**
  * @brief Get the frame time.
  *
  * @return Frame time as a float.
  */
-float GetFrameTime();
+QCAPI float GetFrameTime();
 /**
  * @brief Get the delta time.
  *
  * @return Delta time as a float.
  */
-float GetDeltaTime();
+QCAPI float GetDeltaTime();
 /**
  * @brief Get the current FPS.
  *
  * @return Current FPS as an integer.
  */
-int GetFPS();
+QCAPI int GetFPS();
 /**
  * @brief Get the current time.
  *
  * @return Current time as a double.
  */
-double GetTime();
+QCAPI double GetTime();
 /**
  * @brief Get the screen width.
  *
  * @return Screen width as an integer.
  */
-int GetScreenWidth();
+QCAPI int GetScreenWidth();
 /**
  * @brief Get the screen height.
  *
  * @return Screen height as an integer.
  */
-int GetScreenHeight();
+QCAPI int GetScreenHeight();
 /**
  * @brief Get the current monitor refresh rate.
  *
  * @return Refresh rate in Hz as a float.
  */
-float GetCurrentMonitorRefreshRate();
+QCAPI float GetCurrentMonitorRefreshRate();
 
 /**
  * @brief Check if a key is pressed.
@@ -820,7 +830,7 @@ float GetCurrentMonitorRefreshRate();
  * @return true if the key is pressed.
  * @return false otherwise.
  */
-bool IsKeyDown(KeyboardKey key);
+QCAPI bool IsKeyDown(KeyboardKey key);
 /**
  * @brief Check if a key was just pressed.
  *
@@ -828,7 +838,7 @@ bool IsKeyDown(KeyboardKey key);
  * @return true if the key was just pressed.
  * @return false otherwise.
  */
-bool IsKeyPressed(KeyboardKey key);
+QCAPI bool IsKeyPressed(KeyboardKey key);
 /**
  * @brief Check if a mouse button is pressed.
  *
@@ -836,7 +846,7 @@ bool IsKeyPressed(KeyboardKey key);
  * @return true if the button is pressed.
  * @return false otherwise.
  */
-bool IsMouseButtonDown(MouseButton button);
+QCAPI bool IsMouseButtonDown(MouseButton button);
 /**
  * @brief Check if a mouse button was just pressed.
  *
@@ -844,7 +854,7 @@ bool IsMouseButtonDown(MouseButton button);
  * @return true if the button was just pressed.
  * @return false otherwise.
  */
-bool IsMouseButtonPressed(MouseButton button);
+QCAPI bool IsMouseButtonPressed(MouseButton button);
 /**
  * @brief Check if a mouse button was just released.
  *
@@ -852,7 +862,7 @@ bool IsMouseButtonPressed(MouseButton button);
  * @return true if the button was just released.
  * @return false otherwise.
  */
-bool IsMouseButtonReleased(MouseButton button);
+QCAPI bool IsMouseButtonReleased(MouseButton button);
 /**
  * @brief Check if a mouse button is NOT pressed.
  *
@@ -860,25 +870,25 @@ bool IsMouseButtonReleased(MouseButton button);
  * @return true if the button is NOT pressed.
  * @return false otherwise.
  */
-bool IsMouseButtonUp(MouseButton button);
+QCAPI bool IsMouseButtonUp(MouseButton button);
 /**
  * @brief Get the mouse position.
  *
  * @return Mouse position as a Vec2.
  */
-Vec2 GetMousePosition();
+QCAPI Vec2 GetMousePosition();
 /**
  * @brief Get mouse wheel movement for both axes.
  *
  * @return Mouse wheel movement as a Vec2.
  */
-Vec2 GetMouseWheelMoveV();
+QCAPI Vec2 GetMouseWheelMoveV();
 /**
  * @brief Get vertical mouse wheel movement.
  *
  * @return Vertical mouse wheel movement as a float.
  */
-float GetMouseWheelMove();
+QCAPI float GetMouseWheelMove();
 
 /**
  * @brief Begin drawing.
@@ -886,14 +896,14 @@ float GetMouseWheelMove();
  * @return true on success.
  * @return false on failure.
  */
-void BeginDrawing();
+QCAPI void BeginDrawing();
 /**
  * @brief End drawing and present the frame.
  *
  * @return true on success.
  * @return false on failure.
  */
-void EndDrawing();
+QCAPI void EndDrawing();
 /**
  * @brief Clear the background with a color.
  *
@@ -901,7 +911,7 @@ void EndDrawing();
  * @return true on success.
  * @return false on failure.
  */
-void ClearBackground(Color color);
+QCAPI void ClearBackground(Color color);
 
 /**
  * @brief Draw a rectangle.
@@ -911,20 +921,20 @@ void ClearBackground(Color color);
  * @param height Height of the rectangle.
  * @param color Rectangle color.
  */
-void DrawRectangle(float x, float y, float width, float height, Color color);
+QCAPI void DrawRectangle(float x, float y, float width, float height, Color color);
 /**
  * @brief Draw a rectangle.
  * @param rectangle Rectangle to draw.
  * @param color Rectangle color.
  */
-void DrawRectangle(const Rectangle& rectangle, Color color);
+QCAPI void DrawRectangle(const Rectangle& rectangle, Color color);
 /**
  * @brief Draw a rectangle using vectors.
  * @param position Top-left corner position.
  * @param size Rectangle size.
  * @param color Rectangle color.
  */
-void DrawRectangleV(Vec2 position, Vec2 size, Color color);
+QCAPI void DrawRectangleV(Vec2 position, Vec2 size, Color color);
 /**
  * @brief Draw a circle.
  * @param centerX X coordinate of the center.
@@ -932,7 +942,7 @@ void DrawRectangleV(Vec2 position, Vec2 size, Color color);
  * @param radius Circle radius.
  * @param color Circle color.
  */
-void DrawCircle(float centerX, float centerY, float radius, Color color);
+QCAPI void DrawCircle(float centerX, float centerY, float radius, Color color);
 /**
  * @brief Draw a texture.
  * @param texture Texture to draw.
@@ -940,7 +950,7 @@ void DrawCircle(float centerX, float centerY, float radius, Color color);
  * @param y Y coordinate of the top-left corner.
  * @param tint Tint color.
  */
-void DrawTexture(const Texture2D& texture, float x, float y, Color tint = WHITE);
+QCAPI void DrawTexture(const Texture2D& texture, float x, float y, Color tint = WHITE);
 
 /**
  * @brief Draw a part of a texture (transformed).
@@ -951,14 +961,14 @@ void DrawTexture(const Texture2D& texture, float x, float y, Color tint = WHITE)
  * @param rotation Rotation in degrees.
  * @param tint Tint color.
  */
-void DrawTexturePro(Texture2D texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint = WHITE);
+QCAPI void DrawTexturePro(Texture2D texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint = WHITE);
 
 /**
  * @brief Get the default font.
  * 
  * @return Default font object.
  */
-Font GetDefaultFont();
+QCAPI Font GetDefaultFont();
 
 /**
  * @brief Draw text using the default font.
@@ -969,7 +979,7 @@ Font GetDefaultFont();
  * @param fontSize Font size in pixels.
  * @param color Text tint color.
  */
-void DrawText(const char* text, int x, int y, int fontSize, Color color);
+QCAPI void DrawText(const char* text, int x, int y, int fontSize, Color color);
 
 /**
  * @brief Draw text with a custom font.
@@ -981,7 +991,7 @@ void DrawText(const char* text, int x, int y, int fontSize, Color color);
  * @param spacing Additional character spacing in pixels.
  * @param tint Text tint color.
  */
-void DrawTextEx(Font font, const char* text, Vec2 position,
+QCAPI void DrawTextEx(Font font, const char* text, Vec2 position,
                 float fontSize, float spacing, Color tint);
 
 /**
@@ -993,7 +1003,7 @@ void DrawTextEx(Font font, const char* text, Vec2 position,
  * @param spacing Additional character spacing in pixels.
  * @return Text size as Vec2.
  */
-Vec2 MeasureTextEx(Font font, const char* text,
+QCAPI Vec2 MeasureTextEx(Font font, const char* text,
                    float fontSize, float spacing);
 
 /**
@@ -1003,7 +1013,7 @@ Vec2 MeasureTextEx(Font font, const char* text,
  * @param fontSize Font size in pixels.
  * @return Text width in pixels.
  */
-int MeasureText(const char* text, int fontSize);
+QCAPI int MeasureText(const char* text, int fontSize);
 
 /**
  * @brief Load a font from file.
@@ -1013,14 +1023,14 @@ int MeasureText(const char* text, int fontSize);
  * @return Loaded font object.
  * @return Invalid font (valid=false) on failure.
  */
-Font LoadFont(const char* filePath, int fontSize);
+QCAPI Font LoadFont(const char* filePath, int fontSize);
 
 /**
  * @brief Unload a font and free resources.
  * 
  * @param font Font object to unload.
  */
-void UnloadFont(Font& font);
+QCAPI void UnloadFont(Font& font);
 
 /**
  * @brief Load a texture from a file.
@@ -1028,19 +1038,19 @@ void UnloadFont(Font& font);
  * @return Loaded texture.
  * @return Empty texture on failure.
  */
-Texture2D LoadTexture(const char* filePath);
+QCAPI Texture2D LoadTexture(const char* filePath);
 /**
  * @brief Load a render texture.
  * @param width Texture width.
  * @param height Texture height.
  * @return Loaded render texture.
  */
-RenderTexture2D LoadRenderTexture(int width, int height);
+QCAPI RenderTexture2D LoadRenderTexture(int width, int height);
 /**
  * @brief Unload a render texture.
  * @param target Render texture to unload.
  */
-void UnloadRenderTexture(RenderTexture2D target);
+QCAPI void UnloadRenderTexture(RenderTexture2D target);
 /**
  * @brief Generate a checker texture.
  * @param width Texture width.
@@ -1051,12 +1061,12 @@ void UnloadRenderTexture(RenderTexture2D target);
  * @return Generated texture.
  * @return Empty texture on failure.
  */
-Texture2D GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB);
+QCAPI Texture2D GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB);
 /**
  * @brief Unload a texture.
  * @param texture Texture to unload.
  */
-void UnloadTexture(Texture2D& texture);
+QCAPI void UnloadTexture(Texture2D& texture);
 
 /**
  * @brief Load shader from vertex and fragment source files.
@@ -1065,7 +1075,7 @@ void UnloadTexture(Texture2D& texture);
  * @return Loaded shader.
  * @return Empty shader on failure.
  */
-Shader LoadShader(const char* vsFileName, const char* fsFileName);
+QCAPI Shader LoadShader(const char* vsFileName, const char* fsFileName);
 
 /**
  * @brief Load shader from vertex and fragment source strings.
@@ -1074,7 +1084,7 @@ Shader LoadShader(const char* vsFileName, const char* fsFileName);
  * @return Loaded shader.
  * @return Empty shader on failure.
  */
-Shader LoadShaderFromMemory(const char* vsSource, const char* fsSource);
+QCAPI Shader LoadShaderFromMemory(const char* vsSource, const char* fsSource);
 
 /**
  * @brief Check if shader is valid.
@@ -1082,7 +1092,7 @@ Shader LoadShaderFromMemory(const char* vsSource, const char* fsSource);
  * @return true if shader is valid.
  * @return false otherwise.
  */
-bool IsShaderValid(const Shader& shader);
+QCAPI bool IsShaderValid(const Shader& shader);
 
 /**
  * @brief Get uniform location in shader.
@@ -1090,7 +1100,7 @@ bool IsShaderValid(const Shader& shader);
  * @param uniformName Uniform name to find.
  * @return Uniform location index (-1 if not found).
  */
-int GetShaderLocation(const Shader& shader, const char* uniformName);
+QCAPI int GetShaderLocation(const Shader& shader, const char* uniformName);
 
 /**
  * @brief Get shader attribute location.
@@ -1098,7 +1108,7 @@ int GetShaderLocation(const Shader& shader, const char* uniformName);
  * @param attribName Attribute name to find.
  * @return Attribute location index (-1 if not found).
  */
-int GetShaderAttributeLocation(const Shader& shader, const char* attribName);
+QCAPI int GetShaderAttributeLocation(const Shader& shader, const char* attribName);
 
 /**
  * @brief Set shader float uniform value.
@@ -1106,7 +1116,7 @@ int GetShaderAttributeLocation(const Shader& shader, const char* attribName);
  * @param locIndex Uniform location index.
  * @param value Float value to set.
  */
-void SetShaderValue(const Shader& shader, int locIndex, float value);
+QCAPI void SetShaderValue(const Shader& shader, int locIndex, float value);
 
 /**
  * @brief Set shader int uniform value.
@@ -1114,7 +1124,7 @@ void SetShaderValue(const Shader& shader, int locIndex, float value);
  * @param locIndex Uniform location index.
  * @param value Int value to set.
  */
-void SetShaderValue(const Shader& shader, int locIndex, int value);
+QCAPI void SetShaderValue(const Shader& shader, int locIndex, int value);
 
 /**
  * @brief Set shader Vec2 uniform value.
@@ -1122,7 +1132,7 @@ void SetShaderValue(const Shader& shader, int locIndex, int value);
  * @param locIndex Uniform location index.
  * @param value Vec2 value to set.
  */
-void SetShaderValue(const Shader& shader, int locIndex, const Vec2& value);
+QCAPI void SetShaderValue(const Shader& shader, int locIndex, const Vec2& value);
 
 /**
  * @brief Set shader Vec3 uniform value.
@@ -1130,7 +1140,7 @@ void SetShaderValue(const Shader& shader, int locIndex, const Vec2& value);
  * @param locIndex Uniform location index.
  * @param value Vec3 value to set.
  */
-void SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value);
+QCAPI void SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value);
 
 /**
  * @brief Set shader Vec4 uniform value (color).
@@ -1138,7 +1148,7 @@ void SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value);
  * @param locIndex Uniform location index.
  * @param value Color value to set.
  */
-void SetShaderValue(const Shader& shader, int locIndex, const Color& value);
+QCAPI void SetShaderValue(const Shader& shader, int locIndex, const Color& value);
 
 /**
  * @brief Set shader matrix uniform value.
@@ -1146,7 +1156,7 @@ void SetShaderValue(const Shader& shader, int locIndex, const Color& value);
  * @param locIndex Uniform location index.
  * @param mat 4x4 matrix (16 floats).
  */
-void SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat);
+QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat);
 
 /**
  * @brief Set shader sampler2D uniform to texture unit.
@@ -1154,72 +1164,72 @@ void SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat);
  * @param locIndex Uniform location index.
  * @param textureUnit Texture unit index.
  */
-void SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit);
+QCAPI void SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit);
 
 /**
  * @brief Begin shader mode (use shader for subsequent drawing).
  * @param shader Shader to use.
  */
-void BeginShaderMode(const Shader& shader);
+QCAPI void BeginShaderMode(const Shader& shader);
 
 /**
  * @brief End shader mode (restore default shader).
  */
-void EndShaderMode();
+QCAPI void EndShaderMode();
 
 /**
  * @brief Unload shader and free resources.
  * @param shader Shader to unload.
  */
-void UnloadShader(Shader& shader);
+QCAPI void UnloadShader(Shader& shader);
 
 /**
  * @brief Create a default 2D camera.
  * @return Camera2D with default settings.
  */
-Camera2D CreateCamera2D();
+QCAPI Camera2D CreateCamera2D();
 
 /**
  * @brief Begin 2D mode with custom camera.
  */
-void BeginMode2D(const Camera2D& camera);
-void EndMode2D();
+QCAPI void BeginMode2D(const Camera2D& camera);
+QCAPI void EndMode2D();
 
 /**
  * @brief Begin drawing to render texture.
  * @param target Target render texture.
  */
-void BeginTextureMode(RenderTexture2D target);
+QCAPI void BeginTextureMode(RenderTexture2D target);
 /**
  * @brief End drawing to render texture.
  */
-void EndTextureMode();
+QCAPI void EndTextureMode();
 
 /**
  * @brief Create a default 3D camera.
  * @return Camera3D with default settings.
  */
-Camera3D CreateCamera3D();
+QCAPI Camera3D CreateCamera3D();
 
 /**
  * @brief Begin 3D mode with custom camera.
  */
-void BeginMode3D(const Camera3D& camera);
-void EndMode3D();
+QCAPI void BeginMode3D(const Camera3D& camera);
+QCAPI void EndMode3D();
 
-void PushMatrix();
-void PopMatrix();
+QCAPI void PushMatrix();
+QCAPI void PopMatrix();
 
-void Translate(const Vec3& translation);
-void Translate(float x, float y, float z);
-void Rotate(float angle, const Vec3& axis);
-void Rotate(float angle);
-void Scale(const Vec3& scale);
-void Scale(float scale);
-void MultMatrix(const Mat4& matrix);
+QCAPI void Translate(const Vec3& translation);
+QCAPI void Translate(float x, float y, float z);
+QCAPI void Rotate(float angle, const Vec3& axis);
+QCAPI void Rotate(float angle);
+QCAPI void Scale(const Vec3& scale);
+QCAPI void Scale(float scale);
+QCAPI void MultMatrix(const Mat4& matrix);
 
-void EnableBackfaceCulling();
-void DisableBackfaceCulling();
+QCAPI void EnableBackfaceCulling();
+QCAPI void DisableBackfaceCulling();
 
 /**
  * @brief Convert screen coordinates to world coordinates (2D).
@@ -1227,7 +1237,7 @@ void DisableBackfaceCulling();
  * @param camera 2D camera.
  * @return World position.
  */
-Vec2 GetScreenToWorld2D(Vec2 position, Camera2D camera);
+QCAPI Vec2 GetScreenToWorld2D(Vec2 position, Camera2D camera);
 
 /**
  * @brief Convert world coordinates to screen coordinates (2D).
@@ -1235,7 +1245,7 @@ Vec2 GetScreenToWorld2D(Vec2 position, Camera2D camera);
  * @param camera 2D camera.
  * @return Screen position.
  */
-Vec2 GetWorldToScreen2D(Vec2 position, Camera2D camera);
+QCAPI Vec2 GetWorldToScreen2D(Vec2 position, Camera2D camera);
 
 /**
  * @brief Convert world coordinates to screen coordinates (3D).
@@ -1243,7 +1253,7 @@ Vec2 GetWorldToScreen2D(Vec2 position, Camera2D camera);
  * @param camera 3D camera.
  * @return Screen position (as Vec3, z component is depth).
  */
-Vec3 GetWorldToScreen(Vec3 position, Camera3D camera);
+QCAPI Vec3 GetWorldToScreen(Vec3 position, Camera3D camera);
 
 /**
  * @brief Get a ray from screen coordinates through the camera (3D).
@@ -1251,19 +1261,19 @@ Vec3 GetWorldToScreen(Vec3 position, Camera3D camera);
  * @param camera 3D camera.
  * @return Ray starting from camera position.
  */
-Ray GetScreenToWorldRay(Vec2 mousePosition, Camera3D camera);
+QCAPI Ray GetScreenToWorldRay(Vec2 mousePosition, Camera3D camera);
 
 /**
  * @brief Get the current modelview matrix.
  * @return Pointer to the 4x4 modelview matrix (16 floats).
  */
-const float* GetMatrixModelview();
+QCAPI const float* GetMatrixModelview();
 
 /**
  * @brief Get the current projection matrix.
  * @return Pointer to the 4x4 projection matrix (16 floats).
  */
-const float* GetMatrixProjection();
+QCAPI const float* GetMatrixProjection();
 
 /**
  * @brief Check if a key was just released.
@@ -1271,7 +1281,7 @@ const float* GetMatrixProjection();
  * @return true if the key was just released.
  * @return false otherwise.
  */
-bool IsKeyReleased(KeyboardKey key);
+QCAPI bool IsKeyReleased(KeyboardKey key);
 
 /**
  * @brief Check if a key is NOT pressed.
@@ -1279,61 +1289,61 @@ bool IsKeyReleased(KeyboardKey key);
  * @return true if the key is NOT pressed.
  * @return false otherwise.
  */
-bool IsKeyUp(KeyboardKey key);
+QCAPI bool IsKeyUp(KeyboardKey key);
 
 /**
  * @brief Get the last key pressed.
  * @return Key code of the last pressed key, or 0 if no key was pressed this frame.
  */
-int GetKeyPressed();
+QCAPI int GetKeyPressed();
 
 /**
  * @brief Get the last character pressed.
  * @return Character code of the last pressed character.
  */
-int GetCharPressed();
+QCAPI int GetCharPressed();
 
 /**
  * @brief Set the key that exits the application.
  * @param key Exit key.
  */
-void SetExitKey(KeyboardKey key);
+QCAPI void SetExitKey(KeyboardKey key);
 
 /**
  * @brief Get mouse movement delta for this frame.
  * @return Mouse delta movement.
  */
-Vec2 GetMouseDelta();
+QCAPI Vec2 GetMouseDelta();
 
 /**
  * @brief Set mouse position.
  * @param x Mouse X coordinate.
  * @param y Mouse Y coordinate.
  */
-void SetMousePosition(int x, int y);
+QCAPI void SetMousePosition(int x, int y);
 
 /**
  * @brief Hide the mouse cursor.
  */
-void DisableCursor();
+QCAPI void DisableCursor();
 
 /**
  * @brief Show the mouse cursor.
  */
-void EnableCursor();
+QCAPI void EnableCursor();
 
 /**
  * @brief Check if the cursor is hidden.
  * @return true if cursor is hidden.
  * @return false otherwise.
  */
-bool IsCursorHidden();
+QCAPI bool IsCursorHidden();
 
 /**
  * @brief Set the mouse cursor type.
  * @param cursor Cursor type.
  */
-void SetMouseCursor(MouseCursor cursor);
+QCAPI void SetMouseCursor(MouseCursor cursor);
 
 /**
  * @brief Check if a gamepad is available.
@@ -1341,14 +1351,14 @@ void SetMouseCursor(MouseCursor cursor);
  * @return true if gamepad is available.
  * @return false otherwise.
  */
-bool IsGamepadAvailable(int gamepad);
+QCAPI bool IsGamepadAvailable(int gamepad);
 
 /**
  * @brief Get gamepad name.
  * @param gamepad Gamepad index.
  * @return Gamepad name string.
  */
-const char* GetGamepadName(int gamepad);
+QCAPI const char* GetGamepadName(int gamepad);
 
 /**
  * @brief Get gamepad axis movement value.
@@ -1356,7 +1366,7 @@ const char* GetGamepadName(int gamepad);
  * @param axis Gamepad axis.
  * @return Axis value (-1.0 to 1.0).
  */
-float GetGamepadAxisMovement(int gamepad, int axis);
+QCAPI float GetGamepadAxisMovement(int gamepad, int axis);
 
 /**
  * @brief Check if a gamepad button was just pressed.
@@ -1365,7 +1375,7 @@ float GetGamepadAxisMovement(int gamepad, int axis);
  * @return true if button was just pressed.
  * @return false otherwise.
  */
-bool IsGamepadButtonPressed(int gamepad, int button);
+QCAPI bool IsGamepadButtonPressed(int gamepad, int button);
 
 /**
  * @brief Check if a texture is valid.
@@ -1373,7 +1383,7 @@ bool IsGamepadButtonPressed(int gamepad, int button);
  * @return true if texture is valid.
  * @return false otherwise.
  */
-bool IsTextureValid(Texture2D texture);
+QCAPI bool IsTextureValid(Texture2D texture);
 
 /**
  * @brief Draw a texture at position.
@@ -1381,7 +1391,7 @@ bool IsTextureValid(Texture2D texture);
  * @param position Position to draw at.
  * @param tint Tint color.
  */
-void DrawTextureV(Texture2D texture, Vec2 position, Color tint);
+QCAPI void DrawTextureV(Texture2D texture, Vec2 position, Color tint);
 
 /**
  * @brief Draw a texture at position with rotation and scale.
@@ -1391,7 +1401,7 @@ void DrawTextureV(Texture2D texture, Vec2 position, Color tint);
  * @param scale Scale factor.
  * @param tint Tint color.
  */
-void DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale, Color tint);
+QCAPI void DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale, Color tint);
 
 /**
  * @brief Draw part of a texture at position.
@@ -1400,7 +1410,7 @@ void DrawTextureEx(Texture2D texture, Vec2 position, float rotation, float scale
  * @param position Destination position.
  * @param tint Tint color.
  */
-void DrawTextureRec(Texture2D texture, Rectangle source, Vec2 position, Color tint);
+QCAPI void DrawTextureRec(Texture2D texture, Rectangle source, Vec2 position, Color tint);
 
 /**
  * @brief Draw a tiled texture.
@@ -1409,7 +1419,7 @@ void DrawTextureRec(Texture2D texture, Rectangle source, Vec2 position, Color ti
  * @param offset Texture offset.
  * @param tint Tint color.
  */
-void DrawTextureTiled(Texture2D texture, float scale, Vec2 offset, Color tint);
+QCAPI void DrawTextureTiled(Texture2D texture, float scale, Vec2 offset, Color tint);
 
 /**
  * @brief Draw a textured polygon (n-patch).
@@ -1420,7 +1430,7 @@ void DrawTextureTiled(Texture2D texture, float scale, Vec2 offset, Color tint);
  * @param rotation Rotation in degrees.
  * @param tint Tint color.
  */
-void DrawTextureNPatch(Texture2D texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint);
+QCAPI void DrawTextureNPatch(Texture2D texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint);
 
 /**
  * @brief Check if a render texture is valid.
@@ -1428,14 +1438,14 @@ void DrawTextureNPatch(Texture2D texture, Rectangle source, Rectangle dest, Vec2
  * @return true if render texture is valid.
  * @return false otherwise.
  */
-bool IsRenderTextureValid(RenderTexture2D target);
+QCAPI bool IsRenderTextureValid(RenderTexture2D target);
 
 /**
  * @brief Get the color texture from a render texture.
  * @param target Render texture.
  * @return Color texture.
  */
-Texture2D GetRenderTextureTexture(RenderTexture2D target);
+QCAPI Texture2D GetRenderTextureTexture(RenderTexture2D target);
 
 /**
  * @brief Draw a line.
@@ -1445,7 +1455,7 @@ Texture2D GetRenderTextureTexture(RenderTexture2D target);
  * @param y2 End Y coordinate.
  * @param color Line color.
  */
-void DrawLine(float x1, float y1, float x2, float y2, Color color);
+QCAPI void DrawLine(float x1, float y1, float x2, float y2, Color color);
 
 /**
  * @brief Draw a line using vectors.
@@ -1453,7 +1463,7 @@ void DrawLine(float x1, float y1, float x2, float y2, Color color);
  * @param end End position.
  * @param color Line color.
  */
-void DrawLineV(Vec2 start, Vec2 end, Color color);
+QCAPI void DrawLineV(Vec2 start, Vec2 end, Color color);
 
 /**
  * @brief Draw rectangle outline.
@@ -1461,7 +1471,7 @@ void DrawLineV(Vec2 start, Vec2 end, Color color);
  * @param lineWidth Line width.
  * @param color Line color.
  */
-void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color);
+QCAPI void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color);
 
 /**
  * @brief Draw a triangle.
@@ -1470,7 +1480,7 @@ void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color);
  * @param v3 Third vertex.
  * @param color Triangle color.
  */
-void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
+QCAPI void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
 
 /**
  * @brief Draw circle outline.
@@ -1479,7 +1489,7 @@ void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
  * @param radius Circle radius.
  * @param color Circle color.
  */
-void DrawCircleLines(float centerX, float centerY, float radius, Color color);
+QCAPI void DrawCircleLines(float centerX, float centerY, float radius, Color color);
 
 /**
  * @brief Draw an ellipse.
@@ -1489,7 +1499,7 @@ void DrawCircleLines(float centerX, float centerY, float radius, Color color);
  * @param radiusV Vertical radius.
  * @param color Ellipse color.
  */
-void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Color color);
+QCAPI void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Color color);
 
 /**
  * @brief Draw a polygon.
@@ -1499,7 +1509,7 @@ void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Col
  * @param rotation Rotation in degrees.
  * @param color Polygon color.
  */
-void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color);
+QCAPI void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color);
 
 /**
  * @brief Draw a rounded rectangle.
@@ -1508,7 +1518,7 @@ void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color)
  * @param segments Number of segments for corners.
  * @param color Rectangle color.
  */
-void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments, Color color);
+QCAPI void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments, Color color);
 
 /**
  * @brief Fade a color by alpha.
@@ -1516,7 +1526,7 @@ void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments, Co
  * @param alpha Alpha value (0.0 to 1.0).
  * @return Faded color.
  */
-Color Fade(Color color, float alpha);
+QCAPI Color Fade(Color color, float alpha);
 
 /**
  * @brief Apply alpha to a color.
@@ -1524,7 +1534,7 @@ Color Fade(Color color, float alpha);
  * @param alpha Alpha value.
  * @return Color with alpha applied.
  */
-Color ColorAlpha(Color color, float alpha);
+QCAPI Color ColorAlpha(Color color, float alpha);
 
 /**
  * @brief Tint a color by another color.
@@ -1532,7 +1542,7 @@ Color ColorAlpha(Color color, float alpha);
  * @param tint Tint color.
  * @return Tinted color.
  */
-Color ColorTint(Color color, Color tint);
+QCAPI Color ColorTint(Color color, Color tint);
 
 /**
  * @brief Adjust color brightness.
@@ -1540,7 +1550,7 @@ Color ColorTint(Color color, Color tint);
  * @param factor Brightness factor.
  * @return Adjusted color.
  */
-Color ColorBrightness(Color color, float factor);
+QCAPI Color ColorBrightness(Color color, float factor);
 
 /**
  * @brief Adjust color contrast.
@@ -1548,14 +1558,14 @@ Color ColorBrightness(Color color, float factor);
  * @param contrast Contrast factor.
  * @return Adjusted color.
  */
-Color ColorContrast(Color color, float contrast);
+QCAPI Color ColorContrast(Color color, float contrast);
 
 /**
  * @brief Get color from hex value.
  * @param hexValue Hex color value (0xRRGGBB).
  * @return Color.
  */
-Color GetColor(unsigned int hexValue);
+QCAPI Color GetColor(unsigned int hexValue);
 
 /**
  * @brief Check collision between two rectangles.
@@ -1564,7 +1574,7 @@ Color GetColor(unsigned int hexValue);
  * @return true if rectangles collide.
  * @return false otherwise.
  */
-bool CheckCollisionRecs(Rectangle a, Rectangle b);
+QCAPI bool CheckCollisionRecs(Rectangle a, Rectangle b);
 
 /**
  * @brief Check collision between two circles.
@@ -1575,7 +1585,7 @@ bool CheckCollisionRecs(Rectangle a, Rectangle b);
  * @return true if circles collide.
  * @return false otherwise.
  */
-bool CheckCollisionCircles(Vec2 center1, float radius1, Vec2 center2, float radius2);
+QCAPI bool CheckCollisionCircles(Vec2 center1, float radius1, Vec2 center2, float radius2);
 
 /**
  * @brief Check collision between point and rectangle.
@@ -1584,7 +1594,7 @@ bool CheckCollisionCircles(Vec2 center1, float radius1, Vec2 center2, float radi
  * @return true if point is in rectangle.
  * @return false otherwise.
  */
-bool CheckCollisionPointRec(Vec2 point, Rectangle rect);
+QCAPI bool CheckCollisionPointRec(Vec2 point, Rectangle rect);
 
 /**
  * @brief Check collision between point and circle.
@@ -1594,13 +1604,13 @@ bool CheckCollisionPointRec(Vec2 point, Rectangle rect);
  * @return true if point is in circle.
  * @return false otherwise.
  */
-bool CheckCollisionPointCircle(Vec2 point, Vec2 center, float radius);
+QCAPI bool CheckCollisionPointCircle(Vec2 point, Vec2 center, float radius);
 
 /**
  * @brief Wait for a specified time duration.
  * @param seconds Time to wait in seconds.
  */
-void WaitTime(double seconds);
+QCAPI void WaitTime(double seconds);
 
 /**
  * @brief Get a random integer value.
@@ -1608,20 +1618,20 @@ void WaitTime(double seconds);
  * @param max Maximum value (inclusive).
  * @return Random integer value.
  */
-int GetRandomValue(int min, int max);
+QCAPI int GetRandomValue(int min, int max);
 
 /**
  * @brief Set the random number generator seed.
  * @param seed Random seed value.
  */
-void SetRandomSeed(unsigned int seed);
+QCAPI void SetRandomSeed(unsigned int seed);
 
 /**
  * @brief Check if the window is ready for drawing.
  * @return true if window is ready.
  * @return false otherwise.
  */
-bool IsWindowReady();
+QCAPI bool IsWindowReady();
 
 /**
  * @brief Check if a texture is ready for use.
@@ -1629,7 +1639,7 @@ bool IsWindowReady();
  * @return true if texture is ready.
  * @return false otherwise.
  */
-bool IsTextureReady(Texture2D texture);
+QCAPI bool IsTextureReady(Texture2D texture);
 
 /**
  * @brief Check if a shader is ready for use.
@@ -1637,6 +1647,6 @@ bool IsTextureReady(Texture2D texture);
  * @return true if shader is ready.
  * @return false otherwise.
  */
-bool IsShaderReady(Shader shader);
+QCAPI bool IsShaderReady(Shader shader);
 
 }  // namespace qc

@@ -124,7 +124,7 @@ foreach(t SDL3 SDL_uclibc libglew_shared png16 png_shared zlib zlibstatic assimp
     endif()
 endforeach()
 
-add_library(QuarkCore STATIC
+add_library(QuarkCore SHARED
     src/QuarkCore.cpp
     src/QuarkEvent.cpp
     src/QuarkWindow.cpp
@@ -134,7 +134,10 @@ target_include_directories(QuarkCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(QuarkCore PUBLIC
+target_compile_definitions(QuarkCore PRIVATE QUARKCORE_BUILD_DLL)
+
+target_link_libraries(QuarkCore
+    PUBLIC
     SDL3::SDL3
     libglew_shared
     png_shared

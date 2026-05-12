@@ -165,14 +165,14 @@ struct Model {
  * @return Loaded model.
  * @return Empty model on failure.
  */
-Model LoadModel(const char* filePath);
+QCAPI Model LoadModel(const char* filePath);
 
 /**
  * @brief Unload a model and free its resources.
  *
  * @param model Model to unload.
  */
-void UnloadModel(Model& model);
+QCAPI void UnloadModel(Model& model);
 
 /**
  * @brief Draw a model with transformation.
@@ -184,7 +184,7 @@ void UnloadModel(Model& model);
  * @param rotationY Rotation around Y axis (radians).
  * @param rotationZ Rotation around Z axis (radians).
  */
-void DrawModel(const Model& model, const Vec3& position, float scale,
+QCAPI void DrawModel(const Model& model, const Vec3& position, float scale,
                float rotationX, float rotationY, float rotationZ);
 
 /**
@@ -193,7 +193,7 @@ void DrawModel(const Model& model, const Vec3& position, float scale,
  * @param model Model to draw.
  * @param transform Transformation matrix.
  */
-void DrawModelEx(const Model& model, const Mat4& transform);
+QCAPI void DrawModelEx(const Model& model, const Mat4& transform);
 
 /**
  * @brief Set the view and projection matrices for 3D rendering.
@@ -201,7 +201,7 @@ void DrawModelEx(const Model& model, const Mat4& transform);
  * @param view View matrix.
  * @param projection Projection matrix.
  */
-void Set3DView(const Mat4& view, const Mat4& projection);
+QCAPI void Set3DView(const Mat4& view, const Mat4& projection);
 
 /**
  * @brief Draw a plane.
@@ -209,7 +209,7 @@ void Set3DView(const Mat4& view, const Mat4& projection);
  * @param size Plane size.
  * @param color Plane color.
  */
-void DrawPlane(Vec3 center, Vec2 size, Color color);
+QCAPI void DrawPlane(Vec3 center, Vec2 size, Color color);
 
 /**
  * @brief Draw a cube.
@@ -217,7 +217,7 @@ void DrawPlane(Vec3 center, Vec2 size, Color color);
  * @param size Cube size.
  * @param color Cube color.
  */
-void DrawCubeV(Vec3 position, Vec3 size, Color color);
+QCAPI void DrawCubeV(Vec3 position, Vec3 size, Color color);
 
 /**
  * @brief Draw a cube.
@@ -227,7 +227,7 @@ void DrawCubeV(Vec3 position, Vec3 size, Color color);
  * @param length Length.
  * @param color Cube color.
  */
-void DrawCube(Vec3 position, float width, float height, float length, Color color);
+QCAPI void DrawCube(Vec3 position, float width, float height, float length, Color color);
 
 /**
  * @brief Draw a sphere.
@@ -235,7 +235,7 @@ void DrawCube(Vec3 position, float width, float height, float length, Color colo
  * @param radius Sphere radius.
  * @param color Sphere color.
  */
-void DrawSphere(Vec3 centerPos, float radius, Color color);
+QCAPI void DrawSphere(Vec3 centerPos, float radius, Color color);
 
 /**
  * @brief Draw a sphere with extended parameters.
@@ -245,7 +245,7 @@ void DrawSphere(Vec3 centerPos, float radius, Color color);
  * @param slices Number of slices.
  * @param color Sphere color.
  */
-void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color color);
+QCAPI void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color color);
 
 /**
  * @brief Draw a sphere wireframe.
@@ -255,7 +255,7 @@ void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color col
  * @param slices Number of slices.
  * @param color Sphere color.
  */
-void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color color);
+QCAPI void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color color);
 
 /**
  * @brief Draw a line in 3D space.
@@ -263,14 +263,14 @@ void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color 
  * @param endPos End position.
  * @param color Line color.
  */
-void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color);
+QCAPI void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color);
 
 /**
  * @brief Draw a grid.
  * @param slices Number of slices.
  * @param spacing Spacing between slices.
  */
-void DrawGrid(int slices, float spacing);
+QCAPI void DrawGrid(int slices, float spacing);
 
 /**
  * @brief Draw a cube outline (wireframe).
@@ -280,7 +280,7 @@ void DrawGrid(int slices, float spacing);
  * @param length Length.
  * @param color Wire color.
  */
-void DrawCubeWires(Vec3 position, float width, float height, float length, Color color);
+QCAPI void DrawCubeWires(Vec3 position, float width, float height, float length, Color color);
 
 /**
  * @brief Draw a cube wireframe.
@@ -288,7 +288,7 @@ void DrawCubeWires(Vec3 position, float width, float height, float length, Color
  * @param size Cube size.
  * @param color Cube color.
  */
-void DrawCubeWiresV(Vec3 position, Vec3 size, Color color);
+QCAPI void DrawCubeWiresV(Vec3 position, Vec3 size, Color color);
 
 /**
  * @brief Draw a cylinder.
@@ -299,7 +299,7 @@ void DrawCubeWiresV(Vec3 position, Vec3 size, Color color);
  * @param slices Number of slices.
  * @param color Cylinder color.
  */
-void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color);
+QCAPI void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color);
 
 /**
  * @brief Draw a cylinder with start and end positions.
@@ -310,7 +310,7 @@ void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float heig
  * @param sides Number of sides.
  * @param color Cylinder color.
  */
-void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color);
+QCAPI void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color);
 
 /**
  * @brief Draw a cylinder wireframe.
@@ -321,7 +321,7 @@ void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadi
  * @param slices Number of slices.
  * @param color Cylinder color.
  */
-void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color);
+QCAPI void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color);
 
 /**
  * @brief Draw a cylinder wireframe with start and end positions.
@@ -332,6 +332,6 @@ void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float
  * @param slices Number of slices.
  * @param color Cylinder color.
  */
-void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color);
+QCAPI void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color);
 
 }  // namespace qc
