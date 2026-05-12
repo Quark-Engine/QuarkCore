@@ -1,12 +1,6 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkCore/Quark3D.hpp"
 
-#if defined(USE_IMGUI)
-#include "imgui.h"
-#include "imgui_impl_sdl3.h"
-#include "imgui_impl_opengl3.h"
-#endif
-
 #include <GL/glew.h>
 #include <png.h>
 #include <algorithm>
@@ -65,6 +59,7 @@ struct RendererState {
     Vec2 mousePosition{};
     Vec2 mouseWheel{};
     std::vector<Event> events;
+    SDL_Event nativeEvent{};
     std::size_t nextEventIndex = 0;
     bool eventsReady = false;
 };
@@ -79,8 +74,6 @@ struct PngImageData {
 };
 
 RendererState gRenderer;
-
-bool gImGuiInitialized = false;
 
 namespace {
 struct Model3DState {
@@ -335,6 +328,7 @@ bool CheckWindowCall(bool result, const char* operation) {
 
 Event TranslateEvent(const SDL_Event& sdlEvent) {
     Event event{};
+    event.nativeEvent = sdlEvent;
     event.type = TranslateEventType(sdlEvent.type);
     event.timestamp = sdlEvent.common.timestamp;
 
@@ -625,11 +619,7 @@ void PumpSystemEvents() {
 
     SDL_Event sdlEvent;
     while (SDL_PollEvent(&sdlEvent)) {
-#if defined(USE_IMGUI)
-        if (gImGuiInitialized) {
-            ImGui_ImplSDL3_ProcessEvent(&sdlEvent);
-        }
-#endif
+        gRenderer.nativeEvent = sdlEvent;
         if (sdlEvent.type == SDL_EVENT_QUIT || sdlEvent.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
             gRenderer.shouldClose = true;
         }
@@ -1247,6 +1237,7 @@ bool WaitEvent(Event& event) {
         return false;
     }
 
+    gRenderer.nativeEvent = sdlEvent;
     gRenderer.eventsReady = false;
     gRenderer.events.clear();
     gRenderer.nextEventIndex = 0;
@@ -1266,6 +1257,7 @@ bool WaitEventTimeout(Event& event, int timeoutMs) {
         return false;
     }
 
+    gRenderer.nativeEvent = sdlEvent;
     gRenderer.eventsReady = false;
     gRenderer.events.clear();
     gRenderer.nextEventIndex = 0;
@@ -1576,9 +1568,14 @@ bool SetWindowIcon(const char* filePath) {
     return ok;
 }
 
-SDL_Window* GetNativeWindowHandle() {
+SDL_Window* GetNativeWindow() {
     EnsureInitialized();
     return gRenderer.window;
+}
+
+SDL_Event GetNativeEvent() {
+    EnsureInitialized();
+    return gRenderer.nativeEvent;
 }
 
 bool StartTextInput() {
@@ -3520,84 +3517,6 @@ const float* GetMatrixModelview() {
 
 const float* GetMatrixProjection() {
     return g3DState.projectionMatrix.m;
-}
-
-bool InitImGui() {
-#if defined(USE_IMGUI)
-    EnsureInitialized();
-    if (gImGuiInitialized) {
-        return true;
-    }
-
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-
-    ImGui::StyleColorsDark();
-
-    if (!ImGui_ImplSDL3_InitForOpenGL(gRenderer.window, static_cast<void*>(gRenderer.context))) {
-        return false;
-    }
-    if (!ImGui_ImplOpenGL3_Init("#version 330 core")) {
-        ImGui_ImplSDL3_Shutdown();
-        return false;
-    }
-
-    gImGuiInitialized = true;
-    return true;
-#else
-    (void)gRenderer;
-    return false;
-#endif
-}
-
-void ShutdownImGui() {
-#if defined(USE_IMGUI)
-    if (!gImGuiInitialized) {
-        return;
-    }
-
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL3_Shutdown();
-    ImGui::DestroyContext();
-
-    gImGuiInitialized = false;
-#else
-    (void)gRenderer;
-#endif
-}
-
-void BeginImGui() {
-#if defined(USE_IMGUI)
-    if (!gImGuiInitialized) {
-        InitImGui();
-    }
-    ImGui_ImplSDL3_NewFrame();
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui::NewFrame();
-#else
-    (void)gRenderer;
-#endif
-}
-
-void EndImGui() {
-#if defined(USE_IMGUI)
-    if (!gImGuiInitialized) {
-        return;
-    }
-
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-    ImGuiIO& io = ImGui::GetIO();
-    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-        ImGui::UpdatePlatformWindows();
-        ImGui::RenderPlatformWindowsDefault();
-    }
-#else
-    (void)gRenderer;
-#endif
 }
 
 }  // namespace qc

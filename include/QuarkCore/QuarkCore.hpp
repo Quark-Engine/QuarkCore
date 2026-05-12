@@ -376,6 +376,7 @@ enum class EventType {
  */
 struct Event {
     EventType type = EventType::None;
+    SDL_Event nativeEvent{};
     std::uint64_t timestamp = 0;
     std::uint32_t windowId = 0;
     std::uint64_t which = 0;
@@ -695,6 +696,14 @@ bool SetWindowIcon(const char* filePath);
  * @return Pointer to the SDL window.
  */
 SDL_Window* GetNativeWindow();
+
+/**
+ * @brief Get the underlying SDL event.
+ *
+ * @return SDL_Event structure with event data.
+*/
+
+SDL_Event GetNativeEvent();
 
 /**
  * @brief Start text input.
@@ -1197,30 +1206,6 @@ void MultMatrix(const Mat4& matrix);
 
 void EnableBackfaceCulling();
 void DisableBackfaceCulling();
-
-#if defined(USE_IMGUI)
-/**
- * @brief Initialize Dear ImGui.
- *
- * @return true if initialization succeeded.
- */
-bool InitImGui();
-
-/**
- * @brief Shutdown Dear ImGui and free resources.
- */
-void ShutdownImGui();
-
-/**
- * @brief Begin an ImGui frame.
- */
-void BeginImGui();
-
-/**
- * @brief End the ImGui frame and render draw data.
- */
-void EndImGui();
-#endif // USE_IMGUI
 
 /**
  * @brief Convert screen coordinates to world coordinates (2D).
