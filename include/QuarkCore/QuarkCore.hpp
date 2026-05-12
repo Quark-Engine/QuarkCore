@@ -31,13 +31,6 @@
 
 #include <SDL3/SDL.h>
 #include <cstdint>
-#include "Quark3D.hpp"
-
-#define QC_VERSION_MAJOR 1
-#define QC_VERSION_MINOR 0
-#define QC_VERSION_PATCH 0
-#define QC_VERSION_STRING "1.0.0"
-#define QC_VERSION (QC_VERSION_MAJOR * 10000 + QC_VERSION_MINOR * 100 + QC_VERSION_PATCH)
 
 namespace qc {
 
@@ -52,6 +45,18 @@ struct Texture {
 };
 
 using Texture2D = Texture;
+
+} // namespace qc
+
+#include "Quark3D.hpp"
+
+#define QC_VERSION_MAJOR 1
+#define QC_VERSION_MINOR 0
+#define QC_VERSION_PATCH 0
+#define QC_VERSION_STRING "1.0.0"
+#define QC_VERSION (QC_VERSION_MAJOR * 10000 + QC_VERSION_MINOR * 100 + QC_VERSION_PATCH)
+
+namespace qc {
 
 /**
  * @brief Render texture structure.

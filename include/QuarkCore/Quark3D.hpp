@@ -26,6 +26,9 @@
 
 namespace qc {
 
+// Forward declarations
+struct Shader;
+
 /**
  * @brief Vertex data for 3D meshes.
  */
@@ -44,16 +47,43 @@ struct Ray {
 };
 
 /**
+ * @brief Material map index.
+ */
+enum MaterialMapIndex {
+    MATERIAL_MAP_ALBEDO = 0,        // Albedo material (same as: MATERIAL_MAP_DIFFUSE)
+    MATERIAL_MAP_METALNESS,         // Metalness material (same as: MATERIAL_MAP_SPECULAR)
+    MATERIAL_MAP_NORMAL,            // Normal material
+    MATERIAL_MAP_ROUGHNESS,         // Roughness material
+    MATERIAL_MAP_OCCLUSION,         // Ambient occlusion material
+    MATERIAL_MAP_EMISSION,          // Emission material
+    MATERIAL_MAP_HEIGHT,            // Heightmap material
+    MATERIAL_MAP_CUBEMAP,           // Cubemap material (NOTE: Uses GL_TEXTURE_CUBE_MAP)
+    MATERIAL_MAP_IRRADIANCE,        // Irradiance material (NOTE: Uses GL_TEXTURE_CUBE_MAP)
+    MATERIAL_MAP_PREFILTER,         // Prefilter material (NOTE: Uses GL_TEXTURE_CUBE_MAP)
+    MATERIAL_MAP_BRDF               // Brdf material
+};
+
+/**
+ * @brief Material map.
+ */
+struct MaterialMap {
+    Texture2D texture;      // Material map texture
+    Color color;            // Material map color
+    float value = 0.0f;     // Material map value
+};
+
+/**
  * @brief Material properties.
  */
 struct Material {
-    std::string name;
-    unsigned int diffuseMap = 0;  // OpenGL texture ID
-    Vec3 diffuse{1.0f, 1.0f, 1.0f};
-    Vec3 specular{1.0f, 1.0f, 1.0f};
-    Vec3 ambient{0.1f, 0.1f, 0.1f};
-    float shininess = 32.0f;
+    Shader* shader = nullptr;       // Material shader
+    MaterialMap* maps = nullptr;    // Material maps array (MAX_MATERIAL_MAPS)
+    float params[4] = {0.0f, 0.0f, 0.0f, 0.0f}; // Material generic parameters (if required)
 };
+
+// Backward compatibility
+#define MATERIAL_MAP_DIFFUSE      MATERIAL_MAP_ALBEDO
+#define MATERIAL_MAP_SPECULAR     MATERIAL_MAP_METALNESS
 
 /**
  * @brief Bone information.

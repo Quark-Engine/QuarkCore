@@ -2507,22 +2507,25 @@ Mesh ProcessMesh(const aiMesh* aiMesh, const aiScene* scene) {
 void ProcessMaterials(const aiScene* scene, std::vector<Material>& materials, const char* directory) {
     materials.clear();
 
+    const int MAX_MATERIAL_MAPS = 11;
+
     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
         const aiMaterial* mat = scene->mMaterials[i];
         Material material{};
 
-        aiString matName;
-        if (mat->Get(AI_MATKEY_NAME, matName) == AI_SUCCESS) {
-            material.name = matName.C_Str();
+        material.shader = nullptr;
+        material.maps = new MaterialMap[MAX_MATERIAL_MAPS];
+        
+        for (int j = 0; j < MAX_MATERIAL_MAPS; ++j) {
+            material.maps[j].texture = Texture2D{};
+            material.maps[j].color = Color{255, 255, 255, 255};
+            material.maps[j].value = 0.0f;
         }
 
-        aiColor3D diffuse(1.0f, 1.0f, 1.0f);
-        mat->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse);
-        material.diffuse = Vec3(diffuse.r, diffuse.g, diffuse.b);
-
-        float shininess = 32.0f;
-        mat->Get(AI_MATKEY_SHININESS, shininess);
-        material.shininess = shininess;
+        material.params[0] = 0.0f;
+        material.params[1] = 0.0f;
+        material.params[2] = 0.0f;
+        material.params[3] = 0.0f;
 
         if (mat->GetTextureCount(aiTextureType_DIFFUSE) > 0) {
             aiString texPath;
@@ -2530,9 +2533,42 @@ void ProcessMaterials(const aiScene* scene, std::vector<Material>& materials, co
             std::string fullPath = std::string(directory) + "/" + std::string(texPath.C_Str());
             Texture2D tex = LoadTexture(fullPath.c_str());
             if (tex.valid) {
-                material.diffuseMap = tex.id;
+                material.maps[MATERIAL_MAP_ALBEDO].texture = tex;
             }
         }
+
+        if (mat->GetTextureCount(aiTextureType_NORMALS) > 0) {
+            aiString texPath;
+            mat->GetTexture(aiTextureType_NORMALS, 0, &texPath);
+            std::string fullPath = std::string(directory) + "/" + std::string(texPath.C_Str());
+            Texture2D tex = LoadTexture(fullPath.c_str());
+            if (tex.valid) {
+                material.maps[MATERIAL_MAP_NORMAL].texture = tex;
+            }
+        }
+
+        if (mat->GetTextureCount(aiTextureType_SHININESS) > 0) {
+            aiString texPath;
+            mat->GetTexture(aiTextureType_SHININESS, 0, &texPath);
+            std::string fullPath = std::string(directory) + "/" + std::string(texPath.C_Str());
+            Texture2D tex = LoadTexture(fullPath.c_str());
+            if (tex.valid) {
+                material.maps[MATERIAL_MAP_ROUGHNESS].texture = tex;
+            }
+        }
+
+        aiColor3D diffuse(1.0f, 1.0f, 1.0f);
+        mat->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse);
+        material.maps[MATERIAL_MAP_ALBEDO].color = Color{
+            static_cast<unsigned char>(diffuse.r * 255),
+            static_cast<unsigned char>(diffuse.g * 255),
+            static_cast<unsigned char>(diffuse.b * 255),
+            255
+        };
+
+        float shininess = 32.0f;
+        mat->Get(AI_MATKEY_SHININESS, shininess);
+        material.params[0] = shininess / 100.0f;
 
         materials.push_back(material);
     }
@@ -3154,8 +3190,9 @@ void UnloadModel(Model& model) {
     }
 
     for (int i = 0; i < model.materialCount; ++i) {
-        if (model.materials[i].diffuseMap != 0) {
-            glDeleteTextures(1, &model.materials[i].diffuseMap);
+        if (model.materials[i].maps != nullptr) {
+            delete[] model.materials[i].maps;
+            model.materials[i].maps = nullptr;
         }
     }
 
@@ -3445,8 +3482,8 @@ void DrawModelEx(const Model& model, const Mat4& transform) {
         GLuint textureId = g3DState.whiteTexture;
         if (model.meshMaterial && model.meshMaterial[i] >= 0 && model.meshMaterial[i] < model.materialCount) {
             const Material& mat = model.materials[model.meshMaterial[i]];
-            if (mat.diffuseMap != 0) {
-                textureId = mat.diffuseMap;
+            if (mat.maps != nullptr && mat.maps[MATERIAL_MAP_ALBEDO].texture.valid) {
+                textureId = mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
             }
         }
         glBindTexture(GL_TEXTURE_2D, textureId);
