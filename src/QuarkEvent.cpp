@@ -8,6 +8,7 @@ namespace qc {
 extern QuarkGLRenderer gRenderer;
 extern int gLastKeyPressed;
 extern int gLastCharPressed;
+extern KeyboardKey gExitKey;
 
 EventType TranslateEventType(Uint32 type) {
     switch (type) {
@@ -410,6 +411,7 @@ Event TranslateEvent(const SDL_Event& sdlEvent) {
 
 void PumpSystemEvents() {
     gWin.previousKeys = gWin.currentKeys;
+    gWin.previousMouseButtons = gWin.mouseButtons;
     gWin.mouseWheel = { 0.0f, 0.0f };
     gWin.events.clear();
     gWin.nextEventIndex = 0;
@@ -432,6 +434,9 @@ void PumpSystemEvents() {
         }
         if (sdlEvent.type == SDL_EVENT_KEY_DOWN) {
             gLastKeyPressed = sdlEvent.key.key;
+            if (static_cast<KeyboardKey>(sdlEvent.key.scancode) == gExitKey) {
+                gWin.shouldClose = true;
+            }
         }
         if (sdlEvent.type == SDL_EVENT_TEXT_INPUT) {
             if (sdlEvent.text.text[0] != '\0') {

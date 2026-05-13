@@ -21,12 +21,10 @@
 #include <thread>
 #include <vector>
 #include <array>
+#include <array>
 
 namespace qc {
 
-// ============================================================
-//  Global renderer instance — the single source of truth
-// ============================================================
 QuarkGLRenderer gRenderer;
 
 WindowState gWin;
@@ -36,9 +34,6 @@ KeyboardKey gExitKey    = KeyboardKey::Escape;
 Vec2  gMousePreviousPosition{};
 bool  gCursorHidden     = false;
 
-// ============================================================
-//  Logging helpers
-// ============================================================
 const char* ToString(LogLevel level) {
     switch (level) {
         case LogLevel::Trace: return "TRACE";
@@ -73,9 +68,6 @@ void WriteLog(LogLevel level, const char* type, const std::string& message) {
         << message << '\n';
 }
 
-// ============================================================
-//  Input processing
-// ============================================================
 void CopyText(char* dst, size_t size, const char* src) {
     if (!dst || size == 0) return;
     if (!src) { dst[0] = '\0'; return; }
@@ -88,9 +80,6 @@ void CopyText(char* dst, size_t size, const char* src) {
 }
 
 void UpdateInputFromEvents() {
-    gWin.previousKeys         = gWin.currentKeys;
-    gWin.previousMouseButtons = gWin.mouseButtons;
-
     float mx = 0.f, my = 0.f;
     const SDL_MouseButtonFlags ms = SDL_GetMouseState(&mx, &my);
     gWin.mousePosition = Vec2{mx, my};
@@ -107,9 +96,6 @@ void EnsureInitialized() {
         throw std::runtime_error("QuarkCore is not initialized. Call InitWindow() first.");
 }
 
-// ============================================================
-//  InitWindow / CloseWindow / WindowShouldClose / misc
-// ============================================================
 void InitWindow(int width, int height, const char* title) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
         throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
@@ -124,7 +110,6 @@ void InitWindow(int width, int height, const char* title) {
     if (!gWin.window)
         throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
 
-    // Renderer takes ownership of context creation
     gRenderer.Init(gWin.window, width, height);
     gRenderer.SetTargetFPS(gWin.targetFps);
 
@@ -142,26 +127,10 @@ void CloseWindow() {
 }
 
 bool WindowShouldClose() {
-    gWin.mouseWheel = {0.f, 0.f};
-    gWin.eventsReady = false;
-
-    SDL_Event ev;
-    while (SDL_PollEvent(&ev)) {
-        gWin.nativeEvent = ev;
-        if (ev.type == SDL_EVENT_QUIT)
-            gWin.shouldClose = true;
-        if (ev.type == SDL_EVENT_KEY_DOWN) {
-            gLastKeyPressed = ev.key.scancode;
-            if (static_cast<KeyboardKey>(ev.key.scancode) == gExitKey)
-                gWin.shouldClose = true;
-        }
-        if (ev.type == SDL_EVENT_TEXT_INPUT && ev.text.text[0])
-            gLastCharPressed = static_cast<int>(ev.text.text[0]);
-        if (ev.type == SDL_EVENT_MOUSE_WHEEL)
-            gWin.mouseWheel = Vec2{ev.wheel.x, ev.wheel.y};
+    if (!gWin.eventsReady) {
+        PumpSystemEvents();
     }
-
-    UpdateInputFromEvents();
+    gWin.eventsReady = false;
 
     if (gRenderer.ShouldClose()) gWin.shouldClose = true;
     return gWin.shouldClose;
@@ -209,7 +178,6 @@ const char* TextFormat(const char* fmt, ...) {
 
 SDL_GLContext GetNativeContext() {
     EnsureInitialized();
-    // The GL context lives inside QuarkGLRenderer; expose via SDL query
     return SDL_GL_GetCurrentContext();
 }
 
@@ -218,9 +186,6 @@ bool IsTextInputActive() {
     return SDL_TextInputActive(gWin.window);
 }
 
-// ============================================================
-//  Keyboard
-// ============================================================
 bool IsKeyDown(KeyboardKey key) {
     EnsureInitialized();
     const auto i = static_cast<std::size_t>(key);
@@ -250,9 +215,6 @@ int GetCharPressed() { int c = gLastCharPressed; gLastCharPressed = 0; return c;
 
 void SetExitKey(KeyboardKey key) { gExitKey = key; }
 
-// ============================================================
-//  Mouse
-// ============================================================
 bool IsMouseButtonDown(MouseButton button) {
     EnsureInitialized();
     const auto i = static_cast<std::size_t>(button);
@@ -317,9 +279,6 @@ void SetMouseCursor(MouseCursor cursor) {
     if (c) { SDL_SetCursor(c); SDL_DestroyCursor(c); }
 }
 
-// ============================================================
-//  Gamepad
-// ============================================================
 bool IsGamepadAvailable(int gamepad) {
     SDL_Joystick* j = SDL_OpenJoystick(gamepad);
     if (j) { SDL_CloseJoystick(j); return true; }
@@ -352,17 +311,11 @@ bool IsGamepadButtonPressed(int gamepad, int button) {
     return p;
 }
 
-// ============================================================
-//  Frame
-// ============================================================
 void BeginDrawing() { EnsureInitialized(); gRenderer.BeginDrawing(); }
 void EndDrawing()   { EnsureInitialized(); gRenderer.EndDrawing();   }
 
 void ClearBackground(Color color) { EnsureInitialized(); gRenderer.ClearBackground(color); }
 
-// ============================================================
-//  2D drawing — delegate entirely to gRenderer
-// ============================================================
 void DrawRectangle(float x, float y, float w, float h, Color c)    { gRenderer.DrawRectangle(x, y, w, h, c); }
 void DrawRectangle(const Rectangle& r, Color c)                     { gRenderer.DrawRectangle(r, c);          }
 void DrawRectangleV(Vec2 pos, Vec2 size, Color c)                   { gRenderer.DrawRectangleV(pos, size, c); }
@@ -379,9 +332,6 @@ void DrawLineV(Vec2 start, Vec2 end, Color c)                        { gRenderer
 void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color c)               { gRenderer.DrawTriangle(v1, v2, v3, c); }
 void DrawPoly(Vec2 center, int sides, float r, float rot, Color c)  { gRenderer.DrawPoly(center, sides, r, rot, c); }
 
-// ============================================================
-//  Textures — delegate to gRenderer
-// ============================================================
 Texture2D LoadTexture(const char* filePath) {
     EnsureInitialized();
     ITexture it = gRenderer.LoadTexture(filePath);
@@ -447,9 +397,6 @@ Texture2D GenCheckerTexture(int w, int h, int cellSize, Color a, Color b) {
     return Texture2D{ it.id, it.width, it.height, it.valid };
 }
 
-// ============================================================
-//  RenderTexture
-// ============================================================
 RenderTexture2D LoadRenderTexture(int w, int h) {
     EnsureInitialized();
     IRenderTexture ir = gRenderer.LoadRenderTexture(w, h);
@@ -499,21 +446,17 @@ void EndTextureMode() {
     gRenderer.EndTextureMode();
 }
 
-// ============================================================
-//  Font / Text
-// ============================================================
 Font LoadFont(const char* filePath, int fontSize) {
     EnsureInitialized();
     IFont iFont = gRenderer.LoadFont(filePath, fontSize);
     Font f;
-    f.textureId  = 0;   // internal to renderer; not needed by caller
+    f.textureId  = 0;
     f.baseSize   = fontSize;
     f.valid      = iFont.id != 0;
-    f.lineHeight = 0;   // renderer knows; MeasureTextEx will use iFont
+    f.lineHeight = 0;
     f.ascent     = 0;
     f.descent    = 0;
     f.lineGap    = 0;
-    // Store IFont id so we can pass it back
     static_assert(sizeof(f._rendererFontId) >= sizeof(uint32_t), "Font needs _rendererFontId field");
     f._rendererFontId = iFont.id;
     return f;
@@ -527,8 +470,7 @@ void UnloadFont(Font& font) {
 
 Font GetDefaultFont() {
     EnsureInitialized();
-    // Trigger default font loading inside renderer
-    IFont iFont = gRenderer.LoadFont(nullptr, 32);   // nullptr → system default
+    IFont iFont = gRenderer.LoadFont(nullptr, 32);
     Font f;
     f.valid           = iFont.id != 0;
     f._rendererFontId = iFont.id;
@@ -556,9 +498,6 @@ int MeasureText(const char* text, int fontSize) {
     return gRenderer.MeasureText(text, fontSize);
 }
 
-// ============================================================
-//  Shader
-// ============================================================
 Shader LoadShader(const char* vs, const char* fs) {
     EnsureInitialized();
     return gRenderer.LoadShader(vs, fs);
@@ -592,9 +531,6 @@ void SetShaderValueSampler(const Shader& s, int loc, int unit)      { gRenderer.
 void BeginShaderMode(const Shader& shader) { gRenderer.BeginShaderMode(shader); }
 void EndShaderMode()                       { gRenderer.EndShaderMode(); }
 
-// ============================================================
-//  Camera 2D / 3D
-// ============================================================
 Camera2D CreateCamera2D() {
     Camera2D c{};
     c.zoom = 1.f;
@@ -605,8 +541,6 @@ void BeginMode2D(const Camera2D& camera) { EnsureInitialized(); gRenderer.BeginM
 void EndMode2D()                         { gRenderer.EndMode2D(); }
 
 Camera2D GetCamera2D() {
-    // QuarkGLRenderer keeps its own copy; re-expose it
-    // (add GetCamera2D() accessor to QuarkGLRenderer if needed; shown here as a cast workaround)
     return gRenderer.GetCamera2D();
 }
 
@@ -627,9 +561,6 @@ Camera3D CreateCamera3D() {
 void BeginMode3D(const Camera3D& camera) { EnsureInitialized(); gRenderer.BeginMode3D(camera); }
 void EndMode3D()                         { gRenderer.EndMode3D(); }
 
-// ============================================================
-//  Matrix stack
-// ============================================================
 void PushMatrix()                        { gRenderer.PushMatrix(); }
 void PopMatrix()                         { gRenderer.PopMatrix(); }
 void Translate(const Vec3& t)            { gRenderer.Translate(t); }
@@ -644,9 +575,6 @@ void DisableBackfaceCulling()            { gRenderer.DisableBackfaceCulling(); }
 const float* GetMatrixModelview()        { return gRenderer.GetMatrixModelview(); }
 const float* GetMatrixProjection()       { return gRenderer.GetMatrixProjection(); }
 
-// ============================================================
-//  3D drawing — delegate to gRenderer
-// ============================================================
 void Set3DView(const Mat4& view, const Mat4& proj) { gRenderer.Set3DView(view, proj); }
 
 void DrawLine3D(Vec3 start, Vec3 end, Color c)           { gRenderer.DrawLine3D(start, end, c); }
@@ -667,9 +595,6 @@ void DrawCylinderEx(Vec3 s, Vec3 e, float rS, float rE, int sides, Color c)     
 void DrawCylinderWires(Vec3 pos, float rTop, float rBot, float h, int slices, Color c)  { gRenderer.DrawCylinderWires(pos, rTop, rBot, h, slices, c); }
 void DrawCylinderWiresEx(Vec3 s, Vec3 e, float rS, float rE, int slices, Color c)       { gRenderer.DrawCylinderWiresEx(s, e, rS, rE, slices, c); }
 
-// ============================================================
-//  Model
-// ============================================================
 Model LoadModel(const char* filePath) {
     EnsureInitialized();
     return gRenderer.LoadModel(filePath);
@@ -686,9 +611,6 @@ void DrawModelEx(const Model& model, const Mat4& transform) {
     gRenderer.DrawModelEx(model, transform);
 }
 
-// ============================================================
-//  Camera projections (math only — no GL calls)
-// ============================================================
 Vec2 GetWorldToScreen2D(Vec2 position, Camera2D camera) {
     float dx = position.x - camera.target.x;
     float dy = position.y - camera.target.y;
@@ -765,9 +687,6 @@ Ray GetScreenToWorldRay(Vec2 mouse, Camera3D camera) {
     return ray;
 }
 
-// ============================================================
-//  Utilities
-// ============================================================
 bool CheckCollisionRecs(Rectangle a, Rectangle b) {
     return !(a.x + a.width < b.x || b.x + b.width < a.x ||
              a.y + a.height < b.y || b.y + b.height < a.y);

@@ -18,16 +18,13 @@ public:
     QuarkGLRenderer() = default;
     ~QuarkGLRenderer() override;
 
-    // Lifecycle
     void Init(SDL_Window* window, int width, int height);
     void Shutdown();
 
-    // IRenderer — Frame
     void BeginDrawing() override;
     void EndDrawing() override;
     void ClearBackground(Color color) override;
 
-    // --- 2D ---
     void DrawRectangle(float x, float y, float width, float height, Color color) override;
     void DrawRectangle(const Rectangle& rectangle, Color color) override;
     void DrawRectangleV(Vec2 position, Vec2 size, Color color) override;
@@ -41,7 +38,6 @@ public:
     void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color) override;
     void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color) override;
 
-    // --- 3D ---
     void Set3DView(const Mat4& view, const Mat4& projection) override;
     void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color) override;
     void DrawPlane(Vec3 center, Vec2 size, Color color) override;
@@ -58,13 +54,11 @@ public:
     void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) override;
     void DrawGrid(int slices, float spacing) override;
 
-    // --- Text ---
     void DrawText(const char* text, int x, int y, int fontSize, Color color) override;
     void DrawTextEx(IFont font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) override;
     Vec2 MeasureTextEx(IFont font, const char* text, float fontSize, float spacing) override;
     int  MeasureText(const char* text, int fontSize) override;
 
-    // --- Textures ---
     void           DrawTexture(const ITexture& texture, float x, float y, Color tint) override;
     void           DrawTextureV(const ITexture& texture, Vec2 position, Color tint) override;
     void           DrawTextureEx(const ITexture& texture, Vec2 position, float rotation, float scale, Color tint) override;
@@ -81,17 +75,12 @@ public:
     bool           isRenderTextureValid(IRenderTexture& target) override;
     ITexture       GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB) override;
 
-    // --- Render texture mode ---
     void BeginTextureMode(IRenderTexture target) override;
     void EndTextureMode() override;
 
-    // --- Font ---
-    // LoadFont returns an IFont handle (just an id).
-    // All glyph data is stored internally in m_fonts.
     IFont LoadFont(const char* filePath, int fontSize) override;
     void  UnloadFont(IFont& font) override;
 
-    // --- Shader ---
     void   BeginShaderMode(const Shader& shader) override;
     void   EndShaderMode() override;
     Shader LoadShader(const char* vsFileName, const char* fsFileName) override;
@@ -108,14 +97,12 @@ public:
     void   SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat) override;
     void   SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit) override;
 
-    // --- Camera ---
     void BeginMode2D(const Camera2D& camera) override;
     void EndMode2D() override;
     void BeginMode3D(const Camera3D& camera) override;
     void EndMode3D() override;
     Camera2D GetCamera2D() const { return m_camera2D; }
 
-    // --- Matrix stack ---
     void         PushMatrix() override;
     void         PopMatrix() override;
     void         Translate(const Vec3& translation) override;
@@ -127,7 +114,6 @@ public:
     void         EnableBackfaceCulling() override;
     void         DisableBackfaceCulling() override;
 
-    // --- Models ---
     Model LoadModel(const char* filePath) override;
     void  UnloadModel(Model& model) override;
     void  DrawModel(const Model& model, const Vec3& position, float scale,
@@ -136,7 +122,6 @@ public:
 
     RendererType GetType() const override { return RendererType::OpenGL; }
 
-    // Accessors
     int  GetScreenWidth()  const { return m_width; }
     int  GetScreenHeight() const { return m_height; }
     void SetTargetFPS(int fps)   { m_targetFps = fps; }
@@ -147,9 +132,6 @@ public:
     void   RefreshViewport();
 
 private:
-    // ----------------------------------------------------------------
-    //  Internal types
-    // ----------------------------------------------------------------
 
     struct BatchVertex {
         float x, y, u, v, r, g, b, a;
@@ -161,9 +143,8 @@ private:
         Vec2 texCoord;
     };
 
-    // Per-glyph data stored inside the renderer (not exposed via IFont)
     struct GlyphData {
-        Rectangle uv{};       // normalised UV rect in atlas texture
+        Rectangle uv{};
         float     advanceX = 0.f;
         float     offsetX  = 0.f;
         float     offsetY  = 0.f;
@@ -171,15 +152,14 @@ private:
         int       height   = 0;
     };
 
-    // Complete font data owned by the renderer, keyed by IFont::id
     struct FontData {
-        GLuint    atlasTexture = 0;  // GL texture holding the glyph atlas
+        GLuint    atlasTexture = 0;
         int       baseSize    = 0;
         int       ascent      = 0;
         int       descent     = 0;
         int       lineHeight  = 0;
         int       lineGap     = 0;
-        GlyphData glyphs[95]{};      // indices 0..94 map to ASCII 32..126
+        GlyphData glyphs[95]{};
     };
 
     struct Model3DState {
@@ -204,18 +184,12 @@ private:
         Mat4  projectionMatrix = Mat4::identity();
     };
 
-    // ----------------------------------------------------------------
-    //  Private helpers — general
-    // ----------------------------------------------------------------
     void   InitGL();
     static std::array<float,4> ToNormColor(Color c);
     GLuint CreateTextureFromRgba(const std::uint8_t* pixels, int w, int h);
     GLuint CompileGLShader(GLenum type, const char* source);
     GLuint CreateDefaultProgram();
 
-    // ----------------------------------------------------------------
-    //  Private helpers — 2D batch
-    // ----------------------------------------------------------------
     static constexpr std::size_t kMaxBatchVertices = 8192;
     void FlushBatch();
     void EnsureBatchTexture(GLuint textureId);
@@ -225,24 +199,14 @@ private:
     void PushTexturedQuad(GLuint tex, Rectangle uv,
                           float x, float y, float w, float h, Color color);
 
-    // ----------------------------------------------------------------
-    //  Private helpers — font
-    // ----------------------------------------------------------------
-    // Load FreeType face into a FontData struct; returns false on error.
     bool            LoadFontInternal(const char* filePath, int pointSize, FontData& out);
-    // Returns the default font id, loading it on first call.
     uint32_t        EnsureDefaultFont();
-    // Null if id not found.
     const FontData* GetFontData(IFont font) const;
-    // Core text rendering / measuring using already-resolved FontData.
     void DrawTextWithFontData(const FontData& fd, const char* text,
                               Vec2 pos, float fontSize, float spacing, Color tint);
     Vec2 MeasureTextWithFontData(const FontData& fd, const char* text,
                                  float fontSize, float spacing) const;
 
-    // ----------------------------------------------------------------
-    //  Private helpers — 3D
-    // ----------------------------------------------------------------
     void   Init3DState();
     void   Init3DGeometry();
     GLuint Compile3DShader();
@@ -252,9 +216,6 @@ private:
     Vec3   TransformPoint(const Mat4& m, const Vec3& p) const;
     Mat4   ApplyCurrentMatrix(const Mat4& t) const;
 
-    // ----------------------------------------------------------------
-    //  State
-    // ----------------------------------------------------------------
     SDL_Window*   m_window   = nullptr;
     SDL_GLContext m_context  = nullptr;
     int           m_width    = 0;
@@ -265,7 +226,6 @@ private:
     bool          m_shouldClose = false;
     std::uint64_t m_lastFrameCounter = 0;
 
-    // 2D batch pipeline
     GLuint m_program        = 0;
     GLuint m_vao            = 0;
     GLuint m_vbo            = 0;
@@ -276,23 +236,17 @@ private:
     GLuint m_currentFbo     = 0;
     std::vector<BatchVertex> m_batchVertices;
 
-    // Camera 2D
     Camera2D m_camera2D{};
     bool     m_camera2DActive = false;
 
-    // Matrix stack
     Mat4              m_currentMatrix = Mat4::identity();
     std::vector<Mat4> m_matrixStack;
 
-    // 3D subsystem
     Model3DState m_3d;
 
-    // Font registry
-    // Key   = IFont::id  (uint32_t, never 0)
-    // Value = FontData   (atlas texture + glyph metrics)
     std::unordered_map<uint32_t, FontData> m_fonts;
     uint32_t m_nextFontId    = 1;
-    uint32_t m_defaultFontId = 0;  // 0 = not yet loaded
+    uint32_t m_defaultFontId = 0;
 };
 
 } // namespace qc

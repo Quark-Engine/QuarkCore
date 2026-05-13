@@ -131,8 +131,9 @@ struct Mesh {
     float* animVertices = nullptr;
     float* animNormals = nullptr;
 
-    unsigned int vaoId = 0;
-    unsigned int* vboId = nullptr;
+    unsigned int vaoId = 0;         // OpenGL Vertex Array Object ID
+    unsigned int vboId = 0;         // OpenGL Vertex Buffer Object ID
+    unsigned int eboId = 0;         // OpenGL Element Buffer Object ID
 };
 
 /**

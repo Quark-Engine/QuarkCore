@@ -128,6 +128,7 @@ add_library(QuarkCore SHARED
     src/QuarkCore.cpp
     src/QuarkEvent.cpp
     src/QuarkWindow.cpp
+    src/Renderer/QuarkGLRenderer.cpp
 )
 
 target_include_directories(QuarkCore PUBLIC

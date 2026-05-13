@@ -35,4 +35,6 @@ struct WindowState {
 struct PngImageData { int width=0, height=0; std::vector<uint8_t> pixels; };
 QCAPI bool LoadPngImage(const char* path, PngImageData& out);
 
+void PumpSystemEvents();
+
 } // namespace qc

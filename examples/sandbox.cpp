@@ -37,6 +37,8 @@ int main() {
 
     qc::RenderTexture2D target = qc::LoadRenderTexture(320, 240);
 
+    qc::Font defaultFont = qc::GetDefaultFont();
+
     while (!qc::WindowShouldClose()) {
         if (qc::IsKeyPressed(qc::KeyboardKey::Space)) {
             qc::TraceLog(
@@ -81,7 +83,6 @@ int main() {
 
         qc::DrawText("Hello, QuarkCore!", 360, 40, 32, qc::WHITE);
 
-        qc::Font defaultFont = qc::GetDefaultFont();
         qc::Vec2 textSize = qc::MeasureTextEx(defaultFont, "DrawTextEx example", 24.0f, 2.0f);
         qc::DrawRectangle(360.0f, 80.0f, textSize.x + 16.0f, textSize.y + 12.0f, qc::Color{20, 20, 40, 180});
         qc::DrawTextEx(defaultFont, "DrawTextEx example", qc::Vec2{372.0f, 88.0f}, 24.0f, 2.0f, qc::YELLOW);
