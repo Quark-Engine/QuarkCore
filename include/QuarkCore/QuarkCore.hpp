@@ -102,6 +102,7 @@ struct Font {
     int lineHeight = 0;
     bool valid = false;
     FontGlyph glyphs[95];
+    uint32_t _rendererFontId = 0;
 };
 
 /**

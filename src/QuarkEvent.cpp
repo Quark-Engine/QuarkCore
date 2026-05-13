@@ -1,7 +1,14 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkCore/Quark3D.hpp"
+#include "QuarkInternal.hpp"
+#include "Renderer/QuarkGLRenderer.hpp"
 
 namespace qc {
+
+extern QuarkGLRenderer gRenderer;
+extern int gLastKeyPressed;
+extern int gLastCharPressed;
+
 EventType TranslateEventType(Uint32 type) {
     switch (type) {
         case SDL_EVENT_QUIT: return EventType::Quit;
@@ -402,26 +409,26 @@ Event TranslateEvent(const SDL_Event& sdlEvent) {
 }
 
 void PumpSystemEvents() {
-    gRenderer.previousKeys = gRenderer.currentKeys;
-    gRenderer.mouseWheel = { 0.0f, 0.0f };
-    gRenderer.events.clear();
-    gRenderer.nextEventIndex = 0;
-    gRenderer.shouldClose = false;
+    gWin.previousKeys = gWin.currentKeys;
+    gWin.mouseWheel = { 0.0f, 0.0f };
+    gWin.events.clear();
+    gWin.nextEventIndex = 0;
+    gWin.shouldClose = false;
     gLastKeyPressed = 0;
     gLastCharPressed = 0;
 
     SDL_Event sdlEvent;
     while (SDL_PollEvent(&sdlEvent)) {
-        gRenderer.nativeEvent = sdlEvent;
+        gWin.nativeEvent = sdlEvent;
         if (sdlEvent.type == SDL_EVENT_QUIT || sdlEvent.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-            gRenderer.shouldClose = true;
+            gWin.shouldClose = true;
         }
         if (sdlEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-            RefreshViewport();
+            gRenderer.RefreshViewport();
         }
         if (sdlEvent.type == SDL_EVENT_MOUSE_WHEEL) {
-            gRenderer.mouseWheel.x += sdlEvent.wheel.x;
-            gRenderer.mouseWheel.y += sdlEvent.wheel.y;
+            gWin.mouseWheel.x += sdlEvent.wheel.x;
+            gWin.mouseWheel.y += sdlEvent.wheel.y;
         }
         if (sdlEvent.type == SDL_EVENT_KEY_DOWN) {
             gLastKeyPressed = sdlEvent.key.key;
@@ -432,24 +439,24 @@ void PumpSystemEvents() {
             }
         }
 
-        gRenderer.events.push_back(TranslateEvent(sdlEvent));
+        gWin.events.push_back(TranslateEvent(sdlEvent));
     }
 
     UpdateInputFromEvents();
-    gRenderer.eventsReady = true;
+    gWin.eventsReady = true;
 }
 
 bool PollEvent(Event& event) {
     EnsureInitialized();
-    if (!gRenderer.eventsReady) {
+    if (!gWin.eventsReady) {
         PumpSystemEvents();
     }
 
-    if (gRenderer.nextEventIndex >= gRenderer.events.size()) {
+    if (gWin.nextEventIndex >= gWin.events.size()) {
         return false;
     }
 
-    event = gRenderer.events[gRenderer.nextEventIndex++];
+    event = gWin.events[gWin.nextEventIndex++];
     return true;
 }
 
@@ -461,12 +468,12 @@ bool WaitEvent(Event& event) {
         return false;
     }
 
-    gRenderer.nativeEvent = sdlEvent;
-    gRenderer.eventsReady = false;
-    gRenderer.events.clear();
-    gRenderer.nextEventIndex = 0;
+    gWin.nativeEvent = sdlEvent;
+    gWin.eventsReady = false;
+    gWin.events.clear();
+    gWin.nextEventIndex = 0;
     if (sdlEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-        RefreshViewport();
+        gRenderer.RefreshViewport();
     }
     UpdateInputFromEvents();
     event = TranslateEvent(sdlEvent);
@@ -481,12 +488,12 @@ bool WaitEventTimeout(Event& event, int timeoutMs) {
         return false;
     }
 
-    gRenderer.nativeEvent = sdlEvent;
-    gRenderer.eventsReady = false;
-    gRenderer.events.clear();
-    gRenderer.nextEventIndex = 0;
+    gWin.nativeEvent = sdlEvent;
+    gWin.eventsReady = false;
+    gWin.events.clear();
+    gWin.nextEventIndex = 0;
     if (sdlEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-        RefreshViewport();
+        gRenderer.RefreshViewport();
     }
     UpdateInputFromEvents();
     event = TranslateEvent(sdlEvent);
@@ -537,7 +544,7 @@ const char* GetEventTypeName(EventType type) {
 
 SDL_Event GetNativeEvent() {
     EnsureInitialized();
-    return gRenderer.nativeEvent;
+    return gWin.nativeEvent;
 }
 
 }

@@ -11,7 +11,7 @@ enum class RendererType {
     Vulkan
 };
 
-class IRenderer {
+class QCAPI IRenderer {
 public:
     virtual ~IRenderer() = default;
 
@@ -121,9 +121,9 @@ public:
 
     virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, float value)           = 0;
     virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, int value)             = 0;
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, Color& value)          = 0;
+    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Color& value)    = 0;
     virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const qc::Vec2& value) = 0;
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Vec2& value)     = 0;
+    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const qc::Vec3& value) = 0;
 
     virtual void SetShaderValueMatrix([[maybe_unused]] const Shader& shader, int locIndex, const float* mat) = 0;
     virtual void SetShaderValueSampler([[maybe_unused]] const Shader& shader, int locIndex, int textureUnit) = 0;

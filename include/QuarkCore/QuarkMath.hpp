@@ -217,7 +217,7 @@ struct Vertex {
 /**
  * @brief 4x4 matrix for 3D transformations.
  */
-struct Mat4 {
+struct QCAPI Mat4 {
     float m[16]{};
 
     Mat4() {
