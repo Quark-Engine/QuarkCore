@@ -398,6 +398,7 @@ void QuarkVkRenderer::DrawTextureNPatch(ITexture texture, Rectangle source, Rect
 }
 
 ITexture QuarkVkRenderer::LoadTexture(const char* filePath) {
+    TraceLog(LogLevel::Warn, "VULKAN", TextFormat("LoadTexture is not implemented for Vulkan yet: %s", filePath));
     (void)filePath;
     return ITexture{};
 }
@@ -443,6 +444,7 @@ void QuarkVkRenderer::EndTextureMode() {
 }
 
 IFont QuarkVkRenderer::LoadFont(const char* filePath, int fontSize) {
+    TraceLog(LogLevel::Warn, "VULKAN", TextFormat("LoadFont is not implemented for Vulkan yet: %s", filePath));
     (void)filePath; (void)fontSize;
     return IFont{};
 }
@@ -589,6 +591,7 @@ void QuarkVkRenderer::DisableBackfaceCulling() {
 }
 
 Model QuarkVkRenderer::LoadModel(const char* filePath) {
+    TraceLog(LogLevel::Warn, "VULKAN", TextFormat("LoadModel is not implemented for Vulkan yet: %s", filePath));
     (void)filePath;
     return Model{};
 }

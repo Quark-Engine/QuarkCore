@@ -106,6 +106,14 @@ void EnsureInitialized() {
 }
 
 void InitWindow(int width, int height, const char* title, RendererType rendererType) {
+    TraceLog(LogLevel::Info, "WINDOW", TextFormat("Starting window creation: %s (%dx%d)", title ? title : "Quark", width, height));
+
+    int version = SDL_GetVersion();
+
+    WriteLog(LogLevel::Info, "CORE", "SDL Version: " + std::to_string(SDL_VERSIONNUM_MAJOR(version)) + "." +
+                                                       std::to_string(SDL_VERSIONNUM_MINOR(version)) + "." +
+                                                       std::to_string(SDL_VERSIONNUM_MICRO(version)));
+
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
         throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
 
@@ -115,6 +123,8 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
+        TraceLog(LogLevel::Info, "RENDERER", "Backend selected: OpenGL");
 
         gWin.window = SDL_CreateWindow(
             title,
@@ -131,6 +141,8 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
         gRenderer.SetTargetFPS(gWin.targetFps);
     }
     else if (rendererType == RendererType::Vulkan) {
+        TraceLog(LogLevel::Info, "RENDERER", "Backend selected: Vulkan");
+
         if (!SDL_Vulkan_LoadLibrary(nullptr))
             throw std::runtime_error(std::string("SDL_Vulkan_LoadLibrary failed: ") + SDL_GetError());
 

@@ -536,10 +536,15 @@ void QuarkGLRenderer::DrawTextureNPatch(ITexture t,Rectangle src,Rectangle dst,
 }
 
 ITexture QuarkGLRenderer::LoadTexture(const char* path){
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("Loading texture from: %s", path));
     PngImageData img; ITexture t{};
     if(LoadPngImage(path,img)){
         t.id=CreateTextureFromRgba(img.pixels.data(),img.width,img.height);
         t.width=img.width; t.height=img.height; t.valid=true;
+        TraceLog(LogLevel::Info, "TEXTURE", TextFormat("Texture loaded successfully: %s (%dx%d)", path, t.width, t.height));
+    }
+    else {
+        TraceLog(LogLevel::Error, "TEXTURE", TextFormat("Failed to load texture: %s", path));
     }
     return t;
 }
@@ -702,16 +707,20 @@ Vec2 QuarkGLRenderer::MeasureTextWithFontData(const FontData& fd, const char* te
 
 IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize) {
     if (filePath == nullptr) {
+        TraceLog(LogLevel::Info, "FONT", "Loading default system font...");
         IFont handle{};
         handle.id = this->EnsureDefaultFont();
+        if (handle.id) TraceLog(LogLevel::Info, "FONT", "Default font loaded");
         return handle;
     }
+    TraceLog(LogLevel::Trace, "FONT", TextFormat("Loading font: %s (size: %d)", filePath, fontSize));
     FontData fd{};
     if (!LoadFontInternal(filePath, fontSize, fd)) return IFont{};
     uint32_t id = m_nextFontId++;
     m_fonts[id] = std::move(fd);
     IFont handle{};
     handle.id = id;
+    TraceLog(LogLevel::Info, "FONT", TextFormat("Font loaded successfully: %s", filePath));
     return handle;
 }
 void QuarkGLRenderer::UnloadFont(IFont& font) {
@@ -1148,6 +1157,7 @@ void QuarkGLRenderer::DrawGrid(int slices,float spacing){
 }
 
 Model QuarkGLRenderer::LoadModel(const char* filePath) {
+    TraceLog(LogLevel::Trace, "MODEL", TextFormat("Loading model: %s", filePath));
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(filePath, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs);
 
@@ -1263,6 +1273,7 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
         model.meshMaterial[i] = mesh->mMaterialIndex;
     }
 
+    TraceLog(LogLevel::Info, "MODEL", TextFormat("Model loaded successfully: %s (%d meshes, %d materials)", filePath, model.meshCount, model.materialCount));
     return model;
 }
 
