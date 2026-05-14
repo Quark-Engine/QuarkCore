@@ -1,6 +1,8 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkCore/Quark3D.hpp"
+#include "Renderer/QuarkIRenderer.hpp"
 #include "Renderer/QuarkGLRenderer.hpp"
+#include "Renderer/QuarkVkRenderer.hpp"
 #include "QuarkInternal.hpp"
 
 #include <SDL3/SDL.h>
@@ -27,7 +29,11 @@
 
 namespace qc {
 
-QuarkGLRenderer gRenderer;
+QuarkGLRenderer gGLRenderer;
+QuarkVkRenderer gVkRenderer;
+IRenderer* gRendererPtr = nullptr;
+
+#define gRenderer (*gRendererPtr)
 
 WindowState gWin;
 int   gLastKeyPressed   = 0;
@@ -120,6 +126,7 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
         if (!gWin.window)
             throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
 
+        gRendererPtr = &gGLRenderer;
         gRenderer.Init(gWin.window, width, height);
         gRenderer.SetTargetFPS(gWin.targetFps);
     }
@@ -137,51 +144,9 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
         if (!gWin.window)
             throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
 
-        Uint32 extensionCount = 0;
-        const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
-
-        if (!extensions)
-            throw std::runtime_error(std::string("SDL_Vulkan_GetInstanceExtensions failed: ") + SDL_GetError());
-
-        std::vector<const char*> extensionVec(extensions, extensions + extensionCount);
-
-        WriteLog(LogLevel::Info, "VULKAN", "Required Vulkan extensions:");
-        for (const char* ext : extensionVec) {
-            WriteLog(LogLevel::Info, "VULKAN", std::string("  - ") + (ext ? ext : "(null)"));
-        }
-
-        VkApplicationInfo appInfo{};
-        appInfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        appInfo.pApplicationName   = title;
-        appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.pEngineName        = "QuarkCore";
-        appInfo.engineVersion      = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.apiVersion         = VK_API_VERSION_1_0;
-
-        VkInstanceCreateInfo createInfo{};
-        createInfo.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-        createInfo.pApplicationInfo        = &appInfo;
-        createInfo.enabledExtensionCount   = extensionCount;
-        createInfo.ppEnabledExtensionNames = extensionVec.data();
-        createInfo.enabledLayerCount       = 0;
-
-        VkInstance instance = VK_NULL_HANDLE;
-        VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
-
-        if (result != VK_SUCCESS)
-            throw std::runtime_error("vkCreateInstance failed, VkResult: " + std::to_string(result));
-
-        gWin.vkInstance = instance;
-
-        VkSurfaceKHR surface = VK_NULL_HANDLE;
-        if (!SDL_Vulkan_CreateSurface(gWin.window, instance, nullptr, &surface))
-            throw std::runtime_error(std::string("SDL_Vulkan_CreateSurface failed: ") + SDL_GetError());
-
-        gWin.vkSurface = surface;
-
-        WriteLog(LogLevel::Info, "VULKAN", "Vulkan instance and surface created successfully");
-
-        gWin.targetFps = gWin.targetFps;
+        gRendererPtr = &gVkRenderer;
+        gRenderer.Init(gWin.window, width, height);
+        gRenderer.SetTargetFPS(gWin.targetFps);
     }
 
     if (!gWin.window)
@@ -191,7 +156,10 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
 }
 
 void CloseWindow() {
-    gRenderer.Shutdown();
+    if (gRendererPtr) {
+        gRenderer.Shutdown();
+        gRendererPtr = nullptr;
+    }
     if (gWin.window) {
         SDL_DestroyWindow(gWin.window);
         gWin.window = nullptr;
@@ -206,7 +174,7 @@ bool WindowShouldClose() {
     }
     gWin.eventsReady = false;
 
-    if (gRenderer.ShouldClose()) gWin.shouldClose = true;
+    if (gRendererPtr && gRenderer.ShouldClose()) gWin.shouldClose = true;
     return gWin.shouldClose;
 }
 
@@ -214,15 +182,15 @@ bool IsWindowReady() {
     return gWin.window != nullptr;
 }
 
-int GetScreenWidth()  { return gRenderer.GetScreenWidth();  }
-int GetScreenHeight() { return gRenderer.GetScreenHeight(); }
+int GetScreenWidth()  { return gRendererPtr ? gRenderer.GetScreenWidth() : 0; }
+int GetScreenHeight() { return gRendererPtr ? gRenderer.GetScreenHeight() : 0; }
 
 void SetTargetFPS(int fps) {
     gWin.targetFps = fps;
-    gRenderer.SetTargetFPS(fps);
+    if (gRendererPtr) gRenderer.SetTargetFPS(fps);
 }
 
-float GetFrameTime()  { return gRenderer.GetFrameTime();  }
+float GetFrameTime()  { return gRendererPtr ? gRenderer.GetFrameTime() : 0.0f; }
 float GetDeltaTime()  { return GetFrameTime(); }
 
 double GetTime() {
@@ -1079,9 +1047,9 @@ Mesh GenMeshPoly(int sides, float radius) {
     }
 
     for (int i = 0; i < triangleCount; ++i) {
-        mesh.indices[i * 3 + 0] = 0;
-        mesh.indices[i * 3 + 1] = i + 1;
-        mesh.indices[i * 3 + 2] = i + 2;
+        mesh.indices[i * 3 + 0] = (unsigned short)0;
+        mesh.indices[i * 3 + 1] = (unsigned short)(i + 1);
+        mesh.indices[i * 3 + 2] = (unsigned short)(i + 2);
     }
 
     return mesh;
@@ -1118,12 +1086,12 @@ Mesh GenMeshPlane(float width, float length, int resX, int resZ) {
             int b = a + 1;
             int c = a + vertsX;
             int d = c + 1;
-            mesh.indices[idx++] = a;
-            mesh.indices[idx++] = c;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = c;
-            mesh.indices[idx++] = d;
+            mesh.indices[idx++] = (unsigned short)a;
+            mesh.indices[idx++] = (unsigned short)c;
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)c;
+            mesh.indices[idx++] = (unsigned short)d;
         }
     }
 
@@ -1209,12 +1177,12 @@ Mesh GenMeshSphere(float radius, int rings, int slices) {
         for (int s = 0; s < slices; ++s) {
             int a = r * (slices + 1) + s;
             int b = a + slices + 1;
-            mesh.indices[idx++] = a;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = a + 1;
-            mesh.indices[idx++] = a + 1;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = b + 1;
+            mesh.indices[idx++] = (unsigned short)a;
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)(a + 1);
+            mesh.indices[idx++] = (unsigned short)(a + 1);
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)(b + 1);
         }
     }
     return mesh;
@@ -1251,12 +1219,12 @@ Mesh GenMeshHemiSphere(float radius, int rings, int slices) {
         for (int s = 0; s < slices; ++s) {
             int a = r * (slices + 1) + s;
             int b = a + slices + 1;
-            mesh.indices[idx++] = a;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = a + 1;
-            mesh.indices[idx++] = a + 1;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = b + 1;
+            mesh.indices[idx++] = (unsigned short)a;
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)(a + 1);
+            mesh.indices[idx++] = (unsigned short)(a + 1);
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)(b + 1);
         }
     }
     return mesh;
@@ -1320,20 +1288,20 @@ Mesh GenMeshCylinder(float radius, float height, int slices) {
         int lower1 = ((i + 1) % (slices + 1)) * 2;
         int upper1 = lower1 + 1;
 
-        mesh.indices[idx++] = lower0;
-        mesh.indices[idx++] = upper0;
-        mesh.indices[idx++] = lower1;
-        mesh.indices[idx++] = upper0;
-        mesh.indices[idx++] = upper1;
-        mesh.indices[idx++] = lower1;
+        mesh.indices[idx++] = (unsigned short)lower0;
+        mesh.indices[idx++] = (unsigned short)upper0;
+        mesh.indices[idx++] = (unsigned short)lower1;
+        mesh.indices[idx++] = (unsigned short)upper0;
+        mesh.indices[idx++] = (unsigned short)upper1;
+        mesh.indices[idx++] = (unsigned short)lower1;
 
-        mesh.indices[idx++] = topCenter;
-        mesh.indices[idx++] = upper1;
-        mesh.indices[idx++] = upper0;
+        mesh.indices[idx++] = (unsigned short)topCenter;
+        mesh.indices[idx++] = (unsigned short)upper1;
+        mesh.indices[idx++] = (unsigned short)upper0;
 
-        mesh.indices[idx++] = bottomCenter;
-        mesh.indices[idx++] = lower0;
-        mesh.indices[idx++] = lower1;
+        mesh.indices[idx++] = (unsigned short)bottomCenter;
+        mesh.indices[idx++] = (unsigned short)lower0;
+        mesh.indices[idx++] = (unsigned short)lower1;
     }
     return mesh;
 }
@@ -1386,12 +1354,12 @@ Mesh GenMeshCone(float radius, float height, int slices) {
     int idx = 0;
     for (int i = 0; i < slices; ++i) {
         int next = 2 + ((i + 1) % slices);
-        mesh.indices[idx++] = apex;
-        mesh.indices[idx++] = 2 + i;
-        mesh.indices[idx++] = next;
-        mesh.indices[idx++] = baseCenter;
-        mesh.indices[idx++] = next;
-        mesh.indices[idx++] = 2 + i;
+        mesh.indices[idx++] = (unsigned short)apex;
+        mesh.indices[idx++] = (unsigned short)(2 + i);
+        mesh.indices[idx++] = (unsigned short)next;
+        mesh.indices[idx++] = (unsigned short)baseCenter;
+        mesh.indices[idx++] = (unsigned short)next;
+        mesh.indices[idx++] = (unsigned short)(2 + i);
     }
     return mesh;
 }
@@ -1437,12 +1405,12 @@ Mesh GenMeshTorus(float radius, float size, int radSeg, int sides) {
             int b = nextRing * sides + side;
             int c = nextRing * sides + nextSide;
             int d = ring * sides + nextSide;
-            mesh.indices[idx++] = a;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = d;
-            mesh.indices[idx++] = d;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = c;
+            mesh.indices[idx++] = (unsigned short)a;
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)d;
+            mesh.indices[idx++] = (unsigned short)d;
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)c;
         }
     }
     return mesh;
@@ -1501,12 +1469,12 @@ Mesh GenMeshKnot(float radius, float size, int radSeg, int sides) {
             int b = nextRing * sides + j;
             int c = nextRing * sides + nextSide;
             int d = i * sides + nextSide;
-            mesh.indices[idx++] = a;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = d;
-            mesh.indices[idx++] = d;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = c;
+            mesh.indices[idx++] = (unsigned short)a;
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)d;
+            mesh.indices[idx++] = (unsigned short)d;
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)c;
         }
     }
     return mesh;
@@ -1542,12 +1510,12 @@ Mesh GenMeshHeightmap(Image heightmap, Vec3 size) {
             int b = a + 1;
             int c = a + width;
             int d = c + 1;
-            mesh.indices[idx++] = a;
-            mesh.indices[idx++] = c;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = b;
-            mesh.indices[idx++] = c;
-            mesh.indices[idx++] = d;
+            mesh.indices[idx++] = (unsigned short)a;
+            mesh.indices[idx++] = (unsigned short)c;
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)b;
+            mesh.indices[idx++] = (unsigned short)c;
+            mesh.indices[idx++] = (unsigned short)d;
         }
     }
 
@@ -1621,7 +1589,7 @@ Mesh GenMeshCubicmap(Image cubicmap, Vec3 cubeSize) {
             mesh.texcoords[(vOffset + v) * 2 + 1] = cube.texcoords[v * 2 + 1];
         }
         for (int t = 0; t < cube.triangleCount * 3; ++t) {
-            mesh.indices[iOffset + t] = cube.indices[t] + vOffset;
+            mesh.indices[iOffset + t] = (unsigned short)(cube.indices[t] + vOffset);
         }
         vOffset += cube.vertexCount;
         iOffset += cube.triangleCount * 3;

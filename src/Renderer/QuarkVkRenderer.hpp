@@ -1,3 +1,41 @@
+/*
+    ========================================================
+
+        Quark Vulkan Renderer
+        By Quark Engine Development Team
+
+    --------------------------------------------------------
+
+    Vulkan-based 2D/3D rendering backend for Quark Engine.
+
+    This file contains:
+        * Vulkan instance and device management
+        * Swap chain creation and recreation
+        * 2D batch rendering pipeline
+        * Texture and descriptor set management
+        * Frame synchronization
+
+    Backend:
+        * Vulkan (via vulkan.h)
+        * SDL3 (surface creation via SDL_vulkan.h)
+
+    --------------------------------------------------------
+
+    THIRD-PARTY NOTICE:
+
+        Vulkan and the Vulkan logo are registered trademarks
+        of The Khronos Group Inc.
+
+        Vulkan SDK are registered trademarks of LunarG, Inc.
+        See: https://vulkan.lunarg.com/
+
+        Vulkan is an open standard and cross-platform API
+        maintained by The Khronos Group.
+        See: https://www.khronos.org/vulkan/
+
+    ========================================================
+*/
+
 #pragma once
 
 #include "QuarkIRenderer.hpp"
@@ -68,7 +106,7 @@ struct VkTextureData {
 };
 
 
-class QCAPI QuarkVkRenderer final : public IRenderer {
+class QuarkVkRenderer final : public IRenderer {
 public:
     QuarkVkRenderer() = default;
     ~QuarkVkRenderer() override;
@@ -157,7 +195,14 @@ public:
     void EndMode2D() override;
     void BeginMode3D(const Camera3D& camera) override;
     void EndMode3D() override;
-    Camera2D GetCamera2D() const { return m_camera2D; }
+    Camera2D GetCamera2D() const override { return m_camera2D; }
+    bool ShouldClose() const override { return m_shouldClose; }
+    void SetShouldClose(bool v) { m_shouldClose = v; }
+
+    int   GetScreenWidth()  const override { return m_width; }
+    int   GetScreenHeight() const override { return m_height; }
+    void  SetTargetFPS(int fps)   override { m_targetFps = fps; }
+    float GetFrameTime()   const override { return m_frameTime; }
 
     void         PushMatrix() override;
     void         PopMatrix() override;
@@ -174,13 +219,15 @@ public:
     void  UnloadModel(Model& model) override;
     void  DrawModel(const Model& model, const Vec3& position, float scale, float rotationX, float rotationY, float rotationZ) override;
     void  DrawModelEx(const Model& model, const Mat4& transform) override;
+    void  DrawModelEx(const Model& model, const Mat4& transform, Color tint) override;
 
-    int GetScreenWidth()  const { return m_width; }
-    int GetScreenHeight() const { return m_height; }
-    void SetTargetFPS(int fps)   { m_targetFps = fps; }
-    float GetFrameTime()   const { return m_frameTime; }
+    void  UploadMesh(Mesh& mesh, bool dynamic) override;
+    void  UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) override;
+    void  UnloadMesh(Mesh& mesh) override;
+    void  DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) override;
+    void  DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) override;
 
-    void RefreshViewport();
+    void RefreshViewport() override;
 
 
     RendererType GetType() const override { return RendererType::Vulkan; }
@@ -236,6 +283,7 @@ private:
     float       m_frameTime  = 0.f;
     uint64_t    m_lastFrameCounter = 0;
     bool        m_drawing    = false;
+    bool        m_shouldClose = false;
     bool        m_framebufferResized = false;
  
     VkInstance               m_instance       = VK_NULL_HANDLE;

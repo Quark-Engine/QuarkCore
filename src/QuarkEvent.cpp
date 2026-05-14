@@ -5,7 +5,7 @@
 
 namespace qc {
 
-extern QuarkGLRenderer gRenderer;
+extern IRenderer* gRendererPtr;
 extern int gLastKeyPressed;
 extern int gLastCharPressed;
 extern KeyboardKey gExitKey;
@@ -426,7 +426,7 @@ void PumpSystemEvents() {
             gWin.shouldClose = true;
         }
         if (sdlEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-            gRenderer.RefreshViewport();
+            if (gRendererPtr) gRendererPtr->RefreshViewport();
         }
         if (sdlEvent.type == SDL_EVENT_MOUSE_WHEEL) {
             gWin.mouseWheel.x += sdlEvent.wheel.x;
@@ -478,7 +478,7 @@ bool WaitEvent(Event& event) {
     gWin.events.clear();
     gWin.nextEventIndex = 0;
     if (sdlEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-        gRenderer.RefreshViewport();
+        if (gRendererPtr) gRendererPtr->RefreshViewport();
     }
     UpdateInputFromEvents();
     event = TranslateEvent(sdlEvent);
@@ -498,7 +498,7 @@ bool WaitEventTimeout(Event& event, int timeoutMs) {
     gWin.events.clear();
     gWin.nextEventIndex = 0;
     if (sdlEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-        gRenderer.RefreshViewport();
+        if (gRendererPtr) gRendererPtr->RefreshViewport();
     }
     UpdateInputFromEvents();
     event = TranslateEvent(sdlEvent);
@@ -552,4 +552,4 @@ SDL_Event GetNativeEvent() {
     return gWin.nativeEvent;
 }
 
-}
+} // namespace qc

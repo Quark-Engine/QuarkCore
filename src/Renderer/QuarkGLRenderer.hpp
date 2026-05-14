@@ -1,3 +1,41 @@
+/*
+    ========================================================
+
+        Quark OpenGL Renderer
+        By Quark Engine Development Team
+
+    --------------------------------------------------------
+
+    OpenGL-based 2D/3D rendering backend for Quark Engine.
+
+    This file contains:
+        * OpenGL context and state management
+        * 2D batch rendering pipeline
+        * 3D geometry and model rendering
+        * Texture and framebuffer management
+        * Font atlas and text rendering
+        * Shader compilation and management
+        * Camera and matrix stack
+
+    Backend:
+        * OpenGL (via GLEW)
+        * SDL3 (context creation)
+        * FreeType (font rasterization)
+        * Assimp (model loading)
+
+    --------------------------------------------------------
+
+    THIRD-PARTY NOTICE:
+
+        OpenGL is a registered trademark of Silicon Graphics
+        International(SGI), currently owned by Hewlett Packard
+        Enterprise. The OpenGL specification is maintained
+        by The Khronos Group Inc.
+        See: https://www.khronos.org/opengl/
+
+    ========================================================
+*/
+
 #pragma once
 
 #include "QuarkIRenderer.hpp"
@@ -13,7 +51,7 @@
 
 namespace qc {
 
-class QCAPI QuarkGLRenderer final : public IRenderer {
+class QuarkGLRenderer final : public IRenderer {
 public:
     QuarkGLRenderer() = default;
     ~QuarkGLRenderer() override;
@@ -102,7 +140,7 @@ public:
     void EndMode2D() override;
     void BeginMode3D(const Camera3D& camera) override;
     void EndMode3D() override;
-    Camera2D GetCamera2D() const { return m_camera2D; }
+    Camera2D GetCamera2D() const override { return m_camera2D; }
 
     void         PushMatrix() override;
     void         PopMatrix() override;
@@ -120,24 +158,24 @@ public:
     void  DrawModel(const Model& model, const Vec3& position, float scale,
                     float rotationX, float rotationY, float rotationZ) override;
     void  DrawModelEx(const Model& model, const Mat4& transform) override;
-    void  DrawModelEx(const Model& model, const Mat4& transform, Color tint);
+    void  DrawModelEx(const Model& model, const Mat4& transform, Color tint) override;
 
-    void  UploadMesh(Mesh& mesh, bool dynamic);
-    void  UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset);
-    void  UnloadMesh(Mesh& mesh);
-    void  DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform);
-    void  DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances);
+    void  UploadMesh(Mesh& mesh, bool dynamic) override;
+    void  UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) override;
+    void  UnloadMesh(Mesh& mesh) override;
+    void  DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) override;
+    void  DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) override;
 
     RendererType GetType() const override { return RendererType::OpenGL; }
 
-    int  GetScreenWidth()  const { return m_width; }
-    int  GetScreenHeight() const { return m_height; }
-    void SetTargetFPS(int fps)   { m_targetFps = fps; }
-    float GetFrameTime()   const { return m_frameTime; }
-    bool ShouldClose()     const { return m_shouldClose; }
+    int   GetScreenWidth()  const override { return m_width; }
+    int   GetScreenHeight() const override { return m_height; }
+    void  SetTargetFPS(int fps)   override { m_targetFps = fps; }
+    float GetFrameTime()   const override { return m_frameTime; }
+    bool  ShouldClose()     const override { return m_shouldClose; }
     void SetShouldClose(bool v)  { m_shouldClose = v; }
 
-    void   RefreshViewport();
+    void   RefreshViewport() override;
 
 private:
 

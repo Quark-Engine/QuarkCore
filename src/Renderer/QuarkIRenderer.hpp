@@ -10,6 +10,15 @@ class QCAPI IRenderer {
 public:
     virtual ~IRenderer() = default;
 
+    virtual void  Init(SDL_Window* window, int width, int height) = 0;
+    virtual void  Shutdown() = 0;
+    virtual bool  ShouldClose() const = 0;
+    virtual void  SetTargetFPS(int fps) = 0;
+    virtual float GetFrameTime() const = 0;
+    virtual int   GetScreenWidth() const = 0;
+    virtual int   GetScreenHeight() const = 0;
+    virtual void  RefreshViewport() = 0;
+
     virtual void BeginDrawing() = 0;
     virtual void EndDrawing() = 0;
 
@@ -34,18 +43,18 @@ public:
     virtual void Set3DView(const Mat4& view, const Mat4& projection) = 0;
     virtual void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color) = 0;
     virtual void DrawPlane(Vec3 center, Vec2 size, Color color) = 0;
-    virtual void DrawCube(Vec3 position, float width, float height, float length, Color color) = 0;
+    virtual void DrawCube(Vec3 position, float width, float height, float length, Color color)   = 0;
     virtual void DrawCubeV(Vec3 position, Vec3 size, Color color) = 0;
     virtual void DrawCubeWires(Vec3 position, float width, float height, float length, Color color) = 0;
     virtual void DrawCubeWiresV(Vec3 position, Vec3 size, Color color) = 0;
     virtual void DrawSphere(Vec3 centerPos, float radius, Color color) = 0;
     virtual void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color color) = 0;
     virtual void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color color) = 0;
-    virtual void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) = 0;
-    virtual void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color) = 0;
-    virtual void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) = 0;
+    virtual void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color)      = 0;
+    virtual void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color)       = 0;
+    virtual void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color)  = 0;
     virtual void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) = 0;
-    virtual void DrawGrid(int slices, float spacing) = 0;
+    virtual void DrawGrid(int slices, float spacing)                                                                          = 0;
 
     virtual void DrawText(const char* text, int x, int y, int fontSize, Color color)                                = 0;
     virtual void DrawTextEx(IFont font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) = 0;
@@ -63,6 +72,7 @@ public:
     // Camera 2D
     virtual void BeginMode2D(const Camera2D& camera) = 0;
     virtual void EndMode2D()                         = 0;
+    virtual Camera2D GetCamera2D() const             = 0;
 
     // Camera 3D
     virtual void BeginMode3D(const Camera3D& camera) = 0;
@@ -81,11 +91,18 @@ public:
     virtual void EnableBackfaceCulling() = 0;
     virtual void DisableBackfaceCulling() = 0;
 
-    // Models
-    virtual Model LoadModel(const char* filePath) = 0;
-    virtual void UnloadModel(Model& model)        = 0;
-    virtual void DrawModel(const Model& model, const Vec3& position, float scale, float rotationX, float rotationY, float rotationZ) = 0;
-    virtual void DrawModelEx(const Model& model, const Mat4& transform) = 0;
+    // Models & Meshes
+    virtual Model  LoadModel(const char* filePath) = 0;
+    virtual void   UnloadModel(Model& model)        = 0;
+    virtual void   DrawModel(const Model& model, const Vec3& position, float scale, float rotationX, float rotationY, float rotationZ) = 0;
+    virtual void   DrawModelEx(const Model& model, const Mat4& transform) = 0;
+    virtual void   DrawModelEx(const Model& model, const Mat4& transform, Color tint) = 0;
+
+    virtual void   UploadMesh(Mesh& mesh, bool dynamic) = 0;
+    virtual void   UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) = 0;
+    virtual void   UnloadMesh(Mesh& mesh) = 0;
+    virtual void   DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) = 0;
+    virtual void   DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) = 0;
     
     // Texture
     virtual void BeginTextureMode(IRenderTexture target)                                                = 0;

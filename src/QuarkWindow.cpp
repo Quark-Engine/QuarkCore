@@ -5,7 +5,7 @@
 
 namespace qc {
 
-extern QuarkGLRenderer gRenderer;
+extern IRenderer* gRendererPtr;
 
 static bool CheckWindowCall(bool result, const char* operation) {
     if (!result) {
@@ -216,11 +216,11 @@ SDL_Window* GetNativeWindow() {
 }
 
 int GetFPS() {
-    if (gRenderer.GetFrameTime() <= 0.0f) {
+    if (!gRendererPtr || gRendererPtr->GetFrameTime() <= 0.0f) {
         return 0;
     }
 
-    return static_cast<int>(std::round(1.0f / gRenderer.GetFrameTime()));
+    return static_cast<int>(std::round(1.0f / gRendererPtr->GetFrameTime()));
 }
 
 float GetCurrentMonitorRefreshRate() {

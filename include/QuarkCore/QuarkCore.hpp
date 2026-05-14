@@ -77,6 +77,9 @@ using Texture2D = Texture;
 namespace qc {
 
 struct RendererState;
+class IRenderer;
+extern IRenderer* gRendererPtr;
+
 /**
  * @brief Render texture structure.
  */
