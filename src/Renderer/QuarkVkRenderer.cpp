@@ -52,6 +52,10 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
 }
 
 void QuarkVkRenderer::Shutdown() {
+    if (m_instance == VK_NULL_HANDLE) {
+        return;
+    }
+
     TraceLog(LogLevel::Info, "VULKAN", "Shutting down Vulkan renderer...");
 
     if (m_device != VK_NULL_HANDLE) {

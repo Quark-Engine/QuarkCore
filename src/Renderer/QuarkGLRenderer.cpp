@@ -208,6 +208,10 @@ void QuarkGLRenderer::Init(SDL_Window* window, int width, int height) {
 }
 
 void QuarkGLRenderer::Shutdown() {
+    if (m_window == nullptr) {
+        return;
+    }
+
     for (auto& [id, fd] : m_fonts)
         if (fd.atlasTexture) glDeleteTextures(1, &fd.atlasTexture);
     m_fonts.clear();
