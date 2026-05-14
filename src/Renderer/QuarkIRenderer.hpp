@@ -117,6 +117,7 @@ public:
     virtual void UnloadShader(Shader& shader)                                                     = 0;
     virtual bool isShaderValid(Shader& shader)                                                    = 0;
     virtual int GetShaderLocation(const Shader& shader, const char* uniformName)                  = 0;
+    virtual int GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex)             = 0;
     virtual int GetShaderAttributeLocation(const Shader& shader, const char* attribName)          = 0;
 
     virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, float value)           = 0;

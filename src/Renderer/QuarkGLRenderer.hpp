@@ -88,6 +88,7 @@ public:
     void   UnloadShader(Shader& shader) override;
     bool   isShaderValid(Shader& shader) override;
     int    GetShaderLocation(const Shader& shader, const char* uniformName) override;
+    int    GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex) override;
     int    GetShaderAttributeLocation(const Shader& shader, const char* attribName) override;
     void   SetShaderValue(const Shader& shader, int locIndex, float value) override;
     void   SetShaderValue(const Shader& shader, int locIndex, int value) override;

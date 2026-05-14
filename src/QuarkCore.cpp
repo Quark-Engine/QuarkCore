@@ -513,6 +513,7 @@ bool IsShaderValid(const Shader& shader)                             { return gR
 bool IsShaderReady(Shader shader)                                    { return IsShaderValid(shader); }
 
 int  GetShaderLocation(const Shader& shader, const char* name)      { return gRenderer.GetShaderLocation(shader, name); }
+int  GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex) { return gRenderer.GetShaderLocation(shader, locIndex); }
 int  GetShaderAttributeLocation(const Shader& s, const char* name)  { return gRenderer.GetShaderAttributeLocation(s, name); }
 
 void SetShaderValue(const Shader& s, int loc, float value)          { gRenderer.SetShaderValue(s, loc, value); }

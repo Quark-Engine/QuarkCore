@@ -87,6 +87,39 @@ void main() {
 
 namespace qc {
 
+static const char* shaderLocationNames[SHADER_LOC_COUNT] = {
+    "aPosition",        // SHADER_LOC_VERTEX_POSITION
+    "aTexCoord0",       // SHADER_LOC_VERTEX_TEXCOORD01
+    "aTexCoord1",       // SHADER_LOC_VERTEX_TEXCOORD02
+    "aNormal",          // SHADER_LOC_VERTEX_NORMAL
+    "aTangent",         // SHADER_LOC_VERTEX_TANGENT
+    "aColor",           // SHADER_LOC_VERTEX_COLOR
+    "mvp",              // SHADER_LOC_MATRIX_MVP
+    "view",             // SHADER_LOC_MATRIX_VIEW
+    "projection",       // SHADER_LOC_MATRIX_PROJECTION
+    "model",            // SHADER_LOC_MATRIX_MODEL
+    "normalMatrix",     // SHADER_LOC_MATRIX_NORMAL
+    "viewPos",          // SHADER_LOC_VECTOR_VIEW
+    "colDiffuse",       // SHADER_LOC_COLOR_DIFFUSE
+    "colSpecular",      // SHADER_LOC_COLOR_SPECULAR
+    "colAmbient",       // SHADER_LOC_COLOR_AMBIENT
+    "albedo",           // SHADER_LOC_MAP_ALBEDO
+    "metalness",        // SHADER_LOC_MAP_METALNESS
+    "normal",           // SHADER_LOC_MAP_NORMAL
+    "roughness",        // SHADER_LOC_MAP_ROUGHNESS
+    "occlusion",        // SHADER_LOC_MAP_OCCLUSION
+    "emission",         // SHADER_LOC_MAP_EMISSION
+    "height",           // SHADER_LOC_MAP_HEIGHT
+    "cubemap",          // SHADER_LOC_MAP_CUBEMAP
+    "irradiance",       // SHADER_LOC_MAP_IRRADIANCE
+    "prefilter",        // SHADER_LOC_MAP_PREFILTER
+    "brdf",             // SHADER_LOC_MAP_BRDF
+    "boneIds",          // SHADER_LOC_VERTEX_BONEIDS
+    "boneWeights",      // SHADER_LOC_VERTEX_BONEWEIGHTS
+    "boneTransforms",   // SHADER_LOC_MATRIX_BONETRANSFORMS
+    "instanceTransform" // SHADER_LOC_VERTEX_INSTANCETRANSFORM
+};
+
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable:4611)
@@ -779,7 +812,11 @@ Shader QuarkGLRenderer::LoadShaderFromMemory(const char* vsSource, const char* f
     if (!ok) { char log[512]; glGetProgramInfoLog(p, 512, nullptr, log);
                TraceLog(LogLevel::Error, "SHADER", TextFormat("Program link error: %s", log));
                glDeleteProgram(p); return Shader{}; }
-    return Shader{p};
+    Shader result{p};
+    for (int i = 0; i < SHADER_LOC_COUNT; ++i) {
+        result.locs[i] = GetShaderLocation(result, static_cast<ShaderLocationIndex>(i));
+    }
+    return result;
 }
 void   QuarkGLRenderer::UnloadShader(Shader& sh){
     if (sh.id) {
@@ -790,6 +827,14 @@ void   QuarkGLRenderer::UnloadShader(Shader& sh){
 bool   QuarkGLRenderer::isShaderValid(Shader& sh){ return sh.id != 0; }
 int    QuarkGLRenderer::GetShaderLocation(const Shader& sh,const char* name){
     return sh.id ? glGetUniformLocation(sh.id,name) : -1;
+}
+int    QuarkGLRenderer::GetShaderLocation(const Shader& sh, ShaderLocationIndex locIndex){
+    if (!sh.id || locIndex >= SHADER_LOC_COUNT) return -1;
+    if (locIndex <= SHADER_LOC_VERTEX_COLOR || locIndex >= SHADER_LOC_VERTEX_BONEIDS) {
+        return glGetAttribLocation(sh.id, shaderLocationNames[locIndex]);
+    } else {
+        return glGetUniformLocation(sh.id, shaderLocationNames[locIndex]);
+    }
 }
 int    QuarkGLRenderer::GetShaderAttributeLocation(const Shader& sh,const char* name){
     return sh.id ? glGetAttribLocation(sh.id,name) : -1;
