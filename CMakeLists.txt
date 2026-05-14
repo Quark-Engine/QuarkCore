@@ -27,12 +27,22 @@ target_include_directories(Vulkan::Vulkan INTERFACE
 
 if(WIN32)
     set(VULKAN_LIB_PATH "${VULKAN_EXTERNAL_DIR}/lib/vulkan-1.lib")
+    set(VULKAN_DLL_PATH "${VULKAN_EXTERNAL_DIR}/lib/vulkan-1.dll")
+
     if(NOT EXISTS "${VULKAN_LIB_PATH}")
         message(FATAL_ERROR
             "Vulkan import library not found: ${VULKAN_LIB_PATH}\n"
             "Place vulkan-1.lib in external/Vulkan/lib/")
     endif()
+    if(NOT EXISTS "${VULKAN_DLL_PATH}")
+        message(FATAL_ERROR
+            "Vulkan DLL not found: ${VULKAN_DLL_PATH}\n"
+            "Place vulkan-1.dll in external/Vulkan/lib/")
+    endif()
+
     target_link_libraries(Vulkan::Vulkan INTERFACE "${VULKAN_LIB_PATH}")
+
+    set(VULKAN_RUNTIME_DLL "${VULKAN_DLL_PATH}" CACHE FILEPATH "" FORCE)
 else()
     find_library(VULKAN_LOADER_LIB
         NAMES vulkan vulkan-1
@@ -208,6 +218,17 @@ if(QC_BUILD_EXAMPLES)
     set_target_properties(quarkcore_vulkan PROPERTIES UNITY_BUILD ON)
 
     if(WIN32)
+        add_custom_command(TARGET QuarkCore POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:SDL3::SDL3>
+                $<TARGET_FILE:libglew_shared>
+                $<TARGET_FILE:png_shared>
+                $<TARGET_FILE:assimp::assimp>
+                "${VULKAN_RUNTIME_DLL}"
+                $<TARGET_FILE_DIR:QuarkCore>
+            COMMENT "Copying DLLs next to QuarkCore..."
+        )
+
         set(EXAMPLE_TARGETS
             quarkcore_sandbox
             quarkcore_textures_and_shaders
@@ -218,10 +239,12 @@ if(QC_BUILD_EXAMPLES)
         foreach(target ${EXAMPLE_TARGETS})
             add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:QuarkCore>
                     $<TARGET_FILE:SDL3::SDL3>
                     $<TARGET_FILE:libglew_shared>
                     $<TARGET_FILE:png_shared>
                     $<TARGET_FILE:assimp::assimp>
+                    "${VULKAN_RUNTIME_DLL}"
                     $<TARGET_FILE_DIR:${target}>
                 COMMENT "Copying DLLs for ${target}..."
             )
