@@ -48,14 +48,20 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace qc {
 
-static constexpr int    kVkMaxFramesInFlight = 2;
-static constexpr size_t kVkMaxBatchQuads     = 4096;
-static constexpr size_t kVkMaxBatchVertices  = kVkMaxBatchQuads * 4;
-static constexpr size_t kVkMaxBatchIndices   = kVkMaxBatchQuads * 6;
+static constexpr int    kVkMaxFramesInFlight  = 2;
+static constexpr size_t kVkMaxBatchQuads      = 4096;
+static constexpr size_t kVkMaxBatchVertices   = kVkMaxBatchQuads * 4;
+static constexpr size_t kVkMaxBatchIndices    = kVkMaxBatchQuads * 6;
+
+static constexpr size_t kVkMaxVerticesPerFrame = kVkMaxBatchVertices * 16;
+static constexpr size_t kVkMaxIndicesPerFrame  = kVkMaxBatchIndices  * 16;
+
+static constexpr uint32_t kVkDescriptorPoolSlabSize = 256;
 
 struct VkQueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -67,9 +73,9 @@ struct VkQueueFamilyIndices {
 };
 
 struct VkSwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR capabilities{};
+    VkSurfaceCapabilitiesKHR        capabilities{};
     std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> presentModes;
+    std::vector<VkPresentModeKHR>   presentModes;
 };
 
 struct VkBatchVertex {
@@ -80,7 +86,7 @@ struct VkBatchVertex {
 
 struct VkPushConstants2D {
     float screenWidth;
-    float screenheight;
+    float screenHeight;
 };
 
 struct VkFrameData {
@@ -92,6 +98,10 @@ struct VkFrameData {
     VkBuffer       vertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory vertexMemory = VK_NULL_HANDLE;
     void*          vertexMapped = nullptr;
+
+    VkBuffer       indexBuffer  = VK_NULL_HANDLE;
+    VkDeviceMemory indexMemory  = VK_NULL_HANDLE;
+    void*          indexMapped  = nullptr;
 };
 
 struct VkTextureData {
@@ -101,10 +111,35 @@ struct VkTextureData {
     VkSampler       sampler       = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 
-    int width = 0;
-    int height = 0;
+    uint32_t width  = 0;
+    uint32_t height = 0;
 };
 
+struct VkDrawItem {
+    uint32_t textureDescSet;
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    uint32_t firstIndex  = 0;
+    uint32_t indexCount  = 0;
+};
+
+struct VkFramePass {
+    uint32_t renderTargetId = 0;
+    uint32_t firstDrawItem  = 0;
+    uint32_t drawItemCount  = 0;
+    uint32_t width          = 0;
+    uint32_t height         = 0;
+};
+struct VkRenderTargetData {
+    uint32_t      textureId   = 0;
+    uint32_t      width       = 0;
+    uint32_t      height      = 0;
+    VkFramebuffer framebuffer = VK_NULL_HANDLE;
+    VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    std::vector<VkBatchVertex> vertices;
+    std::vector<uint32_t>      indices;
+    std::vector<VkDrawItem>    drawItems;
+};
 
 class QuarkVkRenderer final : public IRenderer {
 public:
@@ -115,7 +150,7 @@ public:
     void Shutdown();
 
     void BeginDrawing() override;
-    void EndDrawing() override;
+    void EndDrawing()   override;
     void ClearBackground(Color color) override;
 
     void DrawRectangle(float x, float y, float width, float height, Color color) override;
@@ -189,15 +224,15 @@ public:
     void   SetShaderValue(const Shader& shader, int locIndex, const qc::Vec2& value) override;
     void   SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value) override;
     void   SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat) override;
-    void   SetShaderValueSampler(const Shader& sfhader, int locIndex, int textureUnit) override;
+    void   SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit) override;
 
     void BeginMode2D(const Camera2D& camera) override;
     void EndMode2D() override;
     void BeginMode3D(const Camera3D& camera) override;
     void EndMode3D() override;
-    Camera2D GetCamera2D() const override { return m_camera2D; }
-    bool ShouldClose() const override { return m_shouldClose; }
-    void SetShouldClose(bool v) { m_shouldClose = v; }
+    Camera2D GetCamera2D()    const override { return m_camera2D; }
+    bool     ShouldClose()    const override { return m_shouldClose; }
+    void     SetShouldClose(bool v)          { m_shouldClose = v; }
 
     int   GetScreenWidth()  const override { return m_width; }
     int   GetScreenHeight() const override { return m_height; }
@@ -205,30 +240,30 @@ public:
     float GetFrameTime()   const override { return m_frameTime; }
 
     void         PushMatrix() override;
-    void         PopMatrix() override;
+    void         PopMatrix()  override;
     void         Translate(const Vec3& translation) override;
     void         Rotate(float angle, const Vec3& axis) override;
     void         Scale(const Vec3& scale) override;
     void         MultMatrix(const Mat4& matrix) override;
-    const float* GetMatrixModelview() override;
+    const float* GetMatrixModelview()  override;
     const float* GetMatrixProjection() override;
-    void         EnableBackfaceCulling() override;
+    void         EnableBackfaceCulling()  override;
     void         DisableBackfaceCulling() override;
 
     Model LoadModel(const char* filePath) override;
     void  UnloadModel(Model& model) override;
-    void  DrawModel(const Model& model, const Vec3& position, float scale, float rotationX, float rotationY, float rotationZ) override;
+    void  DrawModel(const Model& model, const Vec3& position, float scale,
+                    float rotationX, float rotationY, float rotationZ) override;
     void  DrawModelEx(const Model& model, const Mat4& transform) override;
     void  DrawModelEx(const Model& model, const Mat4& transform, Color tint) override;
 
-    void  UploadMesh(Mesh& mesh, bool dynamic) override;
-    void  UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) override;
-    void  UnloadMesh(Mesh& mesh) override;
-    void  DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) override;
-    void  DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) override;
+    void UploadMesh(Mesh& mesh, bool dynamic) override;
+    void UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) override;
+    void UnloadMesh(Mesh& mesh) override;
+    void DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) override;
+    void DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) override;
 
     void RefreshViewport() override;
-
 
     RendererType GetType() const override { return RendererType::Vulkan; }
 
@@ -240,21 +275,24 @@ private:
     void CreateSwapChain();
     void CreateImageViews();
     void CreateRenderPass();
+    void CreateOffscreenRenderPass();
     void CreateDescriptorSetLayout();
     void CreatePipeline2D();
+    void CreateOffscreenPipeline2D();
     void CreateFramebuffers();
     void CreateCommandPool();
     void CreateCommandBuffers();
     void CreateSyncObjects();
-    void CreateVertexBuffers();
-    void CreateIndexBuffer();
+    void CreateFrameVertexIndexBuffers();
     void CreateWhiteTexture();
-    void CreateDescriptorPool();
-    void CreateDescriptorSets();
- 
+
+    bool CreateDescriptorPoolSlab(uint32_t maxSets, VkDescriptorPool& outPool);
+    bool AllocateTextureDescriptorSet(VkDescriptorSet& outSet);
+
     void RecreateSwapChain();
     void CleanupSwapChain();
- 
+    bool RecreateRenderTargetFramebuffers();
+
     VkQueueFamilyIndices      FindQueueFamilies(VkPhysicalDevice device) const;
     VkSwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device) const;
     bool                      IsDeviceSuitable(VkPhysicalDevice device) const;
@@ -262,80 +300,131 @@ private:
     VkPresentModeKHR          ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& modes) const;
     VkExtent2D                ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps) const;
     uint32_t                  FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags props) const;
- 
-    void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags props, VkBuffer& outBuffer, VkDeviceMemory& outMemory);
- 
-    VkShaderModule CreateShaderModule(const std::vector<uint32_t>& spirv);
+
+    bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                      VkMemoryPropertyFlags props,
+                      VkBuffer& outBuffer, VkDeviceMemory& outMemory);
+
+    bool TransitionImageLayout(VkImage image, VkFormat format,
+                               VkImageLayout oldLayout, VkImageLayout newLayout);
+
+    bool CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t w, uint32_t h);
+
     VkCommandBuffer BeginSingleTimeCommands();
     void            EndSingleTimeCommands(VkCommandBuffer cmd);
- 
-    void TransitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout); 
-    void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t w, uint32_t h);
+
+    bool     CreateTextureFromRGBA(const unsigned char* rgba,
+                                   uint32_t width, uint32_t height,
+                                   uint32_t& outId);
+    void     DestroyTexture(uint32_t textureId);
+
+    IRenderTexture CreateRenderTargetInternal(int width, int height);
+    void           DestroyRenderTargetInternal(uint32_t renderTargetId);
+
+    VkShaderModule CreateShaderModule(const std::vector<uint32_t>& spirv);
+    bool           ReadBinaryFile(const char* path, std::vector<char>& outData) const;
+
+    void BuildCombinedFrameGeometry();
+    bool UploadFrameGeometry(uint32_t frameIndex);
+
+    void AppendQuadToBatch(std::vector<VkBatchVertex>& vertices,
+                           std::vector<uint32_t>&      indices,
+                           std::vector<VkDrawItem>&    drawItems,
+                           VkDescriptorSet             ds,
+                           float x0, float y0,
+                           float x1, float y1,
+                           float x2, float y2,
+                           float x3, float y3,
+                           float r, float g, float b, float a,
+                           float u0 = 0.f, float v0 = 0.f,
+                           float u1 = 1.f, float v1 = 1.f);
+
+    void AppendQuad(VkDescriptorSet ds,
+                    float x0, float y0,
+                    float x1, float y1,
+                    float x2, float y2,
+                    float x3, float y3,
+                    float r, float g, float b, float a,
+                    float u0 = 0.f, float v0 = 0.f,
+                    float u1 = 1.f, float v1 = 1.f);
+
+    bool RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex);
 
     void FlushBatch();
-    void PushQuad(float x, float y, float w, float h, Color color, float u0 = 0.f, float v0 = 0.f, float u1 = 1.f, float v1 = 1.f);
+    void PushQuad(float x, float y, float w, float h, Color color,
+                  float u0 = 0.f, float v0 = 0.f,
+                  float u1 = 1.f, float v1 = 1.f);
     void EnsureBatchTexture(VkDescriptorSet ds);
- 
-    SDL_Window* m_window = nullptr;
-    int         m_width  = 0;
-    int         m_height = 0;
-    int         m_targetFps  = 60;
-    float       m_frameTime  = 0.f;
-    uint64_t    m_lastFrameCounter = 0;
-    bool        m_drawing    = false;
-    bool        m_shouldClose = false;
+
+    SDL_Window* m_window    = nullptr;
+    int         m_width     = 0;
+    int         m_height    = 0;
+    int         m_targetFps = 60;
+    float       m_frameTime = 0.f;
+    uint64_t    m_lastFrameCounter   = 0;
+    bool        m_drawing            = false;
+    bool        m_shouldClose        = false;
     bool        m_framebufferResized = false;
- 
-    VkInstance               m_instance       = VK_NULL_HANDLE;
-    VkSurfaceKHR             m_surface        = VK_NULL_HANDLE;
-    VkPhysicalDevice         m_physicalDevice = VK_NULL_HANDLE;
-    VkDevice                 m_device         = VK_NULL_HANDLE;
-    VkQueue                  m_graphicsQueue  = VK_NULL_HANDLE;
-    VkQueue                  m_presentQueue   = VK_NULL_HANDLE;
- 
+
+    VkInstance       m_instance       = VK_NULL_HANDLE;
+    VkSurfaceKHR     m_surface        = VK_NULL_HANDLE;
+    VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
+    VkDevice         m_device         = VK_NULL_HANDLE;
+    VkQueue          m_graphicsQueue  = VK_NULL_HANDLE;
+    VkQueue          m_presentQueue   = VK_NULL_HANDLE;
+
     VkSwapchainKHR           m_swapChain            = VK_NULL_HANDLE;
     std::vector<VkImage>     m_swapChainImages;
     std::vector<VkImageView> m_swapChainImageViews;
     VkFormat                 m_swapChainImageFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D               m_swapChainExtent      = {0, 0};
- 
-    VkRenderPass                  m_renderPass = VK_NULL_HANDLE;
-    std::vector<VkFramebuffer>    m_swapChainFramebuffers;
- 
-    VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout      m_pipelineLayout      = VK_NULL_HANDLE;
-    VkPipeline            m_pipeline2D          = VK_NULL_HANDLE;
- 
+
+    VkRenderPass m_renderPass          = VK_NULL_HANDLE;
+    VkRenderPass m_offscreenRenderPass = VK_NULL_HANDLE;
+
+    std::vector<VkFramebuffer> m_swapChainFramebuffers;
+
+    VkDescriptorSetLayout         m_descriptorSetLayout = VK_NULL_HANDLE;
+    std::vector<VkDescriptorPool> m_descriptorPools;
+
+    VkPipelineLayout m_pipelineLayout      = VK_NULL_HANDLE;
+    VkPipeline       m_pipeline2D          = VK_NULL_HANDLE;
+    VkPipeline       m_offscreenPipeline2D = VK_NULL_HANDLE;
+
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
- 
+
     std::array<VkFrameData, kVkMaxFramesInFlight> m_frames{};
-    uint32_t m_currentFrame    = 0;
-    uint32_t m_imageIndex      = 0;
- 
-    VkBuffer       m_indexBuffer       = VK_NULL_HANDLE;
-    VkDeviceMemory m_indexBufferMemory = VK_NULL_HANDLE;
- 
-    VkImage        m_whiteImage       = VK_NULL_HANDLE;
-    VkDeviceMemory m_whiteImageMemory = VK_NULL_HANDLE;
-    VkImageView    m_whiteImageView   = VK_NULL_HANDLE;
-    VkSampler      m_whiteSampler     = VK_NULL_HANDLE;
- 
-    VkDescriptorPool m_descriptorPool      = VK_NULL_HANDLE;
-    VkDescriptorSet  m_whiteDescriptorSet  = VK_NULL_HANDLE;
- 
+    uint32_t m_currentFrame = 0;
+    uint32_t m_imageIndex   = 0;
+
+    uint32_t m_whiteTextureId = 0;
+
+    uint32_t                                   m_nextTextureId = 1;
+    std::unordered_map<uint32_t, VkTextureData> m_textures;
+
+    uint32_t                                         m_nextRenderTargetId = 1;
+    std::unordered_map<uint32_t, VkRenderTargetData> m_renderTargets;
+    uint32_t                                         m_activeRenderTargetId = 0;
+
     std::vector<VkBatchVertex> m_batchVertices;
-    VkDescriptorSet            m_currentDescriptorSet = VK_NULL_HANDLE;
-    Color                      m_clearColor           = {0, 0, 0, 255};
- 
-    Mat4              m_currentMatrix = Mat4::identity();
+    std::vector<uint32_t>      m_batchIndices;
+    std::vector<VkDrawItem>    m_batchDrawItems;
+
+    std::vector<VkBatchVertex> m_frameVertices;
+    std::vector<uint32_t>      m_frameIndices;
+    std::vector<VkDrawItem>    m_frameDrawItems;
+    std::vector<VkFramePass>   m_framePasses;
+
+    VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;
+    Color           m_clearColor           = {0, 0, 0, 255};
+
+    Mat4              m_currentMatrix    = Mat4::identity();
     std::vector<Mat4> m_matrixStack;
     Mat4              m_viewMatrix       = Mat4::identity();
     Mat4              m_projectionMatrix = Mat4::identity();
- 
+
     Camera2D m_camera2D{};
     bool     m_camera2DActive = false;
-
 };
-
 
 } // namespace qc

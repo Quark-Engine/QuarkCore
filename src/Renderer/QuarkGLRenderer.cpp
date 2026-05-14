@@ -20,12 +20,16 @@
 
 static const char* kVS2D = R"(
 #version 330 core
+
 layout(location=0) in vec2 aPos;
 layout(location=1) in vec2 aUV;
 layout(location=2) in vec4 aColor;
+
 out vec2 vUV;
 out vec4 vColor;
+
 uniform vec2 uScreenSize;
+
 void main() {
     vec2 ndc = (aPos / uScreenSize) * 2.0 - 1.0;
     ndc.y = -ndc.y;
@@ -37,10 +41,14 @@ void main() {
 
 static const char* kFS2D = R"(
 #version 330 core
+
 in vec2 vUV;
 in vec4 vColor;
+
 out vec4 FragColor;
+
 uniform sampler2D uTexture;
+
 void main() {
     FragColor = texture(uTexture, vUV) * vColor;
 }
@@ -48,32 +56,40 @@ void main() {
 
 static const char* kVS3D = R"(
 #version 330 core
+
 layout(location=0) in vec3 aPosition;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aTexCoord;
+
 out vec3 vFragPos;
 out vec3 vNormal;
 out vec2 vTexCoord;
+
 uniform mat4 uModel;
 uniform mat4 uView;
 uniform mat4 uProjection;
+
 void main() {
-    vFragPos  = vec3(uModel * vec4(aPosition, 1.0));
-    vNormal   = mat3(uModel) * aNormal;
-    vTexCoord = aTexCoord;
+    vFragPos    = vec3(uModel * vec4(aPosition, 1.0));
+    vNormal     = mat3(uModel) * aNormal;
+    vTexCoord   = aTexCoord;
     gl_Position = uProjection * uView * vec4(vFragPos, 1.0);
 }
 )";
 
 static const char* kFS3D = R"(
 #version 330 core
+
 in vec3 vFragPos;
 in vec3 vNormal;
 in vec2 vTexCoord;
+
 out vec4 FragColor;
+
 uniform sampler2D uTexture;
 uniform vec3 uLightPos;
 uniform vec4 uColor;
+
 void main() {
     vec3 norm     = normalize(vNormal);
     vec3 lightDir = normalize(uLightPos - vFragPos);
@@ -81,7 +97,7 @@ void main() {
     float diff    = max(dot(norm, lightDir), 0.0);
     vec4  tex     = texture(uTexture, vTexCoord);
     vec3  result  = (ambient + diff) * tex.rgb * uColor.rgb;
-    FragColor = vec4(result, tex.a * uColor.a);
+    FragColor     = vec4(result, tex.a * uColor.a);
 }
 )";
 
@@ -124,45 +140,59 @@ static const char* shaderLocationNames[SHADER_LOC_COUNT] = {
 #pragma warning(push)
 #pragma warning(disable:4611)
 #endif
+
 static bool PngSafeInit(png_structp png, FILE* f) {
     if (setjmp(png_jmpbuf(png))) return false;
+
     png_init_io(png, f);
     return true;
 }
+
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
 QCAPI bool LoadPngImage(const char* path, PngImageData& out) {
     FILE* f = nullptr;
+
 #if defined(_MSC_VER)
     if (fopen_s(&f, path, "rb") != 0) return false;
 #else
     f = fopen(path, "rb");
     if (!f) return false;
 #endif
+
     png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
     if (!png) { fclose(f); return false; }
+
     png_infop info = png_create_info_struct(png);
-    if (!info) { png_destroy_read_struct(&png,nullptr,nullptr); fclose(f); return false; }
-    if (!PngSafeInit(png,f)) { png_destroy_read_struct(&png,&info,nullptr); fclose(f); return false; }
-    png_read_info(png,info);
-    png_uint_32 w=png_get_image_width(png,info), h=png_get_image_height(png,info);
-    png_byte ct=png_get_color_type(png,info), bd=png_get_bit_depth(png,info);
-    if(bd==16) png_set_strip_16(png);
-    if(ct==PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(png);
-    if(ct==PNG_COLOR_TYPE_GRAY&&bd<8) png_set_expand_gray_1_2_4_to_8(png);
-    if(png_get_valid(png,info,PNG_INFO_tRNS)) png_set_tRNS_to_alpha(png);
-    if(ct==PNG_COLOR_TYPE_RGB||ct==PNG_COLOR_TYPE_GRAY||ct==PNG_COLOR_TYPE_PALETTE)
-        png_set_filler(png,0xFF,PNG_FILLER_AFTER);
-    if(ct==PNG_COLOR_TYPE_GRAY||ct==PNG_COLOR_TYPE_GRAY_ALPHA) png_set_gray_to_rgb(png);
-    png_read_update_info(png,info);
-    out.pixels.resize((size_t)w*h*4);
+    if (!info) { png_destroy_read_struct(&png, nullptr, nullptr); fclose(f); return false; }
+    if (!PngSafeInit(png, f)) { png_destroy_read_struct(&png, &info, nullptr); fclose(f); return false; }
+
+    png_read_info(png, info);
+    png_uint_32 w = png_get_image_width(png, info), h = png_get_image_height(png, info);
+    png_byte ct = png_get_color_type(png, info), bd = png_get_bit_depth(png, info);
+
+    if(bd == 16) png_set_strip_16(png);
+    if(ct == PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(png);
+    if(ct == PNG_COLOR_TYPE_GRAY && bd < 8) png_set_expand_gray_1_2_4_to_8(png);
+
+    if(png_get_valid(png, info, PNG_INFO_tRNS)) png_set_tRNS_to_alpha(png);
+    if(ct == PNG_COLOR_TYPE_RGB || ct == PNG_COLOR_TYPE_GRAY || ct == PNG_COLOR_TYPE_PALETTE)
+        png_set_filler(png, 0xFF, PNG_FILLER_AFTER);
+
+    if(ct == PNG_COLOR_TYPE_GRAY || ct == PNG_COLOR_TYPE_GRAY_ALPHA) png_set_gray_to_rgb(png);
+
+    png_read_update_info(png, info);
+    out.pixels.resize((size_t)w * h * 4);
     std::vector<png_bytep> rows(h);
-    for(png_uint_32 y=0;y<h;++y) rows[y]=out.pixels.data()+(size_t)y*w*4;
-    png_read_image(png,rows.data());
-    png_destroy_read_struct(&png,&info,nullptr);
+    for(png_uint_32 y = 0; y < h ; ++y) rows[y]=out.pixels.data()+(size_t)y * w * 4;
+
+    png_read_image(png, rows.data());
+
+    png_destroy_read_struct(&png, &info, nullptr);
     fclose(f);
-    out.width=(int)w; out.height=(int)h;
+    out.width  = (int)w;
+    out.height = (int)h;
     return true;
 }
 
@@ -170,23 +200,24 @@ namespace {
 
 static bool FileExists(const char* p) {
     if(!p) return false;
-    std::ifstream f(p,std::ios::binary); return f.good();
+    std::ifstream f(p, std::ios::binary); return f.good();
 }
 
 static const char* DefaultFontPath() {
 #if defined(_WIN32)
-    static const char* paths[]={
-        "C:/Windows/Fonts/arial.ttf","C:/Windows/Fonts/segoeui.ttf","C:/Windows/Fonts/verdana.ttf",nullptr};
+    static const char* paths[] = {
+        "C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/verdana.ttf", nullptr};
 #elif defined(__APPLE__)
-    static const char* paths[]={
-        "/System/Library/Fonts/SFNS.ttf","/Library/Fonts/Arial.ttf","/Library/Fonts/Helvetica.ttf",nullptr};
+    static const char* paths[] = {
+        "/System/Library/Fonts/SFNS.ttf", "/Library/Fonts/Arial.ttf", "/Library/Fonts/Helvetica.ttf", nullptr};
 #else
-    static const char* paths[]={
+    static const char* paths[] = {
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSans.ttf",nullptr};
 #endif
-    for(int i=0;paths[i];++i) if(FileExists(paths[i])) return paths[i];
+
+    for(int i = 0; paths[i]; ++i) if(FileExists(paths[i])) return paths[i];
     return nullptr;
 }
 
@@ -201,9 +232,13 @@ void QuarkGLRenderer::Init(SDL_Window* window, int width, int height) {
     m_context = SDL_GL_CreateContext(window);
     if (!m_context)
         throw std::runtime_error(std::string("SDL_GL_CreateContext: ") + SDL_GetError());
+        
+    glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK)
         throw std::runtime_error("glewInit failed");
+
     InitGL();
+
     m_lastFrameCounter = SDL_GetPerformanceCounter();
 }
 
@@ -217,28 +252,28 @@ void QuarkGLRenderer::Shutdown() {
     m_fonts.clear();
     m_defaultFontId = 0;
 
-    if (m_vao)          { glDeleteVertexArrays(1,&m_vao); m_vao=0; }
-    if (m_vbo)          { glDeleteBuffers(1,&m_vbo); m_vbo=0; }
-    if (m_program)      { glDeleteProgram(m_program); m_program=0; }
-    if (m_whiteTexture) { glDeleteTextures(1,&m_whiteTexture); m_whiteTexture=0; }
+    if (m_vao)          { glDeleteVertexArrays(1, &m_vao); m_vao = 0; }
+    if (m_vbo)          { glDeleteBuffers(1, &m_vbo); m_vbo = 0; }
+    if (m_program)      { glDeleteProgram(m_program); m_program = 0; }
+    if (m_whiteTexture) { glDeleteTextures(1, &m_whiteTexture); m_whiteTexture = 0; }
 
-    if (m_3d.shader3D)     { glDeleteProgram(m_3d.shader3D); m_3d.shader3D=0; }
-    if (m_3d.whiteTexture) { glDeleteTextures(1,&m_3d.whiteTexture); m_3d.whiteTexture=0; }
+    if (m_3d.shader3D)     { glDeleteProgram(m_3d.shader3D); m_3d.shader3D = 0; }
+    if (m_3d.whiteTexture) { glDeleteTextures(1, &m_3d.whiteTexture); m_3d.whiteTexture = 0; }
 
-    auto del=[](GLuint& va,GLuint& vb,GLuint& eb){
-        if(va){glDeleteVertexArrays(1,&va);va=0;}
-        if(vb){glDeleteBuffers(1,&vb);vb=0;}
-        if(eb){glDeleteBuffers(1,&eb);eb=0;}
+    auto del=[](GLuint& va,GLuint& vb,GLuint& eb) {
+        if(va) { glDeleteVertexArrays(1, &va); va = 0; }
+        if(vb) { glDeleteBuffers(1, &vb); vb = 0; }
+        if(eb) { glDeleteBuffers(1, &eb); eb = 0; }
     };
     del(m_3d.planeVAO,  m_3d.planeVBO,  m_3d.planeEBO);
     del(m_3d.cubeVAO,   m_3d.cubeVBO,   m_3d.cubeEBO);
     del(m_3d.sphereVAO, m_3d.sphereVBO, m_3d.sphereEBO);
-    if(m_3d.lineVAO){glDeleteVertexArrays(1,&m_3d.lineVAO);m_3d.lineVAO=0;}
-    if(m_3d.lineVBO){glDeleteBuffers(1,&m_3d.lineVBO);m_3d.lineVBO=0;}
-    if(m_3d.triVAO) {glDeleteVertexArrays(1,&m_3d.triVAO);m_3d.triVAO=0;}
-    if(m_3d.triVBO) {glDeleteBuffers(1,&m_3d.triVBO);m_3d.triVBO=0;}
+    if(m_3d.lineVAO) { glDeleteVertexArrays(1, &m_3d.lineVAO); m_3d.lineVAO = 0; }
+    if(m_3d.lineVBO) { glDeleteBuffers(1, &m_3d.lineVBO); m_3d.lineVBO = 0; }
+    if(m_3d.triVAO)  { glDeleteVertexArrays(1, &m_3d.triVAO); m_3d.triVAO = 0; }
+    if(m_3d.triVBO)  { glDeleteBuffers(1, &m_3d.triVBO); m_3d.triVBO = 0; }
 
-    if (m_context) { SDL_GL_DestroyContext(m_context); m_context=nullptr; }
+    if (m_context) { SDL_GL_DestroyContext(m_context); m_context = nullptr; }
     m_window = nullptr;
 }
 
@@ -250,36 +285,38 @@ void QuarkGLRenderer::InitGL() {
     m_defaultShader = m_program;
     m_currentShader = m_program;
     
-    glGenVertexArrays(1,&m_vao);
-    glGenBuffers(1,&m_vbo);
+    glGenVertexArrays(1, &m_vao);
+    glGenBuffers(1, &m_vbo);
     glBindVertexArray(m_vao);
-    glBindBuffer(GL_ARRAY_BUFFER,m_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER, kMaxBatchVertices*sizeof(BatchVertex), nullptr, GL_DYNAMIC_DRAW);
     // layout: vec2 pos, vec2 uv, vec4 color
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(BatchVertex),reinterpret_cast<void*>(offsetof(BatchVertex,x)));
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(BatchVertex), reinterpret_cast<void*>(offsetof(BatchVertex, x)));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(BatchVertex),reinterpret_cast<void*>(offsetof(BatchVertex,u)));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(BatchVertex), reinterpret_cast<void*>(offsetof(BatchVertex, u)));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2,4,GL_FLOAT,GL_FALSE,sizeof(BatchVertex),reinterpret_cast<void*>(offsetof(BatchVertex,r)));
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(BatchVertex), reinterpret_cast<void*>(offsetof(BatchVertex, r)));
     glBindVertexArray(0);
 
-    const uint8_t white[4]={255,255,255,255};
-    glGenTextures(1,&m_whiteTexture);
-    glBindTexture(GL_TEXTURE_2D,m_whiteTexture);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,white);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
-    glBindTexture(GL_TEXTURE_2D,0);
+    const uint8_t white[4] = {255,255,255,255};
+    glGenTextures(1, &m_whiteTexture);
+    glBindTexture(GL_TEXTURE_2D, m_whiteTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA,GL_UNSIGNED_BYTE, white);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     m_currentTexture = m_whiteTexture;
     RefreshViewport();
 }
+
 void QuarkGLRenderer::RefreshViewport() {
-    int w=0,h=0;
-    SDL_GetWindowSizeInPixels(m_window,&w,&h);
-    m_width=w; m_height=h;
-    glViewport(0,0,w,h);
+    int w = 0, h = 0;
+    SDL_GetWindowSizeInPixels(m_window, &w, &h);
+
+    m_width = w; m_height = h;
+    glViewport(0, 0, w, h);
 }
 
 void QuarkGLRenderer::BeginDrawing() {
@@ -288,6 +325,7 @@ void QuarkGLRenderer::BeginDrawing() {
     m_batchVertices.clear();
     RefreshViewport();
 }
+
 void QuarkGLRenderer::EndDrawing() {
     FlushBatch();
     SDL_GL_SwapWindow(m_window);
@@ -314,13 +352,13 @@ void QuarkGLRenderer::EndDrawing() {
 
 void QuarkGLRenderer::ClearBackground(Color c) {
     auto n = ToNormColor(c);
-    glClearColor(n[0],n[1],n[2],n[3]);
+    glClearColor(n[0], n[1], n[2], n[3]);
     glClear(GL_COLOR_BUFFER_BIT);
 }
 
 std::array<float,4> QuarkGLRenderer::ToNormColor(Color c) {
-    constexpr float inv=1.f/255.f;
-    return{c.r*inv,c.g*inv,c.b*inv,c.a*inv};
+    constexpr float inv = 1.f/255.f;
+    return{ c.r*inv, c.g*inv, c.b*inv, c.a*inv };
 }
 
 GLuint QuarkGLRenderer::CreateTextureFromRgba(const uint8_t* px, int w, int h) {
