@@ -52,6 +52,7 @@ FetchContent_Declare(zlib
     SYSTEM
 )
 set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SDL_X11_XSCRNSAVER OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(zlib)
 
 if(NOT TARGET ZLIB::ZLIB)
