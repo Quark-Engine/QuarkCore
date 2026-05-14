@@ -29,6 +29,7 @@ namespace qc {
 // Forward declarations
 struct Shader;
 struct Camera3D;
+struct Mesh;
 
 /**
  * @brief Vertex data for 3D meshes.
@@ -45,6 +46,16 @@ struct Vertex3D {
 struct Ray {
     Vec3 origin{0.0f, 0.0f, 0.0f};     // Ray starting point
     Vec3 direction{0.0f, 0.0f, 1.0f};  // Ray direction (normalized)
+};
+
+/**
+ * @brief Image data.
+ */
+struct Image {
+    int width = 0;
+    int height = 0;
+    int channels = 4;
+    unsigned char* data = nullptr;
 };
 
 /**
@@ -81,6 +92,28 @@ struct Material {
     MaterialMap* maps = nullptr;    // Material maps array (MAX_MATERIAL_MAPS)
     float params[4] = {0.0f, 0.0f, 0.0f, 0.0f}; // Material generic parameters (if required)
 };
+
+QCAPI void UploadMesh(Mesh* mesh, bool dynamic);
+QCAPI void UpdateMeshBuffer(Mesh mesh, int index, const void* data, int dataSize, int offset);
+QCAPI void UnloadMesh(Mesh mesh);
+QCAPI void DrawMesh(Mesh mesh, Material material, Matrix transform);
+QCAPI void DrawMeshInstanced(Mesh mesh, Material material, const Matrix* transforms, int instances);
+QCAPI BoundingBox GetMeshBoundingBox(Mesh mesh);
+QCAPI void GenMeshTangents(Mesh* mesh);
+QCAPI bool ExportMesh(Mesh mesh, const char* fileName);
+QCAPI bool ExportMeshAsCode(Mesh mesh, const char* fileName);
+
+QCAPI Mesh GenMeshPoly(int sides, float radius);
+QCAPI Mesh GenMeshPlane(float width, float length, int resX, int resZ);
+QCAPI Mesh GenMeshCube(float width, float height, float length);
+QCAPI Mesh GenMeshSphere(float radius, int rings, int slices);
+QCAPI Mesh GenMeshHemiSphere(float radius, int rings, int slices);
+QCAPI Mesh GenMeshCylinder(float radius, float height, int slices);
+QCAPI Mesh GenMeshCone(float radius, float height, int slices);
+QCAPI Mesh GenMeshTorus(float radius, float size, int radSeg, int sides);
+QCAPI Mesh GenMeshKnot(float radius, float size, int radSeg, int sides);
+QCAPI Mesh GenMeshHeightmap(Image heightmap, Vec3 size);
+QCAPI Mesh GenMeshCubicmap(Image cubicmap, Vec3 cubeSize);
 
 // Backward compatibility
 #define MATERIAL_MAP_DIFFUSE      MATERIAL_MAP_ALBEDO

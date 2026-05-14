@@ -122,6 +122,12 @@ public:
     void  DrawModelEx(const Model& model, const Mat4& transform) override;
     void  DrawModelEx(const Model& model, const Mat4& transform, Color tint);
 
+    void  UploadMesh(Mesh& mesh, bool dynamic);
+    void  UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset);
+    void  UnloadMesh(Mesh& mesh);
+    void  DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform);
+    void  DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances);
+
     RendererType GetType() const override { return RendererType::OpenGL; }
 
     int  GetScreenWidth()  const { return m_width; }

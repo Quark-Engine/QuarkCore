@@ -1301,6 +1301,139 @@ void  QuarkGLRenderer::UnloadModel(Model& model) {
 
     model = {};
 }
+
+QCAPI void QuarkGLRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
+    if (!mesh.vertices || mesh.vertexCount <= 0) return;
+
+    if (mesh.vaoId) glDeleteVertexArrays(1, &mesh.vaoId);
+    if (mesh.vboId) glDeleteBuffers(1, &mesh.vboId);
+    if (mesh.eboId) glDeleteBuffers(1, &mesh.eboId);
+
+    glGenVertexArrays(1, &mesh.vaoId);
+    glGenBuffers(1, &mesh.vboId);
+    if (mesh.indices && mesh.triangleCount > 0) glGenBuffers(1, &mesh.eboId);
+
+    std::vector<float> vertexData;
+    vertexData.reserve(mesh.vertexCount * 8);
+    for (int i = 0; i < mesh.vertexCount; ++i) {
+        vertexData.push_back(mesh.vertices[i * 3 + 0]);
+        vertexData.push_back(mesh.vertices[i * 3 + 1]);
+        vertexData.push_back(mesh.vertices[i * 3 + 2]);
+
+        if (mesh.normals) {
+            vertexData.push_back(mesh.normals[i * 3 + 0]);
+            vertexData.push_back(mesh.normals[i * 3 + 1]);
+            vertexData.push_back(mesh.normals[i * 3 + 2]);
+        } else {
+            vertexData.push_back(0.0f);
+            vertexData.push_back(0.0f);
+            vertexData.push_back(0.0f);
+        }
+
+        if (mesh.texcoords) {
+            vertexData.push_back(mesh.texcoords[i * 2 + 0]);
+            vertexData.push_back(mesh.texcoords[i * 2 + 1]);
+        } else {
+            vertexData.push_back(0.0f);
+            vertexData.push_back(0.0f);
+        }
+    }
+
+    glBindVertexArray(mesh.vaoId);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mesh.vboId);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizei>(vertexData.size() * sizeof(float)),
+                 vertexData.data(),
+                 dynamic ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
+
+    if (mesh.eboId) {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.eboId);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                     static_cast<GLsizei>(mesh.triangleCount * 3 * sizeof(unsigned short)),
+                     mesh.indices, dynamic ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
+    }
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(6 * sizeof(float)));
+
+    glBindVertexArray(0);
+}
+
+QCAPI void QuarkGLRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) {
+    if (!data || dataSize <= 0) return;
+    if (index == 0 && mesh.vboId) {
+        glBindBuffer(GL_ARRAY_BUFFER, mesh.vboId);
+        glBufferSubData(GL_ARRAY_BUFFER, offset, dataSize, data);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    } else if (index == 1 && mesh.eboId) {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.eboId);
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, offset, dataSize, data);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    }
+}
+
+QCAPI void QuarkGLRenderer::UnloadMesh(Mesh& mesh) {
+    if (mesh.vaoId) glDeleteVertexArrays(1, &mesh.vaoId);
+    if (mesh.vboId) glDeleteBuffers(1, &mesh.vboId);
+    if (mesh.eboId) glDeleteBuffers(1, &mesh.eboId);
+    mesh.vaoId = 0;
+    mesh.vboId = 0;
+    mesh.eboId = 0;
+
+    delete[] mesh.vertices; mesh.vertices = nullptr;
+    delete[] mesh.texcoords; mesh.texcoords = nullptr;
+    delete[] mesh.texcoords2; mesh.texcoords2 = nullptr;
+    delete[] mesh.normals; mesh.normals = nullptr;
+    delete[] mesh.tangents; mesh.tangents = nullptr;
+    delete[] mesh.colors; mesh.colors = nullptr;
+    delete[] mesh.indices; mesh.indices = nullptr;
+    delete[] mesh.boneIndices; mesh.boneIndices = nullptr;
+    delete[] mesh.boneWeights; mesh.boneWeights = nullptr;
+    delete[] mesh.animVertices; mesh.animVertices = nullptr;
+    delete[] mesh.animNormals; mesh.animNormals = nullptr;
+
+    mesh.vertexCount = 0;
+    mesh.triangleCount = 0;
+}
+
+QCAPI void QuarkGLRenderer::DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) {
+    if (!mesh.vaoId) return;
+    if (!m_3d.initialized) Init3DState();
+
+    glUseProgram(m_3d.shader3D);
+    if (m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, transform.m);
+    if (m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+
+    GLuint texId = m_3d.whiteTexture;
+    if (material.maps && material.maps[MATERIAL_MAP_ALBEDO].texture.valid) {
+        texId = material.maps[MATERIAL_MAP_ALBEDO].texture.id;
+    }
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texId);
+    glBindVertexArray(mesh.vaoId);
+
+    if (mesh.eboId) {
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.triangleCount * 3), GL_UNSIGNED_SHORT, nullptr);
+    } else {
+        glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
+    }
+
+    glBindVertexArray(0);
+}
+
+QCAPI void QuarkGLRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) {
+    if (!transforms || instances <= 0) return;
+    for (int i = 0; i < instances; ++i) {
+        DrawMesh(mesh, material, transforms[i]);
+    }
+}
+
 void  QuarkGLRenderer::DrawModel(const Model& model,const Vec3& pos,float scale,
                                    float rx,float ry,float rz){
     Mat4 t=Mat4::translation(pos.x,pos.y,pos.z)

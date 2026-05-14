@@ -709,6 +709,852 @@ void DrawModelWiresEx(Model model, Vec3 position, Vec3 rotationAxis,
     DrawModelWireframe(model, transform, tint);
 }
 
+namespace {
+
+static Mesh CreateMesh(int vertexCount, int triangleCount) {
+    Mesh mesh{};
+    if (vertexCount <= 0) return mesh;
+    mesh.vertexCount = vertexCount;
+    mesh.triangleCount = triangleCount;
+    mesh.vertices = new float[vertexCount * 3];
+    mesh.normals = new float[vertexCount * 3];
+    mesh.texcoords = new float[vertexCount * 2];
+    mesh.indices = new unsigned short[triangleCount * 3];
+    std::fill(mesh.vertices, mesh.vertices + vertexCount * 3, 0.0f);
+    std::fill(mesh.normals, mesh.normals + vertexCount * 3, 0.0f);
+    std::fill(mesh.texcoords, mesh.texcoords + vertexCount * 2, 0.0f);
+    std::fill(mesh.indices, mesh.indices + triangleCount * 3, 0);
+    return mesh;
+}
+
+static void FreeMeshCpuData(Mesh& mesh) {
+    delete[] mesh.vertices; mesh.vertices = nullptr;
+    delete[] mesh.texcoords; mesh.texcoords = nullptr;
+    delete[] mesh.texcoords2; mesh.texcoords2 = nullptr;
+    delete[] mesh.normals; mesh.normals = nullptr;
+    delete[] mesh.tangents; mesh.tangents = nullptr;
+    delete[] mesh.colors; mesh.colors = nullptr;
+    delete[] mesh.indices; mesh.indices = nullptr;
+    delete[] mesh.boneIndices; mesh.boneIndices = nullptr;
+    delete[] mesh.boneWeights; mesh.boneWeights = nullptr;
+    delete[] mesh.animVertices; mesh.animVertices = nullptr;
+    delete[] mesh.animNormals; mesh.animNormals = nullptr;
+}
+
+static void WriteObjFace(std::ofstream& out, int a, int b, int c, bool hasUV, bool hasNormal) {
+    out << "f " << a;
+    if (hasUV || hasNormal) out << "/";
+    if (hasUV) out << a;
+    if (hasNormal) out << "/" << a;
+    out << " " << b;
+    if (hasUV || hasNormal) out << "/";
+    if (hasUV) out << b;
+    if (hasNormal) out << "/" << b;
+    out << " " << c;
+    if (hasUV || hasNormal) out << "/";
+    if (hasUV) out << c;
+    if (hasNormal) out << "/" << c;
+    out << "\n";
+}
+
+static Vec3 CalculateTriangleTangent(const Vec3& p0, const Vec3& p1, const Vec3& p2,
+                                     const Vec2& uv0, const Vec2& uv1, const Vec2& uv2) {
+    Vec3 edge1 = p1 - p0;
+    Vec3 edge2 = p2 - p0;
+    Vec2 deltaUV1{uv1.x - uv0.x, uv1.y - uv0.y};
+    Vec2 deltaUV2{uv2.x - uv0.x, uv2.y - uv0.y};
+    float denom = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
+    if (std::fabs(denom) < EPSILON) return Vec3{1.0f, 0.0f, 0.0f};
+    float inv = 1.0f / denom;
+    Vec3 tangent{
+        inv * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x),
+        inv * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y),
+        inv * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z)
+    };
+    return tangent.normalized();
+}
+
+static Vec3 GetHeightSample(const Image& heightmap, int x, int y) {
+    if (!heightmap.data || x < 0 || y < 0 || x >= heightmap.width || y >= heightmap.height) return Vec3{0,0,0};
+    int stride = heightmap.channels > 0 ? heightmap.channels : 1;
+    int idx = (y * heightmap.width + x) * stride;
+    float value = static_cast<float>(heightmap.data[idx]) / 255.0f;
+    return Vec3{value, value, value};
+}
+
+} // namespace
+
+void UploadMesh(Mesh* mesh, bool dynamic) {
+    if (!mesh) return;
+    gRenderer.UploadMesh(*mesh, dynamic);
+}
+
+void UpdateMeshBuffer(Mesh mesh, int index, const void* data, int dataSize, int offset) {
+    gRenderer.UpdateMeshBuffer(mesh, index, data, dataSize, offset);
+}
+
+void UnloadMesh(Mesh mesh) {
+    gRenderer.UnloadMesh(mesh);
+}
+
+void DrawMesh(Mesh mesh, Material material, Matrix transform) {
+    gRenderer.DrawMesh(mesh, material, transform);
+}
+
+void DrawMeshInstanced(Mesh mesh, Material material, const Matrix* transforms, int instances) {
+    gRenderer.DrawMeshInstanced(mesh, material, transforms, instances);
+}
+
+BoundingBox GetMeshBoundingBox(Mesh mesh) {
+    BoundingBox box{};
+    if (!mesh.vertices || mesh.vertexCount <= 0) return box;
+
+    box.min = Vec3{mesh.vertices[0], mesh.vertices[1], mesh.vertices[2]};
+    box.max = box.min;
+    for (int i = 1; i < mesh.vertexCount; ++i) {
+        Vec3 p{mesh.vertices[i * 3 + 0], mesh.vertices[i * 3 + 1], mesh.vertices[i * 3 + 2]};
+        box.min.x = std::min(box.min.x, p.x);
+        box.min.y = std::min(box.min.y, p.y);
+        box.min.z = std::min(box.min.z, p.z);
+        box.max.x = std::max(box.max.x, p.x);
+        box.max.y = std::max(box.max.y, p.y);
+        box.max.z = std::max(box.max.z, p.z);
+    }
+    return box;
+}
+
+void GenMeshTangents(Mesh* mesh) {
+    if (!mesh || !mesh->vertices || !mesh->normals || !mesh->texcoords || mesh->vertexCount <= 0) return;
+    if (!mesh->tangents) mesh->tangents = new float[mesh->vertexCount * 3];
+    std::fill(mesh->tangents, mesh->tangents + mesh->vertexCount * 3, 0.0f);
+
+    if (!mesh->indices) return;
+
+    for (int t = 0; t < mesh->triangleCount; ++t) {
+        int i0 = mesh->indices[t * 3 + 0];
+        int i1 = mesh->indices[t * 3 + 1];
+        int i2 = mesh->indices[t * 3 + 2];
+        if (i0 >= mesh->vertexCount || i1 >= mesh->vertexCount || i2 >= mesh->vertexCount) continue;
+
+        Vec3 p0{mesh->vertices[i0 * 3 + 0], mesh->vertices[i0 * 3 + 1], mesh->vertices[i0 * 3 + 2]};
+        Vec3 p1{mesh->vertices[i1 * 3 + 0], mesh->vertices[i1 * 3 + 1], mesh->vertices[i1 * 3 + 2]};
+        Vec3 p2{mesh->vertices[i2 * 3 + 0], mesh->vertices[i2 * 3 + 1], mesh->vertices[i2 * 3 + 2]};
+        Vec2 uv0{mesh->texcoords[i0 * 2 + 0], mesh->texcoords[i0 * 2 + 1]};
+        Vec2 uv1{mesh->texcoords[i1 * 2 + 0], mesh->texcoords[i1 * 2 + 1]};
+        Vec2 uv2{mesh->texcoords[i2 * 2 + 0], mesh->texcoords[i2 * 2 + 1]};
+
+        Vec3 tangent = CalculateTriangleTangent(p0, p1, p2, uv0, uv1, uv2);
+        for (int idx : {i0, i1, i2}) {
+            mesh->tangents[idx * 3 + 0] += tangent.x;
+            mesh->tangents[idx * 3 + 1] += tangent.y;
+            mesh->tangents[idx * 3 + 2] += tangent.z;
+        }
+    }
+
+    for (int i = 0; i < mesh->vertexCount; ++i) {
+        Vec3 t{mesh->tangents[i * 3 + 0], mesh->tangents[i * 3 + 1], mesh->tangents[i * 3 + 2]};
+        Vec3 n{mesh->normals[i * 3 + 0], mesh->normals[i * 3 + 1], mesh->normals[i * 3 + 2]};
+        Vec3 tangent = t.normalized();
+        if (tangent.length() > 0.0f) {
+            mesh->tangents[i * 3 + 0] = tangent.x;
+            mesh->tangents[i * 3 + 1] = tangent.y;
+            mesh->tangents[i * 3 + 2] = tangent.z;
+        } else {
+            mesh->tangents[i * 3 + 0] = 1.0f;
+            mesh->tangents[i * 3 + 1] = 0.0f;
+            mesh->tangents[i * 3 + 2] = 0.0f;
+        }
+    }
+}
+
+bool ExportMesh(Mesh mesh, const char* fileName) {
+    if (!fileName || !mesh.vertices || mesh.vertexCount <= 0) return false;
+    std::ofstream out(fileName, std::ios::binary);
+    if (!out) return false;
+
+    bool hasUV = mesh.texcoords != nullptr;
+    bool hasNormal = mesh.normals != nullptr;
+
+    out << "# Generated by QuarkCore\n";
+    for (int i = 0; i < mesh.vertexCount; ++i) {
+        out << "v " << mesh.vertices[i * 3 + 0] << " "
+            << mesh.vertices[i * 3 + 1] << " "
+            << mesh.vertices[i * 3 + 2] << "\n";
+    }
+    if (hasUV) {
+        for (int i = 0; i < mesh.vertexCount; ++i) {
+            out << "vt " << mesh.texcoords[i * 2 + 0] << " "
+                << mesh.texcoords[i * 2 + 1] << "\n";
+        }
+    }
+    if (hasNormal) {
+        for (int i = 0; i < mesh.vertexCount; ++i) {
+            out << "vn " << mesh.normals[i * 3 + 0] << " "
+                << mesh.normals[i * 3 + 1] << " "
+                << mesh.normals[i * 3 + 2] << "\n";
+        }
+    }
+
+    if (mesh.indices && mesh.triangleCount > 0) {
+        for (int t = 0; t < mesh.triangleCount; ++t) {
+            int a = mesh.indices[t * 3 + 0] + 1;
+            int b = mesh.indices[t * 3 + 1] + 1;
+            int c = mesh.indices[t * 3 + 2] + 1;
+            if (hasUV && hasNormal) {
+                out << "f " << a << "/" << a << "/" << a << " "
+                    << b << "/" << b << "/" << b << " "
+                    << c << "/" << c << "/" << c << "\n";
+            } else if (hasUV) {
+                out << "f " << a << "/" << a << " "
+                    << b << "/" << b << " "
+                    << c << "/" << c << "\n";
+            } else if (hasNormal) {
+                out << "f " << a << "//" << a << " "
+                    << b << "//" << b << " "
+                    << c << "//" << c << "\n";
+            } else {
+                out << "f " << a << " " << b << " " << c << "\n";
+            }
+        }
+    } else {
+        for (int i = 0; i + 2 < mesh.vertexCount; i += 3) {
+            out << "f " << (i + 1) << " " << (i + 2) << " " << (i + 3) << "\n";
+        }
+    }
+
+    return true;
+}
+
+bool ExportMeshAsCode(Mesh mesh, const char* fileName) {
+    if (!fileName || !mesh.vertices || mesh.vertexCount <= 0) return false;
+    std::ofstream out(fileName, std::ios::binary);
+    if (!out) return false;
+
+    out << "#include \"QuarkCore/Quark3D.hpp\"\n\n";
+    out << "static float meshVertices[] = {\n";
+    for (int i = 0; i < mesh.vertexCount; ++i) {
+        out << "    " << mesh.vertices[i * 3 + 0] << "f, "
+            << mesh.vertices[i * 3 + 1] << "f, "
+            << mesh.vertices[i * 3 + 2] << "f,\n";
+    }
+    out << "};\n\n";
+
+    if (mesh.normals) {
+        out << "static float meshNormals[] = {\n";
+        for (int i = 0; i < mesh.vertexCount; ++i) {
+            out << "    " << mesh.normals[i * 3 + 0] << "f, "
+                << mesh.normals[i * 3 + 1] << "f, "
+                << mesh.normals[i * 3 + 2] << "f,\n";
+        }
+        out << "};\n\n";
+    }
+
+    if (mesh.texcoords) {
+        out << "static float meshTexcoords[] = {\n";
+        for (int i = 0; i < mesh.vertexCount; ++i) {
+            out << "    " << mesh.texcoords[i * 2 + 0] << "f, "
+                << mesh.texcoords[i * 2 + 1] << "f,\n";
+        }
+        out << "};\n\n";
+    }
+
+    if (mesh.indices && mesh.triangleCount > 0) {
+        out << "static unsigned short meshIndices[] = {\n";
+        for (int i = 0; i < mesh.triangleCount * 3; ++i) {
+            out << "    " << mesh.indices[i] << ",\n";
+        }
+        out << "};\n\n";
+    }
+
+    out << "Mesh mesh = {};\n";
+    out << "mesh.vertexCount = " << mesh.vertexCount << ";\n";
+    out << "mesh.triangleCount = " << mesh.triangleCount << ";\n";
+    out << "mesh.vertices = meshVertices;\n";
+    if (mesh.normals) out << "mesh.normals = meshNormals;\n";
+    if (mesh.texcoords) out << "mesh.texcoords = meshTexcoords;\n";
+    if (mesh.indices && mesh.triangleCount > 0) out << "mesh.indices = meshIndices;\n";
+
+    return true;
+}
+
+Mesh GenMeshPoly(int sides, float radius) {
+    if (sides < 3) return Mesh{};
+    int vertexCount = sides + 1;
+    int triangleCount = sides - 2;
+    Mesh mesh = CreateMesh(vertexCount, triangleCount);
+    float angleStep = 2.0f * PI / sides;
+
+    mesh.vertices[0] = 0.0f;
+    mesh.vertices[1] = 0.0f;
+    mesh.vertices[2] = 0.0f;
+    mesh.normals[0] = 0.0f; mesh.normals[1] = 0.0f; mesh.normals[2] = 1.0f;
+    mesh.texcoords[0] = 0.5f; mesh.texcoords[1] = 0.5f;
+
+    for (int i = 0; i < sides; ++i) {
+        float angle = i * angleStep;
+        float x = std::cos(angle) * radius;
+        float y = std::sin(angle) * radius;
+        mesh.vertices[(i + 1) * 3 + 0] = x;
+        mesh.vertices[(i + 1) * 3 + 1] = y;
+        mesh.vertices[(i + 1) * 3 + 2] = 0.0f;
+        mesh.normals[(i + 1) * 3 + 0] = 0.0f;
+        mesh.normals[(i + 1) * 3 + 1] = 0.0f;
+        mesh.normals[(i + 1) * 3 + 2] = 1.0f;
+        mesh.texcoords[(i + 1) * 2 + 0] = x / (radius * 2.0f) + 0.5f;
+        mesh.texcoords[(i + 1) * 2 + 1] = y / (radius * 2.0f) + 0.5f;
+    }
+
+    for (int i = 0; i < triangleCount; ++i) {
+        mesh.indices[i * 3 + 0] = 0;
+        mesh.indices[i * 3 + 1] = i + 1;
+        mesh.indices[i * 3 + 2] = i + 2;
+    }
+
+    return mesh;
+}
+
+Mesh GenMeshPlane(float width, float length, int resX, int resZ) {
+    if (width <= 0.0f || length <= 0.0f || resX <= 0 || resZ <= 0) return Mesh{};
+    int vertsX = resX + 1;
+    int vertsZ = resZ + 1;
+    int vertexCount = vertsX * vertsZ;
+    int triangleCount = resX * resZ * 2;
+    Mesh mesh = CreateMesh(vertexCount, triangleCount);
+
+    for (int z = 0; z < vertsZ; ++z) {
+        for (int x = 0; x < vertsX; ++x) {
+            int index = z * vertsX + x;
+            float fx = ((float)x / resX - 0.5f) * width;
+            float fz = ((float)z / resZ - 0.5f) * length;
+            mesh.vertices[index * 3 + 0] = fx;
+            mesh.vertices[index * 3 + 1] = 0.0f;
+            mesh.vertices[index * 3 + 2] = fz;
+            mesh.normals[index * 3 + 0] = 0.0f;
+            mesh.normals[index * 3 + 1] = 1.0f;
+            mesh.normals[index * 3 + 2] = 0.0f;
+            mesh.texcoords[index * 2 + 0] = (float)x / resX;
+            mesh.texcoords[index * 2 + 1] = (float)z / resZ;
+        }
+    }
+
+    int idx = 0;
+    for (int z = 0; z < resZ; ++z) {
+        for (int x = 0; x < resX; ++x) {
+            int a = z * vertsX + x;
+            int b = a + 1;
+            int c = a + vertsX;
+            int d = c + 1;
+            mesh.indices[idx++] = a;
+            mesh.indices[idx++] = c;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = c;
+            mesh.indices[idx++] = d;
+        }
+    }
+
+    return mesh;
+}
+
+Mesh GenMeshCube(float width, float height, float length) {
+    float hw = width * 0.5f;
+    float hh = height * 0.5f;
+    float hl = length * 0.5f;
+    Mesh mesh = CreateMesh(24, 12);
+    const Vec3 positions[24] = {
+        {-hw, -hh,  hl}, { hw, -hh,  hl}, { hw,  hh,  hl}, {-hw,  hh,  hl},
+        {-hw, -hh, -hl}, {-hw,  hh, -hl}, { hw,  hh, -hl}, { hw, -hh, -hl},
+        {-hw,  hh, -hl}, {-hw,  hh,  hl}, { hw,  hh,  hl}, { hw,  hh, -hl},
+        {-hw, -hh, -hl}, { hw, -hh, -hl}, { hw, -hh,  hl}, {-hw, -hh,  hl},
+        { hw, -hh, -hl}, { hw,  hh, -hl}, { hw,  hh,  hl}, { hw, -hh,  hl},
+        {-hw, -hh, -hl}, {-hw, -hh,  hl}, {-hw,  hh,  hl}, {-hw,  hh, -hl}
+    };
+    const Vec3 normals[24] = {
+        {0,0,1},{0,0,1},{0,0,1},{0,0,1},
+        {0,0,-1},{0,0,-1},{0,0,-1},{0,0,-1},
+        {0,1,0},{0,1,0},{0,1,0},{0,1,0},
+        {0,-1,0},{0,-1,0},{0,-1,0},{0,-1,0},
+        {1,0,0},{1,0,0},{1,0,0},{1,0,0},
+        {-1,0,0},{-1,0,0},{-1,0,0},{-1,0,0}
+    };
+    const Vec2 uvs[24] = {
+        {0,0},{1,0},{1,1},{0,1}, {0,0},{1,0},{1,1},{0,1},
+        {0,0},{1,0},{1,1},{0,1}, {0,0},{1,0},{1,1},{0,1},
+        {0,0},{1,0},{1,1},{0,1}, {0,0},{1,0},{1,1},{0,1}
+    };
+    for (int i = 0; i < 24; ++i) {
+        mesh.vertices[i * 3 + 0] = positions[i].x;
+        mesh.vertices[i * 3 + 1] = positions[i].y;
+        mesh.vertices[i * 3 + 2] = positions[i].z;
+        mesh.normals[i * 3 + 0] = normals[i].x;
+        mesh.normals[i * 3 + 1] = normals[i].y;
+        mesh.normals[i * 3 + 2] = normals[i].z;
+        mesh.texcoords[i * 2 + 0] = uvs[i].x;
+        mesh.texcoords[i * 2 + 1] = uvs[i].y;
+    }
+    const unsigned short indices[] = {
+         0,  1,  2,  0,  2,  3,
+         4,  5,  6,  4,  6,  7,
+         8,  9, 10,  8, 10, 11,
+        12, 13, 14, 12, 14, 15,
+        16, 17, 18, 16, 18, 19,
+        20, 21, 22, 20, 22, 23
+    };
+    std::copy(std::begin(indices), std::end(indices), mesh.indices);
+    return mesh;
+}
+
+Mesh GenMeshSphere(float radius, int rings, int slices) {
+    if (radius <= 0.0f || rings < 2 || slices < 3) return Mesh{};
+    int vertexCount = (rings + 1) * (slices + 1);
+    int triangleCount = rings * slices * 2;
+    Mesh mesh = CreateMesh(vertexCount, triangleCount);
+
+    int v = 0;
+    for (int r = 0; r <= rings; ++r) {
+        float phi = PI * r / rings;
+        for (int s = 0; s <= slices; ++s) {
+            float theta = 2.0f * PI * s / slices;
+            float x = std::sin(phi) * std::cos(theta);
+            float y = std::cos(phi);
+            float z = std::sin(phi) * std::sin(theta);
+            mesh.vertices[v * 3 + 0] = x * radius;
+            mesh.vertices[v * 3 + 1] = y * radius;
+            mesh.vertices[v * 3 + 2] = z * radius;
+            mesh.normals[v * 3 + 0] = x;
+            mesh.normals[v * 3 + 1] = y;
+            mesh.normals[v * 3 + 2] = z;
+            mesh.texcoords[v * 2 + 0] = (float)s / slices;
+            mesh.texcoords[v * 2 + 1] = (float)r / rings;
+            ++v;
+        }
+    }
+
+    int idx = 0;
+    for (int r = 0; r < rings; ++r) {
+        for (int s = 0; s < slices; ++s) {
+            int a = r * (slices + 1) + s;
+            int b = a + slices + 1;
+            mesh.indices[idx++] = a;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = a + 1;
+            mesh.indices[idx++] = a + 1;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = b + 1;
+        }
+    }
+    return mesh;
+}
+
+Mesh GenMeshHemiSphere(float radius, int rings, int slices) {
+    if (radius <= 0.0f || rings < 1 || slices < 3) return Mesh{};
+    int vertexCount = (rings + 1) * (slices + 1);
+    int triangleCount = rings * slices;
+    Mesh mesh = CreateMesh(vertexCount, triangleCount);
+
+    int v = 0;
+    for (int r = 0; r <= rings; ++r) {
+        float phi = 0.5f * PI * r / rings;
+        for (int s = 0; s <= slices; ++s) {
+            float theta = 2.0f * PI * s / slices;
+            float x = std::sin(phi) * std::cos(theta);
+            float y = std::cos(phi);
+            float z = std::sin(phi) * std::sin(theta);
+            mesh.vertices[v * 3 + 0] = x * radius;
+            mesh.vertices[v * 3 + 1] = y * radius;
+            mesh.vertices[v * 3 + 2] = z * radius;
+            mesh.normals[v * 3 + 0] = x;
+            mesh.normals[v * 3 + 1] = y;
+            mesh.normals[v * 3 + 2] = z;
+            mesh.texcoords[v * 2 + 0] = (float)s / slices;
+            mesh.texcoords[v * 2 + 1] = (float)r / rings;
+            ++v;
+        }
+    }
+
+    int idx = 0;
+    for (int r = 0; r < rings; ++r) {
+        for (int s = 0; s < slices; ++s) {
+            int a = r * (slices + 1) + s;
+            int b = a + slices + 1;
+            mesh.indices[idx++] = a;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = a + 1;
+            mesh.indices[idx++] = a + 1;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = b + 1;
+        }
+    }
+    return mesh;
+}
+
+Mesh GenMeshCylinder(float radius, float height, int slices) {
+    if (radius <= 0.0f || height <= 0.0f || slices < 3) return Mesh{};
+    int vertexCount = (slices + 1) * 2 + 2;
+    int triangleCount = slices * 4;
+    Mesh mesh = CreateMesh(vertexCount, triangleCount);
+
+    int v = 0;
+    for (int i = 0; i <= slices; ++i) {
+        float theta = 2.0f * PI * i / slices;
+        float x = std::cos(theta) * radius;
+        float z = std::sin(theta) * radius;
+        mesh.vertices[v * 3 + 0] = x;
+        mesh.vertices[v * 3 + 1] = -height * 0.5f;
+        mesh.vertices[v * 3 + 2] = z;
+        mesh.normals[v * 3 + 0] = x;
+        mesh.normals[v * 3 + 1] = 0.0f;
+        mesh.normals[v * 3 + 2] = z;
+        mesh.texcoords[v * 2 + 0] = (float)i / slices;
+        mesh.texcoords[v * 2 + 1] = 0.0f;
+        ++v;
+        mesh.vertices[v * 3 + 0] = x;
+        mesh.vertices[v * 3 + 1] = height * 0.5f;
+        mesh.vertices[v * 3 + 2] = z;
+        mesh.normals[v * 3 + 0] = x;
+        mesh.normals[v * 3 + 1] = 0.0f;
+        mesh.normals[v * 3 + 2] = z;
+        mesh.texcoords[v * 2 + 0] = (float)i / slices;
+        mesh.texcoords[v * 2 + 1] = 1.0f;
+        ++v;
+    }
+
+    int topCenter = v++;
+    int bottomCenter = v++;
+    mesh.vertices[topCenter * 3 + 0] = 0.0f;
+    mesh.vertices[topCenter * 3 + 1] = height * 0.5f;
+    mesh.vertices[topCenter * 3 + 2] = 0.0f;
+    mesh.normals[topCenter * 3 + 0] = 0.0f;
+    mesh.normals[topCenter * 3 + 1] = 1.0f;
+    mesh.normals[topCenter * 3 + 2] = 0.0f;
+    mesh.texcoords[topCenter * 2 + 0] = 0.5f;
+    mesh.texcoords[topCenter * 2 + 1] = 0.5f;
+
+    mesh.vertices[bottomCenter * 3 + 0] = 0.0f;
+    mesh.vertices[bottomCenter * 3 + 1] = -height * 0.5f;
+    mesh.vertices[bottomCenter * 3 + 2] = 0.0f;
+    mesh.normals[bottomCenter * 3 + 0] = 0.0f;
+    mesh.normals[bottomCenter * 3 + 1] = -1.0f;
+    mesh.normals[bottomCenter * 3 + 2] = 0.0f;
+    mesh.texcoords[bottomCenter * 2 + 0] = 0.5f;
+    mesh.texcoords[bottomCenter * 2 + 1] = 0.5f;
+
+    int idx = 0;
+    for (int i = 0; i < slices; ++i) {
+        int lower0 = i * 2;
+        int upper0 = lower0 + 1;
+        int lower1 = ((i + 1) % (slices + 1)) * 2;
+        int upper1 = lower1 + 1;
+
+        mesh.indices[idx++] = lower0;
+        mesh.indices[idx++] = upper0;
+        mesh.indices[idx++] = lower1;
+        mesh.indices[idx++] = upper0;
+        mesh.indices[idx++] = upper1;
+        mesh.indices[idx++] = lower1;
+
+        mesh.indices[idx++] = topCenter;
+        mesh.indices[idx++] = upper1;
+        mesh.indices[idx++] = upper0;
+
+        mesh.indices[idx++] = bottomCenter;
+        mesh.indices[idx++] = lower0;
+        mesh.indices[idx++] = lower1;
+    }
+    return mesh;
+}
+
+Mesh GenMeshCone(float radius, float height, int slices) {
+    if (radius <= 0.0f || height <= 0.0f || slices < 3) return Mesh{};
+    int vertexCount = slices + 2;
+    int triangleCount = slices * 2;
+    Mesh mesh = CreateMesh(vertexCount, triangleCount);
+
+    int apex = 0;
+    mesh.vertices[0] = 0.0f;
+    mesh.vertices[1] = height * 0.5f;
+    mesh.vertices[2] = 0.0f;
+    mesh.normals[0] = 0.0f;
+    mesh.normals[1] = 1.0f;
+    mesh.normals[2] = 0.0f;
+    mesh.texcoords[0] = 0.5f;
+    mesh.texcoords[1] = 0.5f;
+
+    int baseCenter = 1;
+    mesh.vertices[3] = 0.0f;
+    mesh.vertices[4] = -height * 0.5f;
+    mesh.vertices[5] = 0.0f;
+    mesh.normals[3] = 0.0f;
+    mesh.normals[4] = -1.0f;
+    mesh.normals[5] = 0.0f;
+    mesh.texcoords[2] = 0.5f;
+    mesh.texcoords[3] = 0.5f;
+
+    for (int i = 0; i < slices; ++i) {
+        float theta = 2.0f * PI * i / slices;
+        float x = std::cos(theta) * radius;
+        float z = std::sin(theta) * radius;
+        int v = 2 + i;
+        mesh.vertices[v * 3 + 0] = x;
+        mesh.vertices[v * 3 + 1] = -height * 0.5f;
+        mesh.vertices[v * 3 + 2] = z;
+        mesh.normals[v * 3 + 0] = x;
+        mesh.normals[v * 3 + 1] = radius;
+        mesh.normals[v * 3 + 2] = z;
+        Vec3 n = Vec3{mesh.normals[v * 3 + 0], mesh.normals[v * 3 + 1], mesh.normals[v * 3 + 2]}.normalized();
+        mesh.normals[v * 3 + 0] = n.x;
+        mesh.normals[v * 3 + 1] = n.y;
+        mesh.normals[v * 3 + 2] = n.z;
+        mesh.texcoords[v * 2 + 0] = (std::cos(theta) + 1.0f) * 0.5f;
+        mesh.texcoords[v * 2 + 1] = (std::sin(theta) + 1.0f) * 0.5f;
+    }
+
+    int idx = 0;
+    for (int i = 0; i < slices; ++i) {
+        int next = 2 + ((i + 1) % slices);
+        mesh.indices[idx++] = apex;
+        mesh.indices[idx++] = 2 + i;
+        mesh.indices[idx++] = next;
+        mesh.indices[idx++] = baseCenter;
+        mesh.indices[idx++] = next;
+        mesh.indices[idx++] = 2 + i;
+    }
+    return mesh;
+}
+
+Mesh GenMeshTorus(float radius, float size, int radSeg, int sides) {
+    if (radius <= 0.0f || size <= 0.0f || radSeg < 3 || sides < 3) return Mesh{};
+    int vertexCount = radSeg * sides;
+    int triangleCount = radSeg * sides * 2;
+    Mesh mesh = CreateMesh(vertexCount, triangleCount);
+
+    int v = 0;
+    for (int ring = 0; ring < radSeg; ++ring) {
+        float u = 2.0f * PI * ring / radSeg;
+        Vec3 center{std::cos(u) * radius, 0.0f, std::sin(u) * radius};
+        Vec3 ringDir{-std::sin(u), 0.0f, std::cos(u)};
+        Vec3 ringUp{0.0f, 1.0f, 0.0f};
+        for (int side = 0; side < sides; ++side) {
+            float vAngle = 2.0f * PI * side / sides;
+            float cx = std::cos(vAngle) * size;
+            float cy = std::sin(vAngle) * size;
+            Vec3 position = center + ringDir * cx + ringUp * cy;
+            Vec3 normal = Vec3{ringDir.x * cx + ringUp.x * cy,
+                               ringDir.y * cx + ringUp.y * cy,
+                               ringDir.z * cx + ringUp.z * cy}.normalized();
+            mesh.vertices[v * 3 + 0] = position.x;
+            mesh.vertices[v * 3 + 1] = position.y;
+            mesh.vertices[v * 3 + 2] = position.z;
+            mesh.normals[v * 3 + 0] = normal.x;
+            mesh.normals[v * 3 + 1] = normal.y;
+            mesh.normals[v * 3 + 2] = normal.z;
+            mesh.texcoords[v * 2 + 0] = (float)ring / radSeg;
+            mesh.texcoords[v * 2 + 1] = (float)side / sides;
+            ++v;
+        }
+    }
+
+    int idx = 0;
+    for (int ring = 0; ring < radSeg; ++ring) {
+        for (int side = 0; side < sides; ++side) {
+            int nextRing = (ring + 1) % radSeg;
+            int nextSide = (side + 1) % sides;
+            int a = ring * sides + side;
+            int b = nextRing * sides + side;
+            int c = nextRing * sides + nextSide;
+            int d = ring * sides + nextSide;
+            mesh.indices[idx++] = a;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = d;
+            mesh.indices[idx++] = d;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = c;
+        }
+    }
+    return mesh;
+}
+
+Mesh GenMeshKnot(float radius, float size, int radSeg, int sides) {
+    if (radius <= 0.0f || size <= 0.0f || radSeg < 3 || sides < 3) return Mesh{};
+    int vertexCount = radSeg * sides;
+    int triangleCount = radSeg * sides * 2;
+    Mesh mesh = CreateMesh(vertexCount, triangleCount);
+
+    auto knotPos = [&](float t) {
+        float x = (2.0f + std::cos(3.0f * t)) * std::cos(2.0f * t);
+        float y = (2.0f + std::cos(3.0f * t)) * std::sin(2.0f * t);
+        float z = std::sin(3.0f * t);
+        return Vec3{x, y, z} * radius;
+    };
+
+    auto knotTangent = [&](float t) {
+        float dx = -2.0f * std::sin(2.0f * t) - 3.0f * std::sin(3.0f * t) * std::cos(2.0f * t) - 2.0f * std::sin(2.0f * t) * std::cos(3.0f * t);
+        float dy =  2.0f * std::cos(2.0f * t) + 3.0f * std::sin(3.0f * t) * std::sin(2.0f * t) + 2.0f * std::cos(2.0f * t) * std::cos(3.0f * t);
+        float dz =  3.0f * std::cos(3.0f * t);
+        return Vec3{dx, dy, dz}.normalized();
+    };
+
+    for (int i = 0; i < radSeg; ++i) {
+        float u = 2.0f * PI * i / radSeg;
+        Vec3 center = knotPos(u);
+        Vec3 tangent = knotTangent(u);
+        Vec3 normal = Vec3{-tangent.y, tangent.x, 0.0f}.normalized();
+        Vec3 binormal = tangent.cross(normal).normalized();
+        for (int j = 0; j < sides; ++j) {
+            float v = 2.0f * PI * j / sides;
+            float cx = std::cos(v) * size;
+            float cy = std::sin(v) * size;
+            Vec3 position = center + normal * cx + binormal * cy;
+            Vec3 n = (normal * cx + binormal * cy).normalized();
+            int index = i * sides + j;
+            mesh.vertices[index * 3 + 0] = position.x;
+            mesh.vertices[index * 3 + 1] = position.y;
+            mesh.vertices[index * 3 + 2] = position.z;
+            mesh.normals[index * 3 + 0] = n.x;
+            mesh.normals[index * 3 + 1] = n.y;
+            mesh.normals[index * 3 + 2] = n.z;
+            mesh.texcoords[index * 2 + 0] = (float)i / radSeg;
+            mesh.texcoords[index * 2 + 1] = (float)j / sides;
+        }
+    }
+
+    int idx = 0;
+    for (int i = 0; i < radSeg; ++i) {
+        int nextRing = (i + 1) % radSeg;
+        for (int j = 0; j < sides; ++j) {
+            int nextSide = (j + 1) % sides;
+            int a = i * sides + j;
+            int b = nextRing * sides + j;
+            int c = nextRing * sides + nextSide;
+            int d = i * sides + nextSide;
+            mesh.indices[idx++] = a;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = d;
+            mesh.indices[idx++] = d;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = c;
+        }
+    }
+    return mesh;
+}
+
+Mesh GenMeshHeightmap(Image heightmap, Vec3 size) {
+    if (!heightmap.data || heightmap.width <= 0 || heightmap.height <= 0) return Mesh{};
+    int width = heightmap.width;
+    int height = heightmap.height;
+    int vertexCount = width * height;
+    int triangleCount = (width - 1) * (height - 1) * 2;
+    Mesh mesh = CreateMesh(vertexCount, triangleCount);
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int idx = y * width + x;
+            float fx = ((float)x / (width - 1) - 0.5f) * size.x;
+            float fz = ((float)y / (height - 1) - 0.5f) * size.z;
+            Vec3 sample = GetHeightSample(heightmap, x, y);
+            float fy = (sample.x - 0.5f) * size.y;
+            mesh.vertices[idx * 3 + 0] = fx;
+            mesh.vertices[idx * 3 + 1] = fy;
+            mesh.vertices[idx * 3 + 2] = fz;
+            mesh.texcoords[idx * 2 + 0] = (float)x / (width - 1);
+            mesh.texcoords[idx * 2 + 1] = (float)y / (height - 1);
+        }
+    }
+
+    int idx = 0;
+    for (int y = 0; y < height - 1; ++y) {
+        for (int x = 0; x < width - 1; ++x) {
+            int a = y * width + x;
+            int b = a + 1;
+            int c = a + width;
+            int d = c + 1;
+            mesh.indices[idx++] = a;
+            mesh.indices[idx++] = c;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = b;
+            mesh.indices[idx++] = c;
+            mesh.indices[idx++] = d;
+        }
+    }
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int index = y * width + x;
+            Vec3 center{mesh.vertices[index * 3 + 0], mesh.vertices[index * 3 + 1], mesh.vertices[index * 3 + 2]};
+            Vec3 left = GetHeightSample(heightmap, x - 1, y);
+            Vec3 right = GetHeightSample(heightmap, x + 1, y);
+            Vec3 down = GetHeightSample(heightmap, x, y - 1);
+            Vec3 up = GetHeightSample(heightmap, x, y + 1);
+            float dx = (right.x - left.x) * size.y;
+            float dz = (up.x - down.x) * size.y;
+            Vec3 normal = Vec3{-dx, 2.0f, -dz}.normalized();
+            mesh.normals[index * 3 + 0] = normal.x;
+            mesh.normals[index * 3 + 1] = normal.y;
+            mesh.normals[index * 3 + 2] = normal.z;
+        }
+    }
+    return mesh;
+}
+
+Mesh GenMeshCubicmap(Image cubicmap, Vec3 cubeSize) {
+    if (!cubicmap.data || cubicmap.width <= 0 || cubicmap.height <= 0) return Mesh{};
+    int width = cubicmap.width;
+    int height = cubicmap.height;
+    std::vector<Mesh> cubes;
+    int channels = cubicmap.channels > 0 ? cubicmap.channels : 1;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int idx = (y * width + x) * channels;
+            unsigned char alpha = 0;
+            if (channels >= 4) {
+                alpha = cubicmap.data[idx + 3];
+            } else if (channels >= 1) {
+                alpha = cubicmap.data[idx];
+            }
+            if (alpha == 0) continue;
+            Mesh cube = GenMeshCube(cubeSize.x, cubeSize.y, cubeSize.z);
+            float px = ((float)x - width * 0.5f + 0.5f) * cubeSize.x;
+            float pz = ((float)y - height * 0.5f + 0.5f) * cubeSize.z;
+            for (int v = 0; v < cube.vertexCount; ++v) {
+                cube.vertices[v * 3 + 0] += px;
+                cube.vertices[v * 3 + 1] += cubeSize.y * 0.5f;
+                cube.vertices[v * 3 + 2] += pz;
+            }
+            cubes.push_back(std::move(cube));
+        }
+    }
+
+    if (cubes.empty()) return Mesh{};
+    int totalVerts = 0;
+    int totalTris = 0;
+    for (auto& cube : cubes) {
+        totalVerts += cube.vertexCount;
+        totalTris += cube.triangleCount;
+    }
+
+    Mesh mesh = CreateMesh(totalVerts, totalTris);
+    int vOffset = 0;
+    int iOffset = 0;
+    for (auto& cube : cubes) {
+        for (int v = 0; v < cube.vertexCount; ++v) {
+            mesh.vertices[(vOffset + v) * 3 + 0] = cube.vertices[v * 3 + 0];
+            mesh.vertices[(vOffset + v) * 3 + 1] = cube.vertices[v * 3 + 1];
+            mesh.vertices[(vOffset + v) * 3 + 2] = cube.vertices[v * 3 + 2];
+            mesh.normals[(vOffset + v) * 3 + 0] = cube.normals[v * 3 + 0];
+            mesh.normals[(vOffset + v) * 3 + 1] = cube.normals[v * 3 + 1];
+            mesh.normals[(vOffset + v) * 3 + 2] = cube.normals[v * 3 + 2];
+            mesh.texcoords[(vOffset + v) * 2 + 0] = cube.texcoords[v * 2 + 0];
+            mesh.texcoords[(vOffset + v) * 2 + 1] = cube.texcoords[v * 2 + 1];
+        }
+        for (int t = 0; t < cube.triangleCount * 3; ++t) {
+            mesh.indices[iOffset + t] = cube.indices[t] + vOffset;
+        }
+        vOffset += cube.vertexCount;
+        iOffset += cube.triangleCount * 3;
+    }
+    return mesh;
+}
+
 void DrawBoundingBox(BoundingBox box, Color color) {
     Vec3 vertices[8] = {
         {box.min.x, box.min.y, box.min.z},

@@ -169,8 +169,12 @@ if(QC_BUILD_EXAMPLES)
     target_link_libraries(quarkcore_3d_primitives PRIVATE QuarkCore)
     set_target_properties(quarkcore_3d_primitives PROPERTIES UNITY_BUILD ON)
 
+    add_executable(quarkcore_meshes examples/meshes.cpp)
+    target_link_libraries(quarkcore_meshes PRIVATE QuarkCore)
+    set_target_properties(quarkcore_meshes PROPERTIES UNITY_BUILD ON)
+
     if(WIN32)
-        set(EXAMPLE_TARGETS quarkcore_sandbox quarkcore_textures_and_shaders quarkcore_3d_primitives)
+        set(EXAMPLE_TARGETS quarkcore_sandbox quarkcore_textures_and_shaders quarkcore_3d_primitives quarkcore_meshes)
         foreach(target ${EXAMPLE_TARGETS})
             add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
