@@ -65,7 +65,8 @@ jobs:
             wayland-protocols \
             libasound2-dev \
             libpulse-dev \
-            libudev-dev
+            libudev-dev \
+            libxss-dev
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DQC_BUILD_EXAMPLES=ON -G Ninja
