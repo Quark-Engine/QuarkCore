@@ -87,10 +87,10 @@ jobs:
           wayland-protocols
 
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DQC_BUILD_EXAMPLES=ON -G Ninja
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DQC_BUILD_EXAMPLES=ON -DASSIMP_BUILD_ZLIB=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -G Ninja
 
       - name: Build
-        run: cmake --build build --config Release -DASSIMP_BUILD_ZLIB=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+        run: cmake --build build --config Release
 
       - name: Prepare Artifacts
         run: |
