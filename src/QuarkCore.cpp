@@ -4,6 +4,8 @@
 #include "QuarkInternal.hpp"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+#include <vulkan/vulkan.h>
 #include <algorithm>
 #include <chrono>
 #include <cstdarg>
@@ -79,86 +81,6 @@ void CopyText(char* dst, size_t size, const char* src) {
 #endif
 }
 
-static Mat4 BuildTransform(const Vec3& position, const Vec3& axis, float angle, const Vec3& scale) {
-    Mat4 translation = Mat4::translation(position.x, position.y, position.z);
-    Mat4 scaleMat = Mat4::scale(scale.x, scale.y, scale.z);
-    Mat4 rotation = Mat4::identity();
-    if ((axis.x != 0.0f || axis.y != 0.0f || axis.z != 0.0f) && angle != 0.0f) {
-        Vec3 n = axis.normalized();
-        float c = std::cos(angle);
-        float s = std::sin(angle);
-        float t = 1.0f - c;
-
-        rotation.m[0] = n.x * n.x * t + c;
-        rotation.m[1] = n.x * n.y * t + n.z * s;
-        rotation.m[2] = n.x * n.z * t - n.y * s;
-        rotation.m[3] = 0.0f;
-
-        rotation.m[4] = n.x * n.y * t - n.z * s;
-        rotation.m[5] = n.y * n.y * t + c;
-        rotation.m[6] = n.y * n.z * t + n.x * s;
-        rotation.m[7] = 0.0f;
-
-        rotation.m[8] = n.x * n.z * t + n.y * s;
-        rotation.m[9] = n.y * n.z * t - n.x * s;
-        rotation.m[10] = n.z * n.z * t + c;
-        rotation.m[11] = 0.0f;
-
-        rotation.m[12] = 0.0f;
-        rotation.m[13] = 0.0f;
-        rotation.m[14] = 0.0f;
-        rotation.m[15] = 1.0f;
-    }
-
-    return translation * rotation * scaleMat;
-}
-
-static Vec3 TransformPoint(const Mat4& transform, const Vec3& point) {
-    return Vec3{
-        transform.m[0] * point.x + transform.m[4] * point.y + transform.m[8]  * point.z + transform.m[12],
-        transform.m[1] * point.x + transform.m[5] * point.y + transform.m[9]  * point.z + transform.m[13],
-        transform.m[2] * point.x + transform.m[6] * point.y + transform.m[10] * point.z + transform.m[14]
-    };
-}
-
-static void DrawModelWireframe(const Model& model, const Mat4& transform, Color color) {
-    if (!model.meshes) return;
-
-    for (int i = 0; i < model.meshCount; ++i) {
-        const Mesh& mesh = model.meshes[i];
-        if (!mesh.vertices) continue;
-
-        const bool hasIndices = mesh.indices != nullptr;
-        const int triangleCount = mesh.triangleCount;
-
-        for (int t = 0; t < triangleCount; ++t) {
-            int idx0 = hasIndices ? mesh.indices[t * 3 + 0] : t * 3 + 0;
-            int idx1 = hasIndices ? mesh.indices[t * 3 + 1] : t * 3 + 1;
-            int idx2 = hasIndices ? mesh.indices[t * 3 + 2] : t * 3 + 2;
-
-            Vec3 v0 = TransformPoint(transform, Vec3{
-                mesh.vertices[idx0 * 3 + 0],
-                mesh.vertices[idx0 * 3 + 1],
-                mesh.vertices[idx0 * 3 + 2]
-            });
-            Vec3 v1 = TransformPoint(transform, Vec3{
-                mesh.vertices[idx1 * 3 + 0],
-                mesh.vertices[idx1 * 3 + 1],
-                mesh.vertices[idx1 * 3 + 2]
-            });
-            Vec3 v2 = TransformPoint(transform, Vec3{
-                mesh.vertices[idx2 * 3 + 0],
-                mesh.vertices[idx2 * 3 + 1],
-                mesh.vertices[idx2 * 3 + 2]
-            });
-
-            gRenderer.DrawLine3D(v0, v1, color);
-            gRenderer.DrawLine3D(v1, v2, color);
-            gRenderer.DrawLine3D(v2, v0, color);
-        }
-    }
-}
-
 void UpdateInputFromEvents() {
     float mx = 0.f, my = 0.f;
     const SDL_MouseButtonFlags ms = SDL_GetMouseState(&mx, &my);
@@ -171,27 +93,99 @@ void UpdateInputFromEvents() {
     for (int i = 0; i < static_cast<int>(SDL_SCANCODE_COUNT); ++i)
         gWin.currentKeys[static_cast<std::size_t>(i)] = ks[i];
 }
+
 void EnsureInitialized() {
     if (gWin.window == nullptr)
         throw std::runtime_error("QuarkCore is not initialized. Call InitWindow() first.");
 }
 
-void InitWindow(int width, int height, const char* title) {
+void InitWindow(int width, int height, const char* title, RendererType rendererType) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
         throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
 
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    if (rendererType == RendererType::OpenGL) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
-    gWin.window = SDL_CreateWindow(title, width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+        gWin.window = SDL_CreateWindow(
+            title,
+            width,
+            height,
+            SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
+        );
+
+        if (!gWin.window)
+            throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
+
+        gRenderer.Init(gWin.window, width, height);
+        gRenderer.SetTargetFPS(gWin.targetFps);
+    }
+    else if (rendererType == RendererType::Vulkan) {
+        if (!SDL_Vulkan_LoadLibrary(nullptr))
+            throw std::runtime_error(std::string("SDL_Vulkan_LoadLibrary failed: ") + SDL_GetError());
+
+        gWin.window = SDL_CreateWindow(
+            title,
+            width,
+            height,
+            SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
+        );
+
+        if (!gWin.window)
+            throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
+
+        Uint32 extensionCount = 0;
+        const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
+
+        if (!extensions)
+            throw std::runtime_error(std::string("SDL_Vulkan_GetInstanceExtensions failed: ") + SDL_GetError());
+
+        std::vector<const char*> extensionVec(extensions, extensions + extensionCount);
+
+        WriteLog(LogLevel::Info, "VULKAN", "Required Vulkan extensions:");
+        for (const char* ext : extensionVec) {
+            WriteLog(LogLevel::Info, "VULKAN", std::string("  - ") + (ext ? ext : "(null)"));
+        }
+
+        VkApplicationInfo appInfo{};
+        appInfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+        appInfo.pApplicationName   = title;
+        appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+        appInfo.pEngineName        = "QuarkCore";
+        appInfo.engineVersion      = VK_MAKE_VERSION(1, 0, 0);
+        appInfo.apiVersion         = VK_API_VERSION_1_0;
+
+        VkInstanceCreateInfo createInfo{};
+        createInfo.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        createInfo.pApplicationInfo        = &appInfo;
+        createInfo.enabledExtensionCount   = extensionCount;
+        createInfo.ppEnabledExtensionNames = extensionVec.data();
+        createInfo.enabledLayerCount       = 0;
+
+        VkInstance instance = VK_NULL_HANDLE;
+        VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
+
+        if (result != VK_SUCCESS)
+            throw std::runtime_error("vkCreateInstance failed, VkResult: " + std::to_string(result));
+
+        gWin.vkInstance = instance;
+
+        VkSurfaceKHR surface = VK_NULL_HANDLE;
+        if (!SDL_Vulkan_CreateSurface(gWin.window, instance, nullptr, &surface))
+            throw std::runtime_error(std::string("SDL_Vulkan_CreateSurface failed: ") + SDL_GetError());
+
+        gWin.vkSurface = surface;
+
+        WriteLog(LogLevel::Info, "VULKAN", "Vulkan instance and surface created successfully");
+
+        gWin.targetFps = gWin.targetFps;
+    }
+
     if (!gWin.window)
-        throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
-
-    gRenderer.Init(gWin.window, width, height);
-    gRenderer.SetTargetFPS(gWin.targetFps);
+        throw std::runtime_error(std::string("Window is null after init"));
 
     WriteLog(LogLevel::Info, "WINDOW", "Window created: " + std::string(title ? title : ""));
 }
@@ -389,6 +383,86 @@ bool IsGamepadButtonPressed(int gamepad, int button) {
     bool p = SDL_GetJoystickButton(j, button) != 0;
     SDL_CloseJoystick(j);
     return p;
+}
+
+static Mat4 BuildTransform(const Vec3& position, const Vec3& axis, float angle, const Vec3& scale) {
+    Mat4 translation = Mat4::translation(position.x, position.y, position.z);
+    Mat4 scaleMat = Mat4::scale(scale.x, scale.y, scale.z);
+    Mat4 rotation = Mat4::identity();
+    if ((axis.x != 0.0f || axis.y != 0.0f || axis.z != 0.0f) && angle != 0.0f) {
+        Vec3 n = axis.normalized();
+        float c = std::cos(angle);
+        float s = std::sin(angle);
+        float t = 1.0f - c;
+
+        rotation.m[0] = n.x * n.x * t + c;
+        rotation.m[1] = n.x * n.y * t + n.z * s;
+        rotation.m[2] = n.x * n.z * t - n.y * s;
+        rotation.m[3] = 0.0f;
+
+        rotation.m[4] = n.x * n.y * t - n.z * s;
+        rotation.m[5] = n.y * n.y * t + c;
+        rotation.m[6] = n.y * n.z * t + n.x * s;
+        rotation.m[7] = 0.0f;
+
+        rotation.m[8] = n.x * n.z * t + n.y * s;
+        rotation.m[9] = n.y * n.z * t - n.x * s;
+        rotation.m[10] = n.z * n.z * t + c;
+        rotation.m[11] = 0.0f;
+
+        rotation.m[12] = 0.0f;
+        rotation.m[13] = 0.0f;
+        rotation.m[14] = 0.0f;
+        rotation.m[15] = 1.0f;
+    }
+
+    return translation * rotation * scaleMat;
+}
+
+static Vec3 TransformPoint(const Mat4& transform, const Vec3& point) {
+    return Vec3{
+        transform.m[0] * point.x + transform.m[4] * point.y + transform.m[8]  * point.z + transform.m[12],
+        transform.m[1] * point.x + transform.m[5] * point.y + transform.m[9]  * point.z + transform.m[13],
+        transform.m[2] * point.x + transform.m[6] * point.y + transform.m[10] * point.z + transform.m[14]
+    };
+}
+
+static void DrawModelWireframe(const Model& model, const Mat4& transform, Color color) {
+    if (!model.meshes) return;
+
+    for (int i = 0; i < model.meshCount; ++i) {
+        const Mesh& mesh = model.meshes[i];
+        if (!mesh.vertices) continue;
+
+        const bool hasIndices = mesh.indices != nullptr;
+        const int triangleCount = mesh.triangleCount;
+
+        for (int t = 0; t < triangleCount; ++t) {
+            int idx0 = hasIndices ? mesh.indices[t * 3 + 0] : t * 3 + 0;
+            int idx1 = hasIndices ? mesh.indices[t * 3 + 1] : t * 3 + 1;
+            int idx2 = hasIndices ? mesh.indices[t * 3 + 2] : t * 3 + 2;
+
+            Vec3 v0 = TransformPoint(transform, Vec3{
+                mesh.vertices[idx0 * 3 + 0],
+                mesh.vertices[idx0 * 3 + 1],
+                mesh.vertices[idx0 * 3 + 2]
+            });
+            Vec3 v1 = TransformPoint(transform, Vec3{
+                mesh.vertices[idx1 * 3 + 0],
+                mesh.vertices[idx1 * 3 + 1],
+                mesh.vertices[idx1 * 3 + 2]
+            });
+            Vec3 v2 = TransformPoint(transform, Vec3{
+                mesh.vertices[idx2 * 3 + 0],
+                mesh.vertices[idx2 * 3 + 1],
+                mesh.vertices[idx2 * 3 + 2]
+            });
+
+            gRenderer.DrawLine3D(v0, v1, color);
+            gRenderer.DrawLine3D(v1, v2, color);
+            gRenderer.DrawLine3D(v2, v0, color);
+        }
+    }
 }
 
 void BeginDrawing() { EnsureInitialized(); gRenderer.BeginDrawing(); }

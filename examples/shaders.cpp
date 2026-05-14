@@ -79,7 +79,7 @@ void main() {
 )";
 
 int main() {
-    qc::InitWindow(1280, 720, "Shader Effects Demo");
+    qc::InitWindow(1280, 720, "Shader Effects Demo", qc::RendererType::OpenGL);
     qc::SetTargetFPS(60);
 
     qc::Texture2D checker = qc::GenCheckerTexture(

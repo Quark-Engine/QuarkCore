@@ -1,7 +1,7 @@
 #include "QuarkCore/QuarkCore.hpp"
 
 int main() {
-    qc::InitWindow(1280, 720, "QuarkCore Sandbox");
+    qc::InitWindow(1280, 720, "QuarkCore Sandbox", qc::RendererType::OpenGL);
     qc::SetWindowMinimumSize(800, 450);
     qc::StartTextInput();
     qc::SetLogLevel(qc::LogLevel::Trace);

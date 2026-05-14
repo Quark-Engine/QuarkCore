@@ -1,7 +1,7 @@
 #include "QuarkCore/QuarkCore.hpp"
 
 int main() {
-    qc::InitWindow(1280, 720, "QuarkCore Meshes Example");
+    qc::InitWindow(1280, 720, "QuarkCore Meshes Example", qc::RendererType::OpenGL);
     qc::SetWindowMinimumSize(800, 450);
     qc::SetTargetFPS(60);
 

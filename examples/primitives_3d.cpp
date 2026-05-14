@@ -2,7 +2,7 @@
 #include <cmath>
 
 int main() {
-    qc::InitWindow(1280, 720, "QuarkCore - 3D Primitives Demo");
+    qc::InitWindow(1280, 720, "QuarkCore - 3D Primitives Demo", qc::RendererType::OpenGL);
     qc::SetTargetFPS(60);
 
     qc::Camera3D camera = qc::CreateCamera3D();

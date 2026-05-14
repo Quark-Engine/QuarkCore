@@ -35,3 +35,56 @@ jobs:
           path: artifacts/
           if-no-files-found: error
           retention-days: 5
+
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            libgl1-mesa-dev \
+            libvulkan-dev \
+            vulkan-validationlayers \
+            libx11-dev \
+            libxext-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxxf86vm-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            wayland-protocols \
+            libasound2-dev \
+            libpulse-dev \
+            libudev-dev
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DQC_BUILD_EXAMPLES=ON -G Ninja
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Prepare Artifacts
+        run: |
+          mkdir -p artifacts/include
+          cp build/libQuarkCore.so artifacts/
+          find build -maxdepth 1 -type f -executable ! -name "*.so*" | xargs -I{} cp {} artifacts/
+          find build -maxdepth 1 -name "*.so*" | xargs -I{} cp {} artifacts/
+          cp -r include/. artifacts/include/
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: QuarkCore-Linux-Binary
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 5

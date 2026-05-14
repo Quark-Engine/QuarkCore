@@ -17,6 +17,34 @@ include(FetchContent)
 set(FETCHCONTENT_QUIET ON)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 
+set(VULKAN_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/Vulkan")
+
+add_library(Vulkan::Vulkan INTERFACE IMPORTED GLOBAL)
+
+target_include_directories(Vulkan::Vulkan INTERFACE
+    "${VULKAN_EXTERNAL_DIR}/include"
+)
+
+if(WIN32)
+    set(VULKAN_LIB_PATH "${VULKAN_EXTERNAL_DIR}/lib/vulkan-1.lib")
+    if(NOT EXISTS "${VULKAN_LIB_PATH}")
+        message(FATAL_ERROR
+            "Vulkan import library not found: ${VULKAN_LIB_PATH}\n"
+            "Place vulkan-1.lib in external/Vulkan/lib/")
+    endif()
+    target_link_libraries(Vulkan::Vulkan INTERFACE "${VULKAN_LIB_PATH}")
+else()
+    find_library(VULKAN_LOADER_LIB
+        NAMES vulkan vulkan-1
+        HINTS "${VULKAN_EXTERNAL_DIR}/lib"
+    )
+    if(VULKAN_LOADER_LIB)
+        target_link_libraries(Vulkan::Vulkan INTERFACE "${VULKAN_LOADER_LIB}")
+    else()
+        target_link_libraries(Vulkan::Vulkan INTERFACE -lvulkan)
+    endif()
+endif()
+
 FetchContent_Declare(zlib
     GIT_REPOSITORY https://github.com/madler/zlib.git
     GIT_TAG        v1.3.1
@@ -30,12 +58,12 @@ if(NOT TARGET ZLIB::ZLIB)
     add_library(ZLIB::ZLIB ALIAS zlibstatic)
 endif()
 
-set(ZLIB_FOUND       TRUE                                    CACHE BOOL   "" FORCE)
-set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}" CACHE STRING "" FORCE)
-set(ZLIB_LIBRARY     zlibstatic                              CACHE STRING "" FORCE)
-set(ZLIB_INCLUDE_DIRS "${ZLIB_INCLUDE_DIR}"  CACHE STRING "" FORCE)
-set(ZLIB_LIBRARIES    "${ZLIB_LIBRARY}"       CACHE STRING "" FORCE)
-set(ZLIB_VERSION_STRING "1.3.1"              CACHE STRING "" FORCE)
+set(ZLIB_FOUND        TRUE                                    CACHE BOOL   "" FORCE)
+set(ZLIB_INCLUDE_DIR  "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}" CACHE STRING "" FORCE)
+set(ZLIB_LIBRARY      zlibstatic                              CACHE STRING "" FORCE)
+set(ZLIB_INCLUDE_DIRS "${ZLIB_INCLUDE_DIR}"                   CACHE STRING "" FORCE)
+set(ZLIB_LIBRARIES    "${ZLIB_LIBRARY}"                       CACHE STRING "" FORCE)
+set(ZLIB_VERSION_STRING "1.3.1"                               CACHE STRING "" FORCE)
 
 list(APPEND VCPKG_MANIFEST_FEATURES "")
 set(VCPKG_INSTALLED_DIR "" CACHE PATH "" FORCE)
@@ -107,11 +135,11 @@ FetchContent_Declare(freetype
     GIT_SHALLOW    TRUE
     SYSTEM
 )
-set(FT_DISABLE_ZLIB     ON CACHE BOOL "" FORCE)
-set(FT_DISABLE_BZIP2    ON CACHE BOOL "" FORCE)
-set(FT_DISABLE_PNG      ON CACHE BOOL "" FORCE)
-set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
-set(FT_DISABLE_BROTLI   ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_ZLIB     ON  CACHE BOOL "" FORCE)
+set(FT_DISABLE_BZIP2    ON  CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG      ON  CACHE BOOL "" FORCE)
+set(FT_DISABLE_HARFBUZZ ON  CACHE BOOL "" FORCE)
+set(FT_DISABLE_BROTLI   ON  CACHE BOOL "" FORCE)
 set(FT_REQUIRE_ZLIB     OFF CACHE BOOL "" FORCE)
 set(FT_REQUIRE_PNG      OFF CACHE BOOL "" FORCE)
 set(CMAKE_SKIP_INSTALL_RULES TRUE)
@@ -145,6 +173,7 @@ target_link_libraries(QuarkCore
     OpenGL::GL
     assimp::assimp
     freetype
+    Vulkan::Vulkan
 )
 
 target_compile_definitions(QuarkCore PRIVATE NOMINMAX)
@@ -173,8 +202,18 @@ if(QC_BUILD_EXAMPLES)
     target_link_libraries(quarkcore_meshes PRIVATE QuarkCore)
     set_target_properties(quarkcore_meshes PROPERTIES UNITY_BUILD ON)
 
+    add_executable(quarkcore_vulkan examples/vulkan.cpp)
+    target_link_libraries(quarkcore_vulkan PRIVATE QuarkCore)
+    set_target_properties(quarkcore_vulkan PROPERTIES UNITY_BUILD ON)
+
     if(WIN32)
-        set(EXAMPLE_TARGETS quarkcore_sandbox quarkcore_textures_and_shaders quarkcore_3d_primitives quarkcore_meshes)
+        set(EXAMPLE_TARGETS
+            quarkcore_sandbox
+            quarkcore_textures_and_shaders
+            quarkcore_3d_primitives
+            quarkcore_meshes
+            quarkcore_vulkan
+        )
         foreach(target ${EXAMPLE_TARGETS})
             add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different

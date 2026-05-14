@@ -44,6 +44,14 @@
 
 namespace qc {
 
+/** 
+ * @brief Renderer type enumeration.
+ */
+enum class RendererType {
+    OpenGL,
+    Vulkan
+};
+
 /**
  * @brief Texture structure.
  */
@@ -462,7 +470,7 @@ struct Event {
  * @param height Window height in pixels.
  * @param title Window title text.
  */
-QCAPI void InitWindow(int width, int height, const char* title);
+QCAPI void InitWindow(int width, int height, const char* title, RendererType rendererType);
 /**
  * @brief Check if the window should close.
  *

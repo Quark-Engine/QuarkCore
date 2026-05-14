@@ -1,6 +1,7 @@
 #pragma once
 #include "QuarkCore/QuarkCore.hpp"
 #include <SDL3/SDL.h>
+#include <vulkan/vulkan.h>
 #include <vector>
 #include <array>
 
@@ -12,6 +13,9 @@ namespace qc {
 struct WindowState {
     SDL_Window* window      = nullptr;
     SDL_GLContext context   = nullptr;
+    VkInstance vkInstance   = VK_NULL_HANDLE;
+    VkSurfaceKHR vkSurface  = VK_NULL_HANDLE;
+
     bool  shouldClose       = false;
     int   targetFps         = 60;
     LogLevel minimumLogLevel = LogLevel::Trace;

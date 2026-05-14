@@ -17,7 +17,7 @@ void main() {
 )";
 
 int main() {
-    qc::InitWindow(1280, 720, "QuarkCore Textures and Shaders Example");
+    qc::InitWindow(1280, 720, "QuarkCore Textures and Shaders Example", qc::RendererType::OpenGL);
     qc::SetTargetFPS(60);
     qc::StartTextInput();
 

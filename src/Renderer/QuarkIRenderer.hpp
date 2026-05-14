@@ -6,11 +6,6 @@
 
 namespace qc {
 
-enum class RendererType {
-    OpenGL,
-    Vulkan
-};
-
 class QCAPI IRenderer {
 public:
     virtual ~IRenderer() = default;
