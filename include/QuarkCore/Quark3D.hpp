@@ -177,20 +177,17 @@ QCAPI Model LoadModel(const char* filePath);
 QCAPI void UnloadModel(Model& model);
 
 /**
- * @brief Draw a model with extended parameters.
+ * @brief Draw a model (with texture if set).
  *
  * @param model Model to draw.
  * @param position Position in world space.
  * @param scale Scale factor.
- * @param rotationAxis Axis to rotate around.
- * @param rotationAngle Rotation angle in radians.
  * @param tint Color tint.
  */
-QCAPI void DrawModel(const Model& model, const Vec3& position, float scale,
-               const Vec3& rotationAxis, float rotationAngle, Color tint);
+QCAPI void DrawModel(Model model, Vec3 position, float scale, Color tint);
 
 /**
- * @brief Draw a model with extended parameters and non-uniform scale.
+ * @brief Draw a model with extended parameters.
  *
  * @param model Model to draw.
  * @param position Position in world space.
@@ -199,8 +196,31 @@ QCAPI void DrawModel(const Model& model, const Vec3& position, float scale,
  * @param scale Scale vector.
  * @param tint Color tint.
  */
-QCAPI void DrawModelEx(const Model& model, const Vec3& position, const Vec3& rotationAxis,
-               float rotationAngle, const Vec3& scale, Color tint);
+QCAPI void DrawModelEx(Model model, Vec3 position, Vec3 rotationAxis,
+               float rotationAngle, Vec3 scale, Color tint);
+
+/**
+ * @brief Draw a model wires (with texture if set).
+ *
+ * @param model Model to draw.
+ * @param position Position in world space.
+ * @param scale Scale factor.
+ * @param tint Color tint.
+ */
+QCAPI void DrawModelWires(Model model, Vec3 position, float scale, Color tint);
+
+/**
+ * @brief Draw a model wires with extended parameters.
+ *
+ * @param model Model to draw.
+ * @param position Position in world space.
+ * @param rotationAxis Axis to rotate around.
+ * @param rotationAngle Rotation angle in radians.
+ * @param scale Scale vector.
+ * @param tint Color tint.
+ */
+QCAPI void DrawModelWiresEx(Model model, Vec3 position, Vec3 rotationAxis,
+               float rotationAngle, Vec3 scale, Color tint);
 
 /**
  * @brief Draw a model with extended parameters.
@@ -208,19 +228,7 @@ QCAPI void DrawModelEx(const Model& model, const Vec3& position, const Vec3& rot
  * @param model Model to draw.
  * @param transform Model transformation matrix.
  */
-QCAPI void DrawModelEx(const Model& model, const Mat4& transform);
-
-/**
- * @brief Draw a model wireframe with texture if available.
- */
-QCAPI void DrawModelWires(const Model& model, const Vec3& position, float scale,
-               const Vec3& rotationAxis, float rotationAngle, Color tint);
-
-/**
- * @brief Draw a model wireframe with extended parameters.
- */
-QCAPI void DrawModelWiresEx(const Model& model, const Vec3& position, const Vec3& rotationAxis,
-               float rotationAngle, const Vec3& scale, Color tint);
+QCAPI void DrawModelEx(Model model, const Mat4& transform);
 
 /**
  * @brief Draw a bounding box.

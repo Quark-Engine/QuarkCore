@@ -69,6 +69,7 @@ int main() {
             qc::DrawCube({ 0, 1, 0 }, 2, 2, 2, qc::RED);
             qc::DrawGrid(20, 1.0f);
             qc::DrawModelEx(model, qc::Mat4::rotationZ(qc::GetTime()));
+            qc::DrawModel(model, { 3, 0, 0 }, 1.0f, qc::GREEN);
         qc::EndMode3D();
 
         

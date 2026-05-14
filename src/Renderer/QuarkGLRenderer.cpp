@@ -1328,4 +1328,25 @@ void QuarkGLRenderer::DrawModelEx(const Model& model,const Mat4& transform){
     }
 }
 
+void QuarkGLRenderer::DrawModelEx(const Model& model,const Mat4& transform, Color tint){
+    Mat4 final=ApplyCurrentMatrix(transform);
+    if(m_3d.modelLoc>=0) glUniformMatrix4fv(m_3d.modelLoc,1,GL_FALSE,final.m);
+    if(m_3d.colorLoc>=0) glUniform4f(m_3d.colorLoc,
+        tint.r/255.0f, tint.g/255.0f, tint.b/255.0f, tint.a/255.0f);
+    for(int i=0;i<model.meshCount;++i){
+        const Mesh& mesh=model.meshes[i];
+        glActiveTexture(GL_TEXTURE0);
+        GLuint texId=m_3d.whiteTexture;
+        if(model.meshMaterial&&model.meshMaterial[i]>=0&&model.meshMaterial[i]<model.materialCount){
+            const Material& mat=model.materials[model.meshMaterial[i]];
+            if(mat.maps&&mat.maps[MATERIAL_MAP_ALBEDO].texture.valid)
+                texId=mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
+        }
+        glBindTexture(GL_TEXTURE_2D,texId);
+        glBindVertexArray(mesh.vaoId);
+        glDrawElements(GL_TRIANGLES,(GLsizei)(mesh.triangleCount*3),GL_UNSIGNED_SHORT,nullptr);
+        glBindVertexArray(0);
+    }
+}
+
 } // namespace qc

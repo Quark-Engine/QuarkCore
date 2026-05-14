@@ -683,30 +683,28 @@ Model LoadModel(const char* filePath) {
 
 void UnloadModel(Model& model)  { gRenderer.UnloadModel(model); }
 
-void DrawModel(const Model& model, const Vec3& position, float scale,
-               const Vec3& rotationAxis, float rotationAngle, Color tint) {
-    Mat4 transform = BuildTransform(position, rotationAxis, rotationAngle, Vec3{scale, scale, scale});
-    gRenderer.DrawModelEx(model, transform);
+void DrawModel(Model model, Vec3 position, float scale, Color tint) {
+    Mat4 transform = BuildTransform(position, Vec3{0.0f, 1.0f, 0.0f}, 0.0f, Vec3{scale, scale, scale});
+    gRenderer.DrawModelEx(model, transform, tint);
 }
 
-void DrawModelEx(const Model& model, const Vec3& position, const Vec3& rotationAxis,
-                 float rotationAngle, const Vec3& scale, Color tint) {
+void DrawModelEx(Model model, Vec3 position, Vec3 rotationAxis,
+                 float rotationAngle, Vec3 scale, Color tint) {
     Mat4 transform = BuildTransform(position, rotationAxis, rotationAngle, scale);
+    gRenderer.DrawModelEx(model, transform, tint);
+}
+
+void DrawModelEx(Model model, const Mat4& transform) {
     gRenderer.DrawModelEx(model, transform);
 }
 
-void DrawModelEx(const Model& model, const Mat4& transform) {
-    gRenderer.DrawModelEx(model, transform);
-}
-
-void DrawModelWires(const Model& model, const Vec3& position, float scale,
-                    const Vec3& rotationAxis, float rotationAngle, Color tint) {
-    Mat4 transform = BuildTransform(position, rotationAxis, rotationAngle, Vec3{scale, scale, scale});
+void DrawModelWires(Model model, Vec3 position, float scale, Color tint) {
+    Mat4 transform = BuildTransform(position, Vec3{0.0f, 0.0f, 1.0f}, 0.0f, Vec3{scale, scale, scale});
     DrawModelWireframe(model, transform, tint);
 }
 
-void DrawModelWiresEx(const Model& model, const Vec3& position, const Vec3& rotationAxis,
-                      float rotationAngle, const Vec3& scale, Color tint) {
+void DrawModelWiresEx(Model model, Vec3 position, Vec3 rotationAxis,
+                      float rotationAngle, Vec3 scale, Color tint) {
     Mat4 transform = BuildTransform(position, rotationAxis, rotationAngle, scale);
     DrawModelWireframe(model, transform, tint);
 }

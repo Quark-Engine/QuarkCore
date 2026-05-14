@@ -120,6 +120,7 @@ public:
     void  DrawModel(const Model& model, const Vec3& position, float scale,
                     float rotationX, float rotationY, float rotationZ) override;
     void  DrawModelEx(const Model& model, const Mat4& transform) override;
+    void  DrawModelEx(const Model& model, const Mat4& transform, Color tint);
 
     RendererType GetType() const override { return RendererType::OpenGL; }
 
