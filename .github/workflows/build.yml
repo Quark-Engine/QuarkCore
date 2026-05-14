@@ -72,7 +72,7 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DQC_BUILD_EXAMPLES=ON -G Ninja
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release -DASSIMP_BUILD_ZLIB=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 
       - name: Prepare Artifacts
         run: |
