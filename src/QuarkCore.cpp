@@ -79,6 +79,86 @@ void CopyText(char* dst, size_t size, const char* src) {
 #endif
 }
 
+static Mat4 BuildTransform(const Vec3& position, const Vec3& axis, float angle, const Vec3& scale) {
+    Mat4 translation = Mat4::translation(position.x, position.y, position.z);
+    Mat4 scaleMat = Mat4::scale(scale.x, scale.y, scale.z);
+    Mat4 rotation = Mat4::identity();
+    if ((axis.x != 0.0f || axis.y != 0.0f || axis.z != 0.0f) && angle != 0.0f) {
+        Vec3 n = axis.normalized();
+        float c = std::cos(angle);
+        float s = std::sin(angle);
+        float t = 1.0f - c;
+
+        rotation.m[0] = n.x * n.x * t + c;
+        rotation.m[1] = n.x * n.y * t + n.z * s;
+        rotation.m[2] = n.x * n.z * t - n.y * s;
+        rotation.m[3] = 0.0f;
+
+        rotation.m[4] = n.x * n.y * t - n.z * s;
+        rotation.m[5] = n.y * n.y * t + c;
+        rotation.m[6] = n.y * n.z * t + n.x * s;
+        rotation.m[7] = 0.0f;
+
+        rotation.m[8] = n.x * n.z * t + n.y * s;
+        rotation.m[9] = n.y * n.z * t - n.x * s;
+        rotation.m[10] = n.z * n.z * t + c;
+        rotation.m[11] = 0.0f;
+
+        rotation.m[12] = 0.0f;
+        rotation.m[13] = 0.0f;
+        rotation.m[14] = 0.0f;
+        rotation.m[15] = 1.0f;
+    }
+
+    return translation * rotation * scaleMat;
+}
+
+static Vec3 TransformPoint(const Mat4& transform, const Vec3& point) {
+    return Vec3{
+        transform.m[0] * point.x + transform.m[4] * point.y + transform.m[8]  * point.z + transform.m[12],
+        transform.m[1] * point.x + transform.m[5] * point.y + transform.m[9]  * point.z + transform.m[13],
+        transform.m[2] * point.x + transform.m[6] * point.y + transform.m[10] * point.z + transform.m[14]
+    };
+}
+
+static void DrawModelWireframe(const Model& model, const Mat4& transform, Color color) {
+    if (!model.meshes) return;
+
+    for (int i = 0; i < model.meshCount; ++i) {
+        const Mesh& mesh = model.meshes[i];
+        if (!mesh.vertices) continue;
+
+        const bool hasIndices = mesh.indices != nullptr;
+        const int triangleCount = mesh.triangleCount;
+
+        for (int t = 0; t < triangleCount; ++t) {
+            int idx0 = hasIndices ? mesh.indices[t * 3 + 0] : t * 3 + 0;
+            int idx1 = hasIndices ? mesh.indices[t * 3 + 1] : t * 3 + 1;
+            int idx2 = hasIndices ? mesh.indices[t * 3 + 2] : t * 3 + 2;
+
+            Vec3 v0 = TransformPoint(transform, Vec3{
+                mesh.vertices[idx0 * 3 + 0],
+                mesh.vertices[idx0 * 3 + 1],
+                mesh.vertices[idx0 * 3 + 2]
+            });
+            Vec3 v1 = TransformPoint(transform, Vec3{
+                mesh.vertices[idx1 * 3 + 0],
+                mesh.vertices[idx1 * 3 + 1],
+                mesh.vertices[idx1 * 3 + 2]
+            });
+            Vec3 v2 = TransformPoint(transform, Vec3{
+                mesh.vertices[idx2 * 3 + 0],
+                mesh.vertices[idx2 * 3 + 1],
+                mesh.vertices[idx2 * 3 + 2]
+            });
+
+            gRenderer.DrawLine3D(v0, v1, color);
+            gRenderer.DrawLine3D(v1, v2, color);
+            gRenderer.DrawLine3D(v2, v0, color);
+        }
+    }
+}
+
 void UpdateInputFromEvents() {
     float mx = 0.f, my = 0.f;
     const SDL_MouseButtonFlags ms = SDL_GetMouseState(&mx, &my);
@@ -603,13 +683,88 @@ Model LoadModel(const char* filePath) {
 
 void UnloadModel(Model& model)  { gRenderer.UnloadModel(model); }
 
-void DrawModel(const Model& model, const Vec3& pos, float scale,
-               float rx, float ry, float rz) {
-    gRenderer.DrawModel(model, pos, scale, rx, ry, rz);
+void DrawModel(const Model& model, const Vec3& position, float scale,
+               const Vec3& rotationAxis, float rotationAngle, Color tint) {
+    Mat4 transform = BuildTransform(position, rotationAxis, rotationAngle, Vec3{scale, scale, scale});
+    gRenderer.DrawModelEx(model, transform);
+}
+
+void DrawModelEx(const Model& model, const Vec3& position, const Vec3& rotationAxis,
+                 float rotationAngle, const Vec3& scale, Color tint) {
+    Mat4 transform = BuildTransform(position, rotationAxis, rotationAngle, scale);
+    gRenderer.DrawModelEx(model, transform);
 }
 
 void DrawModelEx(const Model& model, const Mat4& transform) {
     gRenderer.DrawModelEx(model, transform);
+}
+
+void DrawModelWires(const Model& model, const Vec3& position, float scale,
+                    const Vec3& rotationAxis, float rotationAngle, Color tint) {
+    Mat4 transform = BuildTransform(position, rotationAxis, rotationAngle, Vec3{scale, scale, scale});
+    DrawModelWireframe(model, transform, tint);
+}
+
+void DrawModelWiresEx(const Model& model, const Vec3& position, const Vec3& rotationAxis,
+                      float rotationAngle, const Vec3& scale, Color tint) {
+    Mat4 transform = BuildTransform(position, rotationAxis, rotationAngle, scale);
+    DrawModelWireframe(model, transform, tint);
+}
+
+void DrawBoundingBox(BoundingBox box, Color color) {
+    Vec3 vertices[8] = {
+        {box.min.x, box.min.y, box.min.z},
+        {box.max.x, box.min.y, box.min.z},
+        {box.max.x, box.max.y, box.min.z},
+        {box.min.x, box.max.y, box.min.z},
+        {box.min.x, box.min.y, box.max.z},
+        {box.max.x, box.min.y, box.max.z},
+        {box.max.x, box.max.y, box.max.z},
+        {box.min.x, box.max.y, box.max.z}
+    };
+
+    gRenderer.DrawLine3D(vertices[0], vertices[1], color);
+    gRenderer.DrawLine3D(vertices[1], vertices[2], color);
+    gRenderer.DrawLine3D(vertices[2], vertices[3], color);
+    gRenderer.DrawLine3D(vertices[3], vertices[0], color);
+
+    gRenderer.DrawLine3D(vertices[4], vertices[5], color);
+    gRenderer.DrawLine3D(vertices[5], vertices[6], color);
+    gRenderer.DrawLine3D(vertices[6], vertices[7], color);
+    gRenderer.DrawLine3D(vertices[7], vertices[4], color);
+
+    gRenderer.DrawLine3D(vertices[0], vertices[4], color);
+    gRenderer.DrawLine3D(vertices[1], vertices[5], color);
+    gRenderer.DrawLine3D(vertices[2], vertices[6], color);
+    gRenderer.DrawLine3D(vertices[3], vertices[7], color);
+}
+
+void DrawBillboard(const Camera3D& camera, Texture2D texture, Vec3 position, float scale, Color tint) {
+    Rectangle source{0.0f, 0.0f, static_cast<float>(texture.width), static_cast<float>(texture.height)};
+    Vec2 size{static_cast<float>(texture.width) * scale, static_cast<float>(texture.height) * scale};
+    DrawBillboardRec(camera, texture, source, position, size, tint);
+}
+
+void DrawBillboardRec(const Camera3D& camera, Texture2D texture, Rectangle source,
+                      Vec3 position, Vec2 size, Color tint) {
+    DrawBillboardPro(camera, texture, source, position, camera.up, size, Vec2{0.5f, 0.5f}, 0.0f, tint);
+}
+
+void DrawBillboardPro(const Camera3D& camera, Texture2D texture, Rectangle source,
+                      Vec3 position, Vec3 up, Vec2 size, Vec2 origin, float rotation, Color tint) {
+    Vec3 screenPos = GetWorldToScreen(position, camera);
+    Vec3 screenUp = GetWorldToScreen(position + up, camera);
+    float angle = std::atan2(screenUp.y - screenPos.y, screenUp.x - screenPos.x) * (180.0f / 3.14159265359f);
+    angle += rotation;
+
+    Rectangle dest{
+        screenPos.x - size.x * origin.x,
+        screenPos.y - size.y * origin.y,
+        size.x,
+        size.y
+    };
+    Vec2 originPixels{size.x * origin.x, size.y * origin.y};
+    DrawTexturePro(texture, source, dest, originPixels, angle, tint);
 }
 
 Vec2 GetWorldToScreen2D(Vec2 position, Camera2D camera) {

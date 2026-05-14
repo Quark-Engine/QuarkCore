@@ -185,6 +185,14 @@ struct Vec3 {
     }
 };
 
+/**
+ * @brief Bounding box structure.
+ */
+struct BoundingBox {
+    Vec3 min{0.0f, 0.0f, 0.0f};
+    Vec3 max{0.0f, 0.0f, 0.0f};
+};
+
 inline Vec2 Lerp(const Vec2& start, const Vec2& end, float amount) {
     return Vec2{
         Lerp(start.x, end.x, amount),

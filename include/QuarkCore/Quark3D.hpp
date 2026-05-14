@@ -28,6 +28,7 @@ namespace qc {
 
 // Forward declarations
 struct Shader;
+struct Camera3D;
 
 /**
  * @brief Vertex data for 3D meshes.
@@ -176,25 +177,73 @@ QCAPI Model LoadModel(const char* filePath);
 QCAPI void UnloadModel(Model& model);
 
 /**
- * @brief Draw a model with transformation.
+ * @brief Draw a model with extended parameters.
  *
  * @param model Model to draw.
  * @param position Position in world space.
  * @param scale Scale factor.
- * @param rotationX Rotation around X axis (radians).
- * @param rotationY Rotation around Y axis (radians).
- * @param rotationZ Rotation around Z axis (radians).
+ * @param rotationAxis Axis to rotate around.
+ * @param rotationAngle Rotation angle in radians.
+ * @param tint Color tint.
  */
 QCAPI void DrawModel(const Model& model, const Vec3& position, float scale,
-               float rotationX, float rotationY, float rotationZ);
+               const Vec3& rotationAxis, float rotationAngle, Color tint);
 
 /**
- * @brief Draw a model with a custom transformation matrix.
+ * @brief Draw a model with extended parameters and non-uniform scale.
  *
  * @param model Model to draw.
- * @param transform Transformation matrix.
+ * @param position Position in world space.
+ * @param rotationAxis Axis to rotate around.
+ * @param rotationAngle Rotation angle in radians.
+ * @param scale Scale vector.
+ * @param tint Color tint.
+ */
+QCAPI void DrawModelEx(const Model& model, const Vec3& position, const Vec3& rotationAxis,
+               float rotationAngle, const Vec3& scale, Color tint);
+
+/**
+ * @brief Draw a model with extended parameters.
+ *
+ * @param model Model to draw.
+ * @param transform Model transformation matrix.
  */
 QCAPI void DrawModelEx(const Model& model, const Mat4& transform);
+
+/**
+ * @brief Draw a model wireframe with texture if available.
+ */
+QCAPI void DrawModelWires(const Model& model, const Vec3& position, float scale,
+               const Vec3& rotationAxis, float rotationAngle, Color tint);
+
+/**
+ * @brief Draw a model wireframe with extended parameters.
+ */
+QCAPI void DrawModelWiresEx(const Model& model, const Vec3& position, const Vec3& rotationAxis,
+               float rotationAngle, const Vec3& scale, Color tint);
+
+/**
+ * @brief Draw a bounding box.
+ */
+QCAPI void DrawBoundingBox(BoundingBox box, Color color);
+
+/**
+ * @brief Draw a billboard texture.
+ */
+QCAPI void DrawBillboard(const Camera3D& camera, Texture2D texture, Vec3 position,
+               float scale, Color tint);
+
+/**
+ * @brief Draw a billboard texture with source rectangle.
+ */
+QCAPI void DrawBillboardRec(const Camera3D& camera, Texture2D texture, Rectangle source,
+               Vec3 position, Vec2 size, Color tint);
+
+/**
+ * @brief Draw a billboard with advanced parameters.
+ */
+QCAPI void DrawBillboardPro(const Camera3D& camera, Texture2D texture, Rectangle source,
+               Vec3 position, Vec3 up, Vec2 size, Vec2 origin, float rotation, Color tint);
 
 /**
  * @brief Set the view and projection matrices for 3D rendering.

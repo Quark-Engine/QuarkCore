@@ -208,6 +208,8 @@ struct Camera3D {
     int projection{0};                 // Camera projection: CAMERA_PERSPECTIVE or CAMERA_ORTHOGRAPHIC
 };
 
+using Camera = Camera3D;
+
 /**
  * @brief Default vertex shader source code.
  * Implements basic 2D rendering with texture and color attributes.
