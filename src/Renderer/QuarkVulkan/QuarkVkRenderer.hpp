@@ -39,8 +39,8 @@
 #pragma once
 
 #include "../QuarkIRenderer.hpp"
+#include "../QuarkFont.hpp"
 #include "QuarkCore/QuarkCore.hpp"
-#include "QuarkFont.hpp"
 
 #include <vulkan/vulkan.h>
 #include <SDL3/SDL_vulkan.h>
