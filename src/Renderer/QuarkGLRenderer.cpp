@@ -786,53 +786,88 @@ ITexture QuarkGLRenderer::GetRenderTextureTexture(IRenderTexture rt) {
     return rt.texture;
 }
 
-IRenderTexture QuarkGLRenderer::LoadRenderTexture(int w,int h){
+IRenderTexture QuarkGLRenderer::LoadRenderTexture(int w, int h) {
     IRenderTexture rt{};
-    glGenFramebuffers(1,&rt.id); glBindFramebuffer(GL_FRAMEBUFFER,rt.id);
-    glGenTextures(1,&rt.texture.id); glBindTexture(GL_TEXTURE_2D,rt.texture.id);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,rt.texture.id,0);
-    glGenRenderbuffers(1,&rt.depthId); glBindRenderbuffer(GL_RENDERBUFFER,rt.depthId);
-    glRenderbufferStorage(GL_RENDERBUFFER,GL_DEPTH_COMPONENT24,w,h);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,rt.depthId);
-    glBindFramebuffer(GL_FRAMEBUFFER,0);
-    rt.texture.width=w; rt.texture.height=h; rt.texture.valid=true;
+
+    glGenFramebuffers(1, &rt.id);
+    glBindFramebuffer(GL_FRAMEBUFFER, rt.id);
+
+    glGenTextures(1, &rt.texture.id);
+    glBindTexture(GL_TEXTURE_2D, rt.texture.id);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, rt.texture.id, 0);
+    glGenRenderbuffers(1, &rt.depthId);
+    glBindRenderbuffer(GL_RENDERBUFFER, rt.depthId);
+
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
+
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rt.depthId);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    rt.texture.width = w;
+    rt.texture.height = h;
+    rt.texture.valid = true;
     return rt;
 }
 
-void QuarkGLRenderer::UnloadRenderTexture(IRenderTexture rt){
-    if(rt.id)         glDeleteFramebuffers(1,&rt.id);
-    if(rt.depthId)    glDeleteRenderbuffers(1,&rt.depthId);
-    if(rt.texture.id) glDeleteTextures(1,&rt.texture.id);
+void QuarkGLRenderer::UnloadRenderTexture(IRenderTexture rt) {
+    if(rt.id)
+        glDeleteFramebuffers(1, &rt.id);
+    if(rt.depthId)
+        glDeleteRenderbuffers(1, &rt.depthId);
+    if(rt.texture.id)
+        glDeleteTextures(1, &rt.texture.id);
 }
 
-bool QuarkGLRenderer::isRenderTextureValid(IRenderTexture& rt){ return rt.id&&rt.texture.valid; }
+bool QuarkGLRenderer::isRenderTextureValid(IRenderTexture& rt) {
+    return rt.id && rt.texture.valid;
+}
 
-ITexture QuarkGLRenderer::GenCheckerTexture(int w,int h,int cell,Color ca,Color cb){
-    std::vector<uint8_t> px((size_t)w*h*4);
-    for(int y=0;y<h;++y) for(int x=0;x<w;++x){
-        Color c=((x/cell+y/cell)%2==0)?ca:cb;
-        size_t i=((size_t)y*w+x)*4;
-        px[i]=c.r;px[i+1]=c.g;px[i+2]=c.b;px[i+3]=c.a;
+ITexture QuarkGLRenderer::GenCheckerTexture(int w, int h, int cell, Color ca, Color cb) {
+    std::vector<uint8_t> px((size_t) w * h * 4);
+
+    for(int y = 0; y < h; ++y) for(int x = 0; x < w; ++x) {
+        Color c = ((x / cell +  y / cell) %2 == 0) ? ca : cb;
+        size_t i = ((size_t)y * w + x) * 4;
+
+        px[i] = c.r;
+        px[i+1] = c.g;
+        px[i+2] = c.b;
+        px[i+3] = c.a;
     }
+
     ITexture t{};
-    t.id=CreateTextureFromRgba(px.data(),w,h); t.width=w; t.height=h; t.valid=true;
+    t.id = CreateTextureFromRgba(px.data(), w, h);
+    t.width = w;
+    t.height = h;
+    t.valid = true;
     return t;
 }
 
-void QuarkGLRenderer::BeginTextureMode(IRenderTexture rt){
-    FlushBatch(); glBindFramebuffer(GL_FRAMEBUFFER,rt.id);
-    m_currentFbo=rt.id; m_width=rt.texture.width; m_height=rt.texture.height;
-    glViewport(0,0,m_width,m_height);
+void QuarkGLRenderer::BeginTextureMode(IRenderTexture rt) {
+    FlushBatch();
+
+    glBindFramebuffer(GL_FRAMEBUFFER, rt.id);
+    m_currentFbo = rt.id;
+    m_width = rt.texture.width;
+    m_height = rt.texture.height;
+
+    glViewport(0, 0, m_width, m_height);
 }
 
-void QuarkGLRenderer::EndTextureMode(){
-    FlushBatch(); glBindFramebuffer(GL_FRAMEBUFFER,0);
-    m_currentFbo=0; RefreshViewport();
+void QuarkGLRenderer::EndTextureMode() {
+    FlushBatch();
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    m_currentFbo = 0;
+
+    RefreshViewport();
 }
 
 bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, FontData& out) {
@@ -840,34 +875,55 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
     if (FT_Init_FreeType(&ft) != 0) return false;
 
     FT_Face face = nullptr;
-    if (FT_New_Face(ft, filePath, 0, &face) != 0) { FT_Done_FreeType(ft); return false; }
+    if (FT_New_Face(ft, filePath, 0, &face) != 0) {
+        FT_Done_FreeType(ft);
+        return false;
+    }
+
     FT_Select_Charmap(face, FT_ENCODING_UNICODE);
     FT_Set_Pixel_Sizes(face, 0, (FT_UInt)pointSize);
 
-    constexpr int AW=1024, AH=1024;
-    std::vector<uint8_t> atlas((size_t)AW*AH*4, 0);
-    int penX=1, penY=1, rowH=0;
+    constexpr int AW = 1024, AH = 1024;
+    std::vector<uint8_t> atlas((size_t)AW * AH * 4, 0);
+    int penX = 1, penY = 1, rowH = 0;
 
-    for (unsigned char c=32; c<127; ++c) {
+    for (unsigned char c = 32; c < 127; ++c) {
         if (FT_Load_Char(face, c, FT_LOAD_RENDER|FT_LOAD_TARGET_NORMAL) != 0) continue;
+
         FT_GlyphSlot slot = face->glyph;
-        int gw=(int)slot->bitmap.width, gh=(int)slot->bitmap.rows;
-        if (penX+gw+1>AW) { penX=1; penY+=rowH+1; rowH=0; }
-        if (penY+gh+1>AH) { FT_Done_Face(face); FT_Done_FreeType(ft); return false; }
-        for (int row=0;row<gh;++row) for(int col=0;col<gw;++col){
-            size_t dst=((penY+row)*AW+(penX+col))*4;
-            uint8_t alpha=slot->bitmap.buffer[row*slot->bitmap.pitch+col];
-            atlas[dst]=255; atlas[dst+1]=255; atlas[dst+2]=255; atlas[dst+3]=alpha;
+        int gw = (int)slot->bitmap.width;
+        int gh = (int)slot->bitmap.rows;
+
+        if (penX + gw + 1 > AW) {
+            penX = 1;
+            penY += rowH + 1;
+            rowH = 0;
         }
-        GlyphData& g = out.glyphs[c-32];
-        g.uv      = Rectangle{(float)penX/AW,(float)penY/AH,
-                               gw>0?(float)gw/AW:0.f, gh>0?(float)gh/AH:0.f};
-        g.advanceX= (float)slot->advance.x/64.f;
+
+        if (penY + gh + 1 > AH) {
+            FT_Done_Face(face);
+            FT_Done_FreeType(ft);
+            return false;
+        }
+
+        for (int row = 0; row < gh; ++row) for(int col = 0; col < gw; ++col) {
+            size_t dst = ((penY + row) * AW + (penX + col)) * 4;
+            uint8_t alpha = slot->bitmap.buffer[row * slot->bitmap.pitch + col];
+
+            atlas[dst] = 255;
+            atlas[dst + 1] = 255;
+            atlas[dst + 2] = 255;
+            atlas[dst + 3] = alpha;
+        }
+        GlyphData& g = out.glyphs[c - 32];
+        g.uv = Rectangle{(float)penX / AW, (float)penY / AH,
+                               gw > 0 ? (float)gw / AW : 0.f, gh > 0 ? (float)gh / AH : 0.f};
+        g.advanceX = (float)slot->advance.x / 64.f;
         g.offsetX = (float)slot->bitmap_left;
         g.offsetY = (float)slot->bitmap_top;
-        g.width   = gw;
-        g.height  = gh;
-        penX += gw+1;
+        g.width = gw;
+        g.height = gh;
+        penX += gw + 1;
         rowH  = std::max(rowH, gh);
     }
 
@@ -885,10 +941,13 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
 
 uint32_t QuarkGLRenderer::EnsureDefaultFont() {
     if (m_defaultFontId != 0) return m_defaultFontId;
+
     const char* path = DefaultFontPath();
     if (!path) return 0;
+
     FontData fd{};
     if (!LoadFontInternal(path, 32, fd)) return 0;
+
     uint32_t id = m_nextFontId++;
     m_fonts[id]  = std::move(fd);
     m_defaultFontId = id;
@@ -903,58 +962,91 @@ const QuarkGLRenderer::FontData* QuarkGLRenderer::GetFontData(IFont font) const 
 void QuarkGLRenderer::DrawTextWithFontData(const FontData& fd, const char* text,
                                             Vec2 pos, float fontSize, float spacing, Color tint) {
     if (!text) return;
+
     const float scale      = fontSize / (float)fd.baseSize;
     const float lineHeight = (float)fd.lineHeight * scale;
     const float baseline   = (float)fd.ascent     * scale;
-    float x=pos.x, y=pos.y;
-    bool first=true;
-    for (const char* c=text; *c; ++c) {
-        if (*c=='\n') { x=pos.x; y+=lineHeight; first=true; continue; }
-        unsigned char uc=(unsigned char)*c;
-        if (uc<32||uc>=127) continue;
-        const GlyphData& g = fd.glyphs[uc-32];
-        if (!first) x+=spacing;
-        first=false;
-        float gx=x+g.offsetX*scale;
-        float gy=y+baseline-g.offsetY*scale;
-        float gw=(float)g.width*scale, gh=(float)g.height*scale;
-        if (gw>0&&gh>0)
+    float x = pos.x, y = pos.y;
+
+    bool first = true;
+
+    for (const char* c = text; *c; ++c) {
+        if (*c == '\n') {
+            x = pos.x;
+            y += lineHeight;
+            first = true;
+            continue;
+        }
+
+        unsigned char uc = (unsigned char) * c;
+        if (uc < 32 || uc >= 127) continue;
+
+        const GlyphData& g = fd.glyphs[uc - 32];
+
+        if (!first) x += spacing;
+        first = false;
+
+        float gx = x + g.offsetX * scale;
+        float gy = y + baseline - g.offsetY * scale;
+        float gw = (float)g.width * scale, gh = (float)g.height * scale;
+        if (gw > 0 && gh > 0)
             PushTexturedQuad(fd.atlasTexture, g.uv, gx, gy, gw, gh, tint);
-        x += g.advanceX*scale;
+
+        x += g.advanceX * scale;
     }
 }
 
 Vec2 QuarkGLRenderer::MeasureTextWithFontData(const FontData& fd, const char* text, float fontSize, float spacing) const {
     if (!text) return {};
-    float scale=(float)fontSize/fd.baseSize;
-    float lh=(float)fd.lineHeight*scale;
-    float x=0,maxW=0; bool first=true;
-    for (const char* c=text;*c;++c) {
-        if(*c=='\n'){ maxW=std::max(maxW,x); x=0; first=true; continue; }
-        unsigned char uc=(unsigned char)*c;
-        if(uc<32||uc>=127) continue;
-        if(!first) x+=spacing; first=false;
-        x+=fd.glyphs[uc-32].advanceX*scale;
+
+    float scale = (float)fontSize/fd.baseSize;
+    float lh = (float)fd.lineHeight * scale;
+
+    float x = 0, maxW = 0;
+    bool first = true;
+
+    for (const char* c = text; *c; ++c) {
+        if(*c == '\n') {
+            maxW = std::max(maxW, x);
+            x = 0;
+            first = true;
+            continue;
+        }
+
+        unsigned char uc = (unsigned char)*c;
+        if(uc < 32 || uc >= 127) continue;
+
+        if(!first) x += spacing;
+        first = false;
+        x += fd.glyphs[uc - 32].advanceX * scale;
     }
-    int newlines=(int)std::count(text,text+strlen(text),'\n');
-    return {std::max(maxW,x), lh*(1+newlines)};
+
+    int newlines = (int)std::count(text, text + strlen(text), '\n');
+    return {std::max(maxW, x), lh * (1 + newlines)};
 }
 
 IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize) {
     if (filePath == nullptr) {
         TraceLog(LogLevel::Info, "FONT", "Loading default system font...");
+
         IFont handle{};
         handle.id = this->EnsureDefaultFont();
+
         if (handle.id) TraceLog(LogLevel::Info, "FONT", "Default font loaded");
         return handle;
     }
+
     TraceLog(LogLevel::Trace, "FONT", TextFormat("Loading font: %s (size: %d)", filePath, fontSize));
+
     FontData fd{};
     if (!LoadFontInternal(filePath, fontSize, fd)) return IFont{};
+
     uint32_t id = m_nextFontId++;
     m_fonts[id] = std::move(fd);
+
     IFont handle{};
     handle.id = id;
+
     TraceLog(LogLevel::Info, "FONT", TextFormat("Font loaded successfully: %s", filePath));
     return handle;
 }
@@ -964,15 +1056,19 @@ void QuarkGLRenderer::UnloadFont(IFont& font) {
     if (it != m_fonts.end()) {
         if (it->second.atlasTexture)
             glDeleteTextures(1, &it->second.atlasTexture);
+
         if (font.id == m_defaultFontId) m_defaultFontId = 0;
+
         m_fonts.erase(it);
     }
+
     font.id = 0;
 }
 
 void QuarkGLRenderer::DrawText(const char* text, int x, int y, int fontSize, Color color) {
     uint32_t id = EnsureDefaultFont();
     if (!id) return;
+
     DrawTextWithFontData(m_fonts[id], text, {(float)x,(float)y}, (float)fontSize, 0.f, color);
 }
 
@@ -980,6 +1076,7 @@ void QuarkGLRenderer::DrawTextEx(IFont font, const char* text, Vec2 pos,
                                   float fontSize, float spacing, Color tint) {
     const FontData* fd = GetFontData(font);
     if (!fd) return;
+
     DrawTextWithFontData(*fd, text, pos, fontSize, spacing, tint);
 }
 
@@ -987,21 +1084,27 @@ Vec2 QuarkGLRenderer::MeasureTextEx(IFont font, const char* text,
                                      float fontSize, float spacing) {
     const FontData* fd = GetFontData(font);
     if (!fd) return {};
+
     return MeasureTextWithFontData(*fd, text, fontSize, spacing);
 }
 
 int QuarkGLRenderer::MeasureText(const char* text, int fontSize) {
     uint32_t id = EnsureDefaultFont();
     if (!id) return 0;
+
     return (int)std::round(MeasureTextWithFontData(m_fonts[id], text, (float)fontSize, 0.f).x);
 }
 
-void QuarkGLRenderer::BeginShaderMode(const Shader& sh){
-    if(sh.id){ m_currentShader=sh.id; glUseProgram(sh.id); }
+void QuarkGLRenderer::BeginShaderMode(const Shader& sh) {
+    if(sh.id) {
+        m_currentShader = sh.id;
+        glUseProgram(sh.id);
+    }
 }
 
-void QuarkGLRenderer::EndShaderMode(){
-    m_currentShader=m_defaultShader; glUseProgram(m_defaultShader);
+void QuarkGLRenderer::EndShaderMode() {
+    m_currentShader = m_defaultShader;
+    glUseProgram(m_defaultShader);
 }
 
 Shader QuarkGLRenderer::LoadShader(const char* vsFileName, const char* fsFileName) {
@@ -1016,6 +1119,7 @@ Shader QuarkGLRenderer::LoadShader(const char* vsFileName, const char* fsFileNam
             return Shader{};
         }
     }
+
     if (fsFileName) {
         std::ifstream fsFile(fsFileName);
         if (fsFile.is_open()) {
@@ -1039,7 +1143,10 @@ Shader QuarkGLRenderer::LoadShaderFromMemory(const char* vsSource, const char* f
     }
     if (fsSource) {
         fs = CompileGLShader(GL_FRAGMENT_SHADER, fsSource);
-        if (fs == 0) { glDeleteShader(vs); return Shader{}; }
+        if (fs == 0) {
+            glDeleteShader(vs);
+            return Shader{};
+        }
     }
 
     GLuint p = glCreateProgram();
@@ -1051,9 +1158,14 @@ Shader QuarkGLRenderer::LoadShaderFromMemory(const char* vsSource, const char* f
     if (fs) glDeleteShader(fs);
 
     GLint ok; glGetProgramiv(p, GL_LINK_STATUS, &ok);
-    if (!ok) { char log[512]; glGetProgramInfoLog(p, 512, nullptr, log);
-               TraceLog(LogLevel::Error, "SHADER", TextFormat("Program link error: %s", log));
-               glDeleteProgram(p); return Shader{}; }
+    if (!ok) {
+        char log[512];
+        glGetProgramInfoLog(p, 512, nullptr, log);
+        TraceLog(LogLevel::Error, "SHADER", TextFormat("Program link error: %s", log));
+        glDeleteProgram(p);
+        return Shader{};
+    }
+
     Shader result{p};
     for (int i = 0; i < SHADER_LOC_COUNT; ++i) {
         result.locs[i] = GetShaderLocation(result, static_cast<ShaderLocationIndex>(i));
@@ -1061,7 +1173,7 @@ Shader QuarkGLRenderer::LoadShaderFromMemory(const char* vsSource, const char* f
     return result;
 }
 
-void QuarkGLRenderer::UnloadShader(Shader& sh){
+void QuarkGLRenderer::UnloadShader(Shader& sh) {
     if (sh.id) {
         glDeleteProgram(sh.id);
         sh.id = 0;
@@ -1072,12 +1184,13 @@ bool QuarkGLRenderer::isShaderValid(Shader& sh) {
     return sh.id != 0;
 }
 
-int QuarkGLRenderer::GetShaderLocation(const Shader& sh, const char* name){
+int QuarkGLRenderer::GetShaderLocation(const Shader& sh, const char* name) {
     return sh.id ? glGetUniformLocation(sh.id, name) : -1;
 }
 
-int QuarkGLRenderer::GetShaderLocation(const Shader& sh, ShaderLocationIndex locIndex){
+int QuarkGLRenderer::GetShaderLocation(const Shader& sh, ShaderLocationIndex locIndex) {
     if (!sh.id || locIndex >= SHADER_LOC_COUNT) return -1;
+
     if (locIndex <= SHADER_LOC_VERTEX_COLOR || locIndex >= SHADER_LOC_VERTEX_BONEIDS) {
         return glGetAttribLocation(sh.id, shaderLocationNames[locIndex]);
     } else {
@@ -1843,17 +1956,21 @@ void QuarkGLRenderer::DrawModelEx(const Model& model,const Mat4& transform, Colo
     if(m_3d.modelLoc>=0) glUniformMatrix4fv(m_3d.modelLoc,1,GL_FALSE,final.m);
     if(m_3d.colorLoc>=0) glUniform4f(m_3d.colorLoc,
         tint.r/255.0f, tint.g/255.0f, tint.b/255.0f, tint.a/255.0f);
-    for(int i=0;i<model.meshCount;++i){
+    for(int i = 0;i < model.meshCount; ++i){
         const Mesh& mesh=model.meshes[i];
+
         glActiveTexture(GL_TEXTURE0);
-        GLuint texId=m_3d.whiteTexture;
+
+        GLuint texId = m_3d.whiteTexture;
         if(model.meshMaterial&&model.meshMaterial[i]>=0&&model.meshMaterial[i]<model.materialCount){
             const Material& mat=model.materials[model.meshMaterial[i]];
             if(mat.maps&&mat.maps[MATERIAL_MAP_ALBEDO].texture.valid)
                 texId=mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
         }
+
         glBindTexture(GL_TEXTURE_2D,texId);
         glBindVertexArray(mesh.vaoId);
+
         glDrawElements(GL_TRIANGLES,(GLsizei)(mesh.triangleCount*3),GL_UNSIGNED_SHORT,nullptr);
         glBindVertexArray(0);
     }
