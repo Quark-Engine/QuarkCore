@@ -1599,45 +1599,71 @@ void QuarkGLRenderer::DrawSphereWires(Vec3 c,float r,int rings,int slices,Color 
         }
     }
 }
-void QuarkGLRenderer::DrawCylinder(Vec3 pos,float rTop,float rBot,float h,int sl,Color color){
-    DrawCylinderEx(pos+Vec3{0,-h/2,0},pos+Vec3{0,h/2,0},rBot,rTop,sl,color);
+
+void QuarkGLRenderer::DrawCylinder(Vec3 pos, float rTop, float rBot, float h, int sl, Color color) {
+    DrawCylinderEx(pos + Vec3{0, -h / 2, 0}, pos + Vec3{0, h / 2, 0}, rBot, rTop, sl, color);
 }
-void QuarkGLRenderer::DrawCylinderEx(Vec3 s,Vec3 e,float rs,float re,int sides,Color color){
-    if(sides<3) return;
-    Vec3 dir=e-s; float len=dir.length(); if(len<1e-6f) return; dir=dir*(1/len);
-    Vec3 up{0,1,0}; if(fabsf(dir.dot(up))>0.99f) up={1,0,0};
-    Vec3 xd=dir.cross(up).normalized(),yd=dir.cross(xd).normalized();
-    for(int i=0;i<sides;++i){
-        float a1=2*3.14159f*i/sides,a2=2*3.14159f*(i+1)/sides;
-        Vec3 p1=s+xd*cosf(a1)*rs+yd*sinf(a1)*rs,p2=s+xd*cosf(a2)*rs+yd*sinf(a2)*rs;
-        Vec3 p3=e+xd*cosf(a2)*re+yd*sinf(a2)*re,p4=e+xd*cosf(a1)*re+yd*sinf(a1)*re;
+
+void QuarkGLRenderer::DrawCylinderEx(Vec3 s, Vec3 e, float rs, float re, int sides, Color color) {
+    if(sides < 3) return;
+
+    Vec3 dir = e - s;
+    float len = dir.length();
+    if(len < 1e-6f) return;
+    dir = dir * (1 / len);
+
+    Vec3 up{0, 1, 0};
+    if(fabsf(dir.dot(up)) > 0.99f)
+        up = {1, 0, 0};
+    Vec3 xd = dir.cross(up).normalized(), yd = dir.cross(xd).normalized();
+
+    for(int i = 0; i < sides; ++i) {
+        float a1 = 2 * 3.14159f * i / sides, a2 = 2 * 3.14159f * (i + 1) / sides;
+        Vec3 p1 = s + xd * cosf(a1) * rs + yd * sinf(a1) * rs, p2 = s + xd * cosf(a2) * rs + yd * sinf(a2) * rs;
+        Vec3 p3 = e + xd * cosf(a2) * re + yd * sinf(a2) * re, p4 = e + xd * cosf(a1) * re + yd * sinf(a1) * re;
+
         DrawTriangle3DImpl({p1,(p1-s).normalized(),{0,0}},{p2,(p2-s).normalized(),{0,0}},{p3,(p3-e).normalized(),{0,0}},color);
         DrawTriangle3DImpl({p1,(p1-s).normalized(),{0,0}},{p3,(p3-e).normalized(),{0,0}},{p4,(p4-e).normalized(),{0,0}},color);
         DrawTriangle3DImpl({s,dir*-1,{0,0}},{p2,dir*-1,{0,0}},{p1,dir*-1,{0,0}},color);
         DrawTriangle3DImpl({e,dir,{0,0}},{p3,dir,{0,0}},{p4,dir,{0,0}},color);
     }
 }
-void QuarkGLRenderer::DrawCylinderWires(Vec3 pos,float rTop,float rBot,float h,int sl,Color color){
-    DrawCylinderWiresEx(pos+Vec3{0,-h/2,0},pos+Vec3{0,h/2,0},rBot,rTop,sl,color);
+
+void QuarkGLRenderer::DrawCylinderWires(Vec3 pos, float rTop, float rBot, float h, int sl, Color color) {
+    DrawCylinderWiresEx(pos + Vec3{0, -h / 2, 0}, pos + Vec3{0, h / 2, 0}, rBot, rTop, sl, color);
 }
-void QuarkGLRenderer::DrawCylinderWiresEx(Vec3 s,Vec3 e,float rs,float re,int sl,Color color){
-    if(sl<3) return;
-    Vec3 dir=e-s; float len=dir.length(); if(len<1e-6f) return; dir=dir*(1/len);
-    Vec3 up{0,1,0}; if(fabsf(dir.dot(up))>0.99f) up={1,0,0};
-    Vec3 xd=dir.cross(up).normalized(),yd=dir.cross(xd).normalized();
-    for(int i=0;i<sl;++i){
-        float a1=2*3.14159f*i/sl,a2=2*3.14159f*(i+1)/sl;
-        Vec3 p1=s+xd*cosf(a1)*rs+yd*sinf(a1)*rs,p2=s+xd*cosf(a2)*rs+yd*sinf(a2)*rs;
-        Vec3 p3=e+xd*cosf(a1)*re+yd*sinf(a1)*re,p4=e+xd*cosf(a2)*re+yd*sinf(a2)*re;
-        DrawLine3D(p1,p2,color); DrawLine3D(p3,p4,color); DrawLine3D(p1,p3,color);
+
+void QuarkGLRenderer::DrawCylinderWiresEx(Vec3 s, Vec3 e, float rs, float re, int sl, Color color) {
+    if(sl < 3) return;
+
+    Vec3 dir = e - s;
+    float len = dir.length();
+    if(len < 1e-6f) return;
+    dir = dir * (1 / len);
+
+    Vec3 up{0, 1, 0};
+    if(fabsf(dir.dot(up)) > 0.99f) up = {1, 0, 0};
+
+    Vec3 xd = dir.cross(up).normalized(), yd = dir.cross(xd).normalized();
+
+    for(int i = 0; i < sl; ++i) {
+        float a1 = 2 * 3.14159f * i / sl, a2 = 2 * 3.14159f * (i + 1) / sl;
+        Vec3 p1 = s + xd * cosf(a1) * rs + yd * sinf(a1) * rs, p2 = s + xd * cosf(a2) * rs + yd * sinf(a2) * rs;
+        Vec3 p3 = e + xd * cosf(a1) * re + yd * sinf(a1) * re, p4 = e + xd * cosf(a2) * re + yd * sinf(a2) * re;
+
+        DrawLine3D(p1, p2, color);
+        DrawLine3D(p3, p4, color);
+        DrawLine3D(p1, p3, color);
     }
 }
-void QuarkGLRenderer::DrawGrid(int slices,float spacing){
-    float half=(float)slices*spacing/2;
-    for(int i=0;i<=slices;++i){
-        float f=-half+(float)i*spacing;
-        DrawLine3D({f,0,-half},{f,0,half},DARKGRAY);
-        DrawLine3D({-half,0,f},{half,0,f},DARKGRAY);
+
+void QuarkGLRenderer::DrawGrid(int slices,float spacing) {
+    float half = (float)slices * spacing / 2;
+    for(int i = 0; i <= slices; ++i){
+        float f =- half + (float)i * spacing;
+
+        DrawLine3D({f, 0, -half}, {f, 0, half}, DARKGRAY);
+        DrawLine3D({-half, 0, f}, {half, 0, f}, DARKGRAY);
     }
 }
 
@@ -1765,21 +1791,27 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
 void  QuarkGLRenderer::UnloadModel(Model& model) {
     for (int i = 0; i < model.meshCount; ++i) {
         Mesh& mesh = model.meshes[i];
-        if (mesh.vaoId) glDeleteVertexArrays(1, &mesh.vaoId);
-        if (mesh.vboId) glDeleteBuffers(1, &mesh.vboId);
-        if (mesh.eboId) glDeleteBuffers(1, &mesh.eboId);
+        if (mesh.vaoId)
+            glDeleteVertexArrays(1, &mesh.vaoId);
+        if (mesh.vboId)
+            glDeleteBuffers(1, &mesh.vboId);
+        if (mesh.eboId)
+            glDeleteBuffers(1, &mesh.eboId);
         mesh = {};
     }
+
     delete[] model.meshes;
     model.meshes = nullptr;
 
     for (int i = 0; i < model.materialCount; ++i) {
         Material& mat = model.materials[i];
+
         if (mat.maps && mat.maps[MATERIAL_MAP_ALBEDO].texture.valid) {
             ITexture tempTex;
             tempTex.id = mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
             this->UnloadTexture(tempTex);
         }
+
         delete[] mat.maps;
         mat = {};
     }
@@ -1795,12 +1827,16 @@ void  QuarkGLRenderer::UnloadModel(Model& model) {
 void QuarkGLRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
     if (!mesh.vertices || mesh.vertexCount <= 0) return;
 
-    if (mesh.vaoId) glDeleteVertexArrays(1, &mesh.vaoId);
-    if (mesh.vboId) glDeleteBuffers(1, &mesh.vboId);
-    if (mesh.eboId) glDeleteBuffers(1, &mesh.eboId);
+    if (mesh.vaoId)
+        glDeleteVertexArrays(1, &mesh.vaoId);
+    if (mesh.vboId)
+        glDeleteBuffers(1, &mesh.vboId);
+    if (mesh.eboId)
+        glDeleteBuffers(1, &mesh.eboId);
 
     glGenVertexArrays(1, &mesh.vaoId);
     glGenBuffers(1, &mesh.vboId);
+
     if (mesh.indices && mesh.triangleCount > 0) glGenBuffers(1, &mesh.eboId);
 
     std::vector<float> vertexData;
@@ -1846,8 +1882,10 @@ void QuarkGLRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(0));
+
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float)));
+
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(6 * sizeof(float)));
 
@@ -1856,6 +1894,7 @@ void QuarkGLRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
 
 void QuarkGLRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) {
     if (!data || dataSize <= 0) return;
+
     if (index == 0 && mesh.vboId) {
         glBindBuffer(GL_ARRAY_BUFFER, mesh.vboId);
         glBufferSubData(GL_ARRAY_BUFFER, offset, dataSize, data);
@@ -1868,24 +1907,39 @@ void QuarkGLRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, 
 }
 
 void QuarkGLRenderer::UnloadMesh(Mesh& mesh) {
-    if (mesh.vaoId) glDeleteVertexArrays(1, &mesh.vaoId);
-    if (mesh.vboId) glDeleteBuffers(1, &mesh.vboId);
-    if (mesh.eboId) glDeleteBuffers(1, &mesh.eboId);
+    if (mesh.vaoId)
+        glDeleteVertexArrays(1, &mesh.vaoId);
+    if (mesh.vboId)
+        glDeleteBuffers(1, &mesh.vboId);
+    if (mesh.eboId)
+        glDeleteBuffers(1, &mesh.eboId);
+
     mesh.vaoId = 0;
     mesh.vboId = 0;
     mesh.eboId = 0;
 
-    delete[] mesh.vertices; mesh.vertices = nullptr;
-    delete[] mesh.texcoords; mesh.texcoords = nullptr;
-    delete[] mesh.texcoords2; mesh.texcoords2 = nullptr;
-    delete[] mesh.normals; mesh.normals = nullptr;
-    delete[] mesh.tangents; mesh.tangents = nullptr;
-    delete[] mesh.colors; mesh.colors = nullptr;
-    delete[] mesh.indices; mesh.indices = nullptr;
-    delete[] mesh.boneIndices; mesh.boneIndices = nullptr;
-    delete[] mesh.boneWeights; mesh.boneWeights = nullptr;
-    delete[] mesh.animVertices; mesh.animVertices = nullptr;
-    delete[] mesh.animNormals; mesh.animNormals = nullptr;
+    delete[] mesh.vertices;
+    mesh.vertices = nullptr;
+    delete[] mesh.texcoords;
+    mesh.texcoords = nullptr;
+    delete[] mesh.texcoords2;
+    mesh.texcoords2 = nullptr;
+    delete[] mesh.normals;
+    mesh.normals = nullptr;
+    delete[] mesh.tangents;
+    mesh.tangents = nullptr;
+    delete[] mesh.colors;
+    mesh.colors = nullptr;
+    delete[] mesh.indices;
+    mesh.indices = nullptr;
+    delete[] mesh.boneIndices;
+    mesh.boneIndices = nullptr;
+    delete[] mesh.boneWeights;
+    mesh.boneWeights = nullptr;
+    delete[] mesh.animVertices;
+    mesh.animVertices = nullptr;
+    delete[] mesh.animNormals;
+    mesh.animNormals = nullptr;
 
     mesh.vertexCount = 0;
     mesh.triangleCount = 0;
@@ -1919,59 +1973,71 @@ void QuarkGLRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
 
 void QuarkGLRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) {
     if (!transforms || instances <= 0) return;
+
     for (int i = 0; i < instances; ++i) {
         DrawMesh(mesh, material, transforms[i]);
     }
 }
 
-void  QuarkGLRenderer::DrawModel(const Model& model,const Vec3& pos,float scale,
-                                   float rx,float ry,float rz){
-    Mat4 t=Mat4::translation(pos.x,pos.y,pos.z)
-          *Mat4::rotationY(ry)*Mat4::rotationX(rx)*Mat4::rotationZ(rz)
-          *Mat4::scale(scale,scale,scale);
-    DrawModelEx(model,t);
+void  QuarkGLRenderer::DrawModel(const Model& model, const Vec3& pos, float scale,
+                                   float rx, float ry, float rz) {
+    Mat4 t = Mat4::translation(pos.x, pos.y, pos.z)
+          * Mat4::rotationY(ry) * Mat4::rotationX(rx) * Mat4::rotationZ(rz)
+          * Mat4::scale(scale, scale, scale);
+
+    DrawModelEx(model, t);
 }
-void QuarkGLRenderer::DrawModelEx(const Model& model,const Mat4& transform){
-    Mat4 final=ApplyCurrentMatrix(transform);
-    if(m_3d.modelLoc>=0) glUniformMatrix4fv(m_3d.modelLoc,1,GL_FALSE,final.m);
-    if(m_3d.colorLoc>=0) glUniform4f(m_3d.colorLoc,1,1,1,1);
-    for(int i=0;i<model.meshCount;++i){
-        const Mesh& mesh=model.meshes[i];
+
+void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
+    Mat4 final = ApplyCurrentMatrix(transform);
+
+    if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
+    if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc, 1, 1, 1, 1);
+
+    for(int i = 0; i < model.meshCount; ++i) {
+        const Mesh& mesh = model.meshes[i];
+
         glActiveTexture(GL_TEXTURE0);
-        GLuint texId=m_3d.whiteTexture;
-        if(model.meshMaterial&&model.meshMaterial[i]>=0&&model.meshMaterial[i]<model.materialCount){
-            const Material& mat=model.materials[model.meshMaterial[i]];
-            if(mat.maps&&mat.maps[MATERIAL_MAP_ALBEDO].texture.valid)
-                texId=mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
+        GLuint texId = m_3d.whiteTexture;
+
+        if(model.meshMaterial && model.meshMaterial[i] >= 0 && model.meshMaterial[i] < model.materialCount) {
+            const Material& mat = model.materials[model.meshMaterial[i]];
+            if(mat.maps && mat.maps[MATERIAL_MAP_ALBEDO].texture.valid)
+                texId = mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
         }
-        glBindTexture(GL_TEXTURE_2D,texId);
+
+        glBindTexture(GL_TEXTURE_2D, texId);
         glBindVertexArray(mesh.vaoId);
-        glDrawElements(GL_TRIANGLES,(GLsizei)(mesh.triangleCount*3),GL_UNSIGNED_SHORT,nullptr);
+
+        glDrawElements(GL_TRIANGLES, (GLsizei)(mesh.triangleCount * 3), GL_UNSIGNED_SHORT, nullptr);
         glBindVertexArray(0);
     }
 }
 
-void QuarkGLRenderer::DrawModelEx(const Model& model,const Mat4& transform, Color tint){
-    Mat4 final=ApplyCurrentMatrix(transform);
-    if(m_3d.modelLoc>=0) glUniformMatrix4fv(m_3d.modelLoc,1,GL_FALSE,final.m);
-    if(m_3d.colorLoc>=0) glUniform4f(m_3d.colorLoc,
-        tint.r/255.0f, tint.g/255.0f, tint.b/255.0f, tint.a/255.0f);
-    for(int i = 0;i < model.meshCount; ++i){
-        const Mesh& mesh=model.meshes[i];
+void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Color tint) {
+    Mat4 final = ApplyCurrentMatrix(transform);
+
+    if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
+
+    if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc,
+        tint.r / 255.0f, tint.g / 255.0f, tint.b / 255.0f, tint.a / 255.0f);
+
+    for(int i = 0; i < model.meshCount; ++i) {
+        const Mesh& mesh = model.meshes[i];
 
         glActiveTexture(GL_TEXTURE0);
 
         GLuint texId = m_3d.whiteTexture;
-        if(model.meshMaterial&&model.meshMaterial[i]>=0&&model.meshMaterial[i]<model.materialCount){
-            const Material& mat=model.materials[model.meshMaterial[i]];
-            if(mat.maps&&mat.maps[MATERIAL_MAP_ALBEDO].texture.valid)
-                texId=mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
+        if(model.meshMaterial && model.meshMaterial[i] >= 0 && model.meshMaterial[i] < model.materialCount) {
+            const Material& mat = model.materials[model.meshMaterial[i]];
+            if(mat.maps && mat.maps[MATERIAL_MAP_ALBEDO].texture.valid)
+                texId = mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
         }
 
-        glBindTexture(GL_TEXTURE_2D,texId);
+        glBindTexture(GL_TEXTURE_2D, texId);
         glBindVertexArray(mesh.vaoId);
 
-        glDrawElements(GL_TRIANGLES,(GLsizei)(mesh.triangleCount*3),GL_UNSIGNED_SHORT,nullptr);
+        glDrawElements(GL_TRIANGLES, (GLsizei)(mesh.triangleCount * 3), GL_UNSIGNED_SHORT, nullptr);
         glBindVertexArray(0);
     }
 }
