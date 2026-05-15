@@ -2,7 +2,7 @@
 #include "QuarkCore/Quark3D.hpp"
 #include "Renderer/QuarkIRenderer.hpp"
 #include "Renderer/QuarkGLRenderer.hpp"
-#include "Renderer/QuarkVkRenderer.hpp"
+#include "Renderer/QuarkVulkan/QuarkVkRenderer.hpp"
 #include "QuarkInternal.hpp"
 
 #include <SDL3/SDL.h>
