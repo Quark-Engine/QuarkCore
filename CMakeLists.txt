@@ -168,7 +168,12 @@ add_library(QuarkCore SHARED
     src/QuarkEvent.cpp
     src/QuarkWindow.cpp
     src/Renderer/QuarkGLRenderer.cpp
-    src/Renderer/QuarkVkRenderer.cpp
+    src/Renderer/QuarkVulkan/QuarkVkRenderer.cpp
+    src/Renderer/QuarkVulkan/QuarkVkDraw2D.cpp
+    src/Renderer/QuarkVulkan/QuarkVkDraw3D.cpp
+    src/Renderer/QuarkVulkan/QuarkVkShader.cpp
+    src/Renderer/QuarkVulkan/QuarkVkTexture.cpp
+    src/Renderer/QuarkVulkan/QuarkVkFont.cpp
 )
 
 target_include_directories(QuarkCore PUBLIC

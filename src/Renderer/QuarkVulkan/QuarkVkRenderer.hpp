@@ -38,7 +38,7 @@
 
 #pragma once
 
-#include "QuarkIRenderer.hpp"
+#include "../QuarkIRenderer.hpp"
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkFont.hpp"
 
