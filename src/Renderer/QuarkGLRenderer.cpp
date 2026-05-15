@@ -545,55 +545,75 @@ void QuarkGLRenderer::PushQuad(GLuint tex, float x, float y, float w, float h, C
     EnsureBatchTexture(tex);
     auto n = ToNormColor(col);
 
-    PushVertex({x,  y,     0,0, n[0], n[1], n[2], n[3]});
-    PushVertex({x + w, y,  1, 0, n[0], n[1], n[2], n[3]});
+    PushVertex({x, y, 0, 0, n[0], n[1], n[2], n[3]});
+    PushVertex({x + w, y, 1, 0, n[0], n[1], n[2], n[3]});
     PushVertex({x + w, y + h, 1, 1, n[0], n[1], n[2], n[3]});
-    PushVertex({x,  y, 0,  0, n[0], n[1], n[2], n[3]});
+    PushVertex({x, y, 0, 0, n[0], n[1], n[2], n[3]});
     PushVertex({x + w, y + h, 1, 1, n[0], n[1], n[2], n[3]});
-    PushVertex({x,  y + h, 0, 1, n[0], n[1], n[2], n[3]});
+    PushVertex({x, y + h, 0, 1, n[0], n[1], n[2], n[3]});
 }
 void QuarkGLRenderer::PushTexturedQuad(GLuint tex, Rectangle uv,
                                         float x, float y, float w, float h, Color col) {
     EnsureBatchTexture(tex);
-    auto n=ToNormColor(col);
-    float u0=uv.x, v0=uv.y, u1=uv.x+uv.width, v1=uv.y+uv.height;
-    PushVertex({x,  y,  u0,v0, n[0],n[1],n[2],n[3]});
-    PushVertex({x+w,y,  u1,v0, n[0],n[1],n[2],n[3]});
-    PushVertex({x+w,y+h,u1,v1, n[0],n[1],n[2],n[3]});
-    PushVertex({x,  y,  u0,v0, n[0],n[1],n[2],n[3]});
-    PushVertex({x+w,y+h,u1,v1, n[0],n[1],n[2],n[3]});
-    PushVertex({x,  y+h,u0,v1, n[0],n[1],n[2],n[3]});
+    auto n = ToNormColor(col);
+
+    float u0 = uv.x, v0 = uv.y, u1 = uv.x + uv.width, v1 = uv.y + uv.height;
+
+    PushVertex({x, y, u0, v0, n[0], n[1], n[2], n[3]});
+    PushVertex({x + w, y, u1, v0, n[0], n[1], n[2], n[3]});
+    PushVertex({x + w, y + h, u1, v1, n[0], n[1], n[2], n[3]});
+    PushVertex({x, y,  u0, v0, n[0], n[1], n[2], n[3]});
+    PushVertex({x + w, y + h, u1, v1, n[0], n[1], n[2], n[3]});
+    PushVertex({x,  y + h, u0, v1, n[0], n[1], n[2], n[3]});
 }
 
-void QuarkGLRenderer::PushCircleImpl(float cx,float cy,float r,Color col) {
+void QuarkGLRenderer::PushCircleImpl(float cx, float cy, float r, Color col) {
     EnsureBatchTexture(0);
-    auto n=ToNormColor(col);
-    constexpr int seg=48;
-    for(int i=0;i<seg;++i){
-        float a0=(float)i/seg*6.28318530718f, a1=(float)(i+1)/seg*6.28318530718f;
-        PushVertex({cx,cy,0.5f,0.5f,n[0],n[1],n[2],n[3]});
-        PushVertex({cx+cosf(a0)*r,cy+sinf(a0)*r,1,0,n[0],n[1],n[2],n[3]});
-        PushVertex({cx+cosf(a1)*r,cy+sinf(a1)*r,0,1,n[0],n[1],n[2],n[3]});
+    auto n = ToNormColor(col);
+
+    constexpr int seg = 48;
+    for(int i = 0; i < seg; ++i) {
+        float a0 = (float)i / seg * 6.28318530718f, a1 = (float)(i + 1) / seg * 6.28318530718f;
+        PushVertex({cx, cy, 0.5f, 0.5f, n[0], n[1], n[2], n[3]});
+        PushVertex({cx + cosf(a0) * r, cy + sinf(a0) * r, 1, 0, n[0], n[1], n[2], n[3]});
+        PushVertex({cx + cosf(a1) * r, cy + sinf(a1) * r, 0, 1, n[0], n[1], n[2], n[3]});
     }
 }
 
-void QuarkGLRenderer::DrawRectangle(float x,float y,float w,float h,Color c){ PushQuad(0,x,y,w,h,c); }
-void QuarkGLRenderer::DrawRectangle(const Rectangle& r,Color c){ PushQuad(0,r.x,r.y,r.width,r.height,c); }
-void QuarkGLRenderer::DrawRectangleV(Vec2 p,Vec2 s,Color c){ PushQuad(0,p.x,p.y,s.x,s.y,c); }
-void QuarkGLRenderer::DrawCircle(float cx,float cy,float r,Color c){ PushCircleImpl(cx,cy,r,c); }
+void QuarkGLRenderer::DrawRectangle(float x, float y, float w, float h, Color c) {
+    PushQuad(0, x, y, w, h, c);
+}
 
-void QuarkGLRenderer::DrawLine(float x1,float y1,float x2,float y2,Color c){ DrawLineV({x1,y1},{x2,y2},c); }
-void QuarkGLRenderer::DrawLineV(Vec2 s,Vec2 e,Color c){
+void QuarkGLRenderer::DrawRectangle(const Rectangle& r, Color c) {
+    PushQuad(0, r.x, r.y, r.width, r.height, c);
+}
+
+void QuarkGLRenderer::DrawRectangleV(Vec2 p, Vec2 s, Color c) {
+    PushQuad(0, p.x, p.y, s.x, s.y, c);
+}
+
+void QuarkGLRenderer::DrawCircle(float cx, float cy, float r, Color c) {
+    PushCircleImpl(cx, cy, r, c);
+}
+
+void QuarkGLRenderer::DrawLine(float x1, float y1, float x2, float y2, Color c) {
+    DrawLineV({x1, y1},{x2, y2}, c);
+}
+
+void QuarkGLRenderer::DrawLineV(Vec2 s, Vec2 e, Color c) {
     FlushBatch();
+
     glBegin(GL_LINES);
-    glColor4ub(c.r,c.g,c.b,c.a); glVertex2f(s.x,s.y); glVertex2f(e.x,e.y);
+    glColor4ub(c.r, c.g, c.b, c.a);
+    glVertex2f(s.x, s.y);
+    glVertex2f(e.x, e.y);
     glEnd();
 }
-void QuarkGLRenderer::DrawRectangleLines(Rectangle r,float,Color c){
-    DrawLine(r.x,r.y,r.x+r.width,r.y,c);
-    DrawLine(r.x+r.width,r.y,r.x+r.width,r.y+r.height,c);
-    DrawLine(r.x+r.width,r.y+r.height,r.x,r.y+r.height,c);
-    DrawLine(r.x,r.y+r.height,r.x,r.y,c);
+void QuarkGLRenderer::DrawRectangleLines(Rectangle r, float, Color c) {
+    DrawLine(r.x, r.y, r.x + r.width, r.y, c);
+    DrawLine(r.x + r.width, r.y, r.x + r.width, r.y + r.height, c);
+    DrawLine(r.x + r.width, r.y + r.height, r.x, r.y + r.height, c);
+    DrawLine(r.x, r.y + r.height, r.x, r.y, c);
 }
 void QuarkGLRenderer::DrawRectangleRounded(Rectangle r,float rnd,int,Color c){
     float rad=rnd*std::min(r.width,r.height)/2.f;
