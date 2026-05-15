@@ -173,6 +173,7 @@ add_library(QuarkCore SHARED
     src/Renderer/QuarkVulkan/QuarkVkDraw3D.cpp
     src/Renderer/QuarkVulkan/QuarkVkShader.cpp
     src/Renderer/QuarkVulkan/QuarkVkTexture.cpp
+    src/Renderer/QuarkVulkan/QuarkVkModel.cpp
     src/Renderer/QuarkVulkan/QuarkVkFont.cpp
 )
 
