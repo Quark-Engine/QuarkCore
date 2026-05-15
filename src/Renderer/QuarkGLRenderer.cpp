@@ -643,107 +643,148 @@ void QuarkGLRenderer::DrawTriangle(Vec2 a, Vec2 b, Vec2 c, Color col) {
     glEnd();
 }
 
-void QuarkGLRenderer::DrawCircleLines(float cx,float cy,float r,Color c){
+void QuarkGLRenderer::DrawCircleLines(float cx, float cy, float r, Color c) {
     FlushBatch();
-    glBegin(GL_LINE_LOOP); glColor4ub(c.r,c.g,c.b,c.a);
-    for(int i=0;i<36;++i){ float a=i/36.f*6.28318530718f; glVertex2f(cx+r*cosf(a),cy+r*sinf(a)); }
-    glEnd();
-}
 
-void QuarkGLRenderer::DrawEllipse(float cx,float cy,float rh,float rv,Color c){
-    FlushBatch();
-    glBegin(GL_POLYGON); glColor4ub(c.r,c.g,c.b,c.a);
-    for(int i=0;i<36;++i){ float a=i/36.f*6.28318530718f; glVertex2f(cx+rh*cosf(a),cy+rv*sinf(a)); }
-    glEnd();
-}
-
-void QuarkGLRenderer::DrawPoly(Vec2 cen,int sides,float r,float rot,Color c){
-    if(sides<3) return;
-    FlushBatch();
-    glBegin(GL_POLYGON); glColor4ub(c.r,c.g,c.b,c.a);
-    for(int i=0;i<sides;++i){
-        float a=i/(float)sides*6.28318530718f+rot*3.14159265359f/180.f;
-        glVertex2f(cen.x+r*cosf(a),cen.y+r*sinf(a));
+    glBegin(GL_LINE_LOOP);
+    glColor4ub(c.r, c.g, c.b, c.a);
+    for(int i = 0; i < 36; ++i) {
+        float a = i / 36.f * 6.28318530718f;
+        glVertex2f(cx + r * cosf(a), cy + r * sinf(a));
     }
     glEnd();
 }
 
-void QuarkGLRenderer::DrawTexture(const ITexture& t,float x,float y,Color tint){
+void QuarkGLRenderer::DrawEllipse(float cx, float cy, float rh, float rv, Color c) {
+    FlushBatch();
+
+    glBegin(GL_POLYGON);
+    glColor4ub(c.r, c.g, c.b, c.a);
+    for(int i = 0; i < 36; ++i) {
+        float a = i / 36.f * 6.28318530718f;
+        glVertex2f(cx + rh * cosf(a), cy + rv * sinf(a));
+    }
+    glEnd();
+}
+
+void QuarkGLRenderer::DrawPoly(Vec2 cen, int sides, float r, float rot, Color c) {
+    if(sides < 3) return;
+
+    FlushBatch();
+
+    glBegin(GL_POLYGON);
+    glColor4ub(c.r, c.g, c.b, c.a);
+    for(int i = 0; i < sides; ++i) {
+        float a = i / (float)sides * 6.28318530718f + rot * 3.14159265359f / 180.f;
+        glVertex2f(cen.x + r * cosf(a), cen.y + r * sinf(a));
+    }
+    glEnd();
+}
+
+void QuarkGLRenderer::DrawTexture(const ITexture& t, float x, float y, Color tint) {
     if(!t.id) return;
-    PushQuad(t.id,x,y,(float)t.width,(float)t.height,tint);
+    PushQuad(t.id, x, y, (float)t.width, (float)t.height, tint);
 }
 
 void QuarkGLRenderer::DrawTextureV(const ITexture& t, Vec2 p, Color tint) {
-    DrawTexture(t,p.x,p.y,tint);
+    DrawTexture(t, p.x, p.y, tint);
 }
 
-void QuarkGLRenderer::DrawTextureRec(const ITexture& t,Rectangle src,Vec2 pos,Color tint){
-    ITexture copy=t;
-    DrawTexturePro(copy,src,{pos.x,pos.y,src.width,src.height},{0,0},0,tint);
+void QuarkGLRenderer::DrawTextureRec(const ITexture& t, Rectangle src, Vec2 pos, Color tint) {
+    ITexture copy = t;
+    DrawTexturePro(copy, src, {pos.x, pos.y, src.width, src.height}, {0, 0}, 0, tint);
 }
 
-void QuarkGLRenderer::DrawTextureEx(const ITexture& t,Vec2 pos,float rot,float scale,Color tint){
-    ITexture copy=t;
-    Rectangle src{0,0,(float)t.width,(float)t.height};
-    Rectangle dst{pos.x,pos.y,(float)t.width*scale,(float)t.height*scale};
-    DrawTexturePro(copy,src,dst,{(float)t.width*scale/2,(float)t.height*scale/2},rot,tint);
+void QuarkGLRenderer::DrawTextureEx(const ITexture& t, Vec2 pos, float rot, float scale, Color tint) {
+    ITexture copy = t;
+    Rectangle src{0, 0, (float)t.width, (float)t.height};
+    Rectangle dst{pos.x, pos.y, (float)t.width * scale, (float)t.height * scale};
+    DrawTexturePro(copy, src, dst, {(float)t.width * scale / 2, (float)t.height * scale / 2}, rot, tint);
 }
 
-void QuarkGLRenderer::DrawTexturePro(ITexture t,Rectangle src,Rectangle dst,
-                                      Vec2 origin,float rotation,Color tint){
+void QuarkGLRenderer::DrawTexturePro(ITexture t, Rectangle src, Rectangle dst,
+                                      Vec2 origin, float rotation, Color tint) {
     if(!t.id) return;
     EnsureBatchTexture(t.id);
-    auto n=ToNormColor(tint);
-    float tw=(float)t.width,th=(float)t.height;
-    float u0=src.x/tw,v0=src.y/th,u1=(src.x+src.width)/tw,v1=(src.y+src.height)/th;
-    Vec2 v[4]={{-origin.x,-origin.y},{dst.width-origin.x,-origin.y},
-               {dst.width-origin.x,dst.height-origin.y},{-origin.x,dst.height-origin.y}};
-    if(rotation!=0){
-        float rad=rotation*3.1415926535f/180.f,cA=cosf(rad),sA=sinf(rad);
-        for(auto& p:v){ float rx=p.x*cA-p.y*sA,ry=p.x*sA+p.y*cA; p.x=rx;p.y=ry; }
+
+    auto n = ToNormColor(tint);
+
+    float tw = (float)t.width, th = (float)t.height;
+    float u0 = src.x / tw, v0 = src.y / th, u1 = (src.x + src.width) / tw, v1 = (src.y + src.height) / th;
+    Vec2 v[4] = {{-origin.x, -origin.y}, {dst.width - origin.x, -origin.y},
+               {dst.width - origin.x, dst.height - origin.y}, {-origin.x, dst.height - origin.y}};
+
+    if(rotation != 0) {
+        float rad = rotation * 3.1415926535f / 180.f, cA = cosf(rad), sA = sinf(rad);
+        for(auto& p : v) {
+            float rx = p.x * cA - p.y * sA;
+            float ry = p.x * sA + p.y * cA;
+            p.x = rx;
+            p.y = ry;
+        }
     }
-    for(auto& p:v){ p.x+=dst.x; p.y+=dst.y; }
-    PushVertex({v[0].x,v[0].y,u0,v0,n[0],n[1],n[2],n[3]});
-    PushVertex({v[1].x,v[1].y,u1,v0,n[0],n[1],n[2],n[3]});
-    PushVertex({v[2].x,v[2].y,u1,v1,n[0],n[1],n[2],n[3]});
-    PushVertex({v[0].x,v[0].y,u0,v0,n[0],n[1],n[2],n[3]});
-    PushVertex({v[2].x,v[2].y,u1,v1,n[0],n[1],n[2],n[3]});
-    PushVertex({v[3].x,v[3].y,u0,v1,n[0],n[1],n[2],n[3]});
+
+    for(auto& p : v) {
+        p.x += dst.x;
+        p.y += dst.y;
+    }
+
+    PushVertex({v[0].x, v[0].y, u0, v0, n[0], n[1], n[2], n[3]});
+    PushVertex({v[1].x, v[1].y, u1, v0, n[0], n[1], n[2], n[3]});
+    PushVertex({v[2].x, v[2].y, u1, v1, n[0], n[1], n[2], n[3]});
+    PushVertex({v[0].x, v[0].y, u0, v0, n[0], n[1], n[2], n[3]});
+    PushVertex({v[2].x, v[2].y, u1, v1, n[0], n[1], n[2], n[3]});
+    PushVertex({v[3].x, v[3].y, u0, v1, n[0], n[1], n[2], n[3]});
 }
 
-void QuarkGLRenderer::DrawTextureTiled(ITexture t,float scale,Vec2 off,Color tint){
+void QuarkGLRenderer::DrawTextureTiled(ITexture t, float scale, Vec2 off, Color tint) {
     if(!t.id) return;
-    int tx=(int)ceilf(m_width /(t.width *scale))+1;
-    int ty=(int)ceilf(m_height/(t.height*scale))+1;
-    for(int y=-1;y<ty;++y) for(int x=-1;x<tx;++x)
-        DrawTexture(t,off.x+x*t.width*scale,off.y+y*t.height*scale,tint);
+
+    int tx = (int)ceilf(m_width / (t.width * scale)) + 1;
+    int ty = (int)ceilf(m_height / (t.height * scale)) + 1;
+
+    for(int y = -1; y < ty; ++y) for(int x = -1; x < tx; ++x)
+        DrawTexture(t, off.x + x * t.width * scale, off.y + y * t.height * scale, tint);
 }
 
-void QuarkGLRenderer::DrawTextureNPatch(ITexture t,Rectangle src,Rectangle dst,
-                                         Vec2 origin,float rot,Color tint){
-    DrawTexturePro(t,src,dst,origin,rot,tint);
+void QuarkGLRenderer::DrawTextureNPatch(ITexture t, Rectangle src, Rectangle dst,
+                                         Vec2 origin, float rot, Color tint) {
+    DrawTexturePro(t, src, dst, origin, rot, tint);
 }
 
-ITexture QuarkGLRenderer::LoadTexture(const char* path){
+ITexture QuarkGLRenderer::LoadTexture(const char* path) {
     TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("Loading texture from: %s", path));
-    PngImageData img; ITexture t{};
-    if(LoadPngImage(path,img)){
-        t.id=CreateTextureFromRgba(img.pixels.data(),img.width,img.height);
-        t.width=img.width; t.height=img.height; t.valid=true;
+
+    PngImageData img;
+    ITexture t{};
+
+    if(LoadPngImage(path,img)) {
+        t.id = CreateTextureFromRgba(img.pixels.data(), img.width, img.height);
+        t.width = img.width;
+        t.height = img.height;
+        t.valid = true;
+
         TraceLog(LogLevel::Info, "TEXTURE", TextFormat("Texture loaded successfully: %s (%dx%d)", path, t.width, t.height));
     }
     else {
         TraceLog(LogLevel::Error, "TEXTURE", TextFormat("Failed to load texture: %s", path));
     }
+
     return t;
 }
 
-void QuarkGLRenderer::UnloadTexture(ITexture& t){
-    if(t.id) glDeleteTextures(1,&t.id); t={};
+void QuarkGLRenderer::UnloadTexture(ITexture& t) {
+    if(t.id) glDeleteTextures(1, &t.id);
+    t = {};
 }
 
-bool QuarkGLRenderer::isTextureValid(ITexture& t){ return t.valid&&t.id!=0; }
-ITexture QuarkGLRenderer::GetRenderTextureTexture(IRenderTexture rt){ return rt.texture; }
+bool QuarkGLRenderer::isTextureValid(ITexture& t) {
+    return t.valid && t.id != 0;
+}
+
+ITexture QuarkGLRenderer::GetRenderTextureTexture(IRenderTexture rt) {
+    return rt.texture;
+}
 
 IRenderTexture QuarkGLRenderer::LoadRenderTexture(int w,int h){
     IRenderTexture rt{};
