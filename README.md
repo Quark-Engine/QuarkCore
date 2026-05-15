@@ -1,7 +1,6 @@
 <div align="center">
 
-# QuarkCore
-
+<img src="quark-core-logo.png" alt="QuarkCore" width="100%">
 **An OpenGL rendering library built to make lighting easy for the Quark Engine — and ~1.5x faster than Raylib.**
 
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/)
