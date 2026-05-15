@@ -675,7 +675,7 @@ void QuarkGLRenderer::DrawPoly(Vec2 cen, int sides, float r, float rot, Color c)
     glBegin(GL_POLYGON);
     glColor4ub(c.r, c.g, c.b, c.a);
     for(int i = 0; i < sides; ++i) {
-        float a = i / (float)sides * 6.28318530718f + rot * 3.14159265359f / 180.f;
+        float a = i / (float)sides * 6.28318530718f + rot * PI / 180.f;
         glVertex2f(cen.x + r * cosf(a), cen.y + r * sinf(a));
     }
     glEnd();
@@ -715,7 +715,7 @@ void QuarkGLRenderer::DrawTexturePro(ITexture t, Rectangle src, Rectangle dst,
                {dst.width - origin.x, dst.height - origin.y}, {-origin.x, dst.height - origin.y}};
 
     if(rotation != 0) {
-        float rad = rotation * 3.1415926535f / 180.f, cA = cosf(rad), sA = sinf(rad);
+        float rad = rotation * PI / 180.f, cA = cosf(rad), sA = sinf(rad);
         for(auto& p : v) {
             float rx = p.x * cA - p.y * sA;
             float ry = p.x * sA + p.y * cA;
@@ -1257,7 +1257,7 @@ void QuarkGLRenderer::BeginMode3D(const Camera3D& camera) {
 
     Mat4 view = Mat4::lookAt(camera.position, camera.target, camera.up);
     float asp = (float)m_width / (float)m_height;
-    Mat4 proj = Mat4::perspective(camera.fovy * 3.14159f / 180.f, asp, 0.1f, 1000.f);
+    Mat4 proj = Mat4::perspective(camera.fovy * PI / 180.f, asp, 0.1f, 1000.f);
 
     Set3DView(view,proj);
 
@@ -1447,155 +1447,474 @@ void QuarkGLRenderer::Init3DGeometry() {
 
     const int R = 16, S = 16;
     for(int r = 0; r <= R; ++r) {
-        float phi = 3.14159f * r / R;
+        float phi = PI * r / R;
         for(int s = 0; s <= S; ++s) {
-            float th = 2 * 3.14159f * s /S;
+            float th = 2 * PI * s /S;
             float x = sinf(phi) * cosf(th), y = cosf(phi), z = sinf(phi) * sinf(th);
             sv.insert(sv.end(), {x, y, z, x, y, z, (float)s / S, (float)r / R});
         }
     }
-    for(int r=0;r<R;++r) for(int s=0;s<S;++s){
-        si.push_back(r*(S+1)+s); si.push_back((r+1)*(S+1)+s); si.push_back((r+1)*(S+1)+(s+1));
-        si.push_back(r*(S+1)+s); si.push_back((r+1)*(S+1)+(s+1)); si.push_back(r*(S+1)+(s+1));
+    for (int r = 0; r < R; ++r) {
+        for (int s = 0; s < S; ++s) {
+
+            si.push_back(r * (S + 1) + s);
+            si.push_back((r + 1) * (S + 1) + s);
+            si.push_back((r + 1) * (S + 1) + (s + 1));
+
+            si.push_back(r * (S + 1) + s);
+            si.push_back((r + 1) * (S + 1) + (s + 1));
+            si.push_back(r * (S + 1) + (s + 1));
+        }
     }
-    m_3d.sphereIndexCount=(int)si.size();
-    setup(m_3d.sphereVAO,m_3d.sphereVBO,m_3d.sphereEBO,
-          sv.data(),sv.size()*4, si.data(),si.size()*4);
+
+    m_3d.sphereIndexCount = static_cast<int>(si.size());
+
+    setup(
+        m_3d.sphereVAO,
+        m_3d.sphereVBO,
+        m_3d.sphereEBO,
+        sv.data(),
+        sv.size() * 4,
+        si.data(),
+        si.size() * 4
+    );
 
     // Line / Triangle dynamic VAOs
-    auto dynVao=[](GLuint& vao,GLuint& vbo){
-        glGenVertexArrays(1,&vao); glGenBuffers(1,&vbo);
-        glBindVertexArray(vao); glBindBuffer(GL_ARRAY_BUFFER,vbo);
-        glEnableVertexAttribArray(0); glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(Vertex3D),(void*)offsetof(Vertex3D,position));
-        glEnableVertexAttribArray(1); glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,sizeof(Vertex3D),(void*)offsetof(Vertex3D,normal));
-        glEnableVertexAttribArray(2); glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,sizeof(Vertex3D),(void*)offsetof(Vertex3D,texCoord));
+    auto dynVao = [](GLuint& vao, GLuint& vbo) {
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(
+            0,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex3D),
+            (void*)offsetof(Vertex3D, position)
+        );
+
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(
+            1,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex3D),
+            (void*)offsetof(Vertex3D, normal)
+        );
+
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(
+            2,
+            2,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex3D),
+            (void*)offsetof(Vertex3D, texCoord)
+        );
+
         glBindVertexArray(0);
     };
-    dynVao(m_3d.lineVAO,m_3d.lineVBO);
+
+    dynVao(m_3d.lineVAO, m_3d.lineVBO);
     dynVao(m_3d.triVAO, m_3d.triVBO);
 }
 
-void QuarkGLRenderer::Set3DView(const Mat4& view,const Mat4& proj){
-    m_3d.viewMatrix=view; m_3d.projectionMatrix=proj;
-    if(m_3d.initialized){
-        glUniformMatrix4fv(m_3d.viewLoc,1,GL_FALSE,m_3d.viewMatrix.m);
-        glUniformMatrix4fv(m_3d.projLoc,1,GL_FALSE,m_3d.projectionMatrix.m);
+void QuarkGLRenderer::Set3DView(const Mat4& view,const Mat4& proj) {
+    m_3d.viewMatrix = view;
+    m_3d.projectionMatrix = proj;
+
+    if(m_3d.initialized) {
+        glUniformMatrix4fv(m_3d.viewLoc, 1, GL_FALSE, m_3d.viewMatrix.m);
+        glUniformMatrix4fv(m_3d.projLoc, 1, GL_FALSE, m_3d.projectionMatrix.m);
     }
 }
-Vec3 QuarkGLRenderer::TransformPoint(const Mat4& m,const Vec3& p) const {
-    float x=m.m[0]*p.x+m.m[4]*p.y+m.m[8]*p.z+m.m[12];
-    float y=m.m[1]*p.x+m.m[5]*p.y+m.m[9]*p.z+m.m[13];
-    float z=m.m[2]*p.x+m.m[6]*p.y+m.m[10]*p.z+m.m[14];
-    float w=m.m[3]*p.x+m.m[7]*p.y+m.m[11]*p.z+m.m[15];
-    if(w!=0){x/=w;y/=w;z/=w;} return{x,y,z};
-}
-Mat4 QuarkGLRenderer::ApplyCurrentMatrix(const Mat4& t) const { return m_currentMatrix*t; }
 
-void QuarkGLRenderer::FlushLines3D(){
-    if(m_3d.lineVertices.empty()) return;
-    Mat4 id=Mat4::identity();
-    if(m_3d.modelLoc>=0) glUniformMatrix4fv(m_3d.modelLoc,1,GL_FALSE,id.m);
-    glBindTexture(GL_TEXTURE_2D,m_3d.whiteTexture);
-    glBindVertexArray(m_3d.lineVAO); glBindBuffer(GL_ARRAY_BUFFER,m_3d.lineVBO);
-    glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(m_3d.lineVertices.size()*sizeof(Vertex3D)),m_3d.lineVertices.data(),GL_DYNAMIC_DRAW);
-    glDrawArrays(GL_LINES,0,(GLsizei)m_3d.lineVertices.size());
-    glBindVertexArray(0); m_3d.lineVertices.clear();
+Vec3 QuarkGLRenderer::TransformPoint(const Mat4& m,const Vec3& p) const {
+    float x =
+        m.m[0]  * p.x +
+        m.m[4]  * p.y +
+        m.m[8]  * p.z +
+        m.m[12];
+
+    float y =
+        m.m[1]  * p.x +
+        m.m[5]  * p.y +
+        m.m[9]  * p.z +
+        m.m[13];
+
+    float z =
+        m.m[2]  * p.x +
+        m.m[6]  * p.y +
+        m.m[10] * p.z +
+        m.m[14];
+
+    float w =
+        m.m[3]  * p.x +
+        m.m[7]  * p.y +
+        m.m[11] * p.z +
+        m.m[15];
+
+    if (w != 0.0f) {
+        x /= w;
+        y /= w;
+        z /= w;
+    }
+
+    return {
+        x,
+        y,
+        z
+    };
 }
-void QuarkGLRenderer::FlushTriangles3D(){
-    if(m_3d.triVertices.empty()) return;
-    Mat4 id=Mat4::identity();
-    if(m_3d.modelLoc>=0) glUniformMatrix4fv(m_3d.modelLoc,1,GL_FALSE,id.m);
-    glBindTexture(GL_TEXTURE_2D,m_3d.whiteTexture);
-    glBindVertexArray(m_3d.triVAO); glBindBuffer(GL_ARRAY_BUFFER,m_3d.triVBO);
-    glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(m_3d.triVertices.size()*sizeof(Vertex3D)),m_3d.triVertices.data(),GL_DYNAMIC_DRAW);
-    glDrawArrays(GL_TRIANGLES,0,(GLsizei)m_3d.triVertices.size());
-    glBindVertexArray(0); m_3d.triVertices.clear();
+
+Mat4 QuarkGLRenderer::ApplyCurrentMatrix(const Mat4& t) const {
+    return m_currentMatrix * t;
+}
+
+void QuarkGLRenderer::FlushLines3D() {
+    if (m_3d.lineVertices.empty()) return;
+
+    Mat4 id = Mat4::identity();
+    if (m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, id.m);
+
+    glBindTexture(GL_TEXTURE_2D, m_3d.whiteTexture);
+    glBindVertexArray(m_3d.lineVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_3d.lineVBO);
+
+    glBufferData(GL_ARRAY_BUFFER,
+        (GLsizeiptr)(m_3d.lineVertices.size() * sizeof(Vertex3D)),
+        m_3d.lineVertices.data(),
+        GL_DYNAMIC_DRAW
+    );
+
+    glDrawArrays(GL_LINES, 0, (GLsizei)m_3d.lineVertices.size());
+
+    glBindVertexArray(0);
+    m_3d.lineVertices.clear();
+}
+
+void QuarkGLRenderer::FlushTriangles3D() {
+    if (m_3d.triVertices.empty()) return;
+
+    Mat4 id = Mat4::identity();
+    if (m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, id.m);
+
+    glBindTexture(GL_TEXTURE_2D, m_3d.whiteTexture);
+    glBindVertexArray(m_3d.triVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_3d.triVBO);
+
+    glBufferData(GL_ARRAY_BUFFER,
+        (GLsizeiptr)(m_3d.triVertices.size() * sizeof(Vertex3D)),
+        m_3d.triVertices.data(),
+        GL_DYNAMIC_DRAW
+    );
+
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)m_3d.triVertices.size());
+
+    glBindVertexArray(0);
+    m_3d.triVertices.clear();
 }
 
 void QuarkGLRenderer::DrawTriangle3DImpl(Vertex3D v1,Vertex3D v2,Vertex3D v3,Color color){
-    if(!m_3d.triVertices.empty()&&
-       (color.r!=m_3d.currentTriColor.r||color.g!=m_3d.currentTriColor.g||
-        color.b!=m_3d.currentTriColor.b||color.a!=m_3d.currentTriColor.a))
+    if (!m_3d.triVertices.empty() &&
+        (color.r != m_3d.currentTriColor.r ||
+         color.g != m_3d.currentTriColor.g ||
+         color.b != m_3d.currentTriColor.b ||
+         color.a != m_3d.currentTriColor.a)) {
         FlushTriangles3D();
-    m_3d.currentTriColor=color;
-    if(m_3d.colorLoc>=0) glUniform4f(m_3d.colorLoc,color.r/255.f,color.g/255.f,color.b/255.f,color.a/255.f);
-    m_3d.triVertices.push_back({TransformPoint(m_currentMatrix,v1.position),v1.normal,v1.texCoord});
-    m_3d.triVertices.push_back({TransformPoint(m_currentMatrix,v2.position),v2.normal,v2.texCoord});
-    m_3d.triVertices.push_back({TransformPoint(m_currentMatrix,v3.position),v3.normal,v3.texCoord});
-}
-void QuarkGLRenderer::DrawLine3D(Vec3 s,Vec3 e,Color color){
-    if(!m_3d.lineVertices.empty()&&
-       (color.r!=m_3d.currentLineColor.r||color.g!=m_3d.currentLineColor.g||
-        color.b!=m_3d.currentLineColor.b||color.a!=m_3d.currentLineColor.a))
-        FlushLines3D();
-    m_3d.currentLineColor=color;
-    if(m_3d.colorLoc>=0) glUniform4f(m_3d.colorLoc,color.r/255.f,color.g/255.f,color.b/255.f,color.a/255.f);
-    m_3d.lineVertices.push_back({TransformPoint(m_currentMatrix,s),{0,1,0},{0,0}});
-    m_3d.lineVertices.push_back({TransformPoint(m_currentMatrix,e),{0,1,0},{0,0}});
-}
-void QuarkGLRenderer::DrawPlane(Vec3 c,Vec2 size,Color color){
-    Mat4 t=ApplyCurrentMatrix(Mat4::translation(c.x,c.y,c.z)*Mat4::scale(size.x,1,size.y));
-    if(m_3d.modelLoc>=0) glUniformMatrix4fv(m_3d.modelLoc,1,GL_FALSE,t.m);
-    if(m_3d.colorLoc>=0) glUniform4f(m_3d.colorLoc,color.r/255.f,color.g/255.f,color.b/255.f,color.a/255.f);
-    glBindTexture(GL_TEXTURE_2D,m_3d.whiteTexture);
-    glBindVertexArray(m_3d.planeVAO);
-    glDrawElements(GL_TRIANGLES,m_3d.planeIndexCount,GL_UNSIGNED_INT,0);
-    glBindVertexArray(0);
-}
-void QuarkGLRenderer::DrawCube(Vec3 pos,float w,float h,float l,Color color){
-    Mat4 t=ApplyCurrentMatrix(Mat4::translation(pos.x,pos.y,pos.z)*Mat4::scale(w,h,l));
-    if(m_3d.modelLoc>=0) glUniformMatrix4fv(m_3d.modelLoc,1,GL_FALSE,t.m);
-    if(m_3d.colorLoc>=0) glUniform4f(m_3d.colorLoc,color.r/255.f,color.g/255.f,color.b/255.f,color.a/255.f);
-    glBindTexture(GL_TEXTURE_2D,m_3d.whiteTexture);
-    glBindVertexArray(m_3d.cubeVAO);
-    glDrawElements(GL_TRIANGLES,m_3d.cubeIndexCount,GL_UNSIGNED_INT,0);
-    glBindVertexArray(0);
-}
-void QuarkGLRenderer::DrawCubeV(Vec3 p,Vec3 s,Color c){ DrawCube(p,s.x,s.y,s.z,c); }
-void QuarkGLRenderer::DrawCubeWires(Vec3 pos,float w,float h,float l,Color color){
-    float hw=w/2,hh=h/2,hl=l/2;
-    Vec3 v[8]={pos+Vec3{-hw,-hh,-hl},pos+Vec3{hw,-hh,-hl},pos+Vec3{hw,hh,-hl},pos+Vec3{-hw,hh,-hl},
-               pos+Vec3{-hw,-hh, hl},pos+Vec3{hw,-hh, hl},pos+Vec3{hw,hh, hl},pos+Vec3{-hw,hh, hl}};
-    DrawLine3D(v[0],v[1],color);DrawLine3D(v[1],v[2],color);DrawLine3D(v[2],v[3],color);DrawLine3D(v[3],v[0],color);
-    DrawLine3D(v[4],v[5],color);DrawLine3D(v[5],v[6],color);DrawLine3D(v[6],v[7],color);DrawLine3D(v[7],v[4],color);
-    DrawLine3D(v[0],v[4],color);DrawLine3D(v[1],v[5],color);DrawLine3D(v[2],v[6],color);DrawLine3D(v[3],v[7],color);
-}
-void QuarkGLRenderer::DrawCubeWiresV(Vec3 p,Vec3 s,Color c){ DrawCubeWires(p,s.x,s.y,s.z,c); }
-
-void QuarkGLRenderer::DrawSphere(Vec3 pos,float r,Color color){
-    Mat4 t=ApplyCurrentMatrix(Mat4::translation(pos.x,pos.y,pos.z)*Mat4::scale(r,r,r));
-    if(m_3d.modelLoc>=0) glUniformMatrix4fv(m_3d.modelLoc,1,GL_FALSE,t.m);
-    if(m_3d.colorLoc>=0) glUniform4f(m_3d.colorLoc,color.r/255.f,color.g/255.f,color.b/255.f,color.a/255.f);
-    glBindTexture(GL_TEXTURE_2D,m_3d.whiteTexture);
-    glBindVertexArray(m_3d.sphereVAO);
-    glDrawElements(GL_TRIANGLES,m_3d.sphereIndexCount,GL_UNSIGNED_INT,0);
-    glBindVertexArray(0);
-}
-void QuarkGLRenderer::DrawSphereEx(Vec3 c,float r,int rings,int slices,Color color){
-    for(int ri=0;ri<rings;++ri) for(int si=0;si<slices;++si){
-        float p1=3.14159f*ri/rings,p2=3.14159f*(ri+1)/rings;
-        float t1=2*3.14159f*si/slices,t2=2*3.14159f*(si+1)/slices;
-        Vec3 a{r*sinf(p1)*cosf(t1),r*cosf(p1),r*sinf(p1)*sinf(t1)};
-        Vec3 b{r*sinf(p1)*cosf(t2),r*cosf(p1),r*sinf(p1)*sinf(t2)};
-        Vec3 d{r*sinf(p2)*cosf(t1),r*cosf(p2),r*sinf(p2)*sinf(t1)};
-        Vec3 e{r*sinf(p2)*cosf(t2),r*cosf(p2),r*sinf(p2)*sinf(t2)};
-        DrawTriangle3DImpl({c+a,a.normalized(),{0,0}},{c+b,b.normalized(),{0,0}},{c+e,e.normalized(),{0,0}},color);
-        DrawTriangle3DImpl({c+a,a.normalized(),{0,0}},{c+e,e.normalized(),{0,0}},{c+d,d.normalized(),{0,0}},color);
     }
+
+    m_3d.currentTriColor = color;
+
+    if (m_3d.colorLoc >= 0)
+        glUniform4f(
+            m_3d.colorLoc,
+            color.r / 255.f,
+            color.g / 255.f,
+            color.b / 255.f,
+            color.a / 255.f
+        );
+
+    m_3d.triVertices.push_back({
+        TransformPoint(m_currentMatrix, v1.position),
+        v1.normal,
+        v1.texCoord
+    });
+
+    m_3d.triVertices.push_back({
+        TransformPoint(m_currentMatrix, v2.position),
+        v2.normal,
+        v2.texCoord
+    });
+
+    m_3d.triVertices.push_back({
+        TransformPoint(m_currentMatrix, v3.position),
+        v3.normal,
+        v3.texCoord
+    });
 }
-void QuarkGLRenderer::DrawSphereWires(Vec3 c,float r,int rings,int slices,Color color){
-    for(int ri=0;ri<=rings;++ri){ float phi=3.14159f*ri/rings;
-        for(int si=0;si<slices;++si){
-            float t1=2*3.14159f*si/slices,t2=2*3.14159f*(si+1)/slices;
-            DrawLine3D(c+Vec3{r*sinf(phi)*cosf(t1),r*cosf(phi),r*sinf(phi)*sinf(t1)},
-                       c+Vec3{r*sinf(phi)*cosf(t2),r*cosf(phi),r*sinf(phi)*sinf(t2)},color);
+
+void QuarkGLRenderer::DrawLine3D(Vec3 s,Vec3 e,Color color){
+    if (!m_3d.lineVertices.empty() &&
+        (color.r != m_3d.currentLineColor.r ||
+         color.g != m_3d.currentLineColor.g ||
+         color.b != m_3d.currentLineColor.b ||
+         color.a != m_3d.currentLineColor.a)) {
+        FlushLines3D();
+    }
+
+    m_3d.currentLineColor = color;
+
+    if (m_3d.colorLoc >= 0)
+        glUniform4f(
+            m_3d.colorLoc,
+            color.r / 255.f,
+            color.g / 255.f,
+            color.b / 255.f,
+            color.a / 255.f
+        );
+
+    m_3d.lineVertices.push_back({
+        TransformPoint(m_currentMatrix, s),
+        { 0, 1, 0 },
+        { 0, 0 }
+    });
+
+    m_3d.lineVertices.push_back({
+        TransformPoint(m_currentMatrix, e),
+        { 0, 1, 0 },
+        { 0, 0 }
+    });
+}
+
+void QuarkGLRenderer::DrawPlane(Vec3 c,Vec2 size,Color color){
+    Mat4 t = ApplyCurrentMatrix(
+        Mat4::translation(
+            c.x,
+            c.y,
+            c.z
+        ) * Mat4::scale(
+            size.x,
+            1.0f,
+            size.y
+        )
+    );
+
+    if (m_3d.modelLoc >= 0)
+        glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, t.m);
+
+    if (m_3d.colorLoc >= 0)
+        glUniform4f(
+            m_3d.colorLoc,
+            color.r / 255.f,
+            color.g / 255.f,
+            color.b / 255.f,
+            color.a / 255.f
+        );
+
+    glBindTexture(GL_TEXTURE_2D, m_3d.whiteTexture);
+    glBindVertexArray(m_3d.planeVAO);
+
+    glDrawElements(
+        GL_TRIANGLES,
+        m_3d.planeIndexCount,
+        GL_UNSIGNED_INT,
+        nullptr
+    );
+
+    glBindVertexArray(0);
+}
+
+void QuarkGLRenderer::DrawCube(Vec3 pos,float w,float h,float l,Color color){
+    Mat4 t = ApplyCurrentMatrix(
+        Mat4::translation(
+            pos.x,
+            pos.y,
+            pos.z
+        ) * Mat4::scale(
+            w,
+            h,
+            l
+        )
+    );
+
+    if (m_3d.modelLoc >= 0)
+        glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, t.m);
+
+    if (m_3d.colorLoc >= 0)
+        glUniform4f(
+            m_3d.colorLoc,
+            color.r / 255.f,
+            color.g / 255.f,
+            color.b / 255.f,
+            color.a / 255.f
+        );
+
+    glBindTexture(GL_TEXTURE_2D, m_3d.whiteTexture);
+    glBindVertexArray(m_3d.cubeVAO);
+
+    glDrawElements(
+        GL_TRIANGLES,
+        m_3d.cubeIndexCount,
+        GL_UNSIGNED_INT,
+        nullptr
+    );
+
+    glBindVertexArray(0);
+}
+
+void QuarkGLRenderer::DrawCubeV(Vec3 p, Vec3 s, Color c) {
+    DrawCube(p, s.x, s.y, s.z, c);
+}
+
+void QuarkGLRenderer::DrawCubeWires(Vec3 pos, float w, float h, float l, Color color) {
+    float hw = w * 0.5f;
+    float hh = h * 0.5f;
+    float hl = l * 0.5f;
+
+    Vec3 v[8] = {
+        pos + Vec3{ -hw, -hh, -hl },
+        pos + Vec3{  hw, -hh, -hl },
+        pos + Vec3{  hw,  hh, -hl },
+        pos + Vec3{ -hw,  hh, -hl },
+
+        pos + Vec3{ -hw, -hh,  hl },
+        pos + Vec3{  hw, -hh,  hl },
+        pos + Vec3{  hw,  hh,  hl },
+        pos + Vec3{ -hw,  hh,  hl }
+    };
+
+    DrawLine3D(v[0], v[1], color);
+    DrawLine3D(v[1], v[2], color);
+    DrawLine3D(v[2], v[3], color);
+    DrawLine3D(v[3], v[0], color);
+
+    DrawLine3D(v[4], v[5], color);
+    DrawLine3D(v[5], v[6], color);
+    DrawLine3D(v[6], v[7], color);
+    DrawLine3D(v[7], v[4], color);
+
+    DrawLine3D(v[0], v[4], color);
+    DrawLine3D(v[1], v[5], color);
+    DrawLine3D(v[2], v[6], color);
+    DrawLine3D(v[3], v[7], color);
+}
+
+void QuarkGLRenderer::DrawCubeWiresV(Vec3 p, Vec3 s, Color c) {
+    DrawCubeWires(p, s.x, s.y, s.z, c);
+}
+
+void QuarkGLRenderer::DrawSphere(Vec3 pos, float r, Color color) {
+    Mat4 t = ApplyCurrentMatrix(
+        Mat4::translation(
+            pos.x,
+            pos.y,
+            pos.z
+        ) * Mat4::scale(
+            r,
+            r,
+            r
+        )
+    );
+
+    if (m_3d.modelLoc >= 0)
+        glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, t.m);
+
+    if (m_3d.colorLoc >= 0)
+        glUniform4f(
+            m_3d.colorLoc,
+            color.r / 255.f,
+            color.g / 255.f,
+            color.b / 255.f,
+            color.a / 255.f
+        );
+
+    glBindTexture(GL_TEXTURE_2D, m_3d.whiteTexture);
+    glBindVertexArray(m_3d.sphereVAO);
+
+    glDrawElements(
+        GL_TRIANGLES,
+        m_3d.sphereIndexCount,
+        GL_UNSIGNED_INT,
+        0
+    );
+
+    glBindVertexArray(0);
+}
+
+void QuarkGLRenderer::DrawSphereEx(Vec3 c, float r, int rings, int slices, Color color) {
+    for (int ri = 0; ri < rings; ++ri) {
+        for (int si = 0; si < slices; ++si) {
+
+            float phi1 = PI * ri / rings;
+            float phi2 = PI * (ri + 1) / rings;
+
+            float theta1 = 2.0f * PI * si / slices;
+            float theta2 = 2.0f * PI * (si + 1) / slices;
+
+            Vec3 a = {
+                r * sinf(phi1) * cosf(theta1),
+                r * cosf(phi1),
+                r * sinf(phi1) * sinf(theta1)
+            };
+
+            Vec3 b = {
+                r * sinf(phi1) * cosf(theta2),
+                r * cosf(phi1),
+                r * sinf(phi1) * sinf(theta2)
+            };
+
+            Vec3 d = {
+                r * sinf(phi2) * cosf(theta1),
+                r * cosf(phi2),
+                r * sinf(phi2) * sinf(theta1)
+            };
+
+            Vec3 e = {
+                r * sinf(phi2) * cosf(theta2),
+                r * cosf(phi2),
+                r * sinf(phi2) * sinf(theta2)
+            };
+
+            DrawTriangle3DImpl(
+                { c + a, a.normalized(), {0, 0} },
+                { c + b, b.normalized(), {0, 0} },
+                { c + e, e.normalized(), {0, 0} },
+                color
+            );
+
+            DrawTriangle3DImpl(
+                { c + a, a.normalized(), {0, 0} },
+                { c + e, e.normalized(), {0, 0} },
+                { c + d, d.normalized(), {0, 0} },
+                color
+            );
         }
     }
-    for(int si=0;si<slices;++si){ float th=2*3.14159f*si/slices;
-        for(int ri=0;ri<rings;++ri){
-            float p1=3.14159f*ri/rings,p2=3.14159f*(ri+1)/rings;
-            DrawLine3D(c+Vec3{r*sinf(p1)*cosf(th),r*cosf(p1),r*sinf(p1)*sinf(th)},
-                       c+Vec3{r*sinf(p2)*cosf(th),r*cosf(p2),r*sinf(p2)*sinf(th)},color);
+}
+
+void QuarkGLRenderer::DrawSphereWires(Vec3 c, float r, int rings, int slices, Color color) {
+    for(int ri = 0; ri <= rings; ++ri) {
+        float phi = PI * ri / rings;
+
+        for(int si = 0; si < slices; ++si) {
+            float t1= 2 * PI * si / slices, t2 = 2 * PI * (si + 1) / slices;
+            DrawLine3D(c+ Vec3{r * sinf(phi) * cosf(t1), r * cosf(phi), r * sinf(phi) * sinf(t1)},
+                       c+ Vec3{r * sinf(phi) * cosf(t2), r * cosf(phi), r * sinf(phi) * sinf(t2)}, color);
+        }
+    }
+    for(int si = 0; si < slices; ++si) {
+        float th = 2 * PI * si / slices;
+
+        for(int ri = 0; ri < rings; ++ri){
+            float p1 = PI * ri / rings, p2 = PI * (ri + 1) / rings;
+            DrawLine3D(c + Vec3{r * sinf(p1) * cosf(th), r * cosf(p1), r * sinf(p1) * sinf(th)},
+                       c + Vec3{r * sinf(p2) * cosf(th), r * cosf(p2), r * sinf(p2) * sinf(th)}, color);
         }
     }
 }
@@ -1618,14 +1937,14 @@ void QuarkGLRenderer::DrawCylinderEx(Vec3 s, Vec3 e, float rs, float re, int sid
     Vec3 xd = dir.cross(up).normalized(), yd = dir.cross(xd).normalized();
 
     for(int i = 0; i < sides; ++i) {
-        float a1 = 2 * 3.14159f * i / sides, a2 = 2 * 3.14159f * (i + 1) / sides;
+        float a1 = 2 * PI * i / sides, a2 = 2 * PI * (i + 1) / sides;
         Vec3 p1 = s + xd * cosf(a1) * rs + yd * sinf(a1) * rs, p2 = s + xd * cosf(a2) * rs + yd * sinf(a2) * rs;
         Vec3 p3 = e + xd * cosf(a2) * re + yd * sinf(a2) * re, p4 = e + xd * cosf(a1) * re + yd * sinf(a1) * re;
 
-        DrawTriangle3DImpl({p1,(p1-s).normalized(),{0,0}},{p2,(p2-s).normalized(),{0,0}},{p3,(p3-e).normalized(),{0,0}},color);
-        DrawTriangle3DImpl({p1,(p1-s).normalized(),{0,0}},{p3,(p3-e).normalized(),{0,0}},{p4,(p4-e).normalized(),{0,0}},color);
-        DrawTriangle3DImpl({s,dir*-1,{0,0}},{p2,dir*-1,{0,0}},{p1,dir*-1,{0,0}},color);
-        DrawTriangle3DImpl({e,dir,{0,0}},{p3,dir,{0,0}},{p4,dir,{0,0}},color);
+        DrawTriangle3DImpl({p1, (p1 - s).normalized(), {0, 0}}, {p2, (p2 - s).normalized(), {0, 0}}, {p3, (p3 - e).normalized(), {0, 0}}, color);
+        DrawTriangle3DImpl({p1, (p1 - s).normalized(), {0, 0}}, {p3, (p3 - e).normalized(), {0, 0}}, {p4, (p4 - e).normalized(), {0, 0}}, color);
+        DrawTriangle3DImpl({s, dir * -1, {0, 0}}, {p2, dir * -1, {0, 0}}, {p1, dir * -1, {0, 0}}, color);
+        DrawTriangle3DImpl({e, dir, {0, 0}}, {p3, dir, {0, 0}}, {p4, dir, {0, 0}}, color);
     }
 }
 
@@ -1647,7 +1966,7 @@ void QuarkGLRenderer::DrawCylinderWiresEx(Vec3 s, Vec3 e, float rs, float re, in
     Vec3 xd = dir.cross(up).normalized(), yd = dir.cross(xd).normalized();
 
     for(int i = 0; i < sl; ++i) {
-        float a1 = 2 * 3.14159f * i / sl, a2 = 2 * 3.14159f * (i + 1) / sl;
+        float a1 = 2 * PI * i / sl, a2 = 2 * PI * (i + 1) / sl;
         Vec3 p1 = s + xd * cosf(a1) * rs + yd * sinf(a1) * rs, p2 = s + xd * cosf(a2) * rs + yd * sinf(a2) * rs;
         Vec3 p3 = e + xd * cosf(a1) * re + yd * sinf(a1) * re, p4 = e + xd * cosf(a2) * re + yd * sinf(a2) * re;
 
