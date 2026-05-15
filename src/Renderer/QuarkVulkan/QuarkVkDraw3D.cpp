@@ -16,7 +16,7 @@ void QuarkVkRenderer::BeginMode3D(const Camera3D& camera) {
 
     if (camera.projection == CAMERA_PERSPECTIVE) {
         m_projectionMatrix = Mat4::perspective(
-            camera.fovy * 3.14159265f / 180.0f,
+            camera.fovy * PI / 180.0f,
             static_cast<float>(m_width) / static_cast<float>(m_height),
             0.1f, 1000.0f);
     } else {
