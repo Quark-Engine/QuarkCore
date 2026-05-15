@@ -162,11 +162,23 @@ QCAPI bool LoadPngImage(const char* path, PngImageData& out) {
 #endif
 
     png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-    if (!png) { fclose(f); return false; }
+    if (!png) {
+        fclose(f);
+        return false;
+    }
 
     png_infop info = png_create_info_struct(png);
-    if (!info) { png_destroy_read_struct(&png, nullptr, nullptr); fclose(f); return false; }
-    if (!PngSafeInit(png, f)) { png_destroy_read_struct(&png, &info, nullptr); fclose(f); return false; }
+    if (!info) {
+        png_destroy_read_struct(&png, nullptr, nullptr);
+        fclose(f);
+        return false;
+    }
+
+    if (!PngSafeInit(png, f)) {
+        png_destroy_read_struct(&png, &info, nullptr);
+        fclose(f);
+        return false;
+    }
 
     png_read_info(png, info);
     png_uint_32 w = png_get_image_width(png, info), h = png_get_image_height(png, info);
@@ -185,7 +197,7 @@ QCAPI bool LoadPngImage(const char* path, PngImageData& out) {
     png_read_update_info(png, info);
     out.pixels.resize((size_t)w * h * 4);
     std::vector<png_bytep> rows(h);
-    for(png_uint_32 y = 0; y < h ; ++y) rows[y]=out.pixels.data()+(size_t)y * w * 4;
+    for(png_uint_32 y = 0; y < h ; ++y) rows[y] = out.pixels.data() + (size_t)y * w * 4;
 
     png_read_image(png, rows.data());
 
@@ -252,28 +264,80 @@ void QuarkGLRenderer::Shutdown() {
     m_fonts.clear();
     m_defaultFontId = 0;
 
-    if (m_vao)          { glDeleteVertexArrays(1, &m_vao); m_vao = 0; }
-    if (m_vbo)          { glDeleteBuffers(1, &m_vbo); m_vbo = 0; }
-    if (m_program)      { glDeleteProgram(m_program); m_program = 0; }
-    if (m_whiteTexture) { glDeleteTextures(1, &m_whiteTexture); m_whiteTexture = 0; }
+    if (m_vao) {
+        glDeleteVertexArrays(1, &m_vao);
+        m_vao = 0;
+    }
 
-    if (m_3d.shader3D)     { glDeleteProgram(m_3d.shader3D); m_3d.shader3D = 0; }
-    if (m_3d.whiteTexture) { glDeleteTextures(1, &m_3d.whiteTexture); m_3d.whiteTexture = 0; }
+    if (m_vbo) {
+        glDeleteBuffers(1, &m_vbo);
+        m_vbo = 0;
+    }
+
+    if (m_program) {
+        glDeleteProgram(m_program);
+        m_program = 0;
+    }
+
+    if (m_whiteTexture) {
+        glDeleteTextures(1, &m_whiteTexture);
+        m_whiteTexture = 0;
+    }
+
+    if (m_3d.shader3D) {
+        glDeleteProgram(m_3d.shader3D);
+        m_3d.shader3D = 0;
+    }
+
+    if (m_3d.whiteTexture) {
+        glDeleteTextures(1, &m_3d.whiteTexture);
+        m_3d.whiteTexture = 0;
+    }
 
     auto del=[](GLuint& va,GLuint& vb,GLuint& eb) {
-        if(va) { glDeleteVertexArrays(1, &va); va = 0; }
-        if(vb) { glDeleteBuffers(1, &vb); vb = 0; }
-        if(eb) { glDeleteBuffers(1, &eb); eb = 0; }
+        if(va) {
+            glDeleteVertexArrays(1, &va);
+            va = 0;
+        }
+
+        if(vb) {
+            glDeleteBuffers(1, &vb);
+            vb = 0;
+        }
+
+        if(eb) {
+            glDeleteBuffers(1, &eb);
+            eb = 0;
+        }
     };
     del(m_3d.planeVAO,  m_3d.planeVBO,  m_3d.planeEBO);
     del(m_3d.cubeVAO,   m_3d.cubeVBO,   m_3d.cubeEBO);
     del(m_3d.sphereVAO, m_3d.sphereVBO, m_3d.sphereEBO);
-    if(m_3d.lineVAO) { glDeleteVertexArrays(1, &m_3d.lineVAO); m_3d.lineVAO = 0; }
-    if(m_3d.lineVBO) { glDeleteBuffers(1, &m_3d.lineVBO); m_3d.lineVBO = 0; }
-    if(m_3d.triVAO)  { glDeleteVertexArrays(1, &m_3d.triVAO); m_3d.triVAO = 0; }
-    if(m_3d.triVBO)  { glDeleteBuffers(1, &m_3d.triVBO); m_3d.triVBO = 0; }
+    if(m_3d.lineVAO) {
+        glDeleteVertexArrays(1, &m_3d.lineVAO);
+        m_3d.lineVAO = 0;
+    }
 
-    if (m_context) { SDL_GL_DestroyContext(m_context); m_context = nullptr; }
+    if(m_3d.lineVBO) {
+        glDeleteBuffers(1, &m_3d.lineVBO);
+        m_3d.lineVBO = 0;
+    }
+
+    if(m_3d.triVAO) {
+        glDeleteVertexArrays(1, &m_3d.triVAO); 
+        m_3d.triVAO = 0;
+    }
+
+    if(m_3d.triVBO) {
+        glDeleteBuffers(1, &m_3d.triVBO);
+        m_3d.triVBO = 0;
+    }
+
+    if (m_context) {
+        SDL_GL_DestroyContext(m_context);
+        m_context = nullptr;
+    }
+
     m_window = nullptr;
 }
 
@@ -357,95 +421,136 @@ void QuarkGLRenderer::ClearBackground(Color c) {
 }
 
 std::array<float,4> QuarkGLRenderer::ToNormColor(Color c) {
-    constexpr float inv = 1.f/255.f;
-    return{ c.r*inv, c.g*inv, c.b*inv, c.a*inv };
+    constexpr float inv = 1.f / 255.f;
+    return{ c.r * inv, c.g * inv, c.b * inv, c.a * inv };
 }
 
 GLuint QuarkGLRenderer::CreateTextureFromRgba(const uint8_t* px, int w, int h) {
-    GLuint id=0;
-    glGenTextures(1,&id);
-    glBindTexture(GL_TEXTURE_2D,id);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-    glPixelStorei(GL_UNPACK_ALIGNMENT,1);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,px);
-    glBindTexture(GL_TEXTURE_2D,0);
+    GLuint id = 0;
+
+    glGenTextures(1, &id);
+    glBindTexture(GL_TEXTURE_2D, id);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
     return id;
 }
 
 GLuint QuarkGLRenderer::CompileGLShader(GLenum type, const char* src) {
     GLuint s = glCreateShader(type);
-    glShaderSource(s,1,&src,nullptr);
+
+    glShaderSource(s, 1, &src, nullptr);
     glCompileShader(s);
-    GLint ok; glGetShaderiv(s,GL_COMPILE_STATUS,&ok);
+
+    GLint ok;
+    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+
     if (!ok) {
-        char log[512]; glGetShaderInfoLog(s,512,nullptr,log);
+        char log[512];
+        glGetShaderInfoLog(s, 512, nullptr, log);
+
         glDeleteShader(s);
-        throw std::runtime_error(std::string("Shader compile: ")+log);
+        throw std::runtime_error(std::string("Shader compile: ") + log);
     }
+
     return s;
 }
 
 GLuint QuarkGLRenderer::CreateDefaultProgram() {
-    GLuint vs=CompileGLShader(GL_VERTEX_SHADER,  kVS2D);
-    GLuint fs=CompileGLShader(GL_FRAGMENT_SHADER,kFS2D);
-    GLuint p=glCreateProgram();
-    glAttachShader(p,vs); glAttachShader(p,fs); glLinkProgram(p);
-    glDeleteShader(vs); glDeleteShader(fs);
-    GLint ok; glGetProgramiv(p,GL_LINK_STATUS,&ok);
-    if (!ok) { char log[512]; glGetProgramInfoLog(p,512,nullptr,log);
-               glDeleteProgram(p); throw std::runtime_error(std::string("Program link: ")+log); }
+    GLuint vs = CompileGLShader(GL_VERTEX_SHADER,   kVS2D);
+    GLuint fs = CompileGLShader(GL_FRAGMENT_SHADER, kFS2D);
+    GLuint p  = glCreateProgram();
+
+    glAttachShader(p, vs);
+    glAttachShader(p, fs);
+    glLinkProgram(p);
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    GLint ok;
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
+
+    if (!ok) {
+        char log[512];
+
+        glGetProgramInfoLog(p, 512, nullptr, log);
+        glDeleteProgram(p);
+
+        throw std::runtime_error(std::string("Program link: ") + log);
+    }
     return p;
 }
 
 void QuarkGLRenderer::FlushBatch() {
     if (m_batchVertices.empty()) return;
+
     glUseProgram(m_currentShader);
-    GLint sLoc=glGetUniformLocation(m_currentShader,"uScreenSize");
-    GLint tLoc=glGetUniformLocation(m_currentShader,"uTexture");
-    if(sLoc>=0) glUniform2f(sLoc,(float)m_width,(float)m_height);
-    if(tLoc>=0) glUniform1i(tLoc,0);
+
+    GLint sLoc = glGetUniformLocation(m_currentShader, "uScreenSize");
+    GLint tLoc = glGetUniformLocation(m_currentShader, "uTexture");
+    if(sLoc >= 0)
+        glUniform2f(sLoc, (float)m_width, (float)m_height);
+    if(tLoc >= 0)
+        glUniform1i(tLoc, 0);
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_currentTexture ? m_currentTexture : m_whiteTexture);
     glBindVertexArray(m_vao);
-    glBindBuffer(GL_ARRAY_BUFFER,m_vbo);
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER,
-        (GLsizeiptr)(m_batchVertices.size()*sizeof(BatchVertex)),
+        (GLsizeiptr)(m_batchVertices.size() * sizeof(BatchVertex)),
         m_batchVertices.data(), GL_DYNAMIC_DRAW);
-    glDrawArrays(GL_TRIANGLES,0,(GLsizei)m_batchVertices.size());
+
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)m_batchVertices.size());
+
     m_batchVertices.clear();
 }
 
 void QuarkGLRenderer::EnsureBatchTexture(GLuint id) {
     GLuint r = id ? id : m_whiteTexture;
+
     if (!m_currentTexture) m_currentTexture=r;
-    if (r!=m_currentTexture || m_batchVertices.size()>=kMaxBatchVertices) {
-        FlushBatch(); m_currentTexture=r;
+
+    if (r != m_currentTexture || m_batchVertices.size() >= kMaxBatchVertices) {
+        FlushBatch();
+        m_currentTexture = r;
     }
 }
 
 void QuarkGLRenderer::PushVertex(const BatchVertex& vtx) {
-    if (m_batchVertices.size()>=kMaxBatchVertices) FlushBatch();
-    BatchVertex v=vtx;
-    if (m_camera2DActive) {
-        Vec2 s=qc::GetWorldToScreen2D({v.x,v.y},m_camera2D);
-        v.x=s.x; v.y=s.y;
-    }
-    m_batchVertices.push_back(v);
+    if (m_batchVertices.size() >= kMaxBatchVertices)
+        FlushBatch();
 
+    BatchVertex v = vtx;
+
+    if (m_camera2DActive) {
+        Vec2 s = qc::GetWorldToScreen2D({v.x, v.y}, m_camera2D);
+        v.x = s.x; v.y = s.y;
+    }
+
+    m_batchVertices.push_back(v);
 }
 
-void QuarkGLRenderer::PushQuad(GLuint tex,float x,float y,float w,float h,Color col) {
+void QuarkGLRenderer::PushQuad(GLuint tex, float x, float y, float w, float h, Color col) {
     EnsureBatchTexture(tex);
-    auto n=ToNormColor(col);
-    PushVertex({x,  y,  0,0, n[0],n[1],n[2],n[3]});
-    PushVertex({x+w,y,  1,0, n[0],n[1],n[2],n[3]});
-    PushVertex({x+w,y+h,1,1, n[0],n[1],n[2],n[3]});
-    PushVertex({x,  y,  0,0, n[0],n[1],n[2],n[3]});
-    PushVertex({x+w,y+h,1,1, n[0],n[1],n[2],n[3]});
-    PushVertex({x,  y+h,0,1, n[0],n[1],n[2],n[3]});
+    auto n = ToNormColor(col);
+
+    PushVertex({x,  y,     0,0, n[0], n[1], n[2], n[3]});
+    PushVertex({x + w, y,  1, 0, n[0], n[1], n[2], n[3]});
+    PushVertex({x + w, y + h, 1, 1, n[0], n[1], n[2], n[3]});
+    PushVertex({x,  y, 0,  0, n[0], n[1], n[2], n[3]});
+    PushVertex({x + w, y + h, 1, 1, n[0], n[1], n[2], n[3]});
+    PushVertex({x,  y + h, 0, 1, n[0], n[1], n[2], n[3]});
 }
 void QuarkGLRenderer::PushTexturedQuad(GLuint tex, Rectangle uv,
                                         float x, float y, float w, float h, Color col) {
