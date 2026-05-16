@@ -497,12 +497,17 @@ void QuarkGLRenderer::FlushBatch() {
 
     glUseProgram(m_currentShader);
 
-    GLint sLoc = glGetUniformLocation(m_currentShader, "uScreenSize");
-    GLint tLoc = glGetUniformLocation(m_currentShader, "uTexture");
-    if(sLoc >= 0)
-        glUniform2f(sLoc, (float)m_width, (float)m_height);
-    if(tLoc >= 0)
-        glUniform1i(tLoc, 0);
+    if (m_currentShader == m_defaultShader) {
+        GLint sLoc = glGetUniformLocation(m_currentShader, "uScreenSize");
+        GLint tLoc = glGetUniformLocation(m_currentShader, "uTexture");
+        if (sLoc >= 0) glUniform2f(sLoc, (float)m_width, (float)m_height);
+        if (tLoc >= 0) glUniform1i(tLoc, 0);
+    } 
+    
+    else {
+        GLint sLoc = glGetUniformLocation(m_currentShader, "uScreenSize");
+        if (sLoc >= 0) glUniform2f(sLoc, (float)m_width, (float)m_height);
+    }
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_currentTexture ? m_currentTexture : m_whiteTexture);
@@ -1103,6 +1108,7 @@ void QuarkGLRenderer::BeginShaderMode(const Shader& sh) {
 }
 
 void QuarkGLRenderer::EndShaderMode() {
+    FlushBatch();
     m_currentShader = m_defaultShader;
     glUseProgram(m_defaultShader);
 }
