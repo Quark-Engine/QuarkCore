@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <array>
+#include <string>
 
 namespace qc {
 
@@ -28,6 +29,7 @@ struct WindowState {
     Vec2  mouseWheel{};
 
     std::vector<Event> events;
+    std::vector<std::string> droppedFiles;
     SDL_Event nativeEvent{};
     std::size_t nextEventIndex = 0;
     bool  eventsReady = false;

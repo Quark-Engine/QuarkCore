@@ -1730,4 +1730,43 @@ QCAPI bool IsTextureReady(Texture2D texture);
  */
 QCAPI bool IsShaderReady(Shader shader);
 
+/**
+ * @brief File path list structure.
+ */
+struct FilePathList {
+    unsigned int count = 0;           // Filepaths entries count
+    char** paths = nullptr;           // Filepaths entries
+};
+
+QCAPI int FileRename(const char* fileName, const char* fileRename); // Rename file (if exists)
+QCAPI int FileRemove(const char* fileName);                         // Remove file (if exists)
+QCAPI int FileCopy(const char* srcPath, const char* dstPath);       // Copy file from one path to another, dstPath created if it doesn't exist
+QCAPI int FileMove(const char* srcPath, const char* dstPath);       // Move file from one directory to another, dstPath created if it doesn't exist
+QCAPI int FileTextReplace(const char* fileName, const char* search, const char* replacement); // Replace text in an existing file
+QCAPI int FileTextFindIndex(const char* fileName, const char* search); // Find text in existing file
+QCAPI bool FileExists(const char* fileName);                        // Check if file exists
+QCAPI bool DirectoryExists(const char* dirPath);                    // Check if a directory path exists
+QCAPI bool IsFileExtension(const char* fileName, const char* ext);  // Check file extension (recommended include point: .png, .wav)
+QCAPI int GetFileLength(const char* fileName);                      // Get file length in bytes (NOTE: GetFileSize() conflicts with windows.h)
+QCAPI long GetFileModTime(const char* fileName);                    // Get file modification time (last write time)
+QCAPI const char* GetFileExtension(const char* fileName);           // Get pointer to extension for a filename string (includes dot: '.png')
+QCAPI const char* GetFileName(const char* filePath);                // Get pointer to filename for a path string
+QCAPI const char* GetFileNameWithoutExt(const char* filePath);      // Get filename string without extension (uses static string)
+QCAPI const char* GetDirectoryPath(const char* filePath);           // Get full path for a given fileName with path (uses static string)
+QCAPI const char* GetPrevDirectoryPath(const char* dirPath);        // Get previous directory path for a given path (uses static string)
+QCAPI const char* GetWorkingDirectory(void);                        // Get current working directory (uses static string)
+QCAPI const char* GetApplicationDirectory(void);                    // Get the directory of the running application (uses static string)
+QCAPI int MakeDirectory(const char* dirPath);                       // Create directories (including full path requested), returns 0 on success
+QCAPI bool ChangeDirectory(const char* dirPath);                    // Change working directory, return true on success
+QCAPI bool IsPathFile(const char* path);                            // Check if a given path is a file or a directory
+QCAPI bool IsFileNameValid(const char* fileName);                   // Check if fileName is valid for the platform/OS
+QCAPI FilePathList LoadDirectoryFiles(const char* dirPath);         // Load directory filepaths, files and directories, no subdirs scan
+QCAPI FilePathList LoadDirectoryFilesEx(const char* basePath, const char* filter, bool scanSubdirs); // Load directory filepaths with extension filtering and subdir scan; some filters available: `*.*`,`FILES*`,`DIRS*`
+QCAPI void UnloadDirectoryFiles(FilePathList files);                // Unload filepaths
+QCAPI bool IsFileDropped(void);                                     // Check if a file has been dropped into window
+QCAPI FilePathList LoadDroppedFiles(void);                          // Load dropped filepaths
+QCAPI void UnloadDroppedFiles(FilePathList files);                  // Unload dropped filepaths
+QCAPI unsigned int GetDirectoryFileCount(const char* dirPath);      // Get the file count in a directory
+QCAPI unsigned int GetDirectoryFileCountEx(const char* basePath, const char* filter, bool scanSubdirs);
+
 }  // namespace qc

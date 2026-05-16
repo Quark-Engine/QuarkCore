@@ -422,6 +422,13 @@ void PumpSystemEvents() {
     SDL_Event sdlEvent;
     while (SDL_PollEvent(&sdlEvent)) {
         gWin.nativeEvent = sdlEvent;
+        if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
+            if (sdlEvent.drop.data != nullptr) {
+                gWin.droppedFiles.emplace_back(sdlEvent.drop.data);
+                SDL_free(const_cast<char*>(sdlEvent.drop.data));
+                gWin.nativeEvent.drop.data = nullptr;
+            }
+        }
         if (sdlEvent.type == SDL_EVENT_QUIT || sdlEvent.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
             gWin.shouldClose = true;
         }
@@ -474,6 +481,13 @@ bool WaitEvent(Event& event) {
     }
 
     gWin.nativeEvent = sdlEvent;
+    if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
+        if (sdlEvent.drop.data != nullptr) {
+            gWin.droppedFiles.emplace_back(sdlEvent.drop.data);
+            SDL_free(const_cast<char*>(sdlEvent.drop.data));
+            gWin.nativeEvent.drop.data = nullptr;
+        }
+    }
     gWin.eventsReady = false;
     gWin.events.clear();
     gWin.nextEventIndex = 0;
@@ -494,6 +508,13 @@ bool WaitEventTimeout(Event& event, int timeoutMs) {
     }
 
     gWin.nativeEvent = sdlEvent;
+    if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
+        if (sdlEvent.drop.data != nullptr) {
+            gWin.droppedFiles.emplace_back(sdlEvent.drop.data);
+            SDL_free(const_cast<char*>(sdlEvent.drop.data));
+            gWin.nativeEvent.drop.data = nullptr;
+        }
+    }
     gWin.eventsReady = false;
     gWin.events.clear();
     gWin.nextEventIndex = 0;

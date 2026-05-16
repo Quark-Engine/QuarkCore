@@ -229,6 +229,10 @@ if(QC_BUILD_EXAMPLES)
     target_link_libraries(quarkcore_lights PRIVATE QuarkCore)
     set_target_properties(quarkcore_lights PROPERTIES UNITY_BUILD ON)
 
+    add_executable(quarkcore_files examples/file_operations.cpp)
+    target_link_libraries(quarkcore_files PRIVATE QuarkCore)
+    set_target_properties(quarkcore_files PROPERTIES UNITY_BUILD ON)
+
     if(WIN32)
         add_custom_command(TARGET QuarkCore POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -249,6 +253,7 @@ if(QC_BUILD_EXAMPLES)
             quarkcore_meshes
             quarkcore_vulkan
             quarkcore_lights
+            quarkcore_files
         )
         foreach(target ${EXAMPLE_TARGETS})
             add_custom_command(TARGET ${target} POST_BUILD

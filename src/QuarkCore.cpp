@@ -9,23 +9,25 @@
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdarg>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
-#include <array>
-#include <array>
 
 namespace qc {
 
@@ -645,6 +647,463 @@ Shader LoadShaderFromMemory(const char* vs, const char* fs) {
 void UnloadShader(Shader& shader)                                    { gRenderer.UnloadShader(shader); }
 bool IsShaderValid(const Shader& shader)                             { return gRenderer.isShaderValid(const_cast<Shader&>(shader)); }
 bool IsShaderReady(Shader shader)                                    { return IsShaderValid(shader); }
+
+namespace {
+    namespace fs = std::filesystem;
+
+    static std::string ToLower(std::string value) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+        return value;
+    }
+
+    static std::string ToLower(const std::u8string& value) {
+        std::string utf8String(value.begin(), value.end());
+        return ToLower(std::move(utf8String));
+    }
+
+    static char* AllocatePathString(const std::string& path) {
+        if (path.empty()) return nullptr;
+        size_t size = path.size() + 1;
+        char* data = static_cast<char*>(std::malloc(size));
+        if (!data) return nullptr;
+        std::memcpy(data, path.c_str(), size);
+        return data;
+    }
+
+    static std::string NormalizeExtension(std::string ext) {
+        if (!ext.empty() && ext[0] == '*') {
+            ext.erase(0, 1);
+        }
+        if (!ext.empty() && ext[0] == '.') {
+            return ToLower(ext);
+        }
+        if (!ext.empty()) {
+            return ToLower(std::string(".") + ext);
+        }
+        return std::string();
+    }
+
+    static bool CompareExtension(const fs::path& path, const std::string& filter) {
+        const std::string ext = ToLower(path.extension().string());
+        return ext == filter;
+    }
+
+    static bool MatchesFilter(const fs::path& path, const char* filter) {
+        if (!filter || filter[0] == '\0' || std::strcmp(filter, "*.*") == 0 || std::strcmp(filter, "*") == 0) {
+            return true;
+        }
+
+        const std::string f = filter;
+        if (f.rfind("FILES", 0) == 0) {
+            return fs::is_regular_file(path);
+        }
+        if (f.rfind("DIRS", 0) == 0) {
+            return fs::is_directory(path);
+        }
+        if (f.size() > 0 && f[0] == '*') {
+            const std::string normalized = NormalizeExtension(f.substr(1));
+            return CompareExtension(path, normalized);
+        }
+        if (f.size() > 0 && f[0] == '.') {
+            return CompareExtension(path, ToLower(f));
+        }
+        return CompareExtension(path, NormalizeExtension(f));
+    }
+
+    static std::vector<std::string> LoadDirectoryFilesInternal(const char* basePath, const char* filter, bool scanSubdirs) {
+        std::vector<std::string> result;
+        if (!basePath) return result;
+
+        try {
+            fs::path root(basePath);
+            if (!fs::exists(root)) return result;
+
+            if (scanSubdirs) {
+                for (const auto& entry : fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied)) {
+                    if (!entry.exists()) continue;
+                    const fs::path& path = entry.path();
+                    if (MatchesFilter(path, filter)) {
+                        result.emplace_back(path.string());
+                    }
+                }
+            } else {
+                for (const auto& entry : fs::directory_iterator(root, fs::directory_options::skip_permission_denied)) {
+                    if (!entry.exists()) continue;
+                    const fs::path& path = entry.path();
+                    if (MatchesFilter(path, filter)) {
+                        result.emplace_back(path.string());
+                    }
+                }
+            }
+        } catch (const std::exception&) {
+        }
+        return result;
+    }
+
+    static FilePathList BuildFilePathList(const std::vector<std::string>& paths) {
+        FilePathList list{};
+        list.count = static_cast<unsigned int>(paths.size());
+        if (list.count == 0) return list;
+
+        list.paths = static_cast<char**>(std::malloc(sizeof(char*) * list.count));
+        if (!list.paths) {
+            list.count = 0;
+            return list;
+        }
+
+        for (unsigned int i = 0; i < list.count; ++i) {
+            list.paths[i] = AllocatePathString(paths[i]);
+            if (!list.paths[i]) {
+                for (unsigned int j = 0; j < i; ++j) {
+                    std::free(list.paths[j]);
+                }
+                std::free(list.paths);
+                list.count = 0;
+                list.paths = nullptr;
+                return list;
+            }
+        }
+        return list;
+    }
+
+    static long FileTimeToTimeT(const fs::file_time_type& fileTime) {
+        try {
+            const auto sctp = std::chrono::clock_cast<std::chrono::system_clock>(fileTime);
+            return static_cast<long>(std::chrono::system_clock::to_time_t(sctp));
+        } catch (...) {
+            return 0;
+        }
+    }
+}
+
+int FileRename(const char* fileName, const char* fileRename) {
+    if (!fileName || !fileRename) return -1;
+    try {
+        std::filesystem::rename(fileName, fileRename);
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int FileRemove(const char* fileName) {
+    if (!fileName) return -1;
+    try {
+        return std::filesystem::remove(fileName) ? 0 : -1;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int FileCopy(const char* srcPath, const char* dstPath) {
+    if (!srcPath || !dstPath) return -1;
+    try {
+        std::filesystem::path target(dstPath);
+        if (target.has_parent_path()) {
+            std::filesystem::create_directories(target.parent_path());
+        }
+        std::filesystem::copy_file(srcPath, dstPath, std::filesystem::copy_options::overwrite_existing);
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int FileMove(const char* srcPath, const char* dstPath) {
+    if (!srcPath || !dstPath) return -1;
+    try {
+        std::filesystem::path target(dstPath);
+        if (target.has_parent_path()) {
+            std::filesystem::create_directories(target.parent_path());
+        }
+        std::filesystem::rename(srcPath, dstPath);
+        return 0;
+    } catch (...) {
+        try {
+            if (FileCopy(srcPath, dstPath) == 0) {
+                return FileRemove(srcPath);
+            }
+        } catch (...) {
+        }
+        return -1;
+    }
+}
+
+int FileTextReplace(const char* fileName, const char* search, const char* replacement) {
+    if (!fileName || !search || !replacement) return -1;
+    try {
+        std::ifstream input(fileName, std::ios::binary);
+        if (!input) return -1;
+        std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        input.close();
+
+        std::string needle = search;
+        std::string repl = replacement;
+        size_t pos = 0;
+        bool replaced = false;
+        while ((pos = content.find(needle, pos)) != std::string::npos) {
+            content.replace(pos, needle.length(), repl);
+            pos += repl.length();
+            replaced = true;
+        }
+        if (!replaced) return -1;
+
+        std::ofstream output(fileName, std::ios::binary | std::ios::trunc);
+        if (!output) return -1;
+        output << content;
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int FileTextFindIndex(const char* fileName, const char* search) {
+    if (!fileName || !search) return -1;
+    try {
+        std::ifstream input(fileName, std::ios::binary);
+        if (!input) return -1;
+        std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        const auto pos = content.find(search);
+        return pos == std::string::npos ? -1 : static_cast<int>(pos);
+    } catch (...) {
+        return -1;
+    }
+}
+
+bool FileExists(const char* fileName) {
+    if (!fileName) return false;
+    try {
+        return std::filesystem::exists(fileName) && std::filesystem::is_regular_file(fileName);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool DirectoryExists(const char* dirPath) {
+    if (!dirPath) return false;
+    try {
+        return std::filesystem::exists(dirPath) && std::filesystem::is_directory(dirPath);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool IsFileExtension(const char* fileName, const char* ext) {
+    if (!fileName || !ext) return false;
+    try {
+        const auto fileExt = ToLower(std::filesystem::path(fileName).extension().string());
+        const std::string expected = ToLower(ext[0] == '.' ? std::string(ext) : std::string(".") + ext);
+        return fileExt == expected;
+    } catch (...) {
+        return false;
+    }
+}
+
+int GetFileLength(const char* fileName) {
+    if (!fileName) return -1;
+    try {
+        auto size = std::filesystem::file_size(fileName);
+        return size > static_cast<uintmax_t>(std::numeric_limits<int>::max()) ? -1 : static_cast<int>(size);
+    } catch (...) {
+        return -1;
+    }
+}
+
+long GetFileModTime(const char* fileName) {
+    if (!fileName) return 0;
+    try {
+        auto time = std::filesystem::last_write_time(fileName);
+        return FileTimeToTimeT(time);
+    } catch (...) {
+        return 0;
+    }
+}
+
+const char* GetFileExtension(const char* fileName) {
+    thread_local std::string buffer;
+    buffer.clear();
+    if (!fileName) return buffer.c_str();
+    try {
+        buffer = std::filesystem::path(fileName).extension().string();
+    } catch (...) {
+        buffer.clear();
+    }
+    return buffer.c_str();
+}
+
+const char* GetFileName(const char* filePath) {
+    thread_local std::string buffer;
+    buffer.clear();
+    if (!filePath) return buffer.c_str();
+    try {
+        buffer = std::filesystem::path(filePath).filename().string();
+    } catch (...) {
+        buffer.clear();
+    }
+    return buffer.c_str();
+}
+
+const char* GetFileNameWithoutExt(const char* filePath) {
+    thread_local std::string buffer;
+    buffer.clear();
+    if (!filePath) return buffer.c_str();
+    try {
+        buffer = std::filesystem::path(filePath).stem().string();
+    } catch (...) {
+        buffer.clear();
+    }
+    return buffer.c_str();
+}
+
+const char* GetDirectoryPath(const char* filePath) {
+    thread_local std::string buffer;
+    buffer.clear();
+    if (!filePath) return buffer.c_str();
+    try {
+        buffer = std::filesystem::path(filePath).parent_path().string();
+    } catch (...) {
+        buffer.clear();
+    }
+    return buffer.c_str();
+}
+
+const char* GetPrevDirectoryPath(const char* dirPath) {
+    thread_local std::string buffer;
+    buffer.clear();
+    if (!dirPath) return buffer.c_str();
+    try {
+        const auto path = std::filesystem::path(dirPath).parent_path();
+        buffer = path.parent_path().string();
+    } catch (...) {
+        buffer.clear();
+    }
+    return buffer.c_str();
+}
+
+const char* GetWorkingDirectory(void) {
+    thread_local std::string buffer;
+    buffer.clear();
+    try {
+        buffer = std::filesystem::current_path().string();
+    } catch (...) {
+        buffer.clear();
+    }
+    return buffer.c_str();
+}
+
+const char* GetApplicationDirectory(void) {
+    thread_local std::string buffer;
+    buffer.clear();
+    const char* path = SDL_GetBasePath();
+    if (path) {
+        buffer = path;
+        SDL_free(const_cast<char*>(path));
+    }
+    return buffer.c_str();
+}
+
+int MakeDirectory(const char* dirPath) {
+    if (!dirPath) return -1;
+    try {
+        std::filesystem::create_directories(dirPath);
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+bool ChangeDirectory(const char* dirPath) {
+    if (!dirPath) return false;
+    try {
+        std::filesystem::current_path(dirPath);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool IsPathFile(const char* path) {
+    if (!path) return false;
+    try {
+        return std::filesystem::exists(path) && std::filesystem::is_regular_file(path);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool IsFileNameValid(const char* fileName) {
+    if (!fileName) return false;
+    const std::string name(fileName);
+    if (name.empty() || name == "." || name == "..") return false;
+    for (char c : name) {
+        if (c == '\0') return false;
+#if defined(_WIN32)
+        const char invalid[] = R"(<>:\"/\|?*)";
+        if (std::strchr(invalid, c)) return false;
+#endif
+    }
+#if defined(_WIN32)
+    const std::string upper = ToLower(name);
+    static const char* reserved[] = {
+        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+        "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"
+    };
+    std::string stem = upper;
+    auto dotPos = stem.find('.');
+    if (dotPos != std::string::npos) stem.resize(dotPos);
+    for (const char* r : reserved) {
+        if (stem == r) return false;
+    }
+#endif
+    return true;
+}
+
+FilePathList LoadDirectoryFiles(const char* dirPath) {
+    return BuildFilePathList(LoadDirectoryFilesInternal(dirPath, "*.*", false));
+}
+
+FilePathList LoadDirectoryFilesEx(const char* basePath, const char* filter, bool scanSubdirs) {
+    return BuildFilePathList(LoadDirectoryFilesInternal(basePath, filter, scanSubdirs));
+}
+
+void UnloadDirectoryFiles(FilePathList files) {
+    if (!files.paths) return;
+    for (unsigned int i = 0; i < files.count; ++i) {
+        std::free(files.paths[i]);
+    }
+    std::free(files.paths);
+}
+
+bool IsFileDropped(void) {
+    return !gWin.droppedFiles.empty();
+}
+
+FilePathList LoadDroppedFiles(void) {
+    FilePathList result = BuildFilePathList(gWin.droppedFiles);
+    gWin.droppedFiles.clear();
+    return result;
+}
+
+void UnloadDroppedFiles(FilePathList files) {
+    UnloadDirectoryFiles(files);
+}
+
+unsigned int GetDirectoryFileCount(const char* dirPath) {
+    if (!dirPath) return 0;
+    try {
+        unsigned int count = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(dirPath, std::filesystem::directory_options::skip_permission_denied)) {
+            if (entry.exists()) ++count;
+        }
+        return count;
+    } catch (...) {
+        return 0;
+    }
+}
+
+unsigned int GetDirectoryFileCountEx(const char* basePath, const char* filter, bool scanSubdirs) {
+    return static_cast<unsigned int>(LoadDirectoryFilesInternal(basePath, filter, scanSubdirs).size());
+}
 
 int  GetShaderLocation(const Shader& shader, const char* name)      { return gRenderer.GetShaderLocation(shader, name); }
 int  GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex) { return gRenderer.GetShaderLocation(shader, locIndex); }
