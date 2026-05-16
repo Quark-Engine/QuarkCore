@@ -93,6 +93,15 @@ struct Material {
     float params[4] = {0.0f, 0.0f, 0.0f, 0.0f}; // Material generic parameters (if required)
 };
 
+/**
+ * @brief Set material map color.
+ *
+ * @param material Material to modify.
+ * @param mapIndex Index of material map to color (e.g. MATERIAL_MAP_ALBEDO).
+ * @param color Color to set.
+ */
+QCAPI void SetMaterialColor(Material& material, int mapIndex, Color color);
+
 QCAPI void UploadMesh(Mesh* mesh, bool dynamic);
 QCAPI void UpdateMeshBuffer(Mesh mesh, int index, const void* data, int dataSize, int offset);
 QCAPI void UnloadMesh(Mesh mesh);
@@ -202,8 +211,15 @@ struct Model {
  */
 QCAPI Model LoadModel(const char* filePath);
 
-/**
- * @brief Unload a model and free its resources.
+/** * @brief Create a model from a single mesh.
+ *
+ * @param name Name identifier for the model.
+ * @param mesh Mesh to create model from.
+ * @return Loaded model.
+ */
+QCAPI Model LoadModelFromMesh(const char* name, Mesh mesh);
+
+/** * @brief Unload a model and free its resources.
  *
  * @param model Model to unload.
  */

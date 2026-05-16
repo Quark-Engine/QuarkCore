@@ -1799,6 +1799,15 @@ Color GetColor(unsigned int hex) {
     };
 }
 
+Color ColorFromNormalized(float r, float g, float b, float a) {
+    return Color{
+        static_cast<unsigned char>(std::clamp(r, 0.0f, 1.0f) * 255.0f),
+        static_cast<unsigned char>(std::clamp(g, 0.0f, 1.0f) * 255.0f),
+        static_cast<unsigned char>(std::clamp(b, 0.0f, 1.0f) * 255.0f),
+        static_cast<unsigned char>(std::clamp(a, 0.0f, 1.0f) * 255.0f)
+    };
+}
+
 void WaitTime(double seconds) {
     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(seconds * 1000.0)));
 }

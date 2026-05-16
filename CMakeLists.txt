@@ -57,7 +57,7 @@ endif()
 
 FetchContent_Declare(zlib
     GIT_REPOSITORY https://github.com/madler/zlib.git
-    GIT_TAG        v1.3.1
+    GIT_TAG        v1.3.2
     GIT_SHALLOW    TRUE
     SYSTEM
 )
@@ -91,7 +91,7 @@ set(SDL_TEST   OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(glew
     GIT_REPOSITORY https://github.com/Perlmint/glew-cmake.git
-    GIT_TAG        glew-cmake-2.2.0
+    GIT_TAG        glew-cmake-2.3.1
     GIT_SHALLOW    TRUE
     SYSTEM
 )
@@ -101,7 +101,7 @@ set(ONLY_LIBS               ON  CACHE BOOL "" FORCE)
 
 FetchContent_Declare(assimp
     GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG        v5.4.3
+    GIT_TAG        v6.0.5
     GIT_SHALLOW    TRUE
     SYSTEM
 )
@@ -116,7 +116,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(libpng
     GIT_REPOSITORY https://github.com/glennrp/libpng.git
-    GIT_TAG        v1.6.47
+    GIT_TAG        v1.6.58
     GIT_SHALLOW    TRUE
     SYSTEM
 )
@@ -142,7 +142,7 @@ find_package(OpenGL REQUIRED)
 
 FetchContent_Declare(freetype
     GIT_REPOSITORY https://github.com/freetype/freetype.git
-    GIT_TAG        VER-2-13-3
+    GIT_TAG        VER-2-14-3
     GIT_SHALLOW    TRUE
     SYSTEM
 )
@@ -166,6 +166,7 @@ endforeach()
 add_library(QuarkCore SHARED
     src/QuarkCore.cpp
     src/QuarkEvent.cpp
+    src/QuarkLights.cpp
     src/QuarkWindow.cpp
     src/Renderer/QuarkGLRenderer.cpp
     src/Renderer/QuarkVulkan/QuarkVkRenderer.cpp
@@ -224,12 +225,17 @@ if(QC_BUILD_EXAMPLES)
     target_link_libraries(quarkcore_vulkan PRIVATE QuarkCore)
     set_target_properties(quarkcore_vulkan PROPERTIES UNITY_BUILD ON)
 
+    add_executable(quarkcore_lights examples/light.cpp)
+    target_link_libraries(quarkcore_lights PRIVATE QuarkCore)
+    set_target_properties(quarkcore_lights PROPERTIES UNITY_BUILD ON)
+
     if(WIN32)
         add_custom_command(TARGET QuarkCore POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 $<TARGET_FILE:SDL3::SDL3>
                 $<TARGET_FILE:libglew_shared>
                 $<TARGET_FILE:png_shared>
+                $<TARGET_FILE:ZLIB::ZLIB>
                 $<TARGET_FILE:assimp::assimp>
                 "${VULKAN_RUNTIME_DLL}"
                 $<TARGET_FILE_DIR:QuarkCore>
@@ -242,6 +248,7 @@ if(QC_BUILD_EXAMPLES)
             quarkcore_3d_primitives
             quarkcore_meshes
             quarkcore_vulkan
+            quarkcore_lights
         )
         foreach(target ${EXAMPLE_TARGETS})
             add_custom_command(TARGET ${target} POST_BUILD
@@ -250,6 +257,7 @@ if(QC_BUILD_EXAMPLES)
                     $<TARGET_FILE:SDL3::SDL3>
                     $<TARGET_FILE:libglew_shared>
                     $<TARGET_FILE:png_shared>
+                        $<TARGET_FILE:ZLIB::ZLIB>
                     $<TARGET_FILE:assimp::assimp>
                     "${VULKAN_RUNTIME_DLL}"
                     $<TARGET_FILE_DIR:${target}>

@@ -132,6 +132,19 @@ enum class ShaderUniformDataType {
 };
 
 /**
+ * @brief Shader uniform data type constants for C compatibility.
+ */
+#define SHADER_UNIFORM_FLOAT      0
+#define SHADER_UNIFORM_VEC2       1
+#define SHADER_UNIFORM_VEC3       2
+#define SHADER_UNIFORM_VEC4       3
+#define SHADER_UNIFORM_INT        4
+#define SHADER_UNIFORM_IVEC2      5
+#define SHADER_UNIFORM_IVEC3      6
+#define SHADER_UNIFORM_IVEC4      7
+#define SHADER_UNIFORM_SAMPLER2D  8
+
+/**
  * @brief Shader attribute data type enumeration.
  */
 enum class ShaderAttributeDataType {
@@ -1624,6 +1637,16 @@ QCAPI Color ColorContrast(Color color, float contrast);
  * @return Color.
  */
 QCAPI Color GetColor(unsigned int hexValue);
+
+/**
+ * @brief Create color from normalized values (0.0-1.0 range).
+ * @param r Red component (0.0-1.0).
+ * @param g Green component (0.0-1.0).
+ * @param b Blue component (0.0-1.0).
+ * @param a Alpha component (0.0-1.0).
+ * @return Color with values converted to 0-255 range.
+ */
+QCAPI Color ColorFromNormalized(float r, float g, float b, float a = 1.0f);
 
 /**
  * @brief Check collision between two rectangles.
