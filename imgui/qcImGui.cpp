@@ -474,12 +474,10 @@ bool ImGui_ImplQc_ProcessEvents() {
             io.AddKeyEvent(key, true);
     }
 
-    if (io.WantCaptureKeyboard) {
-        int ch = qc::GetCharPressed();
-        while (ch != 0) {
-            io.AddInputCharacter(ch);
-            ch = qc::GetCharPressed();
-        }
+    int ch = qc::GetCharPressed();
+    while (ch != 0) {
+        io.AddInputCharacter(ch);
+        ch = qc::GetCharPressed();
     }
 
     bool processMouse = focused;
@@ -623,8 +621,11 @@ void qcImGuiBeginInitImGui() {
     if (GlobalContext == nullptr)
         GlobalContext = ImGui::CreateContext(nullptr);
     SetupKeymap();
+    qc::StartTextInput();
 
     ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
     ImFontConfig defaultConfig;
     defaultConfig.SizePixels = 13;
     defaultConfig.PixelSnapH = true;
@@ -675,6 +676,7 @@ void qcImGuiShutdown() {
     ImGui_ImplQc_Shutdown();
     ImGui::DestroyContext(GlobalContext);
     GlobalContext = nullptr;
+    qc::StopTextInput();
 }
 
 void qcImGuiImage(const qc::Texture2D* image) {
