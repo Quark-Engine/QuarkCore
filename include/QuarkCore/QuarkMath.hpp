@@ -367,6 +367,62 @@ struct QCAPI Mat4 {
         return result;
     }
 
+    Mat4 inverted() const {
+        Mat4 result{};
+
+        float A2323 = m[10] * m[15] - m[11] * m[14];
+        float A1323 = m[9]  * m[15] - m[11] * m[13];
+        float A1223 = m[9]  * m[14] - m[10] * m[13];
+        float A0323 = m[8]  * m[15] - m[11] * m[12];
+        float A0223 = m[8]  * m[14] - m[10] * m[12];
+        float A0123 = m[8]  * m[13] - m[9]  * m[12];
+        float A2313 = m[6]  * m[15] - m[7]  * m[14];
+        float A1313 = m[5]  * m[15] - m[7]  * m[13];
+        float A1213 = m[5]  * m[14] - m[6]  * m[13];
+        float A2312 = m[6]  * m[11] - m[7]  * m[10];
+        float A1312 = m[5]  * m[11] - m[7]  * m[9];
+        float A1212 = m[5]  * m[10] - m[6]  * m[9];
+        float A0313 = m[4]  * m[15] - m[7]  * m[12];
+        float A0213 = m[4]  * m[14] - m[6]  * m[12];
+        float A0312 = m[4]  * m[11] - m[7]  * m[8];
+        float A0212 = m[4]  * m[10] - m[6]  * m[8];
+        float A0113 = m[4]  * m[13] - m[5]  * m[12];
+        float A0112 = m[4]  * m[9]  - m[5]  * m[8];
+        float A0012 = m[4]  * m[9]  - m[5]  * m[8];
+
+        float det =
+            m[0] * (m[5] * A2323 - m[6] * A1323 + m[7] * A1223)
+        -m[1] * (m[4] * A2323 - m[6] * A0323 + m[7] * A0223)
+        +m[2] * (m[4] * A1323 - m[5] * A0323 + m[7] * A0123)
+        -m[3] * (m[4] * A1223 - m[5] * A0223 + m[6] * A0123);
+
+        if (std::fabs(det) <= EPSILON) return result;
+
+        float invDet = 1.0f / det;
+
+        result.m[0]  =  invDet * (m[5] * A2323 - m[6] * A1323 + m[7] * A1223);
+        result.m[1]  = -invDet * (m[1] * A2323 - m[2] * A1323 + m[3] * A1223);
+        result.m[2]  =  invDet * (m[1] * A2313 - m[2] * A1313 + m[3] * A1213);
+        result.m[3]  = -invDet * (m[1] * A2312 - m[2] * A1312 + m[3] * A1212);
+
+        result.m[4]  = -invDet * (m[4] * A2323 - m[6] * A0323 + m[7] * A0223);
+        result.m[5]  =  invDet * (m[0] * A2323 - m[2] * A0323 + m[3] * A0223);
+        result.m[6]  = -invDet * (m[0] * A2313 - m[2] * A0313 + m[3] * A0213);
+        result.m[7]  =  invDet * (m[0] * A2312 - m[2] * A0312 + m[3] * A0212);
+
+        result.m[8]  =  invDet * (m[4] * A1323 - m[5] * A0323 + m[7] * A0123);
+        result.m[9]  = -invDet * (m[0] * A1323 - m[1] * A0323 + m[3] * A0123);
+        result.m[10] =  invDet * (m[0] * A1313 - m[1] * A0313 + m[3] * A0113);
+        result.m[11] = -invDet * (m[0] * A1312 - m[1] * A0312 + m[3] * A0112);
+
+        result.m[12] = -invDet * (m[4] * A1223 - m[5] * A0223 + m[6] * A0123);
+        result.m[13] =  invDet * (m[0] * A1223 - m[1] * A0223 + m[2] * A0123);
+        result.m[14] = -invDet * (m[0] * A1213 - m[1] * A0213 + m[2] * A0113);
+        result.m[15] =  invDet * (m[0] * A1212 - m[1] * A0112 + m[2] * A0012);
+
+        return result;
+    }
+
     Mat4 operator*(const Mat4& other) const {
         Mat4 result;
         for (int i = 0; i < 4; ++i) {
