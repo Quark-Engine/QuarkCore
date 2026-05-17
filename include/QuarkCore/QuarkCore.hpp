@@ -1354,6 +1354,14 @@ QCAPI void SetShaderValue(const Shader& shader, int locIndex, const Vec2& value)
 QCAPI void SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value);
 
 /**
+ * @brief Set shader Vec4 uniform value.
+ * @param shader Shader to modify.
+ * @param locIndex Uniform location index.
+ * @param value Vec4 value to set.
+ */
+QCAPI void SetShaderValue(const Shader& shader, int locIndex, const qc::Vec4& value);
+
+/**
  * @brief Set shader Vec4 uniform value (color).
  * @param shader Shader to modify.
  * @param locIndex Uniform location index.
