@@ -137,6 +137,7 @@ public:
     virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Color& value)    = 0;
     virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const qc::Vec2& value) = 0;
     virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const qc::Vec3& value) = 0;
+    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const qc::Vec4& value) = 0;
 
     virtual void SetShaderValueMatrix([[maybe_unused]] const Shader& shader, int locIndex, const float* mat) = 0;
     virtual void SetShaderValueSampler([[maybe_unused]] const Shader& shader, int locIndex, int textureUnit) = 0;

@@ -1233,6 +1233,11 @@ void QuarkGLRenderer::SetShaderValue(const Shader& /*shader*/, int locIndex, con
         glUniform3f(locIndex, value.x, value.y, value.z);
 }
 
+void QuarkGLRenderer::SetShaderValue(const Shader&, int locIndex, const Vec4& value) {
+    if (locIndex >= 0)
+        glUniform4f(locIndex, value.x, value.y, value.z, value.w);
+}
+
 void QuarkGLRenderer::SetShaderValueMatrix(const Shader&,int loc,const float* m) {
     if(loc >= 0&& m)
         glUniformMatrix4fv(loc, 1, GL_FALSE, m);

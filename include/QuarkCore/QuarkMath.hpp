@@ -186,6 +186,47 @@ struct Vec3 {
 };
 
 /**
+ * @brief 4D vector structure.
+ */
+struct Vec4 {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float w = 0.0f;
+
+    Vec4() = default;
+    Vec4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
+
+    Vec4 operator+(const Vec4& v) const {
+        return Vec4(x + v.x, y + v.y, z + v.z, w + v.w);
+    }
+
+    Vec4 operator-(const Vec4& v) const {
+        return Vec4(x - v.x, y - v.y, z - v.z, w - v.w);
+    }
+
+    Vec4 operator*(float s) const {
+        return Vec4(x * s, y * s, z * s, w * s);
+    }
+
+    float dot(const Vec4& v) const {
+        return x * v.x + y * v.y + z * v.z + w * v.w;
+    }
+
+    float length() const {
+        return std::sqrt(x * x + y * y + z * z + w * w);
+    }
+
+    Vec4 normalized() const {
+        float len = length();
+        if (len > 0.0f) {
+            return *this * (1.0f / len);
+        }
+        return *this;
+    }
+};
+
+/**
  * @brief Bounding box structure.
  */
 struct BoundingBox {

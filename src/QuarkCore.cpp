@@ -1112,9 +1112,8 @@ int  GetShaderAttributeLocation(const Shader& s, const char* name)  { return gRe
 void SetShaderValue(const Shader& s, int loc, float value)          { gRenderer.SetShaderValue(s, loc, value); }
 void SetShaderValue(const Shader& s, int loc, int value)            { gRenderer.SetShaderValue(s, loc, value); }
 void SetShaderValue(const Shader& s, int loc, const Vec2& value)    { gRenderer.SetShaderValue(s, loc, value); }
-void SetShaderValue(const Shader& s, int loc, const Vec3& value)    {
-    gRenderer.SetShaderValue(s, loc, value);
-}
+void SetShaderValue(const Shader& s, int loc, const Vec3& value)    { gRenderer.SetShaderValue(s, loc, value); }
+void SetShaderValue(const Shader& s, int loc, const Vec4& value)    { gRenderer.SetShaderValue(s, loc, value); }
 void SetShaderValue(const Shader& s, int loc, const Color& value) {
     Color v = value;
     gRenderer.SetShaderValue(s, loc, v);

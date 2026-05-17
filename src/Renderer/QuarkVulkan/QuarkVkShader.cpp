@@ -71,6 +71,10 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const q
     (void)shader; (void)locIndex; (void)value;
 }
 
+void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const qc::Vec4& value) {
+    (void)shader; (void)locIndex; (void)value;
+}
+
 void QuarkVkRenderer::SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat) {
     (void)shader; (void)locIndex; (void)mat;
 }
