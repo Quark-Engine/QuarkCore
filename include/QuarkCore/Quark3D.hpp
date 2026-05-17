@@ -127,6 +127,7 @@ QCAPI Mesh GenMeshCubicmap(Image cubicmap, Vec3 cubeSize);
 // Backward compatibility
 #define MATERIAL_MAP_DIFFUSE      MATERIAL_MAP_ALBEDO
 #define MATERIAL_MAP_SPECULAR     MATERIAL_MAP_METALNESS
+#define MAX_MESH_VERTEX_BUFFERS   9
 
 /**
  * @brief Bone information.
@@ -218,6 +219,8 @@ QCAPI Model LoadModel(const char* filePath);
  * @return Loaded model.
  */
 QCAPI Model LoadModelFromMesh(const char* name, Mesh mesh);
+QCAPI Model LoadModelFromMesh(Mesh mesh);
+QCAPI Material LoadMaterialDefault();
 
 /** * @brief Unload a model and free its resources.
  *

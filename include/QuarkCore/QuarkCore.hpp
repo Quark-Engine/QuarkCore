@@ -1270,6 +1270,8 @@ QCAPI Texture2D GenCheckerTexture(int width, int height, int cellSize, Color col
  * @param texture Texture to unload.
  */
 QCAPI void UnloadTexture(Texture2D& texture);
+QCAPI void UnloadVertexArray(unsigned int vaoId);
+QCAPI void UnloadVertexBuffer(unsigned int vboId);
 
 /**
  * @brief Load shader from vertex and fragment source files.
@@ -1376,6 +1378,9 @@ QCAPI void SetShaderValue(const Shader& shader, int locIndex, const Color& value
  * @param mat 4x4 matrix (16 floats).
  */
 QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat);
+QCAPI void SetShaderValue(const Shader& shader, int locIndex, const void* value, int uniformType);
+QCAPI void SetShaderValueV(const Shader& shader, int locIndex, const void* value, int uniformType, int count);
+QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const Matrix& mat);
 
 /**
  * @brief Set shader sampler2D uniform to texture unit.
@@ -1384,6 +1389,7 @@ QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const float*
  * @param textureUnit Texture unit index.
  */
 QCAPI void SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit);
+QCAPI void SetShaderValueTexture(const Shader& shader, int locIndex, const Texture2D& texture);
 
 /**
  * @brief Begin shader mode (use shader for subsequent drawing).

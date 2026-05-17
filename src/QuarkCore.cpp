@@ -1118,8 +1118,123 @@ void SetShaderValue(const Shader& s, int loc, const Color& value) {
     Color v = value;
     gRenderer.SetShaderValue(s, loc, v);
 }
+void SetShaderValue(const Shader& s, int loc, const void* value, int uniformType) {
+    if (loc < 0 || !value) return;
+
+    switch (uniformType) {
+        case SHADER_UNIFORM_FLOAT:
+            glUniform1f(loc, *reinterpret_cast<const float*>(value));
+            break;
+        case SHADER_UNIFORM_VEC2:
+            glUniform2fv(loc, 1, reinterpret_cast<const float*>(value));
+            break;
+        case SHADER_UNIFORM_VEC3:
+            glUniform3fv(loc, 1, reinterpret_cast<const float*>(value));
+            break;
+        case SHADER_UNIFORM_VEC4:
+            glUniform4fv(loc, 1, reinterpret_cast<const float*>(value));
+            break;
+        case SHADER_UNIFORM_INT:
+            glUniform1i(loc, *reinterpret_cast<const int*>(value));
+            break;
+        case SHADER_UNIFORM_IVEC2:
+            glUniform2iv(loc, 1, reinterpret_cast<const int*>(value));
+            break;
+        case SHADER_UNIFORM_IVEC3:
+            glUniform3iv(loc, 1, reinterpret_cast<const int*>(value));
+            break;
+        case SHADER_UNIFORM_IVEC4:
+            glUniform4iv(loc, 1, reinterpret_cast<const int*>(value));
+            break;
+        case SHADER_UNIFORM_SAMPLER2D:
+            glUniform1i(loc, *reinterpret_cast<const int*>(value));
+            break;
+        default:
+            break;
+    }
+}
+
+void SetShaderValueV(const Shader& s, int loc, const void* value, int uniformType, int count) {
+    if (loc < 0 || !value || count <= 0) return;
+
+    switch (uniformType) {
+        case SHADER_UNIFORM_FLOAT:
+            glUniform1fv(loc, count, reinterpret_cast<const float*>(value));
+            break;
+        case SHADER_UNIFORM_VEC2:
+            glUniform2fv(loc, count, reinterpret_cast<const float*>(value));
+            break;
+        case SHADER_UNIFORM_VEC3:
+            glUniform3fv(loc, count, reinterpret_cast<const float*>(value));
+            break;
+        case SHADER_UNIFORM_VEC4:
+            glUniform4fv(loc, count, reinterpret_cast<const float*>(value));
+            break;
+        case SHADER_UNIFORM_INT:
+            glUniform1iv(loc, count, reinterpret_cast<const int*>(value));
+            break;
+        case SHADER_UNIFORM_IVEC2:
+            glUniform2iv(loc, count, reinterpret_cast<const int*>(value));
+            break;
+        case SHADER_UNIFORM_IVEC3:
+            glUniform3iv(loc, count, reinterpret_cast<const int*>(value));
+            break;
+        case SHADER_UNIFORM_IVEC4:
+            glUniform4iv(loc, count, reinterpret_cast<const int*>(value));
+            break;
+        case SHADER_UNIFORM_SAMPLER2D:
+            glUniform1iv(loc, count, reinterpret_cast<const int*>(value));
+            break;
+        default:
+            break;
+    }
+}
+
 void SetShaderValueMatrix(const Shader& s, int loc, const float* m) { gRenderer.SetShaderValueMatrix(s, loc, m); }
+
+void SetShaderValueMatrix(const Shader& s, int loc, const Matrix& mat) {
+    if (loc < 0) return;
+    glUniformMatrix4fv(loc, 1, GL_FALSE, mat.m);
+}
+
 void SetShaderValueSampler(const Shader& s, int loc, int unit)      { gRenderer.SetShaderValueSampler(s, loc, unit); }
+void SetShaderValueTexture(const Shader& s, int loc, const Texture2D& texture) {
+    if (loc < 0) return;
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+    gRenderer.SetShaderValueSampler(s, loc, 0);
+}
+
+void UnloadVertexArray(unsigned int vaoId) {
+    if (vaoId) glDeleteVertexArrays(1, &vaoId);
+}
+
+void UnloadVertexBuffer(unsigned int vboId) {
+    if (vboId) glDeleteBuffers(1, &vboId);
+}
+
+Material LoadMaterialDefault() {
+    return Material{};
+}
+
+Model LoadModelFromMesh(Mesh mesh) {
+    EnsureInitialized();
+    gRenderer.UploadMesh(mesh, false);
+
+    Model model{};
+    model.meshCount = 1;
+    model.materialCount = 1;
+    model.meshes = new Mesh[1]{mesh};
+    model.materials = new Material[1]{LoadMaterialDefault()};
+    model.meshMaterial = new int[1]{0};
+    return model;
+}
+
+Model LoadModelFromMesh(const char* name, Mesh mesh) {
+    Model model = LoadModelFromMesh(mesh);
+    if (name) model.directory = name;
+    return model;
+}
 
 void BeginShaderMode(const Shader& shader) { gRenderer.BeginShaderMode(shader); }
 void EndShaderMode()                       { gRenderer.EndShaderMode(); }
