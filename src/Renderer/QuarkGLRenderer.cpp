@@ -2306,10 +2306,16 @@ void  QuarkGLRenderer::DrawModel(const Model& model, const Vec3& pos, float scal
 }
 
 void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
+    if (!m_3d.initialized) Init3DState();
+    glUseProgram(m_3d.shader3D);
+
     Mat4 final = ApplyCurrentMatrix(transform);
 
     if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
     if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc, 1, 1, 1, 1);
+    if(m_3d.samplerLoc >= 0) glUniform1i(m_3d.samplerLoc, 0);
+    if(m_3d.lightPosLoc >= 0) glUniform3f(m_3d.lightPosLoc,
+        m_3d.lightPosition.x, m_3d.lightPosition.y, m_3d.lightPosition.z);
 
     for(int i = 0; i < model.meshCount; ++i) {
         const Mesh& mesh = model.meshes[i];
@@ -2336,9 +2342,15 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
 }
 
 void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Color tint) {
+    if (!m_3d.initialized) Init3DState();
+    glUseProgram(m_3d.shader3D);
+
     Mat4 final = ApplyCurrentMatrix(transform);
 
     if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
+    if(m_3d.samplerLoc >= 0) glUniform1i(m_3d.samplerLoc, 0);
+    if(m_3d.lightPosLoc >= 0) glUniform3f(m_3d.lightPosLoc,
+        m_3d.lightPosition.x, m_3d.lightPosition.y, m_3d.lightPosition.z);
 
     if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc,
         tint.r / 255.0f, tint.g / 255.0f, tint.b / 255.0f, tint.a / 255.0f);
