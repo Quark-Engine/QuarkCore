@@ -110,6 +110,11 @@ inline constexpr Color PURPLE{200, 122, 255, 255};
 inline constexpr Color WHITE{255, 255, 255, 255};
 inline constexpr Color BLACK{0, 0, 0, 255};
 inline constexpr Color BLANK{0, 0, 0, 0};
+inline constexpr Color MAGENTA{255, 0, 255, 255};
+inline constexpr Color CYAN{0, 255, 255, 255};
+inline constexpr Color PINK{255, 109, 194, 255};
+inline constexpr Color BROWN{127, 106, 79, 255};
+inline constexpr Color LIME{0, 158, 47, 255};
 
 /**
  * @brief 2D vector structure.
@@ -373,6 +378,30 @@ struct QCAPI Mat4 {
             }
         }
         return result;
+    }
+
+    Vec2 operator*(const Vec2& v) const {
+        return Vec2(
+            m[0] * v.x + m[4] * v.y + m[12],
+            m[1] * v.x + m[5] * v.y + m[13]
+        );
+    }
+
+    Vec3 operator*(const Vec3& other) const {
+        return Vec3(
+            m[0] * other.x + m[4] * other.y + m[8]  * other.z + m[12],
+            m[1] * other.x + m[5] * other.y + m[9]  * other.z + m[13],
+            m[2] * other.x + m[6] * other.y + m[10] * other.z + m[14]
+        );
+    }
+
+    Vec4 operator*(const Vec4& other) const {
+        return Vec4(
+            m[0] * other.x + m[4] * other.y + m[8]  * other.z + m[12] * other.w,
+            m[1] * other.x + m[5] * other.y + m[9]  * other.z + m[13] * other.w,
+            m[2] * other.x + m[6] * other.y + m[10] * other.z + m[14] * other.w,
+            m[3] * other.x + m[7] * other.y + m[11] * other.z + m[15] * other.w
+        );
     }
 };
 

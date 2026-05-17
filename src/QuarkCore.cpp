@@ -1450,6 +1450,28 @@ BoundingBox GetMeshBoundingBox(Mesh mesh) {
     return box;
 }
 
+BoundingBox GetModelBoundingBox(Model model) {
+    BoundingBox box{};
+    if (!model.meshes || model.meshCount <= 0) return box;
+
+    bool initialized = false;
+    for (int i = 0; i < model.meshCount; ++i) {
+        BoundingBox meshBox = GetMeshBoundingBox(model.meshes[i]);
+        if (!initialized) {
+            box = meshBox;
+            initialized = true;
+        } else {
+            box.min.x = std::min(box.min.x, meshBox.min.x);
+            box.min.y = std::min(box.min.y, meshBox.min.y);
+            box.min.z = std::min(box.min.z, meshBox.min.z);
+            box.max.x = std::max(box.max.x, meshBox.max.x);
+            box.max.y = std::max(box.max.y, meshBox.max.y);
+            box.max.z = std::max(box.max.z, meshBox.max.z);
+        }
+    }
+    return box;
+}
+
 void GenMeshTangents(Mesh* mesh) {
     if (!mesh || !mesh->vertices || !mesh->normals || !mesh->texcoords || mesh->vertexCount <= 0) return;
     if (!mesh->tangents) mesh->tangents = new float[mesh->vertexCount * 3];
@@ -2292,7 +2314,7 @@ Vec3 GetWorldToScreen(Vec3 position, Camera3D camera) {
 
 Ray GetScreenToWorldRay(Vec2 mouse, Camera3D camera) {
     Ray ray;
-    ray.origin = camera.position;
+    ray.position = camera.position;
     Vec3 forward = (camera.target - camera.position).normalized();
     Vec3 right   = forward.cross(camera.up).normalized();
     Vec3 up      = right.cross(forward);

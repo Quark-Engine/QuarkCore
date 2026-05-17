@@ -30,6 +30,7 @@ namespace qc {
 struct Shader;
 struct Camera3D;
 struct Mesh;
+struct Model;
 
 /**
  * @brief Vertex data for 3D meshes.
@@ -44,7 +45,7 @@ struct Vertex3D {
  * @brief Ray for raycasting operations.
  */
 struct Ray {
-    Vec3 origin{0.0f, 0.0f, 0.0f};     // Ray starting point
+    Vec3 position{0.0f, 0.0f, 0.0f};     // Ray starting point
     Vec3 direction{0.0f, 0.0f, 1.0f};  // Ray direction (normalized)
 };
 
@@ -108,6 +109,7 @@ QCAPI void UnloadMesh(Mesh mesh);
 QCAPI void DrawMesh(Mesh mesh, Material material, Matrix transform);
 QCAPI void DrawMeshInstanced(Mesh mesh, Material material, const Matrix* transforms, int instances);
 QCAPI BoundingBox GetMeshBoundingBox(Mesh mesh);
+QCAPI BoundingBox GetModelBoundingBox(Model model);
 QCAPI void GenMeshTangents(Mesh* mesh);
 QCAPI bool ExportMesh(Mesh mesh, const char* fileName);
 QCAPI bool ExportMeshAsCode(Mesh mesh, const char* fileName);
