@@ -49,6 +49,13 @@ struct Ray {
     Vec3 direction{0.0f, 0.0f, 1.0f};  // Ray direction (normalized)
 };
 
+struct RayCollision {
+    bool hit = false;
+    float distance = 0.0f;
+    Vec3 point{0.0f, 0.0f, 0.0f};
+    Vec3 normal{0.0f, 0.0f, 0.0f};
+};
+
 /**
  * @brief Image data.
  */
@@ -383,6 +390,91 @@ QCAPI void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color);
  * @param spacing Spacing between slices.
  */
 QCAPI void DrawGrid(int slices, float spacing);
+
+inline RayCollision GetRayCollisionTriangle(Ray ray, Vec3 a, Vec3 b, Vec3 c) {
+    RayCollision result{};
+
+    const Vec3 edge1 = b - a;
+    const Vec3 edge2 = c - a;
+    const Vec3 p = ray.direction.cross(edge2);
+    const float det = edge1.dot(p);
+
+    if (std::fabs(det) <= EPSILON) {
+        return result;
+    }
+
+    const float invDet = 1.0f / det;
+    const Vec3 t = ray.position - a;
+    const float u = t.dot(p) * invDet;
+    if (u < 0.0f || u > 1.0f) {
+        return result;
+    }
+
+    const Vec3 q = t.cross(edge1);
+    const float v = ray.direction.dot(q) * invDet;
+    if (v < 0.0f || (u + v) > 1.0f) {
+        return result;
+    }
+
+    const float distance = edge2.dot(q) * invDet;
+    if (distance < 0.0f) {
+        return result;
+    }
+
+    result.hit = true;
+    result.distance = distance;
+    result.point = ray.position + ray.direction * distance;
+    result.normal = edge1.cross(edge2).normalized();
+    return result;
+}
+
+inline RayCollision GetRayCollisionBox(Ray ray, BoundingBox box) {
+    RayCollision result{};
+
+    const auto safeInv = [](float value) {
+        return (std::fabs(value) <= EPSILON) ? INFINITY : (1.0f / value);
+    };
+
+    const float invX = safeInv(ray.direction.x);
+    const float invY = safeInv(ray.direction.y);
+    const float invZ = safeInv(ray.direction.z);
+
+    float tmin = (box.min.x - ray.position.x) * invX;
+    float tmax = (box.max.x - ray.position.x) * invX;
+    if (tmin > tmax) std::swap(tmin, tmax);
+
+    float tymin = (box.min.y - ray.position.y) * invY;
+    float tymax = (box.max.y - ray.position.y) * invY;
+    if (tymin > tymax) std::swap(tymin, tymax);
+
+    if ((tmin > tymax) || (tymin > tmax)) {
+        return result;
+    }
+
+    if (tymin > tmin) tmin = tymin;
+    if (tymax < tmax) tmax = tymax;
+
+    float tzmin = (box.min.z - ray.position.z) * invZ;
+    float tzmax = (box.max.z - ray.position.z) * invZ;
+    if (tzmin > tzmax) std::swap(tzmin, tzmax);
+
+    if ((tmin > tzmax) || (tzmin > tmax)) {
+        return result;
+    }
+
+    if (tzmin > tmin) tmin = tzmin;
+    if (tzmax < tmax) tmax = tzmax;
+
+    const float distance = (tmin >= 0.0f) ? tmin : tmax;
+    if (distance < 0.0f || !std::isfinite(distance)) {
+        return result;
+    }
+
+    result.hit = true;
+    result.distance = distance;
+    result.point = ray.position + ray.direction * distance;
+    return result;
+}
 
 /**
  * @brief Draw a cube outline (wireframe).

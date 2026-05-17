@@ -234,6 +234,10 @@ struct Camera3D {
 
 using Camera = Camera3D;
 
+inline Mat4 GetCameraMat4(const Camera3D& camera) {
+    return Mat4::lookAt(camera.position, camera.target, camera.up);
+}
+
 /**
  * @brief Default vertex shader source code.
  * Implements basic 2D rendering with texture and color attributes.
@@ -455,6 +459,11 @@ enum class MouseButton {
     Middle = 2,
     Right = 3,
 };
+
+inline constexpr MouseButton MOUSE_BUTTON_LEFT = MouseButton::Left;
+inline constexpr MouseButton MOUSE_LEFT_BUTTON = MouseButton::Left;
+inline constexpr KeyboardKey KEY_LEFT_CONTROL = KeyboardKey::LeftControl;
+inline constexpr KeyboardKey KEY_RIGHT_CONTROL = KeyboardKey::RightControl;
 
 /**
  * @brief Mouse cursor type enumeration.
@@ -1080,6 +1089,8 @@ QCAPI bool IsMouseButtonUp(MouseButton button);
  * @return Mouse position as a Vec2.
  */
 QCAPI Vec2 GetMousePosition();
+inline int GetMouseX() { return static_cast<int>(GetMousePosition().x); }
+inline int GetMouseY() { return static_cast<int>(GetMousePosition().y); }
 /**
  * @brief Get mouse wheel movement for both axes.
  *

@@ -122,6 +122,9 @@ inline constexpr Color LIME{0, 158, 47, 255};
 struct Vec2 {
     float x = 0.0f;
     float y = 0.0f;
+
+    Vec2() = default;
+    Vec2(float x, float y) : x(x), y(y) {}
 };
 
 /**
@@ -272,7 +275,16 @@ struct Vertex {
  * @brief 4x4 matrix for 3D transformations.
  */
 struct QCAPI Mat4 {
-    float m[16]{};
+    union {
+        float m[16];
+        float m16[16];
+        struct {
+            float m0, m1, m2, m3;
+            float m4, m5, m6, m7;
+            float m8, m9, m10, m11;
+            float m12, m13, m14, m15;
+        };
+    };
 
     Mat4() {
         m[0] = 1.0f;
@@ -462,5 +474,59 @@ struct QCAPI Mat4 {
 };
 
 using Matrix = Mat4;
+
+inline Mat4 Mat4Identity() {
+    return Mat4::identity();
+}
+
+inline Mat4 Mat4Translate(float x, float y, float z) {
+    return Mat4::translation(x, y, z);
+}
+
+inline Mat4 Mat4Scale(float x, float y, float z) {
+    return Mat4::scale(x, y, z);
+}
+
+inline Mat4 Mat4RotateXYZ(const Vec3& rotation) {
+    return Mat4::rotationX(rotation.x) * Mat4::rotationY(rotation.y) * Mat4::rotationZ(rotation.z);
+}
+
+inline Mat4 Mat4Multiply(const Mat4& left, const Mat4& right) {
+    return left * right;
+}
+
+inline Mat4 Mat4Invert(const Mat4& matrix) {
+    return matrix.inverted();
+}
+
+inline Mat4 Mat4Perspective(float fovy, float aspect, float nearPlane, float farPlane) {
+    return Mat4::perspective(fovy, aspect, nearPlane, farPlane);
+}
+
+inline Mat4 Mat4Transpose(const Mat4& matrix) {
+    Mat4 result{};
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            result.m[row * 4 + col] = matrix.m[col * 4 + row];
+        }
+    }
+    return result;
+}
+
+inline Vec3 Vec3Subtract(const Vec3& left, const Vec3& right) {
+    return left - right;
+}
+
+inline Vec3 Vec3Normalize(const Vec3& value) {
+    return value.normalized();
+}
+
+inline Vec3 Vec3Transform(const Vec3& value, const Mat4& transform) {
+    return transform * value;
+}
+
+inline float Vec3Distance(const Vec3& left, const Vec3& right) {
+    return (left - right).length();
+}
 
 }; // namespace qc

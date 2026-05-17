@@ -1,4 +1,4 @@
-#include "QuarkCore/qcImGui.h"
+#include "qcImGui.h"
 #include "imgui.h"
 #include <GL/glew.h>
 #include <cmath>
@@ -538,7 +538,7 @@ bool ImGui_ImplQc_Init() {
     ImGuiIO& io = ImGui::GetIO();
     io.BackendPlatformName = "imgui_impl_quarkcore";
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad | ImGuiBackendFlags_HasSetMousePos;
-    io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors;
+    io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors | ImGuiBackendFlags_RendererHasTextures;
 
     QcImGuiCreateDeviceObjects();
     return g_QcImGuiProgram != 0;
@@ -573,7 +573,7 @@ void ImGui_ImplQc_UpdateTexture(ImTextureData* tex) {
 
             tex->BackendUserData = textureId;
             tex->SetTexID(QcImGuiTextureId(*textureId));
-            tex->Status = ImTextureStatus_OK;
+            tex->SetStatus(ImTextureStatus_OK);
         } break;
 
         case ImTextureStatus_WantUpdates: {
@@ -585,7 +585,7 @@ void ImGui_ImplQc_UpdateTexture(ImTextureData* tex) {
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tex->Width, tex->Height, format, GL_UNSIGNED_BYTE, tex->GetPixels());
             glBindTexture(GL_TEXTURE_2D, 0);
-            tex->Status = ImTextureStatus_OK;
+            tex->SetStatus(ImTextureStatus_OK);
         } break;
 
         case ImTextureStatus_WantDestroy: {
@@ -596,7 +596,7 @@ void ImGui_ImplQc_UpdateTexture(ImTextureData* tex) {
                 tex->BackendUserData = nullptr;
             }
             tex->SetTexID(ImTextureID());
-            tex->Status = ImTextureStatus_Destroyed;
+            tex->SetStatus(ImTextureStatus_Destroyed);
         } break;
 
         default:
@@ -605,6 +605,16 @@ void ImGui_ImplQc_UpdateTexture(ImTextureData* tex) {
 }
 
 void ImGui_ImplQc_RenderDrawData(ImDrawData* draw_data) {
+    if (draw_data && draw_data->Textures) {
+        for (ImTextureData* tex : *draw_data->Textures) {
+            if (!tex) {
+                continue;
+            }
+            if (tex->Status != ImTextureStatus_OK) {
+                ImGui_ImplQc_UpdateTexture(tex);
+            }
+        }
+    }
     ImGuiRenderDrawData(draw_data);
 }
 
@@ -626,7 +636,8 @@ void qcImGuiEndInitImGui() {
     SetupMouseCursors();
     ImGuiIO& io = ImGui::GetIO();
     io.BackendPlatformName = "imgui_impl_quarkcore";
-    io.BackendFlags |= ImGuiBackendFlags_HasGamepad | ImGuiBackendFlags_HasSetMousePos | ImGuiBackendFlags_HasMouseCursors;
+    io.BackendFlags |= ImGuiBackendFlags_HasGamepad | ImGuiBackendFlags_HasSetMousePos |
+                       ImGuiBackendFlags_HasMouseCursors | ImGuiBackendFlags_RendererHasTextures;
     QcImGuiCreateDeviceObjects();
 }
 

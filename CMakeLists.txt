@@ -168,6 +168,7 @@ add_library(QuarkCore SHARED
     src/QuarkEvent.cpp
     src/QuarkLights.cpp
     src/QuarkWindow.cpp
+    imgui/qcImGui.cpp
     src/Renderer/QuarkGLRenderer.cpp
     src/Renderer/QuarkVulkan/QuarkVkRenderer.cpp
     src/Renderer/QuarkVulkan/QuarkVkDraw2D.cpp
@@ -180,6 +181,7 @@ add_library(QuarkCore SHARED
 
 target_include_directories(QuarkCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/imgui
 )
 
 target_compile_definitions(QuarkCore PRIVATE QUARKCORE_BUILD_DLL)
@@ -193,6 +195,7 @@ target_link_libraries(QuarkCore
     assimp::assimp
     freetype
     Vulkan::Vulkan
+    imgui
 )
 
 target_compile_definitions(QuarkCore PRIVATE NOMINMAX)
@@ -267,7 +270,7 @@ if(QC_BUILD_EXAMPLES)
                     $<TARGET_FILE:SDL3::SDL3>
                     $<TARGET_FILE:libglew_shared>
                     $<TARGET_FILE:png_shared>
-                        $<TARGET_FILE:ZLIB::ZLIB>
+                    $<TARGET_FILE:ZLIB::ZLIB>
                     $<TARGET_FILE:assimp::assimp>
                     "${VULKAN_RUNTIME_DLL}"
                     $<TARGET_FILE_DIR:${target}>
