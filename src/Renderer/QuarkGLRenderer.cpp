@@ -1,7 +1,6 @@
 #include "QuarkGLRenderer.hpp"
 #include "../QuarkInternal.hpp"
 
-#include <png.h>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -141,72 +140,9 @@ static const char* shaderLocationNames[SHADER_LOC_COUNT] = {
 #pragma warning(disable:4611)
 #endif
 
-static bool PngSafeInit(png_structp png, FILE* f) {
-    if (setjmp(png_jmpbuf(png))) return false;
-
-    png_init_io(png, f);
-    return true;
-}
-
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
-QCAPI bool LoadPngImage(const char* path, PngImageData& out) {
-    FILE* f = nullptr;
-
-#if defined(_MSC_VER)
-    if (fopen_s(&f, path, "rb") != 0) return false;
-#else
-    f = fopen(path, "rb");
-    if (!f) return false;
-#endif
-
-    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-    if (!png) {
-        fclose(f);
-        return false;
-    }
-
-    png_infop info = png_create_info_struct(png);
-    if (!info) {
-        png_destroy_read_struct(&png, nullptr, nullptr);
-        fclose(f);
-        return false;
-    }
-
-    if (!PngSafeInit(png, f)) {
-        png_destroy_read_struct(&png, &info, nullptr);
-        fclose(f);
-        return false;
-    }
-
-    png_read_info(png, info);
-    png_uint_32 w = png_get_image_width(png, info), h = png_get_image_height(png, info);
-    png_byte ct = png_get_color_type(png, info), bd = png_get_bit_depth(png, info);
-
-    if(bd == 16) png_set_strip_16(png);
-    if(ct == PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(png);
-    if(ct == PNG_COLOR_TYPE_GRAY && bd < 8) png_set_expand_gray_1_2_4_to_8(png);
-
-    if(png_get_valid(png, info, PNG_INFO_tRNS)) png_set_tRNS_to_alpha(png);
-    if(ct == PNG_COLOR_TYPE_RGB || ct == PNG_COLOR_TYPE_GRAY || ct == PNG_COLOR_TYPE_PALETTE)
-        png_set_filler(png, 0xFF, PNG_FILLER_AFTER);
-
-    if(ct == PNG_COLOR_TYPE_GRAY || ct == PNG_COLOR_TYPE_GRAY_ALPHA) png_set_gray_to_rgb(png);
-
-    png_read_update_info(png, info);
-    out.pixels.resize((size_t)w * h * 4);
-    std::vector<png_bytep> rows(h);
-    for(png_uint_32 y = 0; y < h ; ++y) rows[y] = out.pixels.data() + (size_t)y * w * 4;
-
-    png_read_image(png, rows.data());
-
-    png_destroy_read_struct(&png, &info, nullptr);
-    fclose(f);
-    out.width  = (int)w;
-    out.height = (int)h;
-    return true;
-}
 
 namespace {
 
@@ -760,10 +696,11 @@ void QuarkGLRenderer::DrawTextureNPatch(ITexture t, Rectangle src, Rectangle dst
 ITexture QuarkGLRenderer::LoadTexture(const char* path) {
     TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("Loading texture from: %s", path));
 
-    PngImageData img;
+    ImageFileData img;
     ITexture t{};
+    const bool loaded = LoadImageFile(path, img, 4);
 
-    if(LoadPngImage(path,img)) {
+    if(loaded) {
         t.id = CreateTextureFromRgba(img.pixels.data(), img.width, img.height);
         t.width = img.width;
         t.height = img.height;

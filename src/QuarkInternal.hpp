@@ -36,10 +36,16 @@ struct WindowState {
 };
 
 /**
- * @brief Internal PNG data structure.
+ * @brief Internal decoded image data in interleaved byte format.
  */
-struct PngImageData { int width=0, height=0; std::vector<uint8_t> pixels; };
-QCAPI bool LoadPngImage(const char* path, PngImageData& out);
+struct ImageFileData {
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    std::vector<uint8_t> pixels;
+};
+
+QCAPI bool LoadImageFile(const char* path, ImageFileData& out, int desiredChannels = 4);
 
 void PumpSystemEvents();
 

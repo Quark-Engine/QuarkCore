@@ -187,8 +187,8 @@ float GetWindowPixelDensity() {
 bool SetWindowIcon(const char* filePath) {
     EnsureInitialized();
 
-    PngImageData image;
-    if (!LoadPngImage(filePath, image)) {
+    ImageFileData image;
+    if (!LoadImageFile(filePath, image, 4)) {
         TraceLog(LogLevel::Warn, "WINDOW", (std::string("Failed to load window icon: ") + (filePath != nullptr ? filePath : "")).c_str());
         return false;
     }

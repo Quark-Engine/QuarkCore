@@ -418,7 +418,7 @@ static void ImGuiRenderDrawData(ImDrawData* draw_data) {
                 EnableScissor(clipX, clipY, clipW, clipH);
                 unsigned int textureId = QcImGuiTextureIdToUint(pcmd.GetTexID());
                 glBindTexture(GL_TEXTURE_2D, textureId);
-                glDrawElements(indexType, pcmd.ElemCount, indexType, reinterpret_cast<void*>(static_cast<intptr_t>(pcmd.IdxOffset * sizeof(ImDrawIdx))));
+                glDrawElements(GL_TRIANGLES, pcmd.ElemCount, indexType, reinterpret_cast<void*>(static_cast<intptr_t>(pcmd.IdxOffset * sizeof(ImDrawIdx))));
             }
         }
     }

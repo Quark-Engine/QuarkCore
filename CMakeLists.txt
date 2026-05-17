@@ -14,6 +14,7 @@ set(VCPKG_APPLOCAL_DEPS           OFF CACHE BOOL "" FORCE)
 set(X_VCPKG_APPLOCAL_DEPS_INSTALL OFF CACHE BOOL "" FORCE)
 
 include(FetchContent)
+include(ExternalProject)
 set(FETCHCONTENT_QUIET ON)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 
@@ -114,30 +115,6 @@ set(BUILD_SHARED_LIBS         ON  CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(SDL3 glew assimp)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(libpng
-    GIT_REPOSITORY https://github.com/glennrp/libpng.git
-    GIT_TAG        v1.6.58
-    GIT_SHALLOW    TRUE
-    SYSTEM
-)
-set(PNG_SHARED     ON  CACHE BOOL "" FORCE)
-set(PNG_STATIC     OFF CACHE BOOL "" FORCE)
-set(PNG_TESTS      OFF CACHE BOOL "" FORCE)
-set(PNG_TOOLS      OFF CACHE BOOL "" FORCE)
-set(PNG_BUILD_ZLIB OFF CACHE BOOL "" FORCE)
-
-set(_CMAKE_FIND_PACKAGE_REDIRECTS_DIR "" CACHE PATH "" FORCE)
-set(CMAKE_SKIP_INSTALL_RULES TRUE)
-FetchContent_MakeAvailable(libpng)
-set(CMAKE_SKIP_INSTALL_RULES FALSE)
-
-if(TARGET png_shared AND TARGET zlibstatic)
-    target_include_directories(png_shared PRIVATE
-        "${zlib_SOURCE_DIR}" "${zlib_BINARY_DIR}"
-    )
-    target_link_libraries(png_shared PRIVATE zlibstatic)
-endif()
-
 find_package(OpenGL REQUIRED)
 
 FetchContent_Declare(freetype
@@ -157,7 +134,7 @@ set(CMAKE_SKIP_INSTALL_RULES TRUE)
 FetchContent_MakeAvailable(freetype)
 set(CMAKE_SKIP_INSTALL_RULES FALSE)
 
-foreach(t SDL3 SDL_uclibc libglew_shared png16 png_shared zlib zlibstatic assimp freetype)
+foreach(t SDL3 SDL_uclibc libglew_shared zlib zlibstatic assimp freetype)
     if(TARGET ${t})
         target_compile_options(${t} PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>)
     endif()
@@ -168,6 +145,7 @@ add_library(QuarkCore SHARED
     src/QuarkEvent.cpp
     src/QuarkLights.cpp
     src/QuarkWindow.cpp
+    src/QuarkImage.cpp
     imgui/qcImGui.cpp
     src/Renderer/QuarkGLRenderer.cpp
     src/Renderer/QuarkVulkan/QuarkVkRenderer.cpp
@@ -190,7 +168,6 @@ target_link_libraries(QuarkCore
     PUBLIC
     SDL3::SDL3
     libglew_shared
-    png_shared
     OpenGL::GL
     assimp::assimp
     freetype
@@ -245,7 +222,6 @@ if(QC_BUILD_EXAMPLES)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 $<TARGET_FILE:SDL3::SDL3>
                 $<TARGET_FILE:libglew_shared>
-                $<TARGET_FILE:png_shared>
                 $<TARGET_FILE:ZLIB::ZLIB>
                 $<TARGET_FILE:assimp::assimp>
                 "${VULKAN_RUNTIME_DLL}"
@@ -269,7 +245,6 @@ if(QC_BUILD_EXAMPLES)
                     $<TARGET_FILE:QuarkCore>
                     $<TARGET_FILE:SDL3::SDL3>
                     $<TARGET_FILE:libglew_shared>
-                    $<TARGET_FILE:png_shared>
                     $<TARGET_FILE:ZLIB::ZLIB>
                     $<TARGET_FILE:assimp::assimp>
                     "${VULKAN_RUNTIME_DLL}"
