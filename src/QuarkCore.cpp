@@ -1214,7 +1214,10 @@ void UnloadVertexBuffer(unsigned int vboId) {
 }
 
 Material LoadMaterialDefault() {
-    return Material{};
+    Material material{};
+    material.maps = new MaterialMap[MATERIAL_MAP_BRDF + 1]{};
+    material.maps[MATERIAL_MAP_ALBEDO].color = WHITE;
+    return material;
 }
 
 Model LoadModelFromMesh(Mesh mesh) {
