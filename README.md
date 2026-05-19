@@ -42,7 +42,7 @@ target_link_libraries(your_target PRIVATE QuarkCore)
 #include "QuarkCore/QuarkCore.hpp"
 
 int main() {
-    qc::InitWindow(1280, 720, "Hello World");
+    qc::InitWindow(1280, 720, "Hello World", qc::RendererType::OpenGL);
     qc::SetTargetFPS(60);
 
     while (!qc::WindowShouldClose()) {
