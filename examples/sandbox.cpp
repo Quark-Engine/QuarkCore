@@ -21,7 +21,7 @@ int main() {
         qc::Color{40, 120, 210, 255}
     );
 
-    qc::Camera2D camera2d = { 0 };
+    qc::Camera2D camera2d;
     camera2d.target = { 220.0f, 340.0f };
     camera2d.offset = { 1280 / 2.0f, 720 / 2.0f };
     camera2d.zoom = 1.0f;

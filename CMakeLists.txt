@@ -146,7 +146,6 @@ add_library(QuarkCore SHARED
     src/QuarkLights.cpp
     src/QuarkWindow.cpp
     src/QuarkImage.cpp
-    imgui/qcImGui.cpp
     src/Renderer/QuarkGLRenderer.cpp
     src/Renderer/QuarkVulkan/QuarkVkRenderer.cpp
     src/Renderer/QuarkVulkan/QuarkVkDraw2D.cpp
@@ -159,7 +158,6 @@ add_library(QuarkCore SHARED
 
 target_include_directories(QuarkCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/imgui
 )
 
 target_compile_definitions(QuarkCore PRIVATE QUARKCORE_BUILD_DLL)
@@ -172,7 +170,6 @@ target_link_libraries(QuarkCore
     assimp::assimp
     freetype
     Vulkan::Vulkan
-    imgui
 )
 
 target_compile_definitions(QuarkCore PRIVATE NOMINMAX)
