@@ -768,7 +768,11 @@ namespace {
 
     static long FileTimeToTimeT(const fs::file_time_type& fileTime) {
         try {
-            const auto sctp = std::chrono::clock_cast<std::chrono::system_clock>(fileTime);
+            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                fileTime - fs::file_time_type::clock::now()
+                + std::chrono::system_clock::now()
+            );
+
             return static_cast<long>(std::chrono::system_clock::to_time_t(sctp));
         } catch (...) {
             return 0;
