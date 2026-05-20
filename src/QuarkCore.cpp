@@ -1080,7 +1080,8 @@ bool IsFileDropped(void) {
 
 FilePathList LoadDroppedFiles(void) {
     FilePathList result = BuildFilePathList(gWin.droppedFiles);
-    gWin.droppedFiles.clear();
+    if (result.count > 0)
+        gWin.droppedFiles.clear();
     return result;
 }
 
