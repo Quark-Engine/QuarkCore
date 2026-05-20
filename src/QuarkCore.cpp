@@ -1080,8 +1080,8 @@ bool IsFileDropped(void) {
 
 FilePathList LoadDroppedFiles(void) {
     FilePathList result = BuildFilePathList(gWin.droppedFiles);
-    if (result.count > 0)
-        gWin.droppedFiles.clear();
+    
+    gWin.droppedFiles.clear();
     return result;
 }
 
@@ -2204,6 +2204,7 @@ Mesh GenMeshCubicmap(Image cubicmap, Vec3 cubeSize) {
         }
         vOffset += cube.vertexCount;
         iOffset += cube.triangleCount * 3;
+        FreeMeshCpuData(cube);
     }
     return mesh;
 }
