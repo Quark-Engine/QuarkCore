@@ -107,3 +107,53 @@ jobs:
           path: artifacts/
           if-no-files-found: error
           retention-days: 5
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install \
+            cmake \
+            ninja \
+            molten-vk \
+            vulkan-headers \
+            vulkan-loader
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DQC_BUILD_EXAMPLES=ON \
+          -DASSIMP_BUILD_ZLIB=OFF \
+          -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+          -G Ninja
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Prepare Artifacts
+        run: |
+          mkdir -p artifacts/include
+
+          if [ -f build/libQuarkCore.dylib ]; then
+            cp build/libQuarkCore.dylib artifacts/
+          fi
+
+          find build -maxdepth 1 -type f -perm +111 ! -name "*.dylib" -exec cp {} artifacts/ \;
+          find build -maxdepth 1 -name "*.dylib" -exec cp {} artifacts/ \;
+
+          cp -r include/. artifacts/include/
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: QuarkCore-macOS-Binary
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 5

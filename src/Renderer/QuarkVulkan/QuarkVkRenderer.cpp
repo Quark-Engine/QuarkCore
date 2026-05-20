@@ -32,6 +32,10 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
         VK_VERSION_MINOR(version),
         VK_VERSION_PATCH(version)));
 
+#ifndef __APPLE__
+    TraceLog(LogLevel::Info, "VULKAN", "Apple platform detected, using MoltenVK...");
+#endif
+
     m_window   = window;
     m_width    = width;
     m_height   = height;
@@ -326,6 +330,22 @@ void QuarkVkRenderer::CreateInstance() {
     }
     std::vector<const char*> extensions(extensionsData, extensionsData + extensionCount);
 
+#ifdef __APPLE__
+    extensions.push_back(
+        VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+    );
+
+    extensions.push_back(
+        VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME
+    );
+#endif
+
+
+#ifdef _DEBUG
+    const char* validationLayer =
+        "VK_LAYER_KHRONOS_validation";
+#endif
+
     VkApplicationInfo appInfo{};
     appInfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName   = "QuarkCore Vulkan";
@@ -339,12 +359,31 @@ void QuarkVkRenderer::CreateInstance() {
     createInfo.pApplicationInfo        = &appInfo;
     createInfo.enabledExtensionCount   = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
-    createInfo.enabledLayerCount       = 0;
+
+#ifdef _DEBUG
+    createInfo.enabledLayerCount = 1;
+    createInfo.ppEnabledLayerNames = &validationLayer;
+#else
+    createInfo.enabledLayerCount = 0;
+#endif
+
+#ifdef __APPLE__
+    createInfo.flags |=
+        VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
 
     if (vkCreateInstance(&createInfo, nullptr, &m_instance) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create Vulkan instance.");
     }
-    TraceLog(LogLevel::Info, "VULKAN", "Vulkan instance created.");
+    TraceLog(LogLevel::Info, "VULKAN", TextFormat("Vulkan %d.%d.%d instance created.", VK_VERSION_MAJOR(appInfo.apiVersion), VK_VERSION_MINOR(appInfo.apiVersion), VK_VERSION_PATCH(appInfo.apiVersion)));
+
+#ifdef __APPLE__
+    TraceLog(
+        LogLevel::Info,
+        "VULKAN",
+        "MoltenVK compatibility enabled."
+    );
+#endif
 }
 
 void QuarkVkRenderer::CreateSurface() {
