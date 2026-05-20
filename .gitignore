@@ -7,3 +7,4 @@ imgui.ini
 config.json
 todo.todo
 CMakePresets.json
+build.sh
