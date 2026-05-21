@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(QuarkCore VERSION 0.1.0 LANGUAGES CXX)
+project(QuarkCore VERSION 0.1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,42 +7,32 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(QC_BUILD_EXAMPLES "Build QuarkCore examples" ON)
 
-set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "" FORCE)
-
-set(VCPKG_MANIFEST_INSTALL        OFF CACHE BOOL "" FORCE)
-set(VCPKG_APPLOCAL_DEPS           OFF CACHE BOOL "" FORCE)
-set(X_VCPKG_APPLOCAL_DEPS_INSTALL OFF CACHE BOOL "" FORCE)
-
-include(FetchContent)
-include(ExternalProject)
-set(FETCHCONTENT_QUIET ON)
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+function(qc_lib_dir OUT_VAR LIB_NAME)
+    set(BASE "${CMAKE_CURRENT_SOURCE_DIR}/external/${LIB_NAME}/lib")
+    set(${OUT_VAR}_DEBUG   "${BASE}/debug"   PARENT_SCOPE)
+    set(${OUT_VAR}_RELEASE "${BASE}/release" PARENT_SCOPE)
+    set(${OUT_VAR} "$<IF:$<CONFIG:Debug>,${BASE}/debug,${BASE}/release>" PARENT_SCOPE)
+endfunction()
 
 set(VULKAN_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/Vulkan")
 
 add_library(Vulkan::Vulkan INTERFACE IMPORTED GLOBAL)
-
-target_include_directories(Vulkan::Vulkan INTERFACE
-    "${VULKAN_EXTERNAL_DIR}/include"
-)
+target_include_directories(Vulkan::Vulkan INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
 
 if(WIN32)
     set(VULKAN_LIB_PATH "${VULKAN_EXTERNAL_DIR}/lib/vulkan-1.lib")
     set(VULKAN_DLL_PATH "${VULKAN_EXTERNAL_DIR}/lib/vulkan-1.dll")
 
     if(NOT EXISTS "${VULKAN_LIB_PATH}")
-        message(FATAL_ERROR
-            "Vulkan import library not found: ${VULKAN_LIB_PATH}\n"
-            "Place vulkan-1.lib in external/Vulkan/lib/")
+        message(FATAL_ERROR "Vulkan import library not found: ${VULKAN_LIB_PATH}\n"
+                            "Place vulkan-1.lib in external/Vulkan/lib/")
     endif()
     if(NOT EXISTS "${VULKAN_DLL_PATH}")
-        message(FATAL_ERROR
-            "Vulkan DLL not found: ${VULKAN_DLL_PATH}\n"
-            "Place vulkan-1.dll in external/Vulkan/lib/")
+        message(FATAL_ERROR "Vulkan DLL not found: ${VULKAN_DLL_PATH}\n"
+                            "Place vulkan-1.dll in external/Vulkan/lib/")
     endif()
 
     target_link_libraries(Vulkan::Vulkan INTERFACE "${VULKAN_LIB_PATH}")
-
     set(VULKAN_RUNTIME_DLL "${VULKAN_DLL_PATH}" CACHE FILEPATH "" FORCE)
 else()
     find_library(VULKAN_LOADER_LIB
@@ -56,89 +46,97 @@ else()
     endif()
 endif()
 
-FetchContent_Declare(zlib
-    GIT_REPOSITORY https://github.com/madler/zlib.git
-    GIT_TAG        v1.3.2
-    GIT_SHALLOW    TRUE
-    SYSTEM
-)
-set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(SDL_X11_XSCRNSAVER OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(zlib)
+set(SDL3_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
 
-if(NOT TARGET ZLIB::ZLIB)
-    add_library(ZLIB::ZLIB ALIAS zlibstatic)
+add_library(SDL3::SDL3 SHARED IMPORTED GLOBAL)
+target_include_directories(SDL3::SDL3 INTERFACE "${SDL3_EXTERNAL_DIR}/include")
+
+if(WIN32)
+    set_target_properties(SDL3::SDL3 PROPERTIES
+        IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.lib"
+        IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.lib"
+        IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
+        IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll"
+    )
+elseif(APPLE)
+    set_target_properties(SDL3::SDL3 PROPERTIES
+        IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.0.dylib"
+        IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.0.dylib"
+    )
+else()
+    set_target_properties(SDL3::SDL3 PROPERTIES
+        IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.so.0.4.8"
+        IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
+    )
 endif()
 
-set(ZLIB_FOUND        TRUE                                    CACHE BOOL   "" FORCE)
-set(ZLIB_INCLUDE_DIR  "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}" CACHE STRING "" FORCE)
-set(ZLIB_LIBRARY      zlibstatic                              CACHE STRING "" FORCE)
-set(ZLIB_INCLUDE_DIRS "${ZLIB_INCLUDE_DIR}"                   CACHE STRING "" FORCE)
-set(ZLIB_LIBRARIES    "${ZLIB_LIBRARY}"                       CACHE STRING "" FORCE)
-set(ZLIB_VERSION_STRING "1.3.1"                               CACHE STRING "" FORCE)
+set(ZLIB_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
 
-list(APPEND VCPKG_MANIFEST_FEATURES "")
-set(VCPKG_INSTALLED_DIR "" CACHE PATH "" FORCE)
+add_library(ZLIB::ZLIB STATIC IMPORTED GLOBAL)
+target_include_directories(ZLIB::ZLIB INTERFACE "${ZLIB_EXTERNAL_DIR}/include")
 
-FetchContent_Declare(SDL3
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG        release-3.4.8
-    GIT_SHALLOW    TRUE
-    SYSTEM
-)
-set(SDL_SHARED ON  CACHE BOOL "" FORCE)
-set(SDL_STATIC OFF CACHE BOOL "" FORCE)
-set(SDL_TEST   OFF CACHE BOOL "" FORCE)
+if(WIN32)
+    set_target_properties(ZLIB::ZLIB PROPERTIES
+        IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.lib"
+        IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.lib"
+    )
+endif()
 
-FetchContent_Declare(glew
-    GIT_REPOSITORY https://github.com/Perlmint/glew-cmake.git
-    GIT_TAG        glew-cmake-2.3.1
-    GIT_SHALLOW    TRUE
-    SYSTEM
-)
-set(glew-cmake_BUILD_SHARED ON  CACHE BOOL "" FORCE)
-set(glew-cmake_BUILD_STATIC OFF CACHE BOOL "" FORCE)
-set(ONLY_LIBS               ON  CACHE BOOL "" FORCE)
+set(ASSIMP_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
 
-FetchContent_Declare(assimp
-    GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG        v6.0.5
-    GIT_SHALLOW    TRUE
-    SYSTEM
-)
-set(ASSIMP_BUILD_TESTS        OFF CACHE BOOL "" FORCE)
-set(ASSIMP_INSTALL            OFF CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_ZLIB         OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS         ON  CACHE BOOL "" FORCE)
+add_library(assimp::assimp SHARED IMPORTED GLOBAL)
+target_include_directories(assimp::assimp INTERFACE "${ASSIMP_EXTERNAL_DIR}/include")
 
-FetchContent_MakeAvailable(SDL3 glew assimp)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+if(WIN32)
+    set_target_properties(assimp::assimp PROPERTIES
+        IMPORTED_IMPLIB_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.lib"
+        IMPORTED_IMPLIB_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.lib"
+        IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll"
+        IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.dll"
+    )
+elseif(APPLE)
+    set_target_properties(assimp::assimp PROPERTIES
+        IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimp.6.0.5.dylib"
+        IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.6.0.5.dylib"
+    )
+else()
+    set_target_properties(assimp::assimp PROPERTIES
+        IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimp.so.6.0.5"
+        IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.so.6.0.5"
+    )
+endif()
+
+set(FREETYPE_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/freetype")
+
+add_library(freetype SHARED IMPORTED GLOBAL)
+target_include_directories(freetype INTERFACE "${FREETYPE_EXTERNAL_DIR}/include")
+
+if(WIN32)
+    set_target_properties(freetype PROPERTIES
+        IMPORTED_IMPLIB_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.lib"
+        IMPORTED_IMPLIB_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.lib"
+        IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll"
+        IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.dll"
+    )
+elseif(APPLE)
+    set_target_properties(freetype PROPERTIES
+        IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.6.20.6.dylib"
+        IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.6.20.6.dylib"
+    )
+else()
+    set_target_properties(freetype PROPERTIES
+        IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetype.so.6.20.6"
+        IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.so.6.20.6"
+    )
+endif()
+
+set(GLAD_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/glad")
+
+add_library(glad STATIC "${GLAD_EXTERNAL_DIR}/src/glad.c")
+target_include_directories(glad PUBLIC "${GLAD_EXTERNAL_DIR}/include")
+target_compile_options(glad PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>)
 
 find_package(OpenGL REQUIRED)
-
-FetchContent_Declare(freetype
-    GIT_REPOSITORY https://github.com/freetype/freetype.git
-    GIT_TAG        VER-2-14-3
-    GIT_SHALLOW    TRUE
-    SYSTEM
-)
-set(FT_DISABLE_ZLIB     ON  CACHE BOOL "" FORCE)
-set(FT_DISABLE_BZIP2    ON  CACHE BOOL "" FORCE)
-set(FT_DISABLE_PNG      ON  CACHE BOOL "" FORCE)
-set(FT_DISABLE_HARFBUZZ ON  CACHE BOOL "" FORCE)
-set(FT_DISABLE_BROTLI   ON  CACHE BOOL "" FORCE)
-set(FT_REQUIRE_ZLIB     OFF CACHE BOOL "" FORCE)
-set(FT_REQUIRE_PNG      OFF CACHE BOOL "" FORCE)
-set(CMAKE_SKIP_INSTALL_RULES TRUE)
-FetchContent_MakeAvailable(freetype)
-set(CMAKE_SKIP_INSTALL_RULES FALSE)
-
-foreach(t SDL3 SDL_uclibc libglew_shared zlib zlibstatic assimp freetype)
-    if(TARGET ${t})
-        target_compile_options(${t} PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>)
-    endif()
-endforeach()
 
 add_library(QuarkCore SHARED
     src/QuarkCore.cpp
@@ -160,19 +158,21 @@ target_include_directories(QuarkCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_compile_definitions(QuarkCore PRIVATE QUARKCORE_BUILD_DLL)
+target_compile_definitions(QuarkCore PRIVATE
+    QUARKCORE_BUILD_DLL
+    NOMINMAX
+)
 
 target_link_libraries(QuarkCore
     PUBLIC
-    SDL3::SDL3
-    libglew_shared
-    OpenGL::GL
-    assimp::assimp
-    freetype
-    Vulkan::Vulkan
+        SDL3::SDL3
+        glad
+        OpenGL::GL
+        assimp::assimp
+        freetype
+        Vulkan::Vulkan
 )
 
-target_compile_definitions(QuarkCore PRIVATE NOMINMAX)
 set_target_properties(QuarkCore PROPERTIES UNITY_BUILD ON)
 
 if(MSVC)
@@ -182,71 +182,61 @@ else()
 endif()
 
 if(QC_BUILD_EXAMPLES)
-    add_executable(quarkcore_sandbox examples/sandbox.cpp)
-    target_link_libraries(quarkcore_sandbox PRIVATE QuarkCore)
-    set_target_properties(quarkcore_sandbox PROPERTIES UNITY_BUILD ON)
+    set(EXAMPLE_TARGETS
+        quarkcore_sandbox
+        quarkcore_textures_and_shaders
+        quarkcore_3d_primitives
+        quarkcore_meshes
+        quarkcore_vulkan
+        quarkcore_lights
+        quarkcore_files
+        quarkcore_3d_lights
+    )
 
-    add_executable(quarkcore_textures_and_shaders examples/textures_and_shaders.cpp)
-    target_link_libraries(quarkcore_textures_and_shaders PRIVATE QuarkCore)
-    set_target_properties(quarkcore_textures_and_shaders PROPERTIES UNITY_BUILD ON)
+    set(EXAMPLE_SOURCES
+        examples/sandbox.cpp
+        examples/textures_and_shaders.cpp
+        examples/primitives_3d.cpp
+        examples/meshes.cpp
+        examples/vulkan.cpp
+        examples/light.cpp
+        examples/file_operations.cpp
+        examples/3d_light.cpp
+    )
 
-    add_executable(quarkcore_3d_primitives examples/primitives_3d.cpp)
-    target_link_libraries(quarkcore_3d_primitives PRIVATE QuarkCore)
-    set_target_properties(quarkcore_3d_primitives PROPERTIES UNITY_BUILD ON)
+    list(LENGTH EXAMPLE_TARGETS _count)
+    math(EXPR _last "${_count} - 1")
+    foreach(i RANGE ${_last})
+        list(GET EXAMPLE_TARGETS ${i} _target)
+        list(GET EXAMPLE_SOURCES ${i} _source)
 
-    add_executable(quarkcore_meshes examples/meshes.cpp)
-    target_link_libraries(quarkcore_meshes PRIVATE QuarkCore)
-    set_target_properties(quarkcore_meshes PROPERTIES UNITY_BUILD ON)
-
-    add_executable(quarkcore_vulkan examples/vulkan.cpp)
-    target_link_libraries(quarkcore_vulkan PRIVATE QuarkCore)
-    set_target_properties(quarkcore_vulkan PROPERTIES UNITY_BUILD ON)
-
-    add_executable(quarkcore_lights examples/light.cpp)
-    target_link_libraries(quarkcore_lights PRIVATE QuarkCore)
-    set_target_properties(quarkcore_lights PROPERTIES UNITY_BUILD ON)
-
-    add_executable(quarkcore_files examples/file_operations.cpp)
-    target_link_libraries(quarkcore_files PRIVATE QuarkCore)
-    set_target_properties(quarkcore_files PROPERTIES UNITY_BUILD ON)
-
-    add_executable(quarkcore_3d_lights examples/3d_light.cpp)
-    target_link_libraries(quarkcore_3d_lights PRIVATE QuarkCore)
-    set_target_properties(quarkcore_3d_lights PROPERTIES UNITY_BUILD ON)
+        add_executable(${_target} ${_source})
+        target_link_libraries(${_target} PRIVATE QuarkCore)
+        set_target_properties(${_target} PROPERTIES UNITY_BUILD ON)
+    endforeach()
 
     if(WIN32)
+        set(_RUNTIME_DLLS
+            $<TARGET_FILE:SDL3::SDL3>
+            $<TARGET_FILE:assimp::assimp>
+            $<TARGET_FILE:freetype>
+            "${VULKAN_RUNTIME_DLL}"
+        )
+
         add_custom_command(TARGET QuarkCore POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_FILE:SDL3::SDL3>
-                $<TARGET_FILE:libglew_shared>
-                $<TARGET_FILE:ZLIB::ZLIB>
-                $<TARGET_FILE:assimp::assimp>
-                "${VULKAN_RUNTIME_DLL}"
+                ${_RUNTIME_DLLS}
                 $<TARGET_FILE_DIR:QuarkCore>
             COMMENT "Copying DLLs next to QuarkCore..."
         )
 
-        set(EXAMPLE_TARGETS
-            quarkcore_sandbox
-            quarkcore_textures_and_shaders
-            quarkcore_3d_primitives
-            quarkcore_meshes
-            quarkcore_vulkan
-            quarkcore_lights
-            quarkcore_files
-            quarkcore_3d_lights
-        )
-        foreach(target ${EXAMPLE_TARGETS})
-            add_custom_command(TARGET ${target} POST_BUILD
+        foreach(_target ${EXAMPLE_TARGETS})
+            add_custom_command(TARGET ${_target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     $<TARGET_FILE:QuarkCore>
-                    $<TARGET_FILE:SDL3::SDL3>
-                    $<TARGET_FILE:libglew_shared>
-                    $<TARGET_FILE:ZLIB::ZLIB>
-                    $<TARGET_FILE:assimp::assimp>
-                    "${VULKAN_RUNTIME_DLL}"
-                    $<TARGET_FILE_DIR:${target}>
-                COMMENT "Copying DLLs for ${target}..."
+                    ${_RUNTIME_DLLS}
+                    $<TARGET_FILE_DIR:${_target}>
+                COMMENT "Copying DLLs for ${_target}..."
             )
         endforeach()
     endif()

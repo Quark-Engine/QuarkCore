@@ -43,7 +43,7 @@
 #include "QuarkCore/Quark3D.hpp"
 #include "QuarkFont.hpp"
 
-#include <GL/glew.h>
+#include <glad/glad.h>
 #include <array>
 #include <cstdint>
 #include <unordered_map>

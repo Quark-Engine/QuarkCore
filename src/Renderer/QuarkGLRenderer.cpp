@@ -183,9 +183,10 @@ void QuarkGLRenderer::Init(SDL_Window* window, int width, int height) {
     if (!m_context)
         throw std::runtime_error(std::string("SDL_GL_CreateContext: ") + SDL_GetError());
         
-    glewExperimental = GL_TRUE;
-    if (glewInit() != GLEW_OK)
-        throw std::runtime_error("glewInit failed");
+    if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
+    {
+        throw std::runtime_error("Failed to initialize GLAD");
+    }
 
     InitGL();
 
@@ -545,13 +546,14 @@ void QuarkGLRenderer::DrawLine(float x1, float y1, float x2, float y2, Color c) 
 }
 
 void QuarkGLRenderer::DrawLineV(Vec2 s, Vec2 e, Color c) {
-    FlushBatch();
+    float dx = e.x - s.x;
+    float dy = e.y - s.y;
+    float length = sqrtf(dx * dx + dy * dy);
+    if (length <= 0) return;
 
-    glBegin(GL_LINES);
-    glColor4ub(c.r, c.g, c.b, c.a);
-    glVertex2f(s.x, s.y);
-    glVertex2f(e.x, e.y);
-    glEnd();
+    float angle = atan2f(dy, dx) * 180.0f / PI;
+    ITexture white = { m_whiteTexture, 1, 1, true };
+    DrawTexturePro(white, { 0, 0, 1, 1 }, { s.x, s.y, length, 1.0f }, { 0, 0.5f }, angle, c);
 }
 
 void QuarkGLRenderer::DrawRectangleLines(Rectangle r, float, Color c) {
@@ -574,52 +576,46 @@ void QuarkGLRenderer::DrawRectangleRounded(Rectangle r, float rnd, int, Color c)
 }
 
 void QuarkGLRenderer::DrawTriangle(Vec2 a, Vec2 b, Vec2 c, Color col) {
-    FlushBatch();
-
-    glBegin(GL_TRIANGLES);
-    glColor4ub(col.r, col.g, col.b, col.a);
-    glVertex2f(a.x, a.y);
-    glVertex2f(b.x, b.y);
-    glVertex2f(c.x, c.y);
-    glEnd();
+    EnsureBatchTexture(0);
+    auto n = ToNormColor(col);
+    PushVertex({ a.x, a.y, 0, 0, n[0], n[1], n[2], n[3] });
+    PushVertex({ b.x, b.y, 0, 0, n[0], n[1], n[2], n[3] });
+    PushVertex({ c.x, c.y, 0, 0, n[0], n[1], n[2], n[3] });
 }
 
 void QuarkGLRenderer::DrawCircleLines(float cx, float cy, float r, Color c) {
-    FlushBatch();
-
-    glBegin(GL_LINE_LOOP);
-    glColor4ub(c.r, c.g, c.b, c.a);
-    for(int i = 0; i < 36; ++i) {
-        float a = i / 36.f * 6.28318530718f;
-        glVertex2f(cx + r * cosf(a), cy + r * sinf(a));
+    constexpr int segments = 36;
+    for (int i = 0; i < segments; i++) {
+        float a1 = (float)i / segments * 2.0f * PI;
+        float a2 = (float)(i + 1) / segments * 2.0f * PI;
+        DrawLineV({ cx + r * cosf(a1), cy + r * sinf(a1) }, { cx + r * cosf(a2), cy + r * sinf(a2) }, c);
     }
-    glEnd();
 }
 
 void QuarkGLRenderer::DrawEllipse(float cx, float cy, float rh, float rv, Color c) {
-    FlushBatch();
-
-    glBegin(GL_POLYGON);
-    glColor4ub(c.r, c.g, c.b, c.a);
-    for(int i = 0; i < 36; ++i) {
-        float a = i / 36.f * 6.28318530718f;
-        glVertex2f(cx + rh * cosf(a), cy + rv * sinf(a));
+    EnsureBatchTexture(0);
+    auto n = ToNormColor(c);
+    constexpr int segments = 36;
+    for (int i = 0; i < segments; i++) {
+        float a1 = (float)i / segments * 2.0f * PI;
+        float a2 = (float)(i + 1) / segments * 2.0f * PI;
+        PushVertex({ cx, cy, 0.5f, 0.5f, n[0], n[1], n[2], n[3] });
+        PushVertex({ cx + rh * cosf(a1), cy + rv * sinf(a1), 1, 0, n[0], n[1], n[2], n[3] });
+        PushVertex({ cx + rh * cosf(a2), cy + rv * sinf(a2), 0, 1, n[0], n[1], n[2], n[3] });
     }
-    glEnd();
 }
 
 void QuarkGLRenderer::DrawPoly(Vec2 cen, int sides, float r, float rot, Color c) {
     if(sides < 3) return;
-
-    FlushBatch();
-
-    glBegin(GL_POLYGON);
-    glColor4ub(c.r, c.g, c.b, c.a);
-    for(int i = 0; i < sides; ++i) {
-        float a = i / (float)sides * 6.28318530718f + rot * PI / 180.f;
-        glVertex2f(cen.x + r * cosf(a), cen.y + r * sinf(a));
+    EnsureBatchTexture(0);
+    auto n = ToNormColor(c);
+    for (int i = 0; i < sides; i++) {
+        float a1 = (float)i / sides * 2.0f * PI + rot * PI / 180.0f;
+        float a2 = (float)(i + 1) / sides * 2.0f * PI + rot * PI / 180.0f;
+        PushVertex({ cen.x, cen.y, 0.5f, 0.5f, n[0], n[1], n[2], n[3] });
+        PushVertex({ cen.x + r * cosf(a1), cen.y + r * sinf(a1), 1, 0, n[0], n[1], n[2], n[3] });
+        PushVertex({ cen.x + r * cosf(a2), cen.y + r * sinf(a2), 0, 1, n[0], n[1], n[2], n[3] });
     }
-    glEnd();
 }
 
 void QuarkGLRenderer::DrawTexture(const ITexture& t, float x, float y, Color tint) {
