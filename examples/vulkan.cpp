@@ -6,7 +6,12 @@ int main() {
     qc::SetTargetFPS(60);
 
     while (!qc::WindowShouldClose()) {
-        
+        qc::BeginDrawing();
+
+        qc::ClearBackground(qc::WHITE);
+        qc::DrawText("Hello, Vulkan!", 20, 20, 32, qc::GREEN);
+
+        qc::EndDrawing();
     }
 
     qc::CloseWindow();
