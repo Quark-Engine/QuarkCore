@@ -423,7 +423,7 @@ void PumpSystemEvents() {
         gWin.nativeEvent = sdlEvent;
         if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
             if (sdlEvent.drop.data != nullptr) {
-                gWin.droppedFiles.emplace_back(sdlEvent.drop.data);
+                gWin.droppedFiles.emplace_back(std::string(sdlEvent.drop.data));
             }
         }
         if (sdlEvent.type == SDL_EVENT_QUIT || sdlEvent.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
@@ -479,7 +479,7 @@ bool WaitEvent(Event& event) {
 
     if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
         if (sdlEvent.drop.data != nullptr)
-            gWin.droppedFiles.emplace_back(sdlEvent.drop.data);
+            gWin.droppedFiles.emplace_back(std::string(sdlEvent.drop.data));
     }
 
     gWin.nativeEvent = sdlEvent;
@@ -503,7 +503,7 @@ bool WaitEvent(Event& event, int timeoutMs) {
 
     if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
         if (sdlEvent.drop.data != nullptr)
-            gWin.droppedFiles.emplace_back(sdlEvent.drop.data);
+            gWin.droppedFiles.emplace_back(std::string(sdlEvent.drop.data));
     }
 
     gWin.nativeEvent = sdlEvent;

@@ -1072,9 +1072,11 @@ FilePathList LoadDirectoryFilesEx(const char* basePath, const char* filter, bool
 
 void UnloadDirectoryFiles(FilePathList files) {
     if (!files.paths) return;
+
     for (unsigned int i = 0; i < files.count; ++i) {
-        std::free(files.paths[i]);
+        if (files.paths[i]) std::free(files.paths[i]);
     }
+
     std::free(files.paths);
 }
 
