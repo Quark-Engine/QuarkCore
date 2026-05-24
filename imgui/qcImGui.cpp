@@ -1,6 +1,6 @@
 #include "qcImGui.h"
 #include "imgui.h"
-#include <GL/glew.h>
+#include <glad/glad.h>
 #include <cmath>
 #include <limits>
 #include <cstdint>
