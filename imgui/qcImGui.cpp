@@ -1,5 +1,6 @@
 #include "qcImGui.h"
 #include "imgui.h"
+#include <SDL3/SDL.h>
 #include <glad/glad.h>
 #include <cmath>
 #include <limits>
@@ -26,6 +27,7 @@ static GLint g_QcImGuiAttribUV = -1;
 static GLint g_QcImGuiAttribColor = -1;
 static GLint g_QcImGuiUniformTexture = -1;
 static GLint g_QcImGuiUniformProjection = -1;
+static bool g_QcImGuiGladTried = false;
 
 static inline ImTextureID QcImGuiTextureId(unsigned int id) {
     return (ImTextureID)(intptr_t)id;
@@ -33,6 +35,31 @@ static inline ImTextureID QcImGuiTextureId(unsigned int id) {
 
 static inline unsigned int QcImGuiTextureIdToUint(ImTextureID id) {
     return static_cast<unsigned int>((intptr_t)id);
+}
+
+static ImVec2 QcImGuiGetDisplaySize() {
+    qc::IVec2 size = qc::GetWindowSizeInPixels();
+    if (size.x <= 0 || size.y <= 0) {
+        size.x = qc::GetScreenWidth();
+        size.y = qc::GetScreenHeight();
+    }
+
+    if (size.x < 0)
+        size.x = 0;
+    if (size.y < 0)
+        size.y = 0;
+
+    return ImVec2(static_cast<float>(size.x), static_cast<float>(size.y));
+}
+
+static bool QcImGuiEnsureGladLoaded() {
+    if (glCreateShader != nullptr)
+        return true;
+    if (g_QcImGuiGladTried)
+        return false;
+
+    g_QcImGuiGladTried = true;
+    return gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress) != 0;
 }
 
 static const char* QcImGuiVertexShader = R"(
@@ -83,6 +110,9 @@ static bool QcImGuiCompileShader(GLuint shader, const char* source) {
 
 static void QcImGuiCreateDeviceObjects() {
     if (g_QcImGuiProgram != 0)
+        return;
+
+    if (!QcImGuiEnsureGladLoaded())
         return;
 
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
@@ -293,16 +323,14 @@ static bool qcImGuiIsSuperDown() {
 
 static void ImGuiNewFrame(float deltaTime) {
     ImGuiIO& io = ImGui::GetIO();
-    QcImGuiCreateDeviceObjects();
-    if (!g_QcImGuiProgram)
-        return;
-
-    io.DisplaySize = ImVec2((float)qc::GetScreenWidth(), (float)qc::GetScreenHeight());
+    io.DisplaySize = QcImGuiGetDisplaySize();
     io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
 
     if (deltaTime <= 0.0f)
         deltaTime = 1.0f / 60.0f;
     io.DeltaTime = deltaTime;
+
+    QcImGuiCreateDeviceObjects();
 
     if (io.BackendFlags & ImGuiBackendFlags_HasMouseCursors) {
         if ((io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) == 0) {
@@ -344,7 +372,7 @@ static void HandleGamepadStickEvent(ImGuiIO& io, int axis, ImGuiKey negKey, ImGu
 
 static void EnableScissor(float x, float y, float width, float height) {
     glEnable(GL_SCISSOR_TEST);
-    int fbHeight = qc::GetScreenHeight();
+    int fbHeight = static_cast<int>(QcImGuiGetDisplaySize().y);
     int sx = static_cast<int>(x);
     int sy = static_cast<int>(fbHeight - (y + height));
     int sw = static_cast<int>(width);
@@ -544,6 +572,7 @@ bool ImGui_ImplQc_Init() {
 
 void ImGui_ImplQc_Shutdown() {
     QcImGuiDestroyDeviceObjects();
+    g_QcImGuiGladTried = false;
 }
 
 void ImGui_ImplQc_NewFrame() {
