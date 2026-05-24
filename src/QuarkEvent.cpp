@@ -10,6 +10,18 @@ extern int gLastKeyPressed;
 extern int gLastCharPressed;
 extern KeyboardKey gExitKey;
 
+namespace {
+
+void ReleaseDropData(SDL_Event& sdlEvent) {
+    if ((sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) &&
+        sdlEvent.drop.data != nullptr) {
+        SDL_free(const_cast<char*>(sdlEvent.drop.data));
+        sdlEvent.drop.data = nullptr;
+    }
+}
+
+} // namespace
+
 EventType TranslateEventType(Uint32 type) {
     switch (type) {
         case SDL_EVENT_QUIT: return EventType::Quit;
@@ -130,6 +142,10 @@ EventType TranslateEventType(Uint32 type) {
 Event TranslateEvent(const SDL_Event& sdlEvent) {
     Event event{};
     event.nativeEvent = sdlEvent;
+    if ((event.nativeEvent.type == SDL_EVENT_DROP_FILE || event.nativeEvent.type == SDL_EVENT_DROP_TEXT) &&
+        event.nativeEvent.drop.data != nullptr) {
+        event.nativeEvent.drop.data = nullptr;
+    }
     event.type = TranslateEventType(sdlEvent.type);
     event.timestamp = sdlEvent.common.timestamp;
 
@@ -421,6 +437,10 @@ void PumpSystemEvents() {
     SDL_Event sdlEvent;
     while (SDL_PollEvent(&sdlEvent)) {
         gWin.nativeEvent = sdlEvent;
+        if ((gWin.nativeEvent.type == SDL_EVENT_DROP_FILE || gWin.nativeEvent.type == SDL_EVENT_DROP_TEXT) &&
+            gWin.nativeEvent.drop.data != nullptr) {
+            gWin.nativeEvent.drop.data = nullptr;
+        }
         if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
             if (sdlEvent.drop.data != nullptr) {
                 gWin.droppedFiles.emplace_back(std::string(sdlEvent.drop.data));
@@ -449,6 +469,7 @@ void PumpSystemEvents() {
         }
 
         gWin.events.push_back(TranslateEvent(sdlEvent));
+        ReleaseDropData(sdlEvent);
     }
 
     UpdateInputFromEvents();
@@ -483,6 +504,10 @@ bool WaitEvent(Event& event) {
     }
 
     gWin.nativeEvent = sdlEvent;
+    if ((gWin.nativeEvent.type == SDL_EVENT_DROP_FILE || gWin.nativeEvent.type == SDL_EVENT_DROP_TEXT) &&
+        gWin.nativeEvent.drop.data != nullptr) {
+        gWin.nativeEvent.drop.data = nullptr;
+    }
 
     if (sdlEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
         if (gRendererPtr) gRendererPtr->RefreshViewport();
@@ -490,6 +515,7 @@ bool WaitEvent(Event& event) {
 
     UpdateInputFromEvents();
     event = TranslateEvent(sdlEvent);
+    ReleaseDropData(sdlEvent);
     return true;
 }
 
@@ -507,6 +533,10 @@ bool WaitEvent(Event& event, int timeoutMs) {
     }
 
     gWin.nativeEvent = sdlEvent;
+    if ((gWin.nativeEvent.type == SDL_EVENT_DROP_FILE || gWin.nativeEvent.type == SDL_EVENT_DROP_TEXT) &&
+        gWin.nativeEvent.drop.data != nullptr) {
+        gWin.nativeEvent.drop.data = nullptr;
+    }
 
     if (sdlEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
         if (gRendererPtr) gRendererPtr->RefreshViewport();
@@ -514,6 +544,7 @@ bool WaitEvent(Event& event, int timeoutMs) {
 
     UpdateInputFromEvents();
     event = TranslateEvent(sdlEvent);
+    ReleaseDropData(sdlEvent);
     return true;
 }
 

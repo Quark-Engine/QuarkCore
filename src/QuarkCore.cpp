@@ -1001,7 +1001,6 @@ const char* GetApplicationDirectory(void) {
     const char* path = SDL_GetBasePath();
     if (path) {
         buffer = path;
-        SDL_free(const_cast<char*>(path));
     }
     return buffer.c_str();
 }
