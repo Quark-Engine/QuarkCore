@@ -3,6 +3,10 @@
 ### Todo
 
 - [ ] Improve light compatibility API
+- [ ] Audio API
+- [ ] Network API
+- [ ] QuarkSL for multibackend shaders
+- [ ] OpenGL ES backend for mobile devices
 
 ### In Progress
 
