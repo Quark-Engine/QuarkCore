@@ -86,21 +86,76 @@ in vec2 vTexCoord;
 out vec4 FragColor;
 
 uniform sampler2D uTexture;
-uniform vec3 uLightPos;
 uniform vec4 uColor;
 
 void main() {
-    vec3 norm     = normalize(vNormal);
-    vec3 lightDir = normalize(uLightPos - vFragPos);
-    float ambient = 0.3;
-    float diff    = max(dot(norm, lightDir), 0.0);
     vec4  tex     = texture(uTexture, vTexCoord);
-    vec3  result  = (ambient + diff) * tex.rgb * uColor.rgb;
+    vec3  result  = tex.rgb * uColor.rgb;
     FragColor     = vec4(result, tex.a * uColor.a);
 }
 )";
 
 namespace qc {
+
+static Mat4 TransposeMat4(const Mat4& matrix) {
+    Mat4 result{};
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            result.m[row * 4 + col] = matrix.m[col * 4 + row];
+        }
+    }
+    return result;
+}
+
+static void ApplyMaterialShaderUniforms(const Shader& shader, const Mat4& model,
+                                        const Mat4& view, const Mat4& projection,
+                                        Color tint, bool useTexture) {
+    const Mat4 mvp = projection * view * model;
+    const Mat4 normalMatrix = TransposeMat4(model.inverted());
+
+    if (shader.locs[SHADER_LOC_MATRIX_MVP] >= 0)
+        glUniformMatrix4fv(shader.locs[SHADER_LOC_MATRIX_MVP], 1, GL_FALSE, mvp.m);
+    if (shader.locs[SHADER_LOC_MATRIX_VIEW] >= 0)
+        glUniformMatrix4fv(shader.locs[SHADER_LOC_MATRIX_VIEW], 1, GL_FALSE, view.m);
+    if (shader.locs[SHADER_LOC_MATRIX_PROJECTION] >= 0)
+        glUniformMatrix4fv(shader.locs[SHADER_LOC_MATRIX_PROJECTION], 1, GL_FALSE, projection.m);
+    if (shader.locs[SHADER_LOC_MATRIX_MODEL] >= 0)
+        glUniformMatrix4fv(shader.locs[SHADER_LOC_MATRIX_MODEL], 1, GL_FALSE, model.m);
+    if (shader.locs[SHADER_LOC_MATRIX_NORMAL] >= 0)
+        glUniformMatrix4fv(shader.locs[SHADER_LOC_MATRIX_NORMAL], 1, GL_FALSE, normalMatrix.m);
+    if (shader.locs[SHADER_LOC_COLOR_DIFFUSE] >= 0)
+        glUniform4f(shader.locs[SHADER_LOC_COLOR_DIFFUSE],
+            tint.r / 255.0f, tint.g / 255.0f, tint.b / 255.0f, tint.a / 255.0f);
+
+    GLint texture0Loc = glGetUniformLocation(shader.id, "texture0");
+    if (texture0Loc >= 0) glUniform1i(texture0Loc, 0);
+
+    GLint useTextureLoc = glGetUniformLocation(shader.id, "useTexture");
+    if (useTextureLoc >= 0) glUniform1i(useTextureLoc, useTexture ? 1 : 0);
+}
+
+static const Shader* ResolveMaterialShader(const Material* material) {
+    if (material && material->shader && material->shader->id != 0) return material->shader;
+    return nullptr;
+}
+
+template <typename Fn>
+static void WithShaderProgram(const Shader& shader, Fn&& fn) {
+    if (shader.id == 0) return;
+
+    GLint previousProgram = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
+
+    if (static_cast<GLuint>(previousProgram) != shader.id) {
+        glUseProgram(shader.id);
+    }
+
+    fn();
+
+    if (static_cast<GLuint>(previousProgram) != shader.id) {
+        glUseProgram(static_cast<GLuint>(previousProgram));
+    }
+}
 
 static const char* shaderLocationNames[SHADER_LOC_COUNT] = {
     "aPosition",        // SHADER_LOC_VERTEX_POSITION
@@ -1141,44 +1196,60 @@ int QuarkGLRenderer::GetShaderAttributeLocation(const Shader& sh, const char* na
     return sh.id ? glGetAttribLocation(sh.id,name) : -1;
 }
 
-void QuarkGLRenderer::SetShaderValue(const Shader&,int loc,float v) {
-    if(loc >= 0)
+void QuarkGLRenderer::SetShaderValue(const Shader& shader, int loc, float v) {
+    if (loc < 0) return;
+    WithShaderProgram(shader, [&]() {
         glUniform1f(loc, v);
+    });
 }
 
-void QuarkGLRenderer::SetShaderValue(const Shader&,int loc,int v) {
-    if(loc >= 0)
+void QuarkGLRenderer::SetShaderValue(const Shader& shader, int loc, int v) {
+    if (loc < 0) return;
+    WithShaderProgram(shader, [&]() {
         glUniform1i(loc, v);
+    });
 }
 
-void QuarkGLRenderer::SetShaderValue(const Shader&,int loc,const Color& c) {
-    if(loc >= 0)
+void QuarkGLRenderer::SetShaderValue(const Shader& shader, int loc, const Color& c) {
+    if (loc < 0) return;
+    WithShaderProgram(shader, [&]() {
         glUniform4f(loc, c.r / 255.f, c.g / 255.f, c.b / 255.f, c.a / 255.f);
+    });
 }
 
-void QuarkGLRenderer::SetShaderValue(const Shader&,int loc,const Vec2& v) {
-    if(loc >= 0)
+void QuarkGLRenderer::SetShaderValue(const Shader& shader, int loc, const Vec2& v) {
+    if (loc < 0) return;
+    WithShaderProgram(shader, [&]() {
         glUniform2f(loc, v.x, v.y);
+    });
 }
 
-void QuarkGLRenderer::SetShaderValue(const Shader& /*shader*/, int locIndex, const Vec3& value) {
-    if (locIndex >= 0)
+void QuarkGLRenderer::SetShaderValue(const Shader& shader, int locIndex, const Vec3& value) {
+    if (locIndex < 0) return;
+    WithShaderProgram(shader, [&]() {
         glUniform3f(locIndex, value.x, value.y, value.z);
+    });
 }
 
-void QuarkGLRenderer::SetShaderValue(const Shader&, int locIndex, const Vec4& value) {
-    if (locIndex >= 0)
+void QuarkGLRenderer::SetShaderValue(const Shader& shader, int locIndex, const Vec4& value) {
+    if (locIndex < 0) return;
+    WithShaderProgram(shader, [&]() {
         glUniform4f(locIndex, value.x, value.y, value.z, value.w);
+    });
 }
 
-void QuarkGLRenderer::SetShaderValueMatrix(const Shader&,int loc,const float* m) {
-    if(loc >= 0&& m)
+void QuarkGLRenderer::SetShaderValueMatrix(const Shader& shader, int loc, const float* m) {
+    if (loc < 0 || !m) return;
+    WithShaderProgram(shader, [&]() {
         glUniformMatrix4fv(loc, 1, GL_FALSE, m);
+    });
 }
 
-void QuarkGLRenderer::SetShaderValueSampler(const Shader&,int loc,int unit) { 
-    if(loc >= 0)
+void QuarkGLRenderer::SetShaderValueSampler(const Shader& shader, int loc, int unit) {
+    if (loc < 0) return;
+    WithShaderProgram(shader, [&]() {
         glUniform1i(loc, unit);
+    });
 }
 
 void QuarkGLRenderer::BeginMode2D(const Camera2D& cam) {
@@ -2262,13 +2333,20 @@ void QuarkGLRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
     if (!mesh.vaoId) return;
     if (!m_3d.initialized) Init3DState();
 
-    glUseProgram(m_3d.shader3D);
-    if (m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, transform.m);
-    if (m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
-
     GLuint texId = m_3d.whiteTexture;
-    if (material.maps && material.maps[MATERIAL_MAP_ALBEDO].texture.valid) {
+    const bool hasTexture = material.maps && material.maps[MATERIAL_MAP_ALBEDO].texture.valid;
+    if (hasTexture) {
         texId = material.maps[MATERIAL_MAP_ALBEDO].texture.id;
+    }
+
+    const Shader* customShader = ResolveMaterialShader(&material);
+    if (customShader) {
+        glUseProgram(customShader->id);
+        ApplyMaterialShaderUniforms(*customShader, transform, m_3d.viewMatrix, m_3d.projectionMatrix, WHITE, hasTexture);
+    } else {
+        glUseProgram(m_3d.shader3D);
+        if (m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, transform.m);
+        if (m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     glActiveTexture(GL_TEXTURE0);
@@ -2303,26 +2381,33 @@ void  QuarkGLRenderer::DrawModel(const Model& model, const Vec3& pos, float scal
 
 void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
     if (!m_3d.initialized) Init3DState();
-    glUseProgram(m_3d.shader3D);
-
     Mat4 final = ApplyCurrentMatrix(transform);
-
-    if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
-    if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc, 1, 1, 1, 1);
-    if(m_3d.samplerLoc >= 0) glUniform1i(m_3d.samplerLoc, 0);
-    if(m_3d.lightPosLoc >= 0) glUniform3f(m_3d.lightPosLoc,
-        m_3d.lightPosition.x, m_3d.lightPosition.y, m_3d.lightPosition.z);
 
     for(int i = 0; i < model.meshCount; ++i) {
         const Mesh& mesh = model.meshes[i];
 
         glActiveTexture(GL_TEXTURE0);
         GLuint texId = m_3d.whiteTexture;
+        const Material* material = nullptr;
+        const Shader* customShader = nullptr;
+        bool hasTexture = false;
 
         if(model.meshMaterial && model.meshMaterial[i] >= 0 && model.meshMaterial[i] < model.materialCount) {
-            const Material& mat = model.materials[model.meshMaterial[i]];
-            if(mat.maps && mat.maps[MATERIAL_MAP_ALBEDO].texture.valid)
-                texId = mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
+            material = &model.materials[model.meshMaterial[i]];
+            customShader = ResolveMaterialShader(material);
+            hasTexture = material->maps && material->maps[MATERIAL_MAP_ALBEDO].texture.valid;
+            if(hasTexture)
+                texId = material->maps[MATERIAL_MAP_ALBEDO].texture.id;
+        }
+
+        if (customShader) {
+            glUseProgram(customShader->id);
+            ApplyMaterialShaderUniforms(*customShader, final, m_3d.viewMatrix, m_3d.projectionMatrix, WHITE, hasTexture);
+        } else {
+            glUseProgram(m_3d.shader3D);
+            if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
+            if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc, 1, 1, 1, 1);
+            if(m_3d.samplerLoc >= 0) glUniform1i(m_3d.samplerLoc, 0);
         }
 
         glBindTexture(GL_TEXTURE_2D, texId);
@@ -2339,17 +2424,7 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
 
 void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Color tint) {
     if (!m_3d.initialized) Init3DState();
-    glUseProgram(m_3d.shader3D);
-
     Mat4 final = ApplyCurrentMatrix(transform);
-
-    if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
-    if(m_3d.samplerLoc >= 0) glUniform1i(m_3d.samplerLoc, 0);
-    if(m_3d.lightPosLoc >= 0) glUniform3f(m_3d.lightPosLoc,
-        m_3d.lightPosition.x, m_3d.lightPosition.y, m_3d.lightPosition.z);
-
-    if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc,
-        tint.r / 255.0f, tint.g / 255.0f, tint.b / 255.0f, tint.a / 255.0f);
 
     for(int i = 0; i < model.meshCount; ++i) {
         const Mesh& mesh = model.meshes[i];
@@ -2357,10 +2432,26 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Col
         glActiveTexture(GL_TEXTURE0);
 
         GLuint texId = m_3d.whiteTexture;
+        const Material* material = nullptr;
+        const Shader* customShader = nullptr;
+        bool hasTexture = false;
         if(model.meshMaterial && model.meshMaterial[i] >= 0 && model.meshMaterial[i] < model.materialCount) {
-            const Material& mat = model.materials[model.meshMaterial[i]];
-            if(mat.maps && mat.maps[MATERIAL_MAP_ALBEDO].texture.valid)
-                texId = mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
+            material = &model.materials[model.meshMaterial[i]];
+            customShader = ResolveMaterialShader(material);
+            hasTexture = material->maps && material->maps[MATERIAL_MAP_ALBEDO].texture.valid;
+            if(hasTexture)
+                texId = material->maps[MATERIAL_MAP_ALBEDO].texture.id;
+        }
+
+        if (customShader) {
+            glUseProgram(customShader->id);
+            ApplyMaterialShaderUniforms(*customShader, final, m_3d.viewMatrix, m_3d.projectionMatrix, tint, hasTexture);
+        } else {
+            glUseProgram(m_3d.shader3D);
+            if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
+            if(m_3d.samplerLoc >= 0) glUniform1i(m_3d.samplerLoc, 0);
+            if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc,
+                tint.r / 255.0f, tint.g / 255.0f, tint.b / 255.0f, tint.a / 255.0f);
         }
 
         glBindTexture(GL_TEXTURE_2D, texId);

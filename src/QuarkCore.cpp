@@ -44,6 +44,24 @@ KeyboardKey gExitKey    = KeyboardKey::Escape;
 Vec2  gMousePreviousPosition{};
 bool  gCursorHidden     = false;
 
+template <typename Fn>
+static void WithShaderProgramBound(const Shader& shader, Fn&& fn) {
+    if (shader.id == 0) return;
+
+    GLint previousProgram = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
+
+    if (static_cast<unsigned int>(previousProgram) != shader.id) {
+        glUseProgram(shader.id);
+    }
+
+    fn();
+
+    if (static_cast<unsigned int>(previousProgram) != shader.id) {
+        glUseProgram(static_cast<unsigned int>(previousProgram));
+    }
+}
+
 const char* ToString(LogLevel level) {
     switch (level) {
         case LogLevel::Trace: return "TRACE";
@@ -1126,81 +1144,85 @@ void SetShaderValue(const Shader& s, int loc, const Color& value) {
 }
 void SetShaderValue(const Shader& s, int loc, const void* value, int uniformType) {
     if (loc < 0 || !value) return;
-
-    switch (uniformType) {
-        case SHADER_UNIFORM_FLOAT:
-            glUniform1f(loc, *reinterpret_cast<const float*>(value));
-            break;
-        case SHADER_UNIFORM_VEC2:
-            glUniform2fv(loc, 1, reinterpret_cast<const float*>(value));
-            break;
-        case SHADER_UNIFORM_VEC3:
-            glUniform3fv(loc, 1, reinterpret_cast<const float*>(value));
-            break;
-        case SHADER_UNIFORM_VEC4:
-            glUniform4fv(loc, 1, reinterpret_cast<const float*>(value));
-            break;
-        case SHADER_UNIFORM_INT:
-            glUniform1i(loc, *reinterpret_cast<const int*>(value));
-            break;
-        case SHADER_UNIFORM_IVEC2:
-            glUniform2iv(loc, 1, reinterpret_cast<const int*>(value));
-            break;
-        case SHADER_UNIFORM_IVEC3:
-            glUniform3iv(loc, 1, reinterpret_cast<const int*>(value));
-            break;
-        case SHADER_UNIFORM_IVEC4:
-            glUniform4iv(loc, 1, reinterpret_cast<const int*>(value));
-            break;
-        case SHADER_UNIFORM_SAMPLER2D:
-            glUniform1i(loc, *reinterpret_cast<const int*>(value));
-            break;
-        default:
-            break;
-    }
+    WithShaderProgramBound(s, [&]() {
+        switch (uniformType) {
+            case SHADER_UNIFORM_FLOAT:
+                glUniform1f(loc, *reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC2:
+                glUniform2fv(loc, 1, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC3:
+                glUniform3fv(loc, 1, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC4:
+                glUniform4fv(loc, 1, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_INT:
+                glUniform1i(loc, *reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC2:
+                glUniform2iv(loc, 1, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC3:
+                glUniform3iv(loc, 1, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC4:
+                glUniform4iv(loc, 1, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_SAMPLER2D:
+                glUniform1i(loc, *reinterpret_cast<const int*>(value));
+                break;
+            default:
+                break;
+        }
+    });
 }
 
 void SetShaderValueV(const Shader& s, int loc, const void* value, int uniformType, int count) {
     if (loc < 0 || !value || count <= 0) return;
-
-    switch (uniformType) {
-        case SHADER_UNIFORM_FLOAT:
-            glUniform1fv(loc, count, reinterpret_cast<const float*>(value));
-            break;
-        case SHADER_UNIFORM_VEC2:
-            glUniform2fv(loc, count, reinterpret_cast<const float*>(value));
-            break;
-        case SHADER_UNIFORM_VEC3:
-            glUniform3fv(loc, count, reinterpret_cast<const float*>(value));
-            break;
-        case SHADER_UNIFORM_VEC4:
-            glUniform4fv(loc, count, reinterpret_cast<const float*>(value));
-            break;
-        case SHADER_UNIFORM_INT:
-            glUniform1iv(loc, count, reinterpret_cast<const int*>(value));
-            break;
-        case SHADER_UNIFORM_IVEC2:
-            glUniform2iv(loc, count, reinterpret_cast<const int*>(value));
-            break;
-        case SHADER_UNIFORM_IVEC3:
-            glUniform3iv(loc, count, reinterpret_cast<const int*>(value));
-            break;
-        case SHADER_UNIFORM_IVEC4:
-            glUniform4iv(loc, count, reinterpret_cast<const int*>(value));
-            break;
-        case SHADER_UNIFORM_SAMPLER2D:
-            glUniform1iv(loc, count, reinterpret_cast<const int*>(value));
-            break;
-        default:
-            break;
-    }
+    WithShaderProgramBound(s, [&]() {
+        switch (uniformType) {
+            case SHADER_UNIFORM_FLOAT:
+                glUniform1fv(loc, count, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC2:
+                glUniform2fv(loc, count, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC3:
+                glUniform3fv(loc, count, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC4:
+                glUniform4fv(loc, count, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_INT:
+                glUniform1iv(loc, count, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC2:
+                glUniform2iv(loc, count, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC3:
+                glUniform3iv(loc, count, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC4:
+                glUniform4iv(loc, count, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_SAMPLER2D:
+                glUniform1iv(loc, count, reinterpret_cast<const int*>(value));
+                break;
+            default:
+                break;
+        }
+    });
 }
 
 void SetShaderValueMatrix(const Shader& s, int loc, const float* m) { gRenderer.SetShaderValueMatrix(s, loc, m); }
 
 void SetShaderValueMatrix(const Shader& s, int loc, const Matrix& mat) {
     if (loc < 0) return;
-    glUniformMatrix4fv(loc, 1, GL_FALSE, mat.m);
+    WithShaderProgramBound(s, [&]() {
+        glUniformMatrix4fv(loc, 1, GL_FALSE, mat.m);
+    });
 }
 
 void SetShaderValueSampler(const Shader& s, int loc, int unit)      { gRenderer.SetShaderValueSampler(s, loc, unit); }
