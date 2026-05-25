@@ -462,6 +462,7 @@ enum class MouseButton {
 
 inline constexpr MouseButton MOUSE_BUTTON_LEFT = MouseButton::Left;
 inline constexpr MouseButton MOUSE_LEFT_BUTTON = MouseButton::Left;
+inline constexpr KeyboardKey KEY_NULL = KeyboardKey::Unknown;
 inline constexpr KeyboardKey KEY_LEFT_CONTROL = KeyboardKey::LeftControl;
 inline constexpr KeyboardKey KEY_RIGHT_CONTROL = KeyboardKey::RightControl;
 

@@ -458,7 +458,8 @@ void PumpSystemEvents() {
         }
         if (sdlEvent.type == SDL_EVENT_KEY_DOWN) {
             gLastKeyPressed = sdlEvent.key.key;
-            if (static_cast<KeyboardKey>(sdlEvent.key.scancode) == gExitKey) {
+            if (gExitKey != KeyboardKey::Unknown &&
+                static_cast<KeyboardKey>(sdlEvent.key.scancode) == gExitKey) {
                 gWin.shouldClose = true;
             }
         }
