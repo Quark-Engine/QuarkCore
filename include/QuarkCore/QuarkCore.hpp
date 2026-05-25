@@ -676,6 +676,10 @@ QCAPI bool WaitEvent(Event& event);
  */
 QCAPI bool WaitEventTimeout(Event& event, int timeoutMs);
 
+using NativeEventCallback = void(*)(const SDL_Event* event);
+
+QCAPI void SetNativeEventCallback(NativeEventCallback callback);
+
 /**
  * @brief Get event type name as string.
  *

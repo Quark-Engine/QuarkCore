@@ -127,6 +127,8 @@ struct Vec2 {
     Vec2(float x, float y) : x(x), y(y) {}
 };
 
+using Vector2 = Vec2;
+
 /**
  * @brief 2D integer vector structure.
  */
@@ -193,6 +195,8 @@ struct Vec3 {
     }
 };
 
+using Vector3 = Vec3;
+
 /**
  * @brief 4D vector structure.
  */
@@ -233,6 +237,8 @@ struct Vec4 {
         return *this;
     }
 };
+
+using Vector4 = Vec4;
 
 /**
  * @brief Bounding box structure.
@@ -476,32 +482,106 @@ struct QCAPI Mat4 {
 
 using Matrix = Mat4;
 
+inline Vec2 Vec2Zero() {
+    return Vec2{0.0f, 0.0f};
+}
+
+inline Vec2 Vec2One() {
+    return Vec2{1.0f, 1.0f};
+}
+
+inline Vec2 Vec2Add(const Vec2& left, const Vec2& right) {
+    return Vec2{left.x + right.x, left.y + right.y};
+}
+
+inline Vec2 Vec2Subtract(const Vec2& left, const Vec2& right) {
+    return Vec2{left.x - right.x, left.y - right.y};
+}
+
+inline Vec2 Vec2Scale(const Vec2& value, float scale) {
+    return Vec2{value.x * scale, value.y * scale};
+}
+
+inline float Vec2Length(const Vec2& value) {
+    return std::sqrt(value.x * value.x + value.y * value.y);
+}
+
+inline Vec2 Vec2Normalize(const Vec2& value) {
+    const float length = Vec2Length(value);
+    if (length <= EPSILON) return value;
+    return Vec2{value.x / length, value.y / length};
+}
+
+inline float Vec2Distance(const Vec2& left, const Vec2& right) {
+    return Vec2Length(Vec2Subtract(left, right));
+}
+
+inline Vec3 Vec3Zero() {
+    return Vec3{0.0f, 0.0f, 0.0f};
+}
+
+inline Vec3 Vec3One() {
+    return Vec3{1.0f, 1.0f, 1.0f};
+}
+
+inline Vec3 Vec3Add(const Vec3& left, const Vec3& right) {
+    return left + right;
+}
+
 inline Mat4 Mat4Identity() {
     return Mat4::identity();
+}
+
+inline Mat4 MatrixIdentity() {
+    return Mat4Identity();
 }
 
 inline Mat4 Mat4Translate(float x, float y, float z) {
     return Mat4::translation(x, y, z);
 }
 
+inline Mat4 MatrixTranslate(float x, float y, float z) {
+    return Mat4Translate(x, y, z);
+}
+
 inline Mat4 Mat4Scale(float x, float y, float z) {
     return Mat4::scale(x, y, z);
+}
+
+inline Mat4 MatrixScale(float x, float y, float z) {
+    return Mat4Scale(x, y, z);
 }
 
 inline Mat4 Mat4RotateXYZ(const Vec3& rotation) {
     return Mat4::rotationX(rotation.x) * Mat4::rotationY(rotation.y) * Mat4::rotationZ(rotation.z);
 }
 
+inline Mat4 MatrixRotateXYZ(const Vec3& rotation) {
+    return Mat4RotateXYZ(rotation);
+}
+
 inline Mat4 Mat4Multiply(const Mat4& left, const Mat4& right) {
     return left * right;
+}
+
+inline Mat4 MatrixMultiply(const Mat4& left, const Mat4& right) {
+    return Mat4Multiply(left, right);
 }
 
 inline Mat4 Mat4Invert(const Mat4& matrix) {
     return matrix.inverted();
 }
 
+inline Mat4 MatrixInvert(const Mat4& matrix) {
+    return Mat4Invert(matrix);
+}
+
 inline Mat4 Mat4Perspective(float fovy, float aspect, float nearPlane, float farPlane) {
     return Mat4::perspective(fovy, aspect, nearPlane, farPlane);
+}
+
+inline Mat4 MatrixPerspective(float fovy, float aspect, float nearPlane, float farPlane) {
+    return Mat4Perspective(fovy, aspect, nearPlane, farPlane);
 }
 
 inline Mat4 Mat4Transpose(const Mat4& matrix) {
@@ -512,6 +592,10 @@ inline Mat4 Mat4Transpose(const Mat4& matrix) {
         }
     }
     return result;
+}
+
+inline Mat4 MatrixTranspose(const Mat4& matrix) {
+    return Mat4Transpose(matrix);
 }
 
 inline Vec3 Vec3Subtract(const Vec3& left, const Vec3& right) {

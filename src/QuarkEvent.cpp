@@ -12,6 +12,10 @@ extern KeyboardKey gExitKey;
 
 namespace {
 
+NativeEventCallback gNativeEventCallback = nullptr;
+
+} // namespace
+
 void ReleaseDropData(SDL_Event& sdlEvent) {
     if ((sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) &&
         sdlEvent.drop.data != nullptr) {
@@ -19,8 +23,6 @@ void ReleaseDropData(SDL_Event& sdlEvent) {
         sdlEvent.drop.data = nullptr;
     }
 }
-
-} // namespace
 
 EventType TranslateEventType(Uint32 type) {
     switch (type) {
@@ -436,6 +438,9 @@ void PumpSystemEvents() {
 
     SDL_Event sdlEvent;
     while (SDL_PollEvent(&sdlEvent)) {
+        if (gNativeEventCallback != nullptr) {
+            gNativeEventCallback(&sdlEvent);
+        }
         gWin.nativeEvent = sdlEvent;
         if ((gWin.nativeEvent.type == SDL_EVENT_DROP_FILE || gWin.nativeEvent.type == SDL_EVENT_DROP_TEXT) &&
             gWin.nativeEvent.drop.data != nullptr) {
@@ -499,6 +504,10 @@ bool WaitEvent(Event& event) {
         return false;
     }
 
+    if (gNativeEventCallback != nullptr) {
+        gNativeEventCallback(&sdlEvent);
+    }
+
     if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
         if (sdlEvent.drop.data != nullptr)
             gWin.droppedFiles.emplace_back(std::string(sdlEvent.drop.data));
@@ -528,6 +537,10 @@ bool WaitEvent(Event& event, int timeoutMs) {
         return false;
     }
 
+    if (gNativeEventCallback != nullptr) {
+        gNativeEventCallback(&sdlEvent);
+    }
+
     if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
         if (sdlEvent.drop.data != nullptr)
             gWin.droppedFiles.emplace_back(std::string(sdlEvent.drop.data));
@@ -547,6 +560,10 @@ bool WaitEvent(Event& event, int timeoutMs) {
     event = TranslateEvent(sdlEvent);
     ReleaseDropData(sdlEvent);
     return true;
+}
+
+void SetNativeEventCallback(NativeEventCallback callback) {
+    gNativeEventCallback = callback;
 }
 
 const char* GetEventTypeName(EventType type) {

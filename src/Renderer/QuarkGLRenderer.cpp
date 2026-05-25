@@ -2381,7 +2381,7 @@ void  QuarkGLRenderer::DrawModel(const Model& model, const Vec3& pos, float scal
 
 void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
     if (!m_3d.initialized) Init3DState();
-    Mat4 final = ApplyCurrentMatrix(transform);
+    Mat4 final = ApplyCurrentMatrix(transform * model.transform);
 
     for(int i = 0; i < model.meshCount; ++i) {
         const Mesh& mesh = model.meshes[i];
@@ -2424,7 +2424,7 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
 
 void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Color tint) {
     if (!m_3d.initialized) Init3DState();
-    Mat4 final = ApplyCurrentMatrix(transform);
+    Mat4 final = ApplyCurrentMatrix(transform * model.transform);
 
     for(int i = 0; i < model.meshCount; ++i) {
         const Mesh& mesh = model.meshes[i];
