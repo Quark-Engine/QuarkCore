@@ -515,6 +515,10 @@ bool ImGui_ImplQc_ProcessEvents() {
             io.AddMousePosEvent(pos.x, pos.y);
         }
 
+        qc::Vec2 wheel = qc::GetMouseWheelMoveV();
+        if (wheel.x != 0.0f || wheel.y != 0.0f)
+            io.AddMouseWheelEvent(wheel.x, wheel.y);
+
         auto setMouseEvent = [&io](qc::MouseButton button, ImGuiMouseButton imguiButton) {
             if (qc::IsMouseButtonPressed(button))
                 io.AddMouseButtonEvent(imguiButton, true);
