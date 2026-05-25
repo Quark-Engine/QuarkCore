@@ -96,12 +96,12 @@ if(WIN32)
     )
 elseif(APPLE)
     set_target_properties(assimp::assimp PROPERTIES
-        IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimp.6.0.5.dylib"
+        IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimpd.6.0.5.dylib"
         IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.6.0.5.dylib"
     )
 else()
     set_target_properties(assimp::assimp PROPERTIES
-        IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimp.so.6.0.5"
+        IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimpd.so.6.0.5"
         IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.so.6.0.5"
     )
 endif()
