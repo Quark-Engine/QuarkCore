@@ -35,15 +35,9 @@ if(WIN32)
     target_link_libraries(Vulkan::Vulkan INTERFACE "${VULKAN_LIB_PATH}")
     set(VULKAN_RUNTIME_DLL "${VULKAN_DLL_PATH}" CACHE FILEPATH "" FORCE)
 else()
-    find_library(VULKAN_LOADER_LIB
-        NAMES vulkan vulkan-1
-        HINTS "${VULKAN_EXTERNAL_DIR}/lib"
-    )
-    if(VULKAN_LOADER_LIB)
-        target_link_libraries(Vulkan::Vulkan INTERFACE "${VULKAN_LOADER_LIB}")
-    else()
-        target_link_libraries(Vulkan::Vulkan INTERFACE -lvulkan)
-    endif()
+    find_package(Vulkan REQUIRED)
+    target_link_libraries(Vulkan::Vulkan INTERFACE Vulkan::Vulkan)
+    target_include_directories(Vulkan::Vulkan INTERFACE ${Vulkan_INCLUDE_DIRS})
 endif()
 
 set(SDL3_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
@@ -125,7 +119,7 @@ elseif(APPLE)
     )
 else()
     set_target_properties(freetype PROPERTIES
-        IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetype.so.6.20.6"
+        IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.so.6.20.6"
         IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.so.6.20.6"
     )
 endif()
@@ -134,7 +128,8 @@ set(GLAD_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/glad")
 
 add_library(glad STATIC "${GLAD_EXTERNAL_DIR}/src/glad.c")
 target_include_directories(glad PUBLIC "${GLAD_EXTERNAL_DIR}/include")
-target_compile_options(glad PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>)
+target_compile_options(glad PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>, /w, -w>)
+set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 find_package(OpenGL REQUIRED)
 
