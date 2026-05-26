@@ -36,8 +36,6 @@ if(WIN32)
     set(VULKAN_RUNTIME_DLL "${VULKAN_DLL_PATH}" CACHE FILEPATH "" FORCE)
 else()
     find_package(Vulkan REQUIRED)
-    target_link_libraries(Vulkan::Vulkan INTERFACE Vulkan::Vulkan)
-    target_include_directories(Vulkan::Vulkan INTERFACE ${Vulkan_INCLUDE_DIRS})
 endif()
 
 set(SDL3_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
