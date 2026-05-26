@@ -14,12 +14,12 @@ function(qc_lib_dir OUT_VAR LIB_NAME)
     set(${OUT_VAR} "$<IF:$<CONFIG:Debug>,${BASE}/debug,${BASE}/release>" PARENT_SCOPE)
 endfunction()
 
-set(VULKAN_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/Vulkan")
-
-add_library(Vulkan::Vulkan INTERFACE IMPORTED GLOBAL)
-target_include_directories(Vulkan::Vulkan INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
-
 if(WIN32)
+    set(VULKAN_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/Vulkan")
+
+    add_library(Vulkan::Vulkan INTERFACE IMPORTED GLOBAL)
+    target_include_directories(Vulkan::Vulkan INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
+
     set(VULKAN_LIB_PATH "${VULKAN_EXTERNAL_DIR}/lib/vulkan-1.lib")
     set(VULKAN_DLL_PATH "${VULKAN_EXTERNAL_DIR}/lib/vulkan-1.dll")
 
@@ -163,7 +163,7 @@ target_link_libraries(QuarkCore
         OpenGL::GL
         assimp::assimp
         freetype
-        Vulkan::Vulkan
+        $<IF:$<PLATFORM_ID:Windows>,Vulkan::Vulkan,Vulkan::Vulkan>
 )
 
 set_target_properties(QuarkCore PROPERTIES UNITY_BUILD ON)
