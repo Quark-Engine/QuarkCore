@@ -386,6 +386,19 @@ struct QCAPI Mat4 {
         return result;
     }
 
+    static Mat4 ortho(float left, float right, float bottom, float top, float near, float far) {
+        Mat4 result;
+        result.m[0]  =  2.0f / (right - left);
+        result.m[5]  =  2.0f / (top - bottom);
+        result.m[10] = -2.0f / (far - near);
+        result.m[12] = -(right + left) / (right - left);
+        result.m[13] = -(top + bottom) / (top - bottom);
+        result.m[14] = -(far + near) / (far - near);
+        result.m[15] =  1.0f;
+        return result;
+
+    }
+
     Mat4 inverted() const {
         Mat4 result{};
 
