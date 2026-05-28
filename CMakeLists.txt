@@ -57,8 +57,8 @@ elseif(APPLE)
     )
 else()
     set_target_properties(SDL3::SDL3 PROPERTIES
-        IMPORTED_LOCATION
-        "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
+        IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.so.0.4.8"
+        IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
     )
 endif()
 
@@ -93,8 +93,8 @@ elseif(APPLE)
     )
 else()
     set_target_properties(assimp::assimp PROPERTIES
-        IMPORTED_LOCATION
-        "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.so.6.0.5"
+        IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimpd.so.6.0.5"
+        IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.so.6.0.5"
     )
 endif()
 
@@ -117,8 +117,8 @@ elseif(APPLE)
     )
 else()
     set_target_properties(freetype PROPERTIES
-        IMPORTED_LOCATION
-        "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.so.6.20.6"
+        IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.so.6.20.6"
+        IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.so.6.20.6"
     )
 endif()
 
@@ -203,7 +203,6 @@ if(QC_BUILD_EXAMPLES)
         list(GET EXAMPLE_TARGETS ${i} _target)
         list(GET EXAMPLE_SOURCES ${i} _source)
 
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,'$ORIGIN'")
         add_executable(${_target} ${_source})
         target_link_libraries(${_target} PRIVATE QuarkCore)
         set_target_properties(${_target} PROPERTIES UNITY_BUILD ON)
