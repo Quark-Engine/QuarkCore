@@ -199,13 +199,6 @@ if(QC_BUILD_EXAMPLES)
 
     list(LENGTH EXAMPLE_TARGETS _count)
     math(EXPR _last "${_count} - 1")
-    foreach(_dll ${_RUNTIME_DLLS})
-        add_custom_command(TARGET ${_target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${_dll}
-                $<TARGET_FILE_DIR:${_target}>
-        )
-    endforeach()
 
     if(WIN32)
         set(_RUNTIME_DLLS
@@ -230,13 +223,22 @@ if(QC_BUILD_EXAMPLES)
             list(GET EXAMPLE_SOURCES ${i} _source)
 
             add_executable(${_target} ${_source})
-
             target_link_libraries(${_target} PRIVATE QuarkCore)
-                add_custom_command(TARGET ${_target} POST_BUILD
+
+            add_custom_command(TARGET ${_target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     $<TARGET_FILE:QuarkCore>
                     $<TARGET_FILE_DIR:${_target}>
             )
+
+            foreach(_dll IN LISTS _RUNTIME_DLLS)
+                add_custom_command(TARGET ${_target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${_dll}
+                        $<TARGET_FILE_DIR:${_target}>
+                )
+            endforeach()
+
         endforeach()
     endif()
 endif()
