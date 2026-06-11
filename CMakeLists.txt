@@ -49,6 +49,8 @@ if(WIN32)
         IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.lib"
         IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
         IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
     )
 elseif(APPLE)
     set_target_properties(SDL3::SDL3 PROPERTIES
@@ -71,6 +73,8 @@ if(WIN32)
     set_target_properties(ZLIB::ZLIB PROPERTIES
         IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.lib"
         IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.lib"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
     )
 endif()
 
@@ -85,6 +89,8 @@ if(WIN32)
         IMPORTED_IMPLIB_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.lib"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll"
         IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.dll"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
     )
 elseif(APPLE)
     set_target_properties(assimp::assimp PROPERTIES
@@ -109,6 +115,8 @@ if(WIN32)
         IMPORTED_IMPLIB_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.lib"
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll"
         IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.dll"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
     )
 elseif(APPLE)
     set_target_properties(freetype PROPERTIES
@@ -164,9 +172,10 @@ target_link_libraries(QuarkCore
         assimp::assimp
         freetype
         $<IF:$<PLATFORM_ID:Windows>,Vulkan::Vulkan,Vulkan::Vulkan>
+        Vulkan::Vulkan
 )
 
-set_target_properties(QuarkCore PROPERTIES UNITY_BUILD ON)
+set_target_properties(QuarkCore PROPERTIES UNITY_BUILD OFF)
 
 if(MSVC)
     target_compile_options(QuarkCore PRIVATE /W4 /permissive- /MP)

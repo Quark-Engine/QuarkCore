@@ -45,8 +45,14 @@ struct ImageFileData {
     std::vector<uint8_t> pixels;
 };
 
+extern WindowState gWin;
+
 QCAPI bool LoadImageFile(const char* path, ImageFileData& out, int desiredChannels = 4);
 
+void EnsureInitialized();
 void PumpSystemEvents();
+void UpdateInputFromEvents();
+void CopyText(char* dst, size_t size, const char* src);
+void WriteLog(LogLevel level, const char* type, const std::string& message);
 
 } // namespace qc
