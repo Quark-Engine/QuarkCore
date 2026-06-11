@@ -199,13 +199,12 @@ if(QC_BUILD_EXAMPLES)
 
     list(LENGTH EXAMPLE_TARGETS _count)
     math(EXPR _last "${_count} - 1")
-    foreach(i RANGE ${_last})
-        list(GET EXAMPLE_TARGETS ${i} _target)
-        list(GET EXAMPLE_SOURCES ${i} _source)
-
-        add_executable(${_target} ${_source})
-        target_link_libraries(${_target} PRIVATE QuarkCore)
-        set_target_properties(${_target} PROPERTIES UNITY_BUILD ON)
+    foreach(_dll ${_RUNTIME_DLLS})
+        add_custom_command(TARGET ${_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${_dll}
+                $<TARGET_FILE_DIR:${_target}>
+        )
     endforeach()
 
     if(WIN32)
@@ -223,13 +222,20 @@ if(QC_BUILD_EXAMPLES)
             COMMENT "Copying DLLs next to QuarkCore..."
         )
 
-        foreach(_target ${EXAMPLE_TARGETS})
-            add_custom_command(TARGET ${_target} POST_BUILD
+        list(LENGTH EXAMPLE_TARGETS _count)
+        math(EXPR _last "${_count} - 1")
+
+        foreach(i RANGE ${_last})
+            list(GET EXAMPLE_TARGETS ${i} _target)
+            list(GET EXAMPLE_SOURCES ${i} _source)
+
+            add_executable(${_target} ${_source})
+
+            target_link_libraries(${_target} PRIVATE QuarkCore)
+                add_custom_command(TARGET ${_target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     $<TARGET_FILE:QuarkCore>
-                    ${_RUNTIME_DLLS}
                     $<TARGET_FILE_DIR:${_target}>
-                COMMENT "Copying DLLs for ${_target}..."
             )
         endforeach()
     endif()
