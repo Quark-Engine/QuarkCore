@@ -18,7 +18,7 @@
         * Camera and matrix stack
 
     Backend:
-        * OpenGL (via GLEW)
+        * OpenGL (via glad)
         * SDL3 (context creation)
         * FreeType (font rasterization)
         * Assimp (model loading)
