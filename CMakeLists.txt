@@ -45,6 +45,7 @@ target_include_directories(SDL3::SDL3 INTERFACE "${SDL3_EXTERNAL_DIR}/include")
 
 if(MSVC)
     set_target_properties(SDL3::SDL3 PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
         IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.lib"
         IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.lib"
         IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
@@ -54,6 +55,7 @@ if(MSVC)
     )
 elseif(WIN32)
     set_target_properties(SDL3::SDL3 PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
         IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.dll.a"
         IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.dll.a"
         IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
@@ -63,11 +65,15 @@ elseif(WIN32)
     )
 elseif(APPLE)
     set_target_properties(SDL3::SDL3 PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_LOCATION "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.0.dylib"
         IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.0.dylib"
         IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.0.dylib"
     )
 else()
     set_target_properties(SDL3::SDL3 PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_LOCATION "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
         IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.so.0.4.8"
         IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
     )
@@ -80,6 +86,7 @@ target_include_directories(ZLIB::ZLIB INTERFACE "${ZLIB_EXTERNAL_DIR}/include")
 
 if(MSVC)
     set_target_properties(ZLIB::ZLIB PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
         IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.lib"
         IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.lib"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
@@ -87,6 +94,7 @@ if(MSVC)
     )
 elseif(WIN32)
     set_target_properties(ZLIB::ZLIB PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
         IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.a"
         IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.a"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
@@ -101,6 +109,7 @@ target_include_directories(assimp::assimp INTERFACE "${ASSIMP_EXTERNAL_DIR}/incl
 
 if(MSVC)
     set_target_properties(assimp::assimp PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
         IMPORTED_IMPLIB_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.lib"
         IMPORTED_IMPLIB_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.lib"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll"
@@ -110,6 +119,7 @@ if(MSVC)
     )
 elseif(WIN32)
     set_target_properties(assimp::assimp PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
         IMPORTED_IMPLIB_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimpd.dll.a"
         IMPORTED_IMPLIB_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.dll.a"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll"
@@ -119,11 +129,15 @@ elseif(WIN32)
     )
 elseif(APPLE)
     set_target_properties(assimp::assimp PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_LOCATION "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.6.0.5.dylib"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimpd.6.0.5.dylib"
         IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.6.0.5.dylib"
     )
 else()
     set_target_properties(assimp::assimp PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_LOCATION "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.so.6.0.5"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimpd.so.6.0.5"
         IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.so.6.0.5"
     )
@@ -136,6 +150,7 @@ target_include_directories(freetype INTERFACE "${FREETYPE_EXTERNAL_DIR}/include"
 
 if(MSVC)
     set_target_properties(freetype PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
         IMPORTED_IMPLIB_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.lib"
         IMPORTED_IMPLIB_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.lib"
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll"
@@ -145,6 +160,7 @@ if(MSVC)
     )
 elseif(WIN32)
     set_target_properties(freetype PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
         IMPORTED_IMPLIB_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.dll.a"
         IMPORTED_IMPLIB_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.dll.a"
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll"
@@ -154,13 +170,17 @@ elseif(WIN32)
     )
 elseif(APPLE)
     set_target_properties(freetype PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_LOCATION "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.6.20.6.dylib"
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.6.20.6.dylib"
         IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.6.20.6.dylib"
     )
 else()
     set_target_properties(freetype PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_LOCATION "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.so.6.20.6"
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.so.6.20.6"
-        IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetyped.so.6.20.6"
+        IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.so.6.20.6"
     )
 endif()
 
