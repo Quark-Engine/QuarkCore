@@ -43,10 +43,19 @@ set(SDL3_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
 add_library(SDL3::SDL3 SHARED IMPORTED GLOBAL)
 target_include_directories(SDL3::SDL3 INTERFACE "${SDL3_EXTERNAL_DIR}/include")
 
-if(WIN32)
+if(MSVC)
     set_target_properties(SDL3::SDL3 PROPERTIES
         IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.lib"
         IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.lib"
+        IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
+        IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+    )
+elseif(WIN32)
+    set_target_properties(SDL3::SDL3 PROPERTIES
+        IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.dll.a"
+        IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.dll.a"
         IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
         IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
@@ -69,10 +78,17 @@ set(ZLIB_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
 add_library(ZLIB::ZLIB STATIC IMPORTED GLOBAL)
 target_include_directories(ZLIB::ZLIB INTERFACE "${ZLIB_EXTERNAL_DIR}/include")
 
-if(WIN32)
+if(MSVC)
     set_target_properties(ZLIB::ZLIB PROPERTIES
         IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.lib"
         IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.lib"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+    )
+elseif(WIN32)
+    set_target_properties(ZLIB::ZLIB PROPERTIES
+        IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.a"
+        IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.a"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
         MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
     )
@@ -83,10 +99,19 @@ set(ASSIMP_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
 add_library(assimp::assimp SHARED IMPORTED GLOBAL)
 target_include_directories(assimp::assimp INTERFACE "${ASSIMP_EXTERNAL_DIR}/include")
 
-if(WIN32)
+if(MSVC)
     set_target_properties(assimp::assimp PROPERTIES
         IMPORTED_IMPLIB_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.lib"
         IMPORTED_IMPLIB_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.lib"
+        IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll"
+        IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.dll"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+    )
+elseif(WIN32)
+    set_target_properties(assimp::assimp PROPERTIES
+        IMPORTED_IMPLIB_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimpd.dll.a"
+        IMPORTED_IMPLIB_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.dll.a"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll"
         IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.dll"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
@@ -109,10 +134,19 @@ set(FREETYPE_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/freetype")
 add_library(freetype SHARED IMPORTED GLOBAL)
 target_include_directories(freetype INTERFACE "${FREETYPE_EXTERNAL_DIR}/include")
 
-if(WIN32)
+if(MSVC)
     set_target_properties(freetype PROPERTIES
         IMPORTED_IMPLIB_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.lib"
         IMPORTED_IMPLIB_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.lib"
+        IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll"
+        IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.dll"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+    )
+elseif(WIN32)
+    set_target_properties(freetype PROPERTIES
+        IMPORTED_IMPLIB_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.dll.a"
+        IMPORTED_IMPLIB_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.dll.a"
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll"
         IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.dll"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
@@ -126,7 +160,7 @@ elseif(APPLE)
 else()
     set_target_properties(freetype PROPERTIES
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.so.6.20.6"
-        IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.so.6.20.6"
+        IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetyped.so.6.20.6"
     )
 endif()
 
@@ -211,9 +245,9 @@ if(QC_BUILD_EXAMPLES)
 
     if(WIN32)
         set(_RUNTIME_DLLS
-            $<TARGET_FILE:SDL3::SDL3>
-            $<TARGET_FILE:assimp::assimp>
-            $<TARGET_FILE:freetype>
+            $<IF:$<CONFIG:Debug>,${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll,${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll>
+            $<IF:$<CONFIG:Debug>,${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll,${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.dll>
+            $<IF:$<CONFIG:Debug>,${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll,${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.dll>
             "${VULKAN_RUNTIME_DLL}"
         )
 
