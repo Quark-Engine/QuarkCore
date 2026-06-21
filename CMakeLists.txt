@@ -7,6 +7,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(QC_BUILD_EXAMPLES "Build QuarkCore examples" ON)
 
+set(CMAKE_SKIP_BUILD_RPATH FALSE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+if(APPLE)
+    set(CMAKE_INSTALL_RPATH "@loader_path")
+elseif(UNIX)
+    set(CMAKE_INSTALL_RPATH "$ORIGIN")
+endif()
+
 function(qc_lib_dir OUT_VAR LIB_NAME)
     set(BASE "${CMAKE_CURRENT_SOURCE_DIR}/external/${LIB_NAME}/lib")
     set(${OUT_VAR}_DEBUG   "${BASE}/debug"   PARENT_SCOPE)
@@ -231,6 +240,13 @@ target_link_libraries(QuarkCore
 
 set_target_properties(QuarkCore PROPERTIES UNITY_BUILD OFF)
 
+if(UNIX)
+    set_target_properties(QuarkCore PROPERTIES
+        BUILD_RPATH "$ORIGIN"
+        INSTALL_RPATH "$ORIGIN"
+    )
+endif()
+
 if(MSVC)
     target_compile_options(QuarkCore PRIVATE /W4 /permissive- /MP)
 else()
@@ -302,6 +318,32 @@ if(QC_BUILD_EXAMPLES)
                 )
             endforeach()
 
+        endforeach()
+    else()
+        set(_RUNTIME_LIBS
+            $<TARGET_FILE:assimp::assimp>
+            $<TARGET_FILE:freetype>
+            $<TARGET_FILE:SDL3::SDL3>
+        )
+
+        foreach(i RANGE ${_last})
+            list(GET EXAMPLE_TARGETS ${i} _target)
+            list(GET EXAMPLE_SOURCES ${i} _source)
+
+            add_executable(${_target} ${_source})
+            target_link_libraries(${_target} PRIVATE QuarkCore)
+
+            set_target_properties(${_target} PROPERTIES
+                BUILD_RPATH "$ORIGIN"
+                INSTALL_RPATH "$ORIGIN"
+            )
+
+            add_custom_command(TARGET ${_target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:QuarkCore>
+                    ${_RUNTIME_LIBS}
+                    $<TARGET_FILE_DIR:${_target}>
+            )
         endforeach()
     endif()
 endif()
