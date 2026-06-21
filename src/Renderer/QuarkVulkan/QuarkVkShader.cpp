@@ -83,4 +83,20 @@ void QuarkVkRenderer::SetShaderValueSampler(const Shader& shader, int locIndex, 
     (void)shader; (void)locIndex; (void)textureUnit;
 }
 
+void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const void* value, int uniformType) {
+    (void)shader; (void)locIndex; (void)value; (void)uniformType;
+}
+
+void QuarkVkRenderer::SetShaderValueV(const Shader& shader, int locIndex, const void* value, int uniformType, int count) {
+    (void)shader; (void)locIndex; (void)value; (void)uniformType; (void)count;
+}
+
+void QuarkVkRenderer::SetShaderValueMatrix(const Shader& shader, int locIndex, const Matrix& mat) {
+    (void)shader; (void)locIndex; (void)mat;
+}
+
+void QuarkVkRenderer::SetShaderValueTexture(const Shader& shader, int locIndex, const ITexture& texture) {
+    (void)shader; (void)locIndex; (void)texture;
+}
+
 }; // namespace qc

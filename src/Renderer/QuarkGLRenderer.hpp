@@ -136,6 +136,10 @@ public:
     void   SetShaderValue(const Shader& shader, int locIndex, const qc::Vec4& value) override;
     void   SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat) override;
     void   SetShaderValueSampler(const Shader& sfhader, int locIndex, int textureUnit) override;
+    void   SetShaderValue(const Shader& shader, int locIndex, const void* value, int uniformType) override;
+    void   SetShaderValueV(const Shader& shader, int locIndex, const void* value, int uniformType, int count) override;
+    void   SetShaderValueMatrix(const Shader& shader, int locIndex, const Matrix& mat) override;
+    void   SetShaderValueTexture(const Shader& shader, int locIndex, const ITexture& texture) override;
 
     void BeginMode2D(const Camera2D& camera) override;
     void EndMode2D() override;

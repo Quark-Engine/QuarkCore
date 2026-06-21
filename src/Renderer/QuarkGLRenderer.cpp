@@ -1252,6 +1252,94 @@ void QuarkGLRenderer::SetShaderValueSampler(const Shader& shader, int loc, int u
     });
 }
 
+void QuarkGLRenderer::SetShaderValue(const Shader& s, int loc, const void* value, int uniformType) {
+    if (loc < 0 || !value) return;
+    WithShaderProgram(s, [&]() {
+        switch (uniformType) {
+            case SHADER_UNIFORM_FLOAT:
+                glUniform1f(loc, *reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC2:
+                glUniform2fv(loc, 1, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC3:
+                glUniform3fv(loc, 1, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC4:
+                glUniform4fv(loc, 1, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_INT:
+                glUniform1i(loc, *reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC2:
+                glUniform2iv(loc, 1, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC3:
+                glUniform3iv(loc, 1, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC4:
+                glUniform4iv(loc, 1, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_SAMPLER2D:
+                glUniform1i(loc, *reinterpret_cast<const int*>(value));
+                break;
+            default:
+                break;
+        }
+    });
+}
+
+void QuarkGLRenderer::SetShaderValueV(const Shader& s, int loc, const void* value, int uniformType, int count) {
+    if (loc < 0 || !value || count <= 0) return;
+    WithShaderProgram(s, [&]() {
+        switch (uniformType) {
+            case SHADER_UNIFORM_FLOAT:
+                glUniform1fv(loc, count, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC2:
+                glUniform2fv(loc, count, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC3:
+                glUniform3fv(loc, count, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_VEC4:
+                glUniform4fv(loc, count, reinterpret_cast<const float*>(value));
+                break;
+            case SHADER_UNIFORM_INT:
+                glUniform1iv(loc, count, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC2:
+                glUniform2iv(loc, count, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC3:
+                glUniform3iv(loc, count, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_IVEC4:
+                glUniform4iv(loc, count, reinterpret_cast<const int*>(value));
+                break;
+            case SHADER_UNIFORM_SAMPLER2D:
+                glUniform1iv(loc, count, reinterpret_cast<const int*>(value));
+                break;
+            default:
+                break;
+        }
+    });
+}
+
+void QuarkGLRenderer::SetShaderValueMatrix(const Shader& s, int loc, const Matrix& mat) {
+    if (loc < 0) return;
+    WithShaderProgram(s, [&]() {
+        glUniformMatrix4fv(loc, 1, GL_FALSE, mat.m);
+    });
+}
+
+void QuarkGLRenderer::SetShaderValueTexture(const Shader& s, int loc, const ITexture& texture) {
+    if (loc < 0) return;
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+    SetShaderValueSampler(s, loc, 0);
+}
+
 void QuarkGLRenderer::BeginMode2D(const Camera2D& cam) {
     m_camera2D = cam;
     m_camera2DActive = true;

@@ -142,6 +142,11 @@ public:
     virtual void SetShaderValueMatrix([[maybe_unused]] const Shader& shader, int locIndex, const float* mat) = 0;
     virtual void SetShaderValueSampler([[maybe_unused]] const Shader& shader, int locIndex, int textureUnit) = 0;
 
+    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const void* value, int uniformType) = 0;
+    virtual void SetShaderValueV([[maybe_unused]] const Shader& shader, int locIndex, const void* value, int uniformType, int count) = 0;
+    virtual void SetShaderValueMatrix([[maybe_unused]] const Shader& shader, int locIndex, const Matrix& mat) = 0;
+    virtual void SetShaderValueTexture([[maybe_unused]] const Shader& shader, int locIndex, const ITexture& texture) = 0;
+
 
 
     virtual RendererType GetType() const = 0;
