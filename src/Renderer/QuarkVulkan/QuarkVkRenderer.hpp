@@ -362,6 +362,33 @@ private:
                   float u1 = 1.f, float v1 = 1.f);
     void EnsureBatchTexture(VkDescriptorSet ds);
 
+    struct GlyphData {
+        Rectangle uv{};
+        float     advanceX = 0.f;
+        float     offsetX  = 0.f;
+        float     offsetY  = 0.f;
+        int       width    = 0;
+        int       height   = 0;
+    };
+
+    struct FontData {
+        uint32_t atlasTextureId = 0;
+        int      baseSize        = 0;
+        int      ascent          = 0;
+        int      descent         = 0;
+        int      lineHeight      = 0;
+        int      lineGap         = 0;
+        GlyphData glyphs[95]{};
+    };
+
+    bool     LoadFontInternal(const char* filePath, int pointSize, FontData& out);
+    uint32_t EnsureDefaultFont();
+    const FontData* GetFontData(IFont font) const;
+    void DrawTextWithFontData(const FontData& fd, const char* text,
+                              Vec2 position, float fontSize, float spacing, Color tint);
+    Vec2 MeasureTextWithFontData(const FontData& fd, const char* text,
+                                 float fontSize, float spacing) const;
+
     SDL_Window* m_window    = nullptr;
     int         m_width     = 0;
     int         m_height    = 0;
@@ -407,6 +434,9 @@ private:
 
     uint32_t                                   m_nextTextureId = 1;
     std::unordered_map<uint32_t, VkTextureData> m_textures;
+    std::unordered_map<uint32_t, FontData>      m_fonts;
+    uint32_t                                   m_nextFontId = 1;
+    uint32_t                                   m_defaultFontId = 0;
 
     uint32_t                                         m_nextRenderTargetId = 1;
     std::unordered_map<uint32_t, VkRenderTargetData> m_renderTargets;
