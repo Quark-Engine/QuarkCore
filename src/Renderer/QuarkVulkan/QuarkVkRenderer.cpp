@@ -1,8 +1,10 @@
 #include "QuarkVkRenderer.hpp"
 
 #include <SDL3/SDL_vulkan.h>
+#include <cstddef>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <set>
@@ -18,6 +20,400 @@ static const std::vector<const char*> kDeviceExtensions = {
 static float NormalizeColorComponent(std::uint8_t value) {
     return static_cast<float>(value) / 255.0f;
 }
+
+static const std::array<uint32_t, 367> kQuadVertSpv = {
+    0x07230203,
+    0x00010500,
+    0x0008000B,
+    0x00000031,
+    0x00000000,
+    0x00020011,
+    0x00000001,
+    0x0006000B,
+    0x00000001,
+    0x4C534C47,
+    0x6474732E,
+    0x3035342E,
+    0x00000000,
+    0x0003000E,
+    0x00000000,
+    0x00000001,
+    0x000C000F,
+    0x00000000,
+    0x00000004,
+    0x6E69616D,
+    0x00000000,
+    0x0000000B,
+    0x0000000F,
+    0x00000021,
+    0x0000002A,
+    0x0000002B,
+    0x0000002D,
+    0x0000002F,
+    0x00030003,
+    0x00000002,
+    0x000001C2,
+    0x00040005,
+    0x00000004,
+    0x6E69616D,
+    0x00000000,
+    0x00030005,
+    0x00000009,
+    0x0063646E,
+    0x00040005,
+    0x0000000B,
+    0x736F5061,
+    0x00000000,
+    0x00060005,
+    0x0000000D,
+    0x68737550,
+    0x736E6F43,
+    0x746E6174,
+    0x00000073,
+    0x00060006,
+    0x0000000D,
+    0x00000000,
+    0x65726373,
+    0x69536E65,
+    0x0000657A,
+    0x00030005,
+    0x0000000F,
+    0x00006370,
+    0x00060005,
+    0x0000001F,
+    0x505F6C67,
+    0x65567265,
+    0x78657472,
+    0x00000000,
+    0x00060006,
+    0x0000001F,
+    0x00000000,
+    0x505F6C67,
+    0x7469736F,
+    0x006E6F69,
+    0x00070006,
+    0x0000001F,
+    0x00000001,
+    0x505F6C67,
+    0x746E696F,
+    0x657A6953,
+    0x00000000,
+    0x00070006,
+    0x0000001F,
+    0x00000002,
+    0x435F6C67,
+    0x4470696C,
+    0x61747369,
+    0x0065636E,
+    0x00070006,
+    0x0000001F,
+    0x00000003,
+    0x435F6C67,
+    0x446C6C75,
+    0x61747369,
+    0x0065636E,
+    0x00030005,
+    0x00000021,
+    0x00000000,
+    0x00030005,
+    0x0000002A,
+    0x00565576,
+    0x00030005,
+    0x0000002B,
+    0x00565561,
+    0x00040005,
+    0x0000002D,
+    0x6C6F4376,
+    0x0000726F,
+    0x00040005,
+    0x0000002F,
+    0x6C6F4361,
+    0x0000726F,
+    0x00040047,
+    0x0000000B,
+    0x0000001E,
+    0x00000000,
+    0x00030047,
+    0x0000000D,
+    0x00000002,
+    0x00050048,
+    0x0000000D,
+    0x00000000,
+    0x00000023,
+    0x00000000,
+    0x00030047,
+    0x0000001F,
+    0x00000002,
+    0x00050048,
+    0x0000001F,
+    0x00000000,
+    0x0000000B,
+    0x00000000,
+    0x00050048,
+    0x0000001F,
+    0x00000001,
+    0x0000000B,
+    0x00000001,
+    0x00050048,
+    0x0000001F,
+    0x00000002,
+    0x0000000B,
+    0x00000003,
+    0x00050048,
+    0x0000001F,
+    0x00000003,
+    0x0000000B,
+    0x00000004,
+    0x00040047,
+    0x0000002A,
+    0x0000001E,
+    0x00000000,
+    0x00040047,
+    0x0000002B,
+    0x0000001E,
+    0x00000001,
+    0x00040047,
+    0x0000002D,
+    0x0000001E,
+    0x00000001,
+    0x00040047,
+    0x0000002F,
+    0x0000001E,
+    0x00000002,
+    0x00020013,
+    0x00000002,
+    0x00030021,
+    0x00000003,
+    0x00000002,
+    0x00030016,
+    0x00000006,
+    0x00000020,
+    0x00040017,
+    0x00000007,
+    0x00000006,
+    0x00000002,
+    0x00040020,
+    0x00000008,
+    0x00000007,
+    0x00000007,
+    0x00040020,
+    0x0000000A,
+    0x00000001,
+    0x00000007,
+    0x0004003B,
+    0x0000000A,
+    0x0000000B,
+    0x00000001,
+    0x0003001E,
+    0x0000000D,
+    0x00000007,
+    0x00040020,
+    0x0000000E,
+    0x00000009,
+    0x0000000D,
+    0x0004003B,
+    0x0000000E,
+    0x0000000F,
+    0x00000009,
+    0x00040015,
+    0x00000010,
+    0x00000020,
+    0x00000001,
+    0x0004002B,
+    0x00000010,
+    0x00000011,
+    0x00000000,
+    0x00040020,
+    0x00000012,
+    0x00000009,
+    0x00000007,
+    0x0004002B,
+    0x00000006,
+    0x00000016,
+    0x40000000,
+    0x0004002B,
+    0x00000006,
+    0x00000018,
+    0x3F800000,
+    0x00040017,
+    0x0000001B,
+    0x00000006,
+    0x00000004,
+    0x00040015,
+    0x0000001C,
+    0x00000020,
+    0x00000000,
+    0x0004002B,
+    0x0000001C,
+    0x0000001D,
+    0x00000001,
+    0x0004001C,
+    0x0000001E,
+    0x00000006,
+    0x0000001D,
+    0x0006001E,
+    0x0000001F,
+    0x0000001B,
+    0x00000006,
+    0x0000001E,
+    0x0000001E,
+    0x00040020,
+    0x00000020,
+    0x00000003,
+    0x0000001F,
+    0x0004003B,
+    0x00000020,
+    0x00000021,
+    0x00000003,
+    0x0004002B,
+    0x00000006,
+    0x00000023,
+    0x00000000,
+    0x00040020,
+    0x00000027,
+    0x00000003,
+    0x0000001B,
+    0x00040020,
+    0x00000029,
+    0x00000003,
+    0x00000007,
+    0x0004003B,
+    0x00000029,
+    0x0000002A,
+    0x00000003,
+    0x0004003B,
+    0x0000000A,
+    0x0000002B,
+    0x00000001,
+    0x0004003B,
+    0x00000027,
+    0x0000002D,
+    0x00000003,
+    0x00040020,
+    0x0000002E,
+    0x00000001,
+    0x0000001B,
+    0x0004003B,
+    0x0000002E,
+    0x0000002F,
+    0x00000001,
+    0x00050036,
+    0x00000002,
+    0x00000004,
+    0x00000000,
+    0x00000003,
+    0x000200F8,
+    0x00000005,
+    0x0004003B,
+    0x00000008,
+    0x00000009,
+    0x00000007,
+    0x0004003D,
+    0x00000007,
+    0x0000000C,
+    0x0000000B,
+    0x00050041,
+    0x00000012,
+    0x00000013,
+    0x0000000F,
+    0x00000011,
+    0x0004003D,
+    0x00000007,
+    0x00000014,
+    0x00000013,
+    0x00050088,
+    0x00000007,
+    0x00000015,
+    0x0000000C,
+    0x00000014,
+    0x0005008E,
+    0x00000007,
+    0x00000017,
+    0x00000015,
+    0x00000016,
+    0x00050050,
+    0x00000007,
+    0x00000019,
+    0x00000018,
+    0x00000018,
+    0x00050083,
+    0x00000007,
+    0x0000001A,
+    0x00000017,
+    0x00000019,
+    0x0003003E,
+    0x00000009,
+    0x0000001A,
+    0x0004003D,
+    0x00000007,
+    0x00000022,
+    0x00000009,
+    0x00050051,
+    0x00000006,
+    0x00000024,
+    0x00000022,
+    0x00000000,
+    0x00050051,
+    0x00000006,
+    0x00000025,
+    0x00000022,
+    0x00000001,
+    0x00070050,
+    0x0000001B,
+    0x00000026,
+    0x00000024,
+    0x00000025,
+    0x00000023,
+    0x00000018,
+    0x00050041,
+    0x00000027,
+    0x00000028,
+    0x00000021,
+    0x00000011,
+    0x0003003E,
+    0x00000028,
+    0x00000026,
+    0x0004003D,
+    0x00000007,
+    0x0000002C,
+    0x0000002B,
+    0x0003003E,
+    0x0000002A,
+    0x0000002C,
+    0x0004003D,
+    0x0000001B,
+    0x00000030,
+    0x0000002F,
+    0x0003003E,
+    0x0000002D,
+    0x00000030,
+    0x000100FD,
+    0x00010038
+};
+
+static const std::array<uint32_t, 166> kQuadFragSpv = {
+    0x07230203, 0x00010500, 0x0008000B, 0x00000018, 0x00000000, 0x00020011, 0x00000001, 0x0006000B,
+    0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 0x00000000, 0x0003000E, 0x00000000, 0x00000001,
+    0x0009000F, 0x00000004, 0x00000004, 0x6E69616D, 0x00000000, 0x00000009, 0x0000000D, 0x00000011,
+    0x00000015, 0x00030010, 0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001C2, 0x00040005,
+    0x00000004, 0x6E69616D, 0x00000000, 0x00050005, 0x00000009, 0x4374756F, 0x726F6C6F, 0x00000000,
+    0x00050005, 0x0000000D, 0x78655475, 0x65727574, 0x00000000, 0x00030005, 0x00000011, 0x00565576,
+    0x00040005, 0x00000015, 0x6C6F4376, 0x0000726F, 0x00040047, 0x00000009, 0x0000001E, 0x00000000,
+    0x00040047, 0x0000000D, 0x00000021, 0x00000000, 0x00040047, 0x0000000D, 0x00000022, 0x00000000,
+    0x00040047, 0x00000011, 0x0000001E, 0x00000000, 0x00040047, 0x00000015, 0x0000001E, 0x00000001,
+    0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020,
+    0x00040017, 0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008, 0x00000003, 0x00000007,
+    0x0004003B, 0x00000008, 0x00000009, 0x00000003, 0x00090019, 0x0000000A, 0x00000006, 0x00000001,
+    0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x0003001B, 0x0000000B, 0x0000000A,
+    0x00040020, 0x0000000C, 0x00000000, 0x0000000B, 0x0004003B, 0x0000000C, 0x0000000D, 0x00000000,
+    0x00040017, 0x0000000F, 0x00000006, 0x00000002, 0x00040020, 0x00000010, 0x00000001, 0x0000000F,
+    0x0004003B, 0x00000010, 0x00000011, 0x00000001, 0x00040020, 0x00000014, 0x00000001, 0x00000007,
+    0x0004003B, 0x00000014, 0x00000015, 0x00000001, 0x00050036, 0x00000002, 0x00000004, 0x00000000,
+    0x00000003, 0x000200F8, 0x00000005, 0x0004003D, 0x0000000B, 0x0000000E, 0x0000000D, 0x0004003D,
+    0x0000000F, 0x00000012, 0x00000011, 0x00050057, 0x00000007, 0x00000013, 0x0000000E, 0x00000012,
+    0x0004003D, 0x00000007, 0x00000016, 0x00000015, 0x00050085, 0x00000007, 0x00000017, 0x00000013,
+    0x00000016, 0x0003003E, 0x00000009, 0x00000017, 0x000100FD, 0x00010038
+};
 
 QuarkVkRenderer::~QuarkVkRenderer() {
     Shutdown();
@@ -50,6 +446,8 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     CreateRenderPass();
     CreateOffscreenRenderPass();
     CreateDescriptorSetLayout();
+    CreatePipeline2D();
+    CreateOffscreenPipeline2D();
     CreateFramebuffers();
     CreateCommandPool();
     CreateCommandBuffers();
@@ -255,6 +653,9 @@ void QuarkVkRenderer::EndDrawing() {
     presentInfo.pImageIndices      = &m_imageIndex;
 
     VkResult presentResult = vkQueuePresentKHR(m_presentQueue, &presentInfo);
+    if (presentResult == VK_SUCCESS) {
+        vkQueueWaitIdle(m_presentQueue);
+    }
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR ||
         presentResult == VK_SUBOPTIMAL_KHR ||
         m_framebufferResized)
@@ -817,6 +1218,174 @@ void QuarkVkRenderer::CreateWhiteTexture() {
     TraceLog(LogLevel::Trace, "VULKAN", "White fallback texture created.");
 }
 
+VkPipeline QuarkVkRenderer::CreatePipelineForRenderPass(VkRenderPass renderPass) {
+    if (m_device == VK_NULL_HANDLE || renderPass == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+
+    if (m_pipelineLayout == VK_NULL_HANDLE) {
+        VkPushConstantRange pushConstantRange{};
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushConstantRange.offset     = 0;
+        pushConstantRange.size       = sizeof(VkPushConstants2D);
+
+        VkPipelineLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutInfo.setLayoutCount         = 1;
+        layoutInfo.pSetLayouts            = &m_descriptorSetLayout;
+        layoutInfo.pushConstantRangeCount  = 1;
+        layoutInfo.pPushConstantRanges     = &pushConstantRange;
+
+        if (vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create Vulkan pipeline layout.");
+        }
+    }
+
+    const std::vector<uint32_t> vertCode(kQuadVertSpv.begin(), kQuadVertSpv.end());
+    const std::vector<uint32_t> fragCode(kQuadFragSpv.begin(), kQuadFragSpv.end());
+
+    VkShaderModule vertShader = CreateShaderModule(vertCode);
+    VkShaderModule fragShader = CreateShaderModule(fragCode);
+
+    VkPipelineShaderStageCreateInfo vertStage{};
+    vertStage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertStage.stage  = VK_SHADER_STAGE_VERTEX_BIT;
+    vertStage.module = vertShader;
+    vertStage.pName  = "main";
+
+    VkPipelineShaderStageCreateInfo fragStage{};
+    fragStage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragStage.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragStage.module = fragShader;
+    fragStage.pName  = "main";
+
+    VkVertexInputBindingDescription bindingDesc{};
+    bindingDesc.binding   = 0;
+    bindingDesc.stride    = sizeof(VkBatchVertex);
+    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 3> attributes{};
+    attributes[0].binding  = 0;
+    attributes[0].location = 0;
+    attributes[0].format   = VK_FORMAT_R32G32_SFLOAT;
+    attributes[0].offset   = offsetof(VkBatchVertex, x);
+
+    attributes[1].binding  = 0;
+    attributes[1].location = 1;
+    attributes[1].format   = VK_FORMAT_R32G32_SFLOAT;
+    attributes[1].offset   = offsetof(VkBatchVertex, u);
+
+    attributes[2].binding  = 0;
+    attributes[2].location = 2;
+    attributes[2].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributes[2].offset   = offsetof(VkBatchVertex, r);
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount   = 1;
+    vertexInput.pVertexBindingDescriptions      = &bindingDesc;
+    vertexInput.vertexAttributeDescriptionCount  = static_cast<uint32_t>(attributes.size());
+    vertexInput.pVertexAttributeDescriptions    = attributes.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType                  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable  = VK_FALSE;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount  = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable        = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode             = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth               = 1.0f;
+    rasterizer.cullMode                = VK_CULL_MODE_NONE;
+    rasterizer.frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable         = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.sampleShadingEnable  = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+                                          VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT |
+                                          VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable    = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType             = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable     = VK_FALSE;
+    colorBlending.attachmentCount   = 1;
+    colorBlending.pAttachments      = &colorBlendAttachment;
+
+    VkDynamicState dynamicStates[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(sizeof(dynamicStates) / sizeof(dynamicStates[0]));
+    dynamicState.pDynamicStates    = dynamicStates;
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount          = static_cast<uint32_t>(stages.size());
+    pipelineInfo.pStages             = stages.data();
+    pipelineInfo.pVertexInputState   = &vertexInput;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState      = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState   = &multisampling;
+    pipelineInfo.pColorBlendState    = &colorBlending;
+    pipelineInfo.pDynamicState       = &dynamicState;
+    pipelineInfo.layout              = m_pipelineLayout;
+    pipelineInfo.renderPass          = renderPass;
+    pipelineInfo.subpass             = 0;
+
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+        vkDestroyShaderModule(m_device, fragShader, nullptr);
+        vkDestroyShaderModule(m_device, vertShader, nullptr);
+        throw std::runtime_error("Failed to create Vulkan 2D pipeline.");
+    }
+
+    vkDestroyShaderModule(m_device, fragShader, nullptr);
+    vkDestroyShaderModule(m_device, vertShader, nullptr);
+    return pipeline;
+}
+
+void QuarkVkRenderer::CreatePipeline2D() {
+    if (m_pipeline2D != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_pipeline2D, nullptr);
+        m_pipeline2D = VK_NULL_HANDLE;
+    }
+    m_pipeline2D = CreatePipelineForRenderPass(m_renderPass);
+}
+
+void QuarkVkRenderer::CreateOffscreenPipeline2D() {
+    if (m_offscreenPipeline2D != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_offscreenPipeline2D, nullptr);
+        m_offscreenPipeline2D = VK_NULL_HANDLE;
+    }
+    m_offscreenPipeline2D = CreatePipelineForRenderPass(m_offscreenRenderPass);
+}
+
 void QuarkVkRenderer::RecreateSwapChain() {
     TraceLog(LogLevel::Info, "VULKAN", "Recreating swapchain...");
     vkDeviceWaitIdle(m_device);
@@ -827,6 +1396,8 @@ void QuarkVkRenderer::RecreateSwapChain() {
     CreateImageViews();
     CreateRenderPass();
     CreateOffscreenRenderPass();
+    CreatePipeline2D();
+    CreateOffscreenPipeline2D();
     CreateFramebuffers();
     RecreateRenderTargetFramebuffers();
 }
@@ -1654,6 +2225,11 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         if (m_offscreenPipeline2D != VK_NULL_HANDLE) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline2D);
         }
+        const VkPushConstants2D rtPushConstants{
+            static_cast<float>(pass.width),
+            static_cast<float>(pass.height)
+        };
+        vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(rtPushConstants), &rtPushConstants);
         vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, offsets);
         vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
@@ -1708,6 +2284,11 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     if (m_pipeline2D != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline2D);
     }
+    const VkPushConstants2D screenPushConstants{
+        static_cast<float>(m_swapChainExtent.width),
+        static_cast<float>(m_swapChainExtent.height)
+    };
+    vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(screenPushConstants), &screenPushConstants);
     vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, offsets);
     vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 

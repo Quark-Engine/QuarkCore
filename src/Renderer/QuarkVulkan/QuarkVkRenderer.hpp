@@ -284,6 +284,7 @@ private:
     void CreateDescriptorSetLayout();
     void CreatePipeline2D();
     void CreateOffscreenPipeline2D();
+    VkPipeline CreatePipelineForRenderPass(VkRenderPass renderPass);
     void CreateFramebuffers();
     void CreateCommandPool();
     void CreateCommandBuffers();

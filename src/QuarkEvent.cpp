@@ -19,7 +19,6 @@ NativeEventCallback gNativeEventCallback = nullptr;
 void ReleaseDropData(SDL_Event& sdlEvent) {
     if ((sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) &&
         sdlEvent.drop.data != nullptr) {
-        SDL_free(const_cast<char*>(sdlEvent.drop.data));
         sdlEvent.drop.data = nullptr;
     }
 }
@@ -448,7 +447,10 @@ void PumpSystemEvents() {
         }
         if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
             if (sdlEvent.drop.data != nullptr) {
-                gWin.droppedFiles.emplace_back(std::string(sdlEvent.drop.data));
+                constexpr size_t DropPathBufferSize = 4096;
+                char dropPath[DropPathBufferSize]{};
+                CopyText(dropPath, DropPathBufferSize, sdlEvent.drop.data);
+                gWin.droppedFiles.emplace_back(dropPath);
             }
         }
         if (sdlEvent.type == SDL_EVENT_QUIT || sdlEvent.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
@@ -509,8 +511,12 @@ bool WaitEvent(Event& event) {
     }
 
     if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
-        if (sdlEvent.drop.data != nullptr)
-            gWin.droppedFiles.emplace_back(std::string(sdlEvent.drop.data));
+        if (sdlEvent.drop.data != nullptr) {
+            constexpr size_t DropPathBufferSize = 4096;
+            char dropPath[DropPathBufferSize]{};
+            CopyText(dropPath, DropPathBufferSize, sdlEvent.drop.data);
+            gWin.droppedFiles.emplace_back(dropPath);
+        }
     }
 
     gWin.nativeEvent = sdlEvent;
@@ -542,8 +548,12 @@ bool WaitEvent(Event& event, int timeoutMs) {
     }
 
     if (sdlEvent.type == SDL_EVENT_DROP_FILE || sdlEvent.type == SDL_EVENT_DROP_TEXT) {
-        if (sdlEvent.drop.data != nullptr)
-            gWin.droppedFiles.emplace_back(std::string(sdlEvent.drop.data));
+        if (sdlEvent.drop.data != nullptr) {
+            constexpr size_t DropPathBufferSize = 4096;
+            char dropPath[DropPathBufferSize]{};
+            CopyText(dropPath, DropPathBufferSize, sdlEvent.drop.data);
+            gWin.droppedFiles.emplace_back(dropPath);
+        }
     }
 
     gWin.nativeEvent = sdlEvent;

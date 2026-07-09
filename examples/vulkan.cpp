@@ -10,6 +10,7 @@ int main() {
 
         qc::ClearBackground(qc::WHITE);
         qc::DrawText("Hello, Vulkan!", 20, 20, 32, qc::GREEN);
+        qc::DrawTriangle(qc::Vector2{ 640, 100 }, qc::Vector2{ 540, 300 }, qc::Vector2{ 740, 300 }, qc::RED);
 
         qc::EndDrawing();
     }
