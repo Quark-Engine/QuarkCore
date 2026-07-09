@@ -48,6 +48,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -139,6 +140,13 @@ struct VkRenderTargetData {
     std::vector<VkBatchVertex> vertices;
     std::vector<uint32_t>      indices;
     std::vector<VkDrawItem>    drawItems;
+};
+
+struct VkShaderProgramData {
+    VkShaderModule vertexModule   = VK_NULL_HANDLE;
+    VkShaderModule fragmentModule = VK_NULL_HANDLE;
+    std::unordered_map<std::string, int> uniforms;
+    std::unordered_map<std::string, int> attributes;
 };
 
 class QuarkVkRenderer final : public IRenderer {
@@ -431,6 +439,10 @@ private:
     uint32_t m_imageIndex   = 0;
 
     uint32_t m_whiteTextureId = 0;
+
+    uint32_t m_nextShaderProgramId = 1;
+    uint32_t m_currentShaderProgramId = 0;
+    std::unordered_map<uint32_t, VkShaderProgramData> m_shaderPrograms;
 
     uint32_t                                   m_nextTextureId = 1;
     std::unordered_map<uint32_t, VkTextureData> m_textures;
