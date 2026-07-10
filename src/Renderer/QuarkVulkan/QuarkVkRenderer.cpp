@@ -5,12 +5,20 @@
 #include <cstddef>
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <set>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <vector>
+
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 namespace qc {
 
@@ -416,6 +424,189 @@ static const std::array<uint32_t, 166> kQuadFragSpv = {
     0x00000016, 0x0003003E, 0x00000009, 0x00000017, 0x000100FD, 0x00010038
 };
 
+namespace {
+
+static const std::array<uint32_t, 257> kVk3DVertSpv = {
+    0x07230203, 0x00010000, 0x0008000B, 0x0000001E, 0x00000000, 0x00020011, 0x00000001, 0x0006000B,
+    0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 0x00000000, 0x0003000E, 0x00000000, 0x00000001,
+    0x000B000F, 0x00000000, 0x00000004, 0x6E69616D, 0x00000000, 0x0000000D, 0x00000011, 0x00000017,
+    0x00000019, 0x0000001B, 0x0000001C, 0x00030003, 0x00000002, 0x000001C2, 0x00040005, 0x00000004,
+    0x6E69616D, 0x00000000, 0x00060005, 0x0000000B, 0x505F6C67, 0x65567265, 0x78657472, 0x00000000,
+    0x00060006, 0x0000000B, 0x00000000, 0x505F6C67, 0x7469736F, 0x006E6F69, 0x00070006, 0x0000000B,
+    0x00000001, 0x505F6C67, 0x746E696F, 0x657A6953, 0x00000000, 0x00070006, 0x0000000B, 0x00000002,
+    0x435F6C67, 0x4470696C, 0x61747369, 0x0065636E, 0x00070006, 0x0000000B, 0x00000003, 0x435F6C67,
+    0x446C6C75, 0x61747369, 0x0065636E, 0x00030005, 0x0000000D, 0x00000000, 0x00050005, 0x00000011,
+    0x736F5061, 0x6F697469, 0x0000006E, 0x00050005, 0x00000017, 0x78655476, 0x726F6F43, 0x00000064,
+    0x00050005, 0x00000019, 0x78655461, 0x726F6F43, 0x00000064, 0x00040005, 0x0000001B, 0x6C6F4376,
+    0x0000726F, 0x00040005, 0x0000001C, 0x6C6F4361, 0x0000726F, 0x00030047, 0x0000000B, 0x00000002,
+    0x00050048, 0x0000000B, 0x00000000, 0x0000000B, 0x00000000, 0x00050048, 0x0000000B, 0x00000001,
+    0x0000000B, 0x00000001, 0x00050048, 0x0000000B, 0x00000002, 0x0000000B, 0x00000003, 0x00050048,
+    0x0000000B, 0x00000003, 0x0000000B, 0x00000004, 0x00040047, 0x00000011, 0x0000001E, 0x00000000,
+    0x00040047, 0x00000017, 0x0000001E, 0x00000000, 0x00040047, 0x00000019, 0x0000001E, 0x00000001,
+    0x00040047, 0x0000001B, 0x0000001E, 0x00000001, 0x00040047, 0x0000001C, 0x0000001E, 0x00000002,
+    0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020,
+    0x00040017, 0x00000007, 0x00000006, 0x00000004, 0x00040015, 0x00000008, 0x00000020, 0x00000000,
+    0x0004002B, 0x00000008, 0x00000009, 0x00000001, 0x0004001C, 0x0000000A, 0x00000006, 0x00000009,
+    0x0006001E, 0x0000000B, 0x00000007, 0x00000006, 0x0000000A, 0x0000000A, 0x00040020, 0x0000000C,
+    0x00000003, 0x0000000B, 0x0004003B, 0x0000000C, 0x0000000D, 0x00000003, 0x00040015, 0x0000000E,
+    0x00000020, 0x00000001, 0x0004002B, 0x0000000E, 0x0000000F, 0x00000000, 0x00040020, 0x00000010,
+    0x00000001, 0x00000007, 0x0004003B, 0x00000010, 0x00000011, 0x00000001, 0x00040020, 0x00000013,
+    0x00000003, 0x00000007, 0x00040017, 0x00000015, 0x00000006, 0x00000002, 0x00040020, 0x00000016,
+    0x00000003, 0x00000015, 0x0004003B, 0x00000016, 0x00000017, 0x00000003, 0x00040020, 0x00000018,
+    0x00000001, 0x00000015, 0x0004003B, 0x00000018, 0x00000019, 0x00000001, 0x0004003B, 0x00000013,
+    0x0000001B, 0x00000003, 0x0004003B, 0x00000010, 0x0000001C, 0x00000001, 0x00050036, 0x00000002,
+    0x00000004, 0x00000000, 0x00000003, 0x000200F8, 0x00000005, 0x0004003D, 0x00000007, 0x00000012,
+    0x00000011, 0x00050041, 0x00000013, 0x00000014, 0x0000000D, 0x0000000F, 0x0003003E, 0x00000014,
+    0x00000012, 0x0004003D, 0x00000015, 0x0000001A, 0x00000019, 0x0003003E, 0x00000017, 0x0000001A,
+    0x0004003D, 0x00000007, 0x0000001D, 0x0000001C, 0x0003003E, 0x0000001B, 0x0000001D, 0x000100FD,
+    0x00010038
+};
+
+static const std::array<uint32_t, 167> kVk3DFragSpv = {
+    0x07230203, 0x00010000, 0x0008000B, 0x00000018, 0x00000000, 0x00020011, 0x00000001, 0x0006000B,
+    0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 0x00000000, 0x0003000E, 0x00000000, 0x00000001,
+    0x0008000F, 0x00000004, 0x00000004, 0x6E69616D, 0x00000000, 0x00000009, 0x00000011, 0x00000015,
+    0x00030010, 0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001C2, 0x00040005, 0x00000004,
+    0x6E69616D, 0x00000000, 0x00050005, 0x00000009, 0x67617246, 0x6F6C6F43, 0x00000072, 0x00050005,
+    0x0000000D, 0x78655475, 0x65727574, 0x00000000, 0x00050005, 0x00000011, 0x78655476, 0x726F6F43,
+    0x00000064, 0x00040005, 0x00000015, 0x6C6F4376, 0x0000726F, 0x00040047, 0x00000009, 0x0000001E,
+    0x00000000, 0x00040047, 0x0000000D, 0x00000021, 0x00000000, 0x00040047, 0x0000000D, 0x00000022,
+    0x00000000, 0x00040047, 0x00000011, 0x0000001E, 0x00000000, 0x00040047, 0x00000015, 0x0000001E,
+    0x00000001, 0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006,
+    0x00000020, 0x00040017, 0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008, 0x00000003,
+    0x00000007, 0x0004003B, 0x00000008, 0x00000009, 0x00000003, 0x00090019, 0x0000000A, 0x00000006,
+    0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x0003001B, 0x0000000B,
+    0x0000000A, 0x00040020, 0x0000000C, 0x00000000, 0x0000000B, 0x0004003B, 0x0000000C, 0x0000000D,
+    0x00000000, 0x00040017, 0x0000000F, 0x00000006, 0x00000002, 0x00040020, 0x00000010, 0x00000001,
+    0x0000000F, 0x0004003B, 0x00000010, 0x00000011, 0x00000001, 0x00040020, 0x00000014, 0x00000001,
+    0x00000007, 0x0004003B, 0x00000014, 0x00000015, 0x00000001, 0x00050036, 0x00000002, 0x00000004,
+    0x00000000, 0x00000003, 0x000200F8, 0x00000005, 0x0004003D, 0x0000000B, 0x0000000E, 0x0000000D,
+    0x0004003D, 0x0000000F, 0x00000012, 0x00000011, 0x00050057, 0x00000007, 0x00000013, 0x0000000E,
+    0x00000012, 0x0004003D, 0x00000007, 0x00000016, 0x00000015, 0x00050085, 0x00000007, 0x00000017,
+    0x00000013, 0x00000016, 0x0003003E, 0x00000009, 0x00000017, 0x000100FD, 0x00010038
+};
+
+std::filesystem::path FindGlslangValidator() {
+    const std::filesystem::path cwd = std::filesystem::current_path();
+    const std::array<std::filesystem::path, 4> candidates = {
+        cwd / "external" / "Vulkan" / "lib" / "glslangValidator.exe",
+        cwd / "external" / "Vulkan" / "lib" / "glslangValidator",
+        std::filesystem::path("external") / "Vulkan" / "lib" / "glslangValidator.exe",
+        std::filesystem::path("external") / "Vulkan" / "lib" / "glslangValidator"
+    };
+
+    for (const auto& candidate : candidates) {
+        std::error_code ec;
+        if (std::filesystem::exists(candidate, ec) && !ec) {
+            return candidate;
+        }
+    }
+    return {};
+}
+
+bool RunCompilerProcess(const std::filesystem::path& validator,
+                        const std::filesystem::path& sourcePath,
+                        const std::filesystem::path& outputPath,
+                        const std::string& stageName) {
+#if defined(_WIN32)
+    const std::wstring validatorW = validator.wstring();
+    const std::wstring sourceW = sourcePath.wstring();
+    const std::wstring outputW = outputPath.wstring();
+    const std::wstring stageW(stageName.begin(), stageName.end());
+    std::wstring commandLine = L"\"" + validatorW + L"\" -V -S " + stageW + L" \"" + sourceW + L"\" -o \"" + outputW + L"\"";
+
+    STARTUPINFOW si{};
+    PROCESS_INFORMATION pi{};
+    si.cb = sizeof(si);
+
+    if (!CreateProcessW(validatorW.c_str(), commandLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        TraceLog(LogLevel::Error, "VULKAN", TextFormat("Failed to launch glslangValidator: %lu", GetLastError()));
+        return false;
+    }
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exitCode = 0;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return exitCode == 0;
+#else
+    std::ostringstream command;
+    command << '"' << validator.string() << '"' << " -V -S " << stageName << " "
+            << '"' << sourcePath.string() << '"' << " -o " << '"' << outputPath.string() << '"';
+    return std::system(command.str().c_str()) == 0;
+#endif
+}
+
+bool CompileGlslToSpirv(const std::string& source, const char* stageName, std::vector<uint32_t>& outSpirv) {
+    const std::filesystem::path validator = FindGlslangValidator();
+    if (validator.empty()) {
+        TraceLog(LogLevel::Error, "VULKAN", "glslangValidator was not found in external/Vulkan/lib.");
+        return false;
+    }
+
+    std::error_code ec;
+    const std::filesystem::path tempBase = std::filesystem::temp_directory_path(ec);
+    std::filesystem::path tempDir = tempBase / "quarkvkshader";
+    for (int attempt = 0; attempt < 1000; ++attempt) {
+        tempDir = tempBase / (std::string("quarkvkshader-") + std::to_string(std::rand()) + std::to_string(attempt));
+        if (!std::filesystem::exists(tempDir, ec)) {
+            break;
+        }
+    }
+    std::filesystem::create_directories(tempDir, ec);
+    if (ec) {
+        TraceLog(LogLevel::Error, "VULKAN", "Failed to create temporary directory for shader compilation.");
+        return false;
+    }
+
+    const std::filesystem::path sourcePath = tempDir / (std::string("shader.") + stageName + ".glsl");
+    const std::filesystem::path outputPath = tempDir / "shader.spv";
+
+    {
+        std::ofstream sourceFile(sourcePath, std::ios::binary);
+        if (!sourceFile.is_open()) {
+            std::filesystem::remove_all(tempDir, ec);
+            return false;
+        }
+        sourceFile << source;
+    }
+
+    const bool compiled = RunCompilerProcess(validator, sourcePath, outputPath, stageName);
+    if (!compiled || !std::filesystem::exists(outputPath, ec)) {
+        std::filesystem::remove_all(tempDir, ec);
+        TraceLog(LogLevel::Error, "VULKAN", TextFormat("Failed to compile embedded %s shader.", stageName));
+        return false;
+    }
+
+    std::ifstream binary(outputPath, std::ios::binary | std::ios::ate);
+    if (!binary.is_open()) {
+        std::filesystem::remove_all(tempDir, ec);
+        return false;
+    }
+
+    const std::streamsize size = binary.tellg();
+    binary.seekg(0);
+    if (size <= 0) {
+        std::filesystem::remove_all(tempDir, ec);
+        return false;
+    }
+
+    std::vector<char> bytes(static_cast<size_t>(size));
+    binary.read(bytes.data(), size);
+    outSpirv.resize(bytes.size() / sizeof(uint32_t));
+    std::memcpy(outSpirv.data(), bytes.data(), bytes.size());
+
+    std::filesystem::remove_all(tempDir, ec);
+    return true;
+}
+
+bool HasStencilComponent(VkFormat format) {
+    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
+} // namespace
+
 QuarkVkRenderer::~QuarkVkRenderer() {
     Shutdown();
 }
@@ -449,6 +640,7 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     CreateDescriptorSetLayout();
     CreatePipeline2D();
     CreateOffscreenPipeline2D();
+    CreatePipeline3D();
     CreateFramebuffers();
     CreateCommandPool();
     CreateCommandBuffers();
@@ -524,6 +716,18 @@ void QuarkVkRenderer::Shutdown() {
             vkFreeMemory(m_device, frame.indexMemory, nullptr);
             frame.indexMemory = VK_NULL_HANDLE;
         }
+        if (frame.vertexMapped3D && frame.vertexMemory3D != VK_NULL_HANDLE) {
+            vkUnmapMemory(m_device, frame.vertexMemory3D);
+            frame.vertexMapped3D = nullptr;
+        }
+        if (frame.vertexBuffer3D != VK_NULL_HANDLE) {
+            vkDestroyBuffer(m_device, frame.vertexBuffer3D, nullptr);
+            frame.vertexBuffer3D = VK_NULL_HANDLE;
+        }
+        if (frame.vertexMemory3D != VK_NULL_HANDLE) {
+            vkFreeMemory(m_device, frame.vertexMemory3D, nullptr);
+            frame.vertexMemory3D = VK_NULL_HANDLE;
+        }
     }
 
     for (VkDescriptorPool pool : m_descriptorPools) {
@@ -568,6 +772,10 @@ void QuarkVkRenderer::Shutdown() {
     m_nextTextureId      = 1;
     m_nextRenderTargetId = 1;
     m_activeRenderTargetId = 0;
+    m_main3DBatch.triangleVertices.clear();
+    m_main3DBatch.lineVertices.clear();
+    m_frameTriangleVertices3D.clear();
+    m_frameLineVertices3D.clear();
 }
 
 void QuarkVkRenderer::BeginDrawing() {
@@ -617,21 +825,16 @@ void QuarkVkRenderer::EndDrawing() {
         rt.vertices.clear();
         rt.indices.clear();
         rt.drawItems.clear();
+        rt.triangleVertices3D.clear();
+        rt.lineVertices3D.clear();
     }
+    m_main3DBatch.triangleVertices.clear();
+    m_main3DBatch.lineVertices.clear();
 
     if (!UploadFrameGeometry(m_currentFrame)) {
         m_drawing = false;
         return;
     }
-    if (!RecordCommandBuffer(cmd, m_imageIndex)) {
-        m_drawing = false;
-        return;
-    }
-    if (!UploadFrameGeometry(m_currentFrame)) {
-        m_drawing = false;
-        return;
-    }
-
     if (!RecordCommandBuffer(cmd, m_imageIndex)) {
         m_drawing = false;
         return;
@@ -979,6 +1182,8 @@ void QuarkVkRenderer::CreateImageViews() {
 }
 
 void QuarkVkRenderer::CreateRenderPass() {
+    m_depthFormat = FindDepthFormat();
+
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format         = m_swapChainImageFormat;
     colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
@@ -989,26 +1194,44 @@ void QuarkVkRenderer::CreateRenderPass() {
     colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
     colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format         = m_depthFormat;
+    depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentRef{};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments    = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     VkSubpassDependency dependency{};
     dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass    = 0;
     dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments    = &colorAttachment;
+    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments    = attachments.data();
     renderPassInfo.subpassCount    = 1;
     renderPassInfo.pSubpasses      = &subpass;
     renderPassInfo.dependencyCount = 1;
@@ -1031,28 +1254,46 @@ void QuarkVkRenderer::CreateOffscreenRenderPass() {
     colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
     colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format         = m_depthFormat;
+    depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentRef{};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments    = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     VkSubpassDependency dependency{};
     dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass    = 0;
     dependency.srcStageMask  = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependency.srcAccessMask = 0;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments    = &colorAttachment;
+    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments    = attachments.data();
     renderPassInfo.subpassCount    = 1;
     renderPassInfo.pSubpasses      = &subpass;
     renderPassInfo.dependencyCount = 1;
@@ -1130,16 +1371,32 @@ bool QuarkVkRenderer::AllocateTextureDescriptorSet(VkDescriptorSet& outSet) {
 }
 
 void QuarkVkRenderer::CreateFramebuffers() {
+    m_swapChainDepthImages.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
+    m_swapChainDepthMemories.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
+    m_swapChainDepthImageViews.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
+
+    for (size_t i = 0; i < m_swapChainImageViews.size(); ++i) {
+        if (!CreateDepthResources(m_swapChainExtent.width, m_swapChainExtent.height,
+                                  m_swapChainDepthImages[i],
+                                  m_swapChainDepthMemories[i],
+                                  m_swapChainDepthImageViews[i])) {
+            throw std::runtime_error("Failed to create Vulkan depth resources.");
+        }
+    }
+
     m_swapChainFramebuffers.resize(m_swapChainImageViews.size());
 
     for (size_t i = 0; i < m_swapChainImageViews.size(); ++i) {
-        VkImageView attachments[] = { m_swapChainImageViews[i] };
+        std::array<VkImageView, 2> attachments = {
+            m_swapChainImageViews[i],
+            m_swapChainDepthImageViews[i]
+        };
 
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass      = m_renderPass;
-        framebufferInfo.attachmentCount = 1;
-        framebufferInfo.pAttachments    = attachments;
+        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        framebufferInfo.pAttachments    = attachments.data();
         framebufferInfo.width           = m_swapChainExtent.width;
         framebufferInfo.height          = m_swapChainExtent.height;
         framebufferInfo.layers          = 1;
@@ -1162,16 +1419,23 @@ bool QuarkVkRenderer::RecreateRenderTargetFramebuffers() {
             rt.framebuffer = VK_NULL_HANDLE;
         }
 
-        VkImageView attachments[] = { itTex->second.view };
+        if (rt.depthView == VK_NULL_HANDLE) {
+            if (!CreateDepthResources(rt.width, rt.height, rt.depthImage, rt.depthMemory, rt.depthView)) {
+                return false;
+            }
+        }
+
+        std::array<VkImageView, 2> attachments = { itTex->second.view, rt.depthView };
         VkFramebufferCreateInfo fbInfo{};
         fbInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         fbInfo.renderPass      = m_offscreenRenderPass;
-        fbInfo.attachmentCount = 1;
-        fbInfo.pAttachments    = attachments;
+        fbInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        fbInfo.pAttachments    = attachments.data();
         fbInfo.width           = rt.width;
         fbInfo.height          = rt.height;
         fbInfo.layers          = 1;
         if (vkCreateFramebuffer(m_device, &fbInfo, nullptr, &rt.framebuffer) != VK_SUCCESS) {
+            DestroyDepthResources(rt.depthImage, rt.depthMemory, rt.depthView);
             return false;
         }
     }
@@ -1212,6 +1476,7 @@ void QuarkVkRenderer::CreateCommandBuffers() {
 void QuarkVkRenderer::CreateFrameVertexIndexBuffers() {
     const VkDeviceSize vertexBufSize = sizeof(VkBatchVertex) * kVkMaxVerticesPerFrame;
     const VkDeviceSize indexBufSize  = sizeof(uint32_t)      * kVkMaxIndicesPerFrame;
+    const VkDeviceSize vertexBufSize3D = sizeof(Vk3DVertex)  * kVkMaxVerticesPerFrame;
 
     for (auto& frame : m_frames) {
         if (!CreateBuffer(vertexBufSize,
@@ -1229,6 +1494,14 @@ void QuarkVkRenderer::CreateFrameVertexIndexBuffers() {
             throw std::runtime_error("Failed to create per-frame Vulkan index buffer.");
         }
         vkMapMemory(m_device, frame.indexMemory, 0, indexBufSize, 0, &frame.indexMapped);
+
+        if (!CreateBuffer(vertexBufSize3D,
+                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                          frame.vertexBuffer3D, frame.vertexMemory3D)) {
+            throw std::runtime_error("Failed to create per-frame Vulkan 3D vertex buffer.");
+        }
+        vkMapMemory(m_device, frame.vertexMemory3D, 0, vertexBufSize3D, 0, &frame.vertexMapped3D);
     }
     TraceLog(LogLevel::Trace, "VULKAN", "Per-frame vertex/index buffers created.");
 }
@@ -1353,6 +1626,14 @@ VkPipeline QuarkVkRenderer::CreatePipelineForRenderPass(VkRenderPass renderPass)
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     multisampling.sampleShadingEnable  = VK_FALSE;
 
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable       = VK_FALSE;
+    depthStencil.depthWriteEnable      = VK_FALSE;
+    depthStencil.depthCompareOp        = VK_COMPARE_OP_ALWAYS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable     = VK_FALSE;
+
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
                                           VK_COLOR_COMPONENT_G_BIT |
@@ -1393,6 +1674,7 @@ VkPipeline QuarkVkRenderer::CreatePipelineForRenderPass(VkRenderPass renderPass)
     pipelineInfo.pViewportState      = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState   = &multisampling;
+    pipelineInfo.pDepthStencilState  = &depthStencil;
     pipelineInfo.pColorBlendState    = &colorBlending;
     pipelineInfo.pDynamicState       = &dynamicState;
     pipelineInfo.layout              = m_pipelineLayout;
@@ -1427,6 +1709,191 @@ void QuarkVkRenderer::CreateOffscreenPipeline2D() {
     m_offscreenPipeline2D = CreatePipelineForRenderPass(m_offscreenRenderPass);
 }
 
+VkPipeline QuarkVkRenderer::Create3DPipelineForRenderPass(VkRenderPass renderPass, VkPrimitiveTopology topology) {
+    if (m_device == VK_NULL_HANDLE || renderPass == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+
+    if (m_pipelineLayout == VK_NULL_HANDLE) {
+        VkPushConstantRange pushConstantRange{};
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushConstantRange.offset     = 0;
+        pushConstantRange.size       = sizeof(VkPushConstants2D);
+
+        VkPipelineLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType                 = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutInfo.setLayoutCount        = 1;
+        layoutInfo.pSetLayouts           = &m_descriptorSetLayout;
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges   = &pushConstantRange;
+
+        if (vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create Vulkan pipeline layout.");
+        }
+    }
+
+    const std::vector<uint32_t> vertCode(kVk3DVertSpv.begin(), kVk3DVertSpv.end());
+    const std::vector<uint32_t> fragCode(kVk3DFragSpv.begin(), kVk3DFragSpv.end());
+
+    VkShaderModule vertShader = CreateShaderModule(vertCode);
+    VkShaderModule fragShader = CreateShaderModule(fragCode);
+
+    VkPipelineShaderStageCreateInfo vertStage{};
+    vertStage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertStage.stage  = VK_SHADER_STAGE_VERTEX_BIT;
+    vertStage.module = vertShader;
+    vertStage.pName  = "main";
+
+    VkPipelineShaderStageCreateInfo fragStage{};
+    fragStage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragStage.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragStage.module = fragShader;
+    fragStage.pName  = "main";
+
+    VkVertexInputBindingDescription bindingDesc{};
+    bindingDesc.binding   = 0;
+    bindingDesc.stride    = sizeof(Vk3DVertex);
+    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 3> attributes{};
+    attributes[0].binding  = 0;
+    attributes[0].location = 0;
+    attributes[0].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributes[0].offset   = offsetof(Vk3DVertex, x);
+
+    attributes[1].binding  = 0;
+    attributes[1].location = 1;
+    attributes[1].format   = VK_FORMAT_R32G32_SFLOAT;
+    attributes[1].offset   = offsetof(Vk3DVertex, u);
+
+    attributes[2].binding  = 0;
+    attributes[2].location = 2;
+    attributes[2].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributes[2].offset   = offsetof(Vk3DVertex, r);
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType                          = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount  = 1;
+    vertexInput.pVertexBindingDescriptions     = &bindingDesc;
+    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size());
+    vertexInput.pVertexAttributeDescriptions   = attributes.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType                 = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology              = topology;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType        = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount  = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable        = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode             = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth               = 1.0f;
+    rasterizer.cullMode                = VK_CULL_MODE_NONE;
+    rasterizer.frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable         = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.sampleShadingEnable  = VK_FALSE;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable       = VK_TRUE;
+    depthStencil.depthWriteEnable      = VK_TRUE;
+    depthStencil.depthCompareOp        = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable     = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+                                          VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT |
+                                          VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable    = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable   = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments    = &colorBlendAttachment;
+
+    VkDynamicState dynamicStates[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(sizeof(dynamicStates) / sizeof(dynamicStates[0]));
+    dynamicState.pDynamicStates    = dynamicStates;
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount          = static_cast<uint32_t>(stages.size());
+    pipelineInfo.pStages             = stages.data();
+    pipelineInfo.pVertexInputState    = &vertexInput;
+    pipelineInfo.pInputAssemblyState  = &inputAssembly;
+    pipelineInfo.pViewportState       = &viewportState;
+    pipelineInfo.pRasterizationState  = &rasterizer;
+    pipelineInfo.pMultisampleState    = &multisampling;
+    pipelineInfo.pDepthStencilState   = &depthStencil;
+    pipelineInfo.pColorBlendState     = &colorBlending;
+    pipelineInfo.pDynamicState        = &dynamicState;
+    pipelineInfo.layout               = m_pipelineLayout;
+    pipelineInfo.renderPass           = renderPass;
+    pipelineInfo.subpass              = 0;
+
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+        vkDestroyShaderModule(m_device, fragShader, nullptr);
+        vkDestroyShaderModule(m_device, vertShader, nullptr);
+        throw std::runtime_error("Failed to create Vulkan 3D pipeline.");
+    }
+
+    vkDestroyShaderModule(m_device, fragShader, nullptr);
+    vkDestroyShaderModule(m_device, vertShader, nullptr);
+    return pipeline;
+}
+
+void QuarkVkRenderer::CreatePipeline3D() {
+    if (m_pipeline3DTri != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_pipeline3DTri, nullptr);
+        m_pipeline3DTri = VK_NULL_HANDLE;
+    }
+    if (m_pipeline3DLines != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_pipeline3DLines, nullptr);
+        m_pipeline3DLines = VK_NULL_HANDLE;
+    }
+    if (m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_offscreenPipeline3DTri, nullptr);
+        m_offscreenPipeline3DTri = VK_NULL_HANDLE;
+    }
+    if (m_offscreenPipeline3DLines != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_offscreenPipeline3DLines, nullptr);
+        m_offscreenPipeline3DLines = VK_NULL_HANDLE;
+    }
+
+    m_pipeline3DTri = Create3DPipelineForRenderPass(m_renderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    m_pipeline3DLines = Create3DPipelineForRenderPass(m_renderPass, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+    m_offscreenPipeline3DTri = Create3DPipelineForRenderPass(m_offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    m_offscreenPipeline3DLines = Create3DPipelineForRenderPass(m_offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+}
+
 void QuarkVkRenderer::RecreateSwapChain() {
     TraceLog(LogLevel::Info, "VULKAN", "Recreating swapchain...");
     vkDeviceWaitIdle(m_device);
@@ -1439,6 +1906,7 @@ void QuarkVkRenderer::RecreateSwapChain() {
     CreateOffscreenRenderPass();
     CreatePipeline2D();
     CreateOffscreenPipeline2D();
+    CreatePipeline3D();
     CreateFramebuffers();
     RecreateRenderTargetFramebuffers();
 }
@@ -1461,13 +1929,44 @@ void QuarkVkRenderer::CleanupSwapChain() {
     }
     m_swapChainFramebuffers.clear();
 
+    for (size_t i = 0; i < m_swapChainDepthImageViews.size(); ++i) {
+        if (m_swapChainDepthImageViews[i] != VK_NULL_HANDLE) {
+            vkDestroyImageView(m_device, m_swapChainDepthImageViews[i], nullptr);
+        }
+        if (m_swapChainDepthImages.size() > i && m_swapChainDepthImages[i] != VK_NULL_HANDLE) {
+            vkDestroyImage(m_device, m_swapChainDepthImages[i], nullptr);
+        }
+        if (m_swapChainDepthMemories.size() > i && m_swapChainDepthMemories[i] != VK_NULL_HANDLE) {
+            vkFreeMemory(m_device, m_swapChainDepthMemories[i], nullptr);
+        }
+    }
+    m_swapChainDepthImageViews.clear();
+    m_swapChainDepthImages.clear();
+    m_swapChainDepthMemories.clear();
+
     if (m_offscreenPipeline2D != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_device, m_offscreenPipeline2D, nullptr);
         m_offscreenPipeline2D = VK_NULL_HANDLE;
     }
+    if (m_offscreenPipeline3DLines != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_offscreenPipeline3DLines, nullptr);
+        m_offscreenPipeline3DLines = VK_NULL_HANDLE;
+    }
+    if (m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_offscreenPipeline3DTri, nullptr);
+        m_offscreenPipeline3DTri = VK_NULL_HANDLE;
+    }
     if (m_pipeline2D != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_device, m_pipeline2D, nullptr);
         m_pipeline2D = VK_NULL_HANDLE;
+    }
+    if (m_pipeline3DLines != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_pipeline3DLines, nullptr);
+        m_pipeline3DLines = VK_NULL_HANDLE;
+    }
+    if (m_pipeline3DTri != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_pipeline3DTri, nullptr);
+        m_pipeline3DTri = VK_NULL_HANDLE;
     }
     if (m_pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
@@ -1586,6 +2085,34 @@ uint32_t QuarkVkRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFl
     throw std::runtime_error("Failed to find suitable Vulkan memory type.");
 }
 
+VkFormat QuarkVkRenderer::FindSupportedFormat(const std::vector<VkFormat>& candidates,
+                                              VkImageTiling tiling,
+                                              VkFormatFeatureFlags features) const {
+    for (VkFormat format : candidates) {
+        VkFormatProperties props{};
+        vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format, &props);
+
+        if (tiling == VK_IMAGE_TILING_LINEAR &&
+            (props.linearTilingFeatures & features) == features) {
+            return format;
+        }
+        if (tiling == VK_IMAGE_TILING_OPTIMAL &&
+            (props.optimalTilingFeatures & features) == features) {
+            return format;
+        }
+    }
+
+    throw std::runtime_error("Failed to find supported Vulkan format.");
+}
+
+VkFormat QuarkVkRenderer::FindDepthFormat() const {
+    return FindSupportedFormat(
+        { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+    );
+}
+
 bool QuarkVkRenderer::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                                     VkMemoryPropertyFlags props,
                                     VkBuffer& outBuffer, VkDeviceMemory& outMemory) {
@@ -1614,6 +2141,87 @@ bool QuarkVkRenderer::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
     }
     vkBindBufferMemory(m_device, outBuffer, outMemory, 0);
     return true;
+}
+
+bool QuarkVkRenderer::CreateDepthResources(uint32_t width, uint32_t height,
+                                           VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView) {
+    outImage = VK_NULL_HANDLE;
+    outMemory = VK_NULL_HANDLE;
+    outView = VK_NULL_HANDLE;
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width  = width;
+    imageInfo.extent.height = height;
+    imageInfo.extent.depth  = 1;
+    imageInfo.mipLevels     = 1;
+    imageInfo.arrayLayers   = 1;
+    imageInfo.format        = m_depthFormat;
+    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(m_device, &imageInfo, nullptr, &outImage) != VK_SUCCESS) {
+        return false;
+    }
+
+    VkMemoryRequirements memReq{};
+    vkGetImageMemoryRequirements(m_device, outImage, &memReq);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize  = memReq.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &outMemory) != VK_SUCCESS) {
+        vkDestroyImage(m_device, outImage, nullptr);
+        outImage = VK_NULL_HANDLE;
+        return false;
+    }
+
+    vkBindImageMemory(m_device, outImage, outMemory, 0);
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image                           = outImage;
+    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format                          = m_depthFormat;
+    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (HasStencilComponent(m_depthFormat)) {
+        viewInfo.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
+    viewInfo.subresourceRange.baseMipLevel   = 0;
+    viewInfo.subresourceRange.levelCount     = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount     = 1;
+
+    if (vkCreateImageView(m_device, &viewInfo, nullptr, &outView) != VK_SUCCESS) {
+        vkFreeMemory(m_device, outMemory, nullptr);
+        vkDestroyImage(m_device, outImage, nullptr);
+        outImage = VK_NULL_HANDLE;
+        outMemory = VK_NULL_HANDLE;
+        return false;
+    }
+
+    return true;
+}
+
+void QuarkVkRenderer::DestroyDepthResources(VkImage& image, VkDeviceMemory& memory, VkImageView& view) {
+    if (view != VK_NULL_HANDLE) {
+        vkDestroyImageView(m_device, view, nullptr);
+        view = VK_NULL_HANDLE;
+    }
+    if (image != VK_NULL_HANDLE) {
+        vkDestroyImage(m_device, image, nullptr);
+        image = VK_NULL_HANDLE;
+    }
+    if (memory != VK_NULL_HANDLE) {
+        vkFreeMemory(m_device, memory, nullptr);
+        memory = VK_NULL_HANDLE;
+    }
 }
 
 VkCommandBuffer QuarkVkRenderer::BeginSingleTimeCommands() {
@@ -2008,18 +2616,27 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     const uint32_t textureId = m_nextTextureId++;
     m_textures[textureId] = tex;
 
+    VkImage depthImage = VK_NULL_HANDLE;
+    VkDeviceMemory depthMemory = VK_NULL_HANDLE;
+    VkImageView depthView = VK_NULL_HANDLE;
+    if (!CreateDepthResources(tex.width, tex.height, depthImage, depthMemory, depthView)) {
+        DestroyTexture(textureId);
+        return IRenderTexture{};
+    }
+
     VkFramebuffer framebuffer = VK_NULL_HANDLE;
-    VkImageView   attachments[] = { tex.view };
+    std::array<VkImageView, 2> attachments = { tex.view, depthView };
 
     VkFramebufferCreateInfo fbInfo{};
     fbInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     fbInfo.renderPass      = m_offscreenRenderPass;
-    fbInfo.attachmentCount = 1;
-    fbInfo.pAttachments    = attachments;
+    fbInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    fbInfo.pAttachments    = attachments.data();
     fbInfo.width           = tex.width;
     fbInfo.height          = tex.height;
     fbInfo.layers          = 1;
     if (vkCreateFramebuffer(m_device, &fbInfo, nullptr, &framebuffer) != VK_SUCCESS) {
+        DestroyDepthResources(depthImage, depthMemory, depthView);
         DestroyTexture(textureId);
         return IRenderTexture{};
     }
@@ -2031,6 +2648,9 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     rt.height      = tex.height;
     rt.framebuffer = framebuffer;
     rt.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    rt.depthImage  = depthImage;
+    rt.depthMemory = depthMemory;
+    rt.depthView   = depthView;
     m_renderTargets[rtId] = rt;
 
     TraceLog(LogLevel::Info, "VULKAN", TextFormat("Render target created (%ux%u).", tex.width, tex.height));
@@ -2044,6 +2664,9 @@ void QuarkVkRenderer::DestroyRenderTargetInternal(uint32_t renderTargetId) {
     const uint32_t textureId = it->second.textureId;
     if (it->second.framebuffer != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
         vkDestroyFramebuffer(m_device, it->second.framebuffer, nullptr);
+    }
+    if (m_device != VK_NULL_HANDLE) {
+        DestroyDepthResources(it->second.depthImage, it->second.depthMemory, it->second.depthView);
     }
     m_renderTargets.erase(it);
 
@@ -2081,13 +2704,19 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
     m_frameIndices.clear();
     m_frameDrawItems.clear();
     m_framePasses.clear();
+    m_frameTriangleVertices3D.clear();
+    m_frameLineVertices3D.clear();
 
     for (auto& [id, rt] : m_renderTargets) {
-        if (rt.drawItems.empty()) continue;
+        const bool has2D = !rt.drawItems.empty();
+        const bool has3D = !rt.triangleVertices3D.empty() || !rt.lineVertices3D.empty();
+        if (!has2D && !has3D) continue;
 
         const uint32_t baseVertex = static_cast<uint32_t>(m_frameVertices.size());
         const uint32_t baseIndex  = static_cast<uint32_t>(m_frameIndices.size());
         const uint32_t firstDraw  = static_cast<uint32_t>(m_frameDrawItems.size());
+        const uint32_t triFirst   = static_cast<uint32_t>(m_frameTriangleVertices3D.size());
+        const uint32_t lineFirst  = static_cast<uint32_t>(m_frameLineVertices3D.size());
 
         m_frameVertices.insert(m_frameVertices.end(), rt.vertices.begin(), rt.vertices.end());
         for (uint32_t idx : rt.indices) {
@@ -2098,12 +2727,21 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
             m_frameDrawItems.push_back(item);
         }
 
+        m_frameTriangleVertices3D.insert(m_frameTriangleVertices3D.end(),
+                                         rt.triangleVertices3D.begin(), rt.triangleVertices3D.end());
+        m_frameLineVertices3D.insert(m_frameLineVertices3D.end(),
+                                     rt.lineVertices3D.begin(), rt.lineVertices3D.end());
+
         m_framePasses.push_back(VkFramePass{
             id,
             firstDraw,
             static_cast<uint32_t>(m_frameDrawItems.size() - firstDraw),
             rt.width,
-            rt.height
+            rt.height,
+            triFirst,
+            static_cast<uint32_t>(rt.triangleVertices3D.size()),
+            lineFirst,
+            static_cast<uint32_t>(rt.lineVertices3D.size())
         });
     }
 
@@ -2111,6 +2749,8 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
         const uint32_t baseVertex = static_cast<uint32_t>(m_frameVertices.size());
         const uint32_t baseIndex  = static_cast<uint32_t>(m_frameIndices.size());
         const uint32_t firstDraw  = static_cast<uint32_t>(m_frameDrawItems.size());
+        const uint32_t triFirst   = static_cast<uint32_t>(m_frameTriangleVertices3D.size());
+        const uint32_t lineFirst  = static_cast<uint32_t>(m_frameLineVertices3D.size());
 
         m_frameVertices.insert(m_frameVertices.end(), m_batchVertices.begin(), m_batchVertices.end());
         for (uint32_t idx : m_batchIndices) {
@@ -2121,19 +2761,31 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
             m_frameDrawItems.push_back(item);
         }
 
+        m_frameTriangleVertices3D.insert(m_frameTriangleVertices3D.end(),
+                                         m_main3DBatch.triangleVertices.begin(),
+                                         m_main3DBatch.triangleVertices.end());
+        m_frameLineVertices3D.insert(m_frameLineVertices3D.end(),
+                                     m_main3DBatch.lineVertices.begin(),
+                                     m_main3DBatch.lineVertices.end());
+
         m_framePasses.push_back(VkFramePass{
             0,
             firstDraw,
             static_cast<uint32_t>(m_frameDrawItems.size() - firstDraw),
             static_cast<uint32_t>(m_swapChainExtent.width),
-            static_cast<uint32_t>(m_swapChainExtent.height)
+            static_cast<uint32_t>(m_swapChainExtent.height),
+            triFirst,
+            static_cast<uint32_t>(m_main3DBatch.triangleVertices.size()),
+            lineFirst,
+            static_cast<uint32_t>(m_main3DBatch.lineVertices.size())
         });
     }
 }
 
 bool QuarkVkRenderer::UploadFrameGeometry(uint32_t frameIndex) {
     if (m_frameVertices.size() > kVkMaxVerticesPerFrame ||
-        m_frameIndices.size()  > kVkMaxIndicesPerFrame) {
+        m_frameIndices.size()  > kVkMaxIndicesPerFrame ||
+        m_frameTriangleVertices3D.size() + m_frameLineVertices3D.size() > kVkMaxVerticesPerFrame) {
         TraceLog(LogLevel::Error, "VULKAN", "Frame geometry overflow — increase kVkMaxVerticesPerFrame / kVkMaxIndicesPerFrame.");
         return false;
     }
@@ -2146,6 +2798,17 @@ bool QuarkVkRenderer::UploadFrameGeometry(uint32_t frameIndex) {
     if (!m_frameIndices.empty() && frame.indexMapped) {
         std::memcpy(frame.indexMapped, m_frameIndices.data(),
                     m_frameIndices.size() * sizeof(uint32_t));
+    }
+    if (frame.vertexMapped3D) {
+        const size_t triBytes = m_frameTriangleVertices3D.size() * sizeof(Vk3DVertex);
+        const size_t lineBytes = m_frameLineVertices3D.size() * sizeof(Vk3DVertex);
+        if (triBytes + lineBytes > 0) {
+            std::memcpy(frame.vertexMapped3D, m_frameTriangleVertices3D.data(), triBytes);
+            if (lineBytes > 0) {
+                std::memcpy(static_cast<char*>(frame.vertexMapped3D) + triBytes,
+                            m_frameLineVertices3D.data(), lineBytes);
+            }
+        }
     }
     return true;
 }
@@ -2222,6 +2885,11 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
 
     const VkFrameData& frame = m_frames[m_currentFrame];
     VkDeviceSize offsets[] = { 0 };
+    VkDescriptorSet whiteDescriptorSet = VK_NULL_HANDLE;
+    const auto whiteTexIt = m_textures.find(m_whiteTextureId);
+    if (whiteTexIt != m_textures.end()) {
+        whiteDescriptorSet = whiteTexIt->second.descriptorSet;
+    }
     
     auto inlineTransition = [&](VkImage image,
                                  VkImageLayout oldLayout, VkImageLayout newLayout,
@@ -2243,12 +2911,10 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     };
 
     for (const VkFramePass& pass : m_framePasses) {
-        if (pass.renderTargetId == 0 || pass.drawItemCount == 0) continue;
+        if (pass.renderTargetId == 0) continue;
 
         auto itRt  = m_renderTargets.find(pass.renderTargetId);
         if (itRt == m_renderTargets.end()) continue;
-        auto itTex = m_textures.find(itRt->second.textureId);
-        if (itTex == m_textures.end()) continue;
 
         Color passClearColor = m_clearColor;
         if (pass.renderTargetId != 0) {
@@ -2257,28 +2923,29 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
             }
         }
 
-        VkClearValue clearValue{};
-        clearValue.color = {{
+        std::array<VkClearValue, 2> clearValues{};
+        clearValues[0].color = {{
             NormalizeColorComponent(passClearColor.r),
             NormalizeColorComponent(passClearColor.g),
             NormalizeColorComponent(passClearColor.b),
             NormalizeColorComponent(passClearColor.a)
         }};
+        clearValues[1].depthStencil = { 1.0f, 0 };
 
         VkRenderPassBeginInfo rtPassInfo{};
         rtPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         rtPassInfo.renderPass        = m_offscreenRenderPass;
         rtPassInfo.framebuffer       = itRt->second.framebuffer;
         rtPassInfo.renderArea.extent = { pass.width, pass.height };
-        rtPassInfo.clearValueCount   = 1;
-        rtPassInfo.pClearValues      = &clearValue;
+        rtPassInfo.clearValueCount   = static_cast<uint32_t>(clearValues.size());
+        rtPassInfo.pClearValues      = clearValues.data();
         vkCmdBeginRenderPass(cmd, &rtPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         VkViewport viewport{};
         viewport.x        = 0.0f;
-        viewport.y        = static_cast<float>(pass.height);
+        viewport.y        = 0.0f;
         viewport.width    = static_cast<float>(pass.width);
-        viewport.height   = -static_cast<float>(pass.height);
+        viewport.height   = static_cast<float>(pass.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -2286,6 +2953,23 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         VkRect2D scissor{};
         scissor.extent = { pass.width, pass.height };
         vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        if ((pass.triVertexCount + pass.lineVertexCount) > 0 &&
+            whiteDescriptorSet != VK_NULL_HANDLE) {
+            vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    m_pipelineLayout, 0, 1, &whiteDescriptorSet, 0, nullptr);
+
+            if (pass.triVertexCount > 0 && m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DTri);
+                vkCmdDraw(cmd, pass.triVertexCount, 1, pass.triFirstVertex, 0);
+            }
+            if (pass.lineVertexCount > 0 && m_offscreenPipeline3DLines != VK_NULL_HANDLE) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DLines);
+                vkCmdDraw(cmd, pass.lineVertexCount, 1,
+                          static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + pass.lineFirstVertex, 0);
+            }
+        }
 
         if (m_offscreenPipeline2D != VK_NULL_HANDLE) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline2D);
@@ -2309,24 +2993,35 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         vkCmdEndRenderPass(cmd);
     }
 
-    VkClearValue clearValue{};
-    clearValue.color = {{
+    const VkFramePass* mainPass = nullptr;
+    for (const VkFramePass& pass : m_framePasses) {
+        if (pass.renderTargetId == 0) {
+            mainPass = &pass;
+            break;
+        }
+    }
+
+    std::array<VkClearValue, 2> clearValues{};
+    clearValues[0].color = {{
         NormalizeColorComponent(m_clearColor.r),
         NormalizeColorComponent(m_clearColor.g),
         NormalizeColorComponent(m_clearColor.b),
         NormalizeColorComponent(m_clearColor.a)
     }};
+    clearValues[1].depthStencil = { 1.0f, 0 };
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass        = m_renderPass;
     renderPassInfo.framebuffer       = m_swapChainFramebuffers[imageIndex];
     renderPassInfo.renderArea.extent = m_swapChainExtent;
-    renderPassInfo.clearValueCount   = 1;
-    renderPassInfo.pClearValues      = &clearValue;
+    renderPassInfo.clearValueCount   = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues      = clearValues.data();
     vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     VkViewport viewport{};
+    viewport.x        = 0.0f;
+    viewport.y        = 0.0f;
     viewport.width    = static_cast<float>(m_swapChainExtent.width);
     viewport.height   = static_cast<float>(m_swapChainExtent.height);
     viewport.minDepth = 0.0f;
@@ -2336,6 +3031,23 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     VkRect2D scissor{};
     scissor.extent = m_swapChainExtent;
     vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    if (mainPass && (mainPass->triVertexCount + mainPass->lineVertexCount) > 0 &&
+        whiteDescriptorSet != VK_NULL_HANDLE) {
+        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_pipelineLayout, 0, 1, &whiteDescriptorSet, 0, nullptr);
+
+        if (mainPass->triVertexCount > 0 && m_pipeline3DTri != VK_NULL_HANDLE) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DTri);
+            vkCmdDraw(cmd, mainPass->triVertexCount, 1, mainPass->triFirstVertex, 0);
+        }
+        if (mainPass->lineVertexCount > 0 && m_pipeline3DLines != VK_NULL_HANDLE) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DLines);
+            vkCmdDraw(cmd, mainPass->lineVertexCount, 1,
+                      static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + mainPass->lineFirstVertex, 0);
+        }
+    }
 
     if (m_pipeline2D != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline2D);

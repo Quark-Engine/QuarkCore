@@ -85,6 +85,12 @@ struct VkBatchVertex {
     float r, g, b, a;
 };
 
+struct Vk3DVertex {
+    float x, y, z, w;
+    float u, v;
+    float r, g, b, a;
+};
+
 struct VkPushConstants2D {
     float screenWidth;
     float screenHeight;
@@ -103,6 +109,10 @@ struct VkFrameData {
     VkBuffer       indexBuffer  = VK_NULL_HANDLE;
     VkDeviceMemory indexMemory  = VK_NULL_HANDLE;
     void*          indexMapped  = nullptr;
+
+    VkBuffer       vertexBuffer3D = VK_NULL_HANDLE;
+    VkDeviceMemory vertexMemory3D = VK_NULL_HANDLE;
+    void*          vertexMapped3D = nullptr;
 };
 
 struct VkTextureData {
@@ -129,6 +139,10 @@ struct VkFramePass {
     uint32_t drawItemCount  = 0;
     uint32_t width          = 0;
     uint32_t height         = 0;
+    uint32_t triFirstVertex  = 0;
+    uint32_t triVertexCount  = 0;
+    uint32_t lineFirstVertex = 0;
+    uint32_t lineVertexCount = 0;
 };
 struct VkRenderTargetData {
     uint32_t      textureId   = 0;
@@ -137,10 +151,15 @@ struct VkRenderTargetData {
     VkFramebuffer framebuffer = VK_NULL_HANDLE;
     VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     Color         clearColor  = {0, 0, 0, 255};
+    VkImage       depthImage  = VK_NULL_HANDLE;
+    VkDeviceMemory depthMemory = VK_NULL_HANDLE;
+    VkImageView   depthView    = VK_NULL_HANDLE;
 
     std::vector<VkBatchVertex> vertices;
     std::vector<uint32_t>      indices;
     std::vector<VkDrawItem>    drawItems;
+    std::vector<Vk3DVertex>    triangleVertices3D;
+    std::vector<Vk3DVertex>    lineVertices3D;
 };
 
 struct VkShaderProgramData {
@@ -294,6 +313,8 @@ private:
     void CreatePipeline2D();
     void CreateOffscreenPipeline2D();
     VkPipeline CreatePipelineForRenderPass(VkRenderPass renderPass);
+    VkPipeline Create3DPipelineForRenderPass(VkRenderPass renderPass, VkPrimitiveTopology topology);
+    void CreatePipeline3D();
     void CreateFramebuffers();
     void CreateCommandPool();
     void CreateCommandBuffers();
@@ -315,6 +336,10 @@ private:
     VkPresentModeKHR          ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& modes) const;
     VkExtent2D                ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps) const;
     uint32_t                  FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags props) const;
+    VkFormat                  FindSupportedFormat(const std::vector<VkFormat>& candidates,
+                                                  VkImageTiling tiling,
+                                                  VkFormatFeatureFlags features) const;
+    VkFormat                  FindDepthFormat() const;
 
     bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                       VkMemoryPropertyFlags props,
@@ -332,6 +357,9 @@ private:
                                    uint32_t width, uint32_t height,
                                    uint32_t& outId);
     void     DestroyTexture(uint32_t textureId);
+    bool     CreateDepthResources(uint32_t width, uint32_t height,
+                                  VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView);
+    void     DestroyDepthResources(VkImage& image, VkDeviceMemory& memory, VkImageView& view);
 
     IRenderTexture CreateRenderTargetInternal(int width, int height);
     void           DestroyRenderTargetInternal(uint32_t renderTargetId);
@@ -371,6 +399,21 @@ private:
                   float u1 = 1.f, float v1 = 1.f);
     Vec2 ApplyCameraTransform(Vec2 position) const;
     void EnsureBatchTexture(VkDescriptorSet ds);
+    struct Vk3DGeometryBatch {
+        std::vector<Vk3DVertex> triangleVertices;
+        std::vector<Vk3DVertex> lineVertices;
+    };
+
+    std::vector<Vk3DVertex>&       GetActive3DTriangleVertices();
+    const std::vector<Vk3DVertex>& GetActive3DTriangleVertices() const;
+    std::vector<Vk3DVertex>&       GetActive3DLineVertices();
+    const std::vector<Vk3DVertex>& GetActive3DLineVertices() const;
+    Vk3DVertex               Transform3DVertex(Vec3 position, Color color) const;
+    void                     AppendTriangle3D(std::vector<Vk3DVertex>& vertices,
+                                              Vec3 a, Vec3 b, Vec3 c, Color color);
+    void                     AppendLine3D(std::vector<Vk3DVertex>& vertices,
+                                          Vec3 a, Vec3 b, Color color);
+    void                     DrawSphereExInternal(Vec3 centerPos, float radius, int rings, int slices, Color color);
 
     struct GlyphData {
         Rectangle uv{};
@@ -420,7 +463,11 @@ private:
     VkSwapchainKHR           m_swapChain            = VK_NULL_HANDLE;
     std::vector<VkImage>     m_swapChainImages;
     std::vector<VkImageView> m_swapChainImageViews;
+    std::vector<VkImage>     m_swapChainDepthImages;
+    std::vector<VkDeviceMemory> m_swapChainDepthMemories;
+    std::vector<VkImageView> m_swapChainDepthImageViews;
     VkFormat                 m_swapChainImageFormat = VK_FORMAT_UNDEFINED;
+    VkFormat                 m_depthFormat          = VK_FORMAT_UNDEFINED;
     VkExtent2D               m_swapChainExtent      = {0, 0};
 
     VkRenderPass m_renderPass          = VK_NULL_HANDLE;
@@ -434,6 +481,10 @@ private:
     VkPipelineLayout m_pipelineLayout      = VK_NULL_HANDLE;
     VkPipeline       m_pipeline2D          = VK_NULL_HANDLE;
     VkPipeline       m_offscreenPipeline2D = VK_NULL_HANDLE;
+    VkPipeline       m_pipeline3DTri       = VK_NULL_HANDLE;
+    VkPipeline       m_pipeline3DLines     = VK_NULL_HANDLE;
+    VkPipeline       m_offscreenPipeline3DTri   = VK_NULL_HANDLE;
+    VkPipeline       m_offscreenPipeline3DLines = VK_NULL_HANDLE;
 
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
 
@@ -460,11 +511,14 @@ private:
     std::vector<VkBatchVertex> m_batchVertices;
     std::vector<uint32_t>      m_batchIndices;
     std::vector<VkDrawItem>    m_batchDrawItems;
+    Vk3DGeometryBatch          m_main3DBatch;
 
     std::vector<VkBatchVertex> m_frameVertices;
     std::vector<uint32_t>      m_frameIndices;
     std::vector<VkDrawItem>    m_frameDrawItems;
     std::vector<VkFramePass>   m_framePasses;
+    std::vector<Vk3DVertex>    m_frameTriangleVertices3D;
+    std::vector<Vk3DVertex>    m_frameLineVertices3D;
 
     VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;
     Color           m_clearColor           = {0, 0, 0, 255};
