@@ -1290,9 +1290,14 @@ QCAPI void UnloadVertexArray(unsigned int vaoId);
 QCAPI void UnloadVertexBuffer(unsigned int vboId);
 
 /**
- * @brief Load shader from vertex and fragment source files.
- * @param vsFileName Path to vertex shader file (can be NULL for default vertex shader).
- * @param fsFileName Path to fragment shader file (can be NULL for default fragment shader).
+ * @brief Load a shader from vertex and fragment shader files.
+ *
+ * On the Vulkan backend, specify the paths to the SPIR-V versions of the
+ * shaders (`.spv`). They will be loaded and compiled into a Vulkan shader
+ * module automatically.
+ *
+ * @param vsFileName Path to the vertex shader file (can be NULL for the default vertex shader).
+ * @param fsFileName Path to the fragment shader file (can be NULL for the default fragment shader).
  * @return Loaded shader.
  * @return Empty shader on failure.
  */

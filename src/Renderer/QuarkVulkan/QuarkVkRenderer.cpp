@@ -1,5 +1,6 @@
 #include "QuarkVkRenderer.hpp"
 
+#include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_vulkan.h>
 #include <cstddef>
 #include <algorithm>
@@ -428,7 +429,7 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
         VK_VERSION_MINOR(version),
         VK_VERSION_PATCH(version)));
 
-#ifndef __APPLE__
+#ifdef __APPLE__
     TraceLog(LogLevel::Info, "VULKAN", "Apple platform detected, using MoltenVK...");
 #endif
 
@@ -573,20 +574,13 @@ void QuarkVkRenderer::BeginDrawing() {
     if (!m_device || !m_swapChain || m_drawing) {
         return;
     }
-    
-    m_batchVertices.clear();
-    m_batchIndices.clear();
-    m_batchDrawItems.clear();
+
     m_activeRenderTargetId = 0;
-    for (auto& [id, rt] : m_renderTargets) {
-        (void)id;
-        rt.vertices.clear();
-        rt.indices.clear();
-        rt.drawItems.clear();
+    if (m_lastFrameCounter == 0) {
+        m_lastFrameCounter = SDL_GetPerformanceCounter();
     }
 
     VkFrameData& frame = m_frames[m_currentFrame];
-
     vkWaitForFences(m_device, 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
 
     VkResult result = vkAcquireNextImageKHR(
@@ -605,9 +599,7 @@ void QuarkVkRenderer::BeginDrawing() {
 }
 
 void QuarkVkRenderer::EndDrawing() {
-    if (!m_drawing || !m_device || !m_swapChain) {
-        return;
-    }
+    if (!m_drawing || !m_device || !m_swapChain) return;
 
     VkFrameData& frame = m_frames[m_currentFrame];
     VkCommandBuffer cmd = frame.commandBuffer;
@@ -616,6 +608,25 @@ void QuarkVkRenderer::EndDrawing() {
     vkResetCommandBuffer(cmd, 0);
 
     BuildCombinedFrameGeometry();
+
+    m_batchVertices.clear();
+    m_batchIndices.clear();
+    m_batchDrawItems.clear();
+    for (auto& [id, rt] : m_renderTargets) {
+        (void)id;
+        rt.vertices.clear();
+        rt.indices.clear();
+        rt.drawItems.clear();
+    }
+
+    if (!UploadFrameGeometry(m_currentFrame)) {
+        m_drawing = false;
+        return;
+    }
+    if (!RecordCommandBuffer(cmd, m_imageIndex)) {
+        m_drawing = false;
+        return;
+    }
     if (!UploadFrameGeometry(m_currentFrame)) {
         m_drawing = false;
         return;
@@ -644,6 +655,26 @@ void QuarkVkRenderer::EndDrawing() {
         throw std::runtime_error("Failed to submit Vulkan command buffer.");
     }
 
+    const std::uint64_t freq = SDL_GetPerformanceFrequency();
+    if (m_targetFps > 0) {
+        const std::uint64_t targetTicks = freq / static_cast<std::uint64_t>(m_targetFps);
+        while (true) {
+            const std::uint64_t now = SDL_GetPerformanceCounter();
+            const std::uint64_t elapsed = now - m_lastFrameCounter;
+            if (elapsed >= targetTicks) {
+                break;
+            }
+            const std::uint64_t remaining = targetTicks - elapsed;
+            if (remaining > freq / 500) {
+                SDL_Delay(1);
+            }
+        }
+    }
+
+    const std::uint64_t frameEnd = SDL_GetPerformanceCounter();
+    m_frameTime = static_cast<float>(frameEnd - m_lastFrameCounter) / static_cast<float>(freq);
+    m_lastFrameCounter = frameEnd;
+
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
@@ -668,9 +699,17 @@ void QuarkVkRenderer::EndDrawing() {
 
     m_currentFrame = (m_currentFrame + 1) % kVkMaxFramesInFlight;
     m_drawing = false;
+    m_frameGeometryPending = false;
 }
 
 void QuarkVkRenderer::ClearBackground(Color color) {
+    if (m_activeRenderTargetId != 0) {
+        auto itRt = m_renderTargets.find(m_activeRenderTargetId);
+        if (itRt != m_renderTargets.end()) {
+            itRt->second.clearColor = color;
+            return;
+        }
+    }
     m_clearColor = color;
 }
 
@@ -989,8 +1028,8 @@ void QuarkVkRenderer::CreateOffscreenRenderPass() {
     colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
@@ -1004,9 +1043,11 @@ void QuarkVkRenderer::CreateOffscreenRenderPass() {
     VkSubpassDependency dependency{};
     dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass    = 0;
-    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcStageMask  = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -1670,6 +1711,20 @@ bool QuarkVkRenderer::TransitionImageLayout(VkImage image, VkFormat /*format*/,
         srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         dstStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     }
+    else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
+             newLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask = 0;
+        srcStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dstStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+             newLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = 0;
+        srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dstStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    }
 
     vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
     EndSingleTimeCommands(cmd);
@@ -1794,9 +1849,9 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter    = VK_FILTER_NEAREST;
-    samplerInfo.minFilter    = VK_FILTER_NEAREST;
-    samplerInfo.mipmapMode   = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.magFilter    = VK_FILTER_LINEAR;
+    samplerInfo.minFilter    = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode   = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -1914,9 +1969,9 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter    = VK_FILTER_NEAREST;
-    samplerInfo.minFilter    = VK_FILTER_NEAREST;
-    samplerInfo.mipmapMode   = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.magFilter    = VK_FILTER_LINEAR;
+    samplerInfo.minFilter    = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode   = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -2108,11 +2163,16 @@ void QuarkVkRenderer::AppendQuadToBatch(
     float u0, float v0,
     float u1, float v1)
 {
+    const Vec2 p0 = ApplyCameraTransform(Vec2{ x0, y0 });
+    const Vec2 p1 = ApplyCameraTransform(Vec2{ x1, y1 });
+    const Vec2 p2 = ApplyCameraTransform(Vec2{ x2, y2 });
+    const Vec2 p3 = ApplyCameraTransform(Vec2{ x3, y3 });
+
     const uint32_t base = static_cast<uint32_t>(vertices.size());
-    vertices.push_back({ x0, y0, u0, v0, r, g, b, a });
-    vertices.push_back({ x1, y1, u1, v0, r, g, b, a });
-    vertices.push_back({ x2, y2, u1, v1, r, g, b, a });
-    vertices.push_back({ x3, y3, u0, v1, r, g, b, a });
+    vertices.push_back({ p0.x, p0.y, u0, v0, r, g, b, a });
+    vertices.push_back({ p1.x, p1.y, u1, v0, r, g, b, a });
+    vertices.push_back({ p2.x, p2.y, u1, v1, r, g, b, a });
+    vertices.push_back({ p3.x, p3.y, u0, v1, r, g, b, a });
 
     const uint32_t firstIndex = static_cast<uint32_t>(indices.size());
     indices.push_back(base + 0);
@@ -2190,17 +2250,20 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         auto itTex = m_textures.find(itRt->second.textureId);
         if (itTex == m_textures.end()) continue;
 
-        inlineTransition(itTex->second.image,
-                         itRt->second.imageLayout,
-                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                         VK_ACCESS_SHADER_READ_BIT,
-                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-        itRt->second.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        Color passClearColor = m_clearColor;
+        if (pass.renderTargetId != 0) {
+            if (itRt != m_renderTargets.end()) {
+                passClearColor = itRt->second.clearColor;
+            }
+        }
 
         VkClearValue clearValue{};
-        clearValue.color = {{ 0.0f, 0.0f, 0.0f, 0.0f }};
+        clearValue.color = {{
+            NormalizeColorComponent(passClearColor.r),
+            NormalizeColorComponent(passClearColor.g),
+            NormalizeColorComponent(passClearColor.b),
+            NormalizeColorComponent(passClearColor.a)
+        }};
 
         VkRenderPassBeginInfo rtPassInfo{};
         rtPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -2212,8 +2275,10 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         vkCmdBeginRenderPass(cmd, &rtPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         VkViewport viewport{};
+        viewport.x        = 0.0f;
+        viewport.y        = static_cast<float>(pass.height);
         viewport.width    = static_cast<float>(pass.width);
-        viewport.height   = static_cast<float>(pass.height);
+        viewport.height   = -static_cast<float>(pass.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -2242,15 +2307,6 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         }
 
         vkCmdEndRenderPass(cmd);
-
-        inlineTransition(itTex->second.image,
-                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                         VK_ACCESS_SHADER_READ_BIT,
-                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-        itRt->second.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
 
     VkClearValue clearValue{};

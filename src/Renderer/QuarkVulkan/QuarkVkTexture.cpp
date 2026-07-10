@@ -291,6 +291,7 @@ ITexture QuarkVkRenderer::GenCheckerTexture(int width, int height, int cellSize,
 void QuarkVkRenderer::BeginTextureMode(IRenderTexture target) {
     if (target.id != 0 && m_renderTargets.find(target.id) != m_renderTargets.end()) {
         m_activeRenderTargetId = target.id;
+        m_frameGeometryPending = true;
     }
 }
 

@@ -136,6 +136,7 @@ struct VkRenderTargetData {
     uint32_t      height      = 0;
     VkFramebuffer framebuffer = VK_NULL_HANDLE;
     VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    Color         clearColor  = {0, 0, 0, 255};
 
     std::vector<VkBatchVertex> vertices;
     std::vector<uint32_t>      indices;
@@ -368,6 +369,7 @@ private:
     void PushQuad(float x, float y, float w, float h, Color color,
                   float u0 = 0.f, float v0 = 0.f,
                   float u1 = 1.f, float v1 = 1.f);
+    Vec2 ApplyCameraTransform(Vec2 position) const;
     void EnsureBatchTexture(VkDescriptorSet ds);
 
     struct GlyphData {
@@ -406,6 +408,7 @@ private:
     bool        m_drawing            = false;
     bool        m_shouldClose        = false;
     bool        m_framebufferResized = false;
+    bool        m_frameGeometryPending = false;
 
     VkInstance       m_instance       = VK_NULL_HANDLE;
     VkSurfaceKHR     m_surface        = VK_NULL_HANDLE;

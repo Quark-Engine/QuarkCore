@@ -218,6 +218,14 @@ add_library(QuarkCore SHARED
     src/Renderer/QuarkVulkan/QuarkVkFont.cpp
 )
 
+if(WIN32)
+    target_compile_definitions(QuarkCore PRIVATE _WIN32)
+elseif(UNIX)
+    target_compile_definitions(QuarkCore PRIVATE __linux__)
+elseif(APPLE)
+    target_compile_definitions(QuarkCore PRIVATE __APPLE__)
+endif()
+
 target_include_directories(QuarkCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
