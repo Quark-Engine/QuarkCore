@@ -47,7 +47,7 @@ const std::vector<Vk3DVertex>& QuarkVkRenderer::GetActive3DLineVertices() const 
 Vk3DVertex QuarkVkRenderer::Transform3DVertex(Vec3 position, Color color) const {
     const Vec4 clip = m_projectionMatrix * (m_viewMatrix * (m_currentMatrix * Vec4{ position.x, position.y, position.z, 1.0f }));
     return {
-        clip.x, -clip.y, clip.z, clip.w,
+        clip.x, clip.y, clip.z, clip.w,
         0.0f, 0.0f,
         static_cast<float>(color.r) / 255.0f,
         static_cast<float>(color.g) / 255.0f,
@@ -73,7 +73,7 @@ void QuarkVkRenderer::BeginMode3D(const Camera3D& camera) {
     m_viewMatrix = Mat4::lookAt(camera.position, camera.target, camera.up);
 
     if (camera.projection == CAMERA_PERSPECTIVE) {
-        m_projectionMatrix = Mat4::perspective(
+        m_projectionMatrix = Mat4::perspectiveVulkan(
             camera.fovy * PI / 180.0f,
             static_cast<float>(m_width) / static_cast<float>(m_height),
             0.1f, 1000.0f);

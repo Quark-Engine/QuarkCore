@@ -365,6 +365,17 @@ struct QCAPI Mat4 {
         return result;
     }
 
+    static Mat4 perspectiveVulkan(float fov, float aspect, float near, float far) {
+        Mat4 result{};
+        float f = 1.0f / std::tan(fov * 0.5f);
+        result.m[0] = f / aspect;
+        result.m[5] = f;
+        result.m[10] = far / (near - far);
+        result.m[11] = -1.0f;
+        result.m[14] = (far * near) / (near - far);
+        return result;
+    }
+
     static Mat4 lookAt(const Vec3& eye, const Vec3& center, const Vec3& up) {
         Vec3 f = (center - eye).normalized();
         Vec3 s = f.cross(up).normalized();
@@ -591,6 +602,10 @@ inline Mat4 MatrixInvert(const Mat4& matrix) {
 
 inline Mat4 Mat4Perspective(float fovy, float aspect, float nearPlane, float farPlane) {
     return Mat4::perspective(fovy, aspect, nearPlane, farPlane);
+}
+
+inline Mat4 Mat4PerspectiveVulkan(float fovy, float aspect, float nearPlane, float farPlane) {
+    return Mat4::perspectiveVulkan(fovy, aspect, nearPlane, farPlane);
 }
 
 inline Mat4 MatrixPerspective(float fovy, float aspect, float nearPlane, float farPlane) {

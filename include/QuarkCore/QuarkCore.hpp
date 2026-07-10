@@ -41,6 +41,7 @@
 
 #include <SDL3/SDL.h>
 #include <cstdint>
+#include <vulkan/vulkan.h>
 
 namespace qc {
 
@@ -48,6 +49,7 @@ namespace qc {
  * @brief Renderer type enumeration.
  */
 enum class RendererType {
+    Auto,
     OpenGL,
     Vulkan
 };
@@ -636,7 +638,12 @@ struct Event {
  * @param height Window height in pixels.
  * @param title Window title text.
  */
-QCAPI void InitWindow(int width, int height, const char* title, RendererType rendererType);
+QCAPI void InitWindow(int width, int height, const char* title, RendererType rendererType = RendererType::Auto);
+
+/**
+ * @brief Get the currently active rendering backend.
+ */
+QCAPI RendererType GetCurrentBackend();
 /**
  * @brief Check if the window should close.
  *
@@ -648,6 +655,22 @@ QCAPI bool WindowShouldClose();
  * @brief Close and destroy the application window.
  */
 QCAPI void CloseWindow();
+
+QCAPI VkInstance            GetVulkanInstance();
+QCAPI VkPhysicalDevice       GetVulkanPhysicalDevice();
+QCAPI VkDevice              GetVulkanDevice();
+QCAPI uint32_t              GetVulkanGraphicsQueueFamily();
+QCAPI VkQueue               GetVulkanGraphicsQueue();
+QCAPI VkDescriptorPool      GetVulkanDescriptorPool();
+QCAPI VkRenderPass          GetVulkanMainRenderPass();
+QCAPI uint32_t              GetVulkanMinImageCount();
+QCAPI uint32_t              GetVulkanImageCount();
+QCAPI VkSampleCountFlagBits GetVulkanMSAASamples();
+QCAPI VkDescriptorSet       GetVulkanTextureDescriptorSet(uint32_t textureId);
+
+using VulkanRenderCallback = void(*)(VkCommandBuffer commandBuffer);
+QCAPI void SetVulkanRenderCallback(VulkanRenderCallback callback);
+QCAPI VulkanRenderCallback GetVulkanRenderCallback();
 
 /**
  * @brief Poll the next available event.

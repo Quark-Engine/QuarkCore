@@ -645,6 +645,16 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     CreateCommandPool();
     CreateCommandBuffers();
     CreateFrameVertexIndexBuffers();
+    m_batchVertices.reserve(kVkMaxVerticesPerFrame);
+    m_batchIndices.reserve(kVkMaxIndicesPerFrame);
+    m_batchDrawItems.reserve(256);
+    m_frameVertices.reserve(kVkMaxVerticesPerFrame);
+    m_frameIndices.reserve(kVkMaxIndicesPerFrame);
+    m_frameDrawItems.reserve(256);
+    m_main3DBatch.triangleVertices.reserve(kVkMaxVerticesPerFrame / 2);
+    m_main3DBatch.lineVertices.reserve(kVkMaxVerticesPerFrame / 2);
+    m_frameTriangleVertices3D.reserve(kVkMaxVerticesPerFrame);
+    m_frameLineVertices3D.reserve(kVkMaxVerticesPerFrame);
     CreateSyncObjects();
     CreateWhiteTexture();
 
@@ -737,6 +747,11 @@ void QuarkVkRenderer::Shutdown() {
     }
     m_descriptorPools.clear();
 
+    if (m_imguiDescriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
+        m_imguiDescriptorPool = VK_NULL_HANDLE;
+    }
+
     if (m_descriptorSetLayout != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
         m_descriptorSetLayout = VK_NULL_HANDLE;
@@ -772,6 +787,9 @@ void QuarkVkRenderer::Shutdown() {
     m_nextTextureId      = 1;
     m_nextRenderTargetId = 1;
     m_activeRenderTargetId = 0;
+    m_graphicsQueueFamily = UINT32_MAX;
+    m_swapChainMinImageCount = 0;
+    m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
     m_main3DBatch.triangleVertices.clear();
     m_main3DBatch.lineVertices.clear();
     m_frameTriangleVertices3D.clear();
@@ -963,6 +981,14 @@ void QuarkVkRenderer::RefreshViewport() {
     m_framebufferResized = true;
 }
 
+VkDescriptorSet QuarkVkRenderer::GetTextureDescriptorSet(uint32_t textureId) const {
+    const auto it = m_textures.find(textureId);
+    if (it == m_textures.end()) {
+        return VK_NULL_HANDLE;
+    }
+    return it->second.descriptorSet;
+}
+
 void QuarkVkRenderer::CreateInstance() {
     if (m_instance != VK_NULL_HANDLE) return;
 
@@ -1062,6 +1088,7 @@ void QuarkVkRenderer::PickPhysicalDevice() {
 
 void QuarkVkRenderer::CreateLogicalDevice() {
     VkQueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
+    m_graphicsQueueFamily = indices.graphicsFamily.value();
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
     std::set<uint32_t> uniqueQueueFamilies = {
@@ -1099,6 +1126,7 @@ void QuarkVkRenderer::CreateLogicalDevice() {
 
 void QuarkVkRenderer::CreateSwapChain() {
     VkSwapChainSupportDetails details = QuerySwapChainSupport(m_physicalDevice);
+    m_swapChainMinImageCount = details.capabilities.minImageCount;
 
     VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(details.formats);
     VkPresentModeKHR   presentMode   = ChooseSwapPresentMode(details.presentModes);
@@ -1320,6 +1348,33 @@ void QuarkVkRenderer::CreateDescriptorSetLayout() {
 
     if (vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create Vulkan descriptor set layout.");
+    }
+
+    if (m_imguiDescriptorPool == VK_NULL_HANDLE) {
+        std::array<VkDescriptorPoolSize, 11> poolSizes = {{
+            { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+            { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+            { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+            { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
+        }};
+
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        poolInfo.maxSets       = 1000 * static_cast<uint32_t>(poolSizes.size());
+        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        poolInfo.pPoolSizes    = poolSizes.data();
+
+        if (vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_imguiDescriptorPool) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create Vulkan ImGui descriptor pool.");
+        }
     }
 
     VkDescriptorPool firstSlab = VK_NULL_HANDLE;
@@ -1807,7 +1862,7 @@ VkPipeline QuarkVkRenderer::Create3DPipelineForRenderPass(VkRenderPass renderPas
     depthStencil.sType                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable       = VK_TRUE;
     depthStencil.depthWriteEnable      = VK_TRUE;
-    depthStencil.depthCompareOp        = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depthStencil.depthCompareOp        = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable     = VK_FALSE;
 
@@ -3084,6 +3139,10 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                                     m_pipelineLayout, 0, 1, &item.descriptorSet, 0, nullptr);
             vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
         }
+    }
+
+    if (const VulkanRenderCallback callback = GetVulkanRenderCallback()) {
+        callback(cmd);
     }
 
     vkCmdEndRenderPass(cmd);

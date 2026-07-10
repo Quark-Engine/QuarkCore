@@ -22,8 +22,8 @@ int main() {
             qc::ClearBackground(qc::Color{30, 30, 35, 255});
 
             qc::BeginMode3D(camera);
-                qc::DrawGrid(20, 1.0f);
                 qc::DrawPlane({ 0, 0, 0 }, { 20, 20 }, qc::DARKGRAY);
+                qc::DrawGrid(20, 1.0f);
 
                 qc::DrawCubeV({ -4, 1, -4 }, { 2, 2, 2 }, qc::RED);
                 qc::DrawCubeWiresV({ -4, 1, -4 }, { 2.1f, 2.1f, 2.1f }, qc::WHITE);

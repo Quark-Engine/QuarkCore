@@ -300,6 +300,18 @@ public:
 
     RendererType GetType() const override { return RendererType::Vulkan; }
 
+    VkInstance            GetVulkanInstance() const { return m_instance; }
+    VkPhysicalDevice       GetVulkanPhysicalDevice() const { return m_physicalDevice; }
+    VkDevice              GetVulkanDevice() const { return m_device; }
+    uint32_t              GetVulkanGraphicsQueueFamily() const { return m_graphicsQueueFamily; }
+    VkQueue               GetVulkanGraphicsQueue() const { return m_graphicsQueue; }
+    VkDescriptorPool      GetVulkanDescriptorPool() const { return m_imguiDescriptorPool; }
+    VkRenderPass          GetVulkanMainRenderPass() const { return m_renderPass; }
+    uint32_t              GetVulkanMinImageCount() const { return m_swapChainMinImageCount; }
+    uint32_t              GetVulkanImageCount() const { return static_cast<uint32_t>(m_swapChainImages.size()); }
+    VkSampleCountFlagBits GetVulkanMSAASamples() const { return m_msaaSamples; }
+    VkDescriptorSet       GetTextureDescriptorSet(uint32_t textureId) const;
+
 private:
     void CreateInstance();
     void CreateSurface();
@@ -477,6 +489,7 @@ private:
 
     VkDescriptorSetLayout         m_descriptorSetLayout = VK_NULL_HANDLE;
     std::vector<VkDescriptorPool> m_descriptorPools;
+    VkDescriptorPool              m_imguiDescriptorPool = VK_NULL_HANDLE;
 
     VkPipelineLayout m_pipelineLayout      = VK_NULL_HANDLE;
     VkPipeline       m_pipeline2D          = VK_NULL_HANDLE;
@@ -491,6 +504,9 @@ private:
     std::array<VkFrameData, kVkMaxFramesInFlight> m_frames{};
     uint32_t m_currentFrame = 0;
     uint32_t m_imageIndex   = 0;
+    uint32_t m_graphicsQueueFamily = UINT32_MAX;
+    uint32_t m_swapChainMinImageCount = 0;
+    VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
     uint32_t m_whiteTextureId = 0;
 

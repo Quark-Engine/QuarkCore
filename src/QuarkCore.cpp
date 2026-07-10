@@ -34,6 +34,8 @@ namespace qc {
 QuarkGLRenderer gGLRenderer;
 QuarkVkRenderer gVkRenderer;
 IRenderer* gRendererPtr = nullptr;
+RendererType gCurrentBackend = RendererType::Auto;
+bool gVulkanLibraryLoaded = false;
 
 #define gRenderer (*gRendererPtr)
 
@@ -108,6 +110,74 @@ void EnsureInitialized() {
         throw std::runtime_error("QuarkCore is not initialized. Call InitWindow() first.");
 }
 
+static void CleanupBackendInitFailure() {
+    if (gRendererPtr) {
+        gRendererPtr = nullptr;
+    }
+
+    if (gWin.window) {
+        SDL_DestroyWindow(gWin.window);
+        gWin.window = nullptr;
+    }
+
+    if (gVulkanLibraryLoaded) {
+        SDL_Vulkan_UnloadLibrary();
+        gVulkanLibraryLoaded = false;
+    }
+
+    gCurrentBackend = RendererType::Auto;
+}
+
+static bool InitOpenGLBackend(int width, int height, const char* title) {
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
+    TraceLog(LogLevel::Info, "RENDERER", "Backend selected: OpenGL");
+
+    gWin.window = SDL_CreateWindow(
+        title,
+        width,
+        height,
+        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
+    );
+
+    if (!gWin.window)
+        throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
+
+    gRendererPtr = &gGLRenderer;
+    gRenderer.Init(gWin.window, width, height);
+    gRenderer.SetTargetFPS(gWin.targetFps);
+    gCurrentBackend = RendererType::OpenGL;
+    return true;
+}
+
+static bool InitVulkanBackend(int width, int height, const char* title) {
+    TraceLog(LogLevel::Info, "RENDERER", "Backend selected: Vulkan");
+
+    if (!SDL_Vulkan_LoadLibrary(nullptr))
+        throw std::runtime_error(std::string("SDL_Vulkan_LoadLibrary failed: ") + SDL_GetError());
+    gVulkanLibraryLoaded = true;
+
+    gWin.window = SDL_CreateWindow(
+        title,
+        width,
+        height,
+        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
+    );
+
+    if (!gWin.window)
+        throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
+
+    gRendererPtr = &gVkRenderer;
+    gRenderer.Init(gWin.window, width, height);
+    gRenderer.SetTargetFPS(gWin.targetFps);
+    gCurrentBackend = RendererType::Vulkan;
+    return true;
+}
+
 void InitWindow(int width, int height, const char* title, RendererType rendererType) {
     TraceLog(LogLevel::Info, "WINDOW", TextFormat("Starting window creation: %s (%dx%d)", title ? title : "Quark", width, height));
 
@@ -120,48 +190,31 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
         throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
 
-    if (rendererType == RendererType::OpenGL) {
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    auto initVulkan = [&]() {
+        InitVulkanBackend(width, height, title);
+    };
 
-        TraceLog(LogLevel::Info, "RENDERER", "Backend selected: OpenGL");
+    auto initOpenGL = [&]() {
+        InitOpenGLBackend(width, height, title);
+    };
 
-        gWin.window = SDL_CreateWindow(
-            title,
-            width,
-            height,
-            SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
-        );
-
-        if (!gWin.window)
-            throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
-
-        gRendererPtr = &gGLRenderer;
-        gRenderer.Init(gWin.window, width, height);
-        gRenderer.SetTargetFPS(gWin.targetFps);
-    }
-    else if (rendererType == RendererType::Vulkan) {
-        TraceLog(LogLevel::Info, "RENDERER", "Backend selected: Vulkan");
-
-        if (!SDL_Vulkan_LoadLibrary(nullptr))
-            throw std::runtime_error(std::string("SDL_Vulkan_LoadLibrary failed: ") + SDL_GetError());
-
-        gWin.window = SDL_CreateWindow(
-            title,
-            width,
-            height,
-            SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
-        );
-
-        if (!gWin.window)
-            throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
-
-        gRendererPtr = &gVkRenderer;
-        gRenderer.Init(gWin.window, width, height);
-        gRenderer.SetTargetFPS(gWin.targetFps);
+    try {
+        if (rendererType == RendererType::Auto) {
+            try {
+                initVulkan();
+            } catch (...) {
+                CleanupBackendInitFailure();
+                initOpenGL();
+            }
+        } else if (rendererType == RendererType::OpenGL) {
+            initOpenGL();
+        } else if (rendererType == RendererType::Vulkan) {
+            initVulkan();
+        }
+    } catch (...) {
+        CleanupBackendInitFailure();
+        SDL_Quit();
+        throw;
     }
 
     if (!gWin.window)
@@ -175,12 +228,105 @@ void CloseWindow() {
         gRenderer.Shutdown();
         gRendererPtr = nullptr;
     }
+    if (gVulkanLibraryLoaded) {
+        SDL_Vulkan_UnloadLibrary();
+        gVulkanLibraryLoaded = false;
+    }
     if (gWin.window) {
         SDL_DestroyWindow(gWin.window);
         gWin.window = nullptr;
     }
+    gCurrentBackend = RendererType::Auto;
     SDL_Quit();
     WriteLog(LogLevel::Info, "WINDOW", "Window closed");
+}
+
+RendererType GetCurrentBackend() {
+    return gCurrentBackend;
+}
+
+static QuarkVkRenderer* GetVulkanRenderer() {
+    if (!gRendererPtr || gRendererPtr->GetType() != RendererType::Vulkan) {
+        return nullptr;
+    }
+    return &gVkRenderer;
+}
+
+VkInstance GetVulkanInstance() {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetVulkanInstance();
+    }
+    return VK_NULL_HANDLE;
+}
+
+VkPhysicalDevice GetVulkanPhysicalDevice() {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetVulkanPhysicalDevice();
+    }
+    return VK_NULL_HANDLE;
+}
+
+VkDevice GetVulkanDevice() {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetVulkanDevice();
+    }
+    return VK_NULL_HANDLE;
+}
+
+uint32_t GetVulkanGraphicsQueueFamily() {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetVulkanGraphicsQueueFamily();
+    }
+    return UINT32_MAX;
+}
+
+VkQueue GetVulkanGraphicsQueue() {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetVulkanGraphicsQueue();
+    }
+    return VK_NULL_HANDLE;
+}
+
+VkDescriptorPool GetVulkanDescriptorPool() {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetVulkanDescriptorPool();
+    }
+    return VK_NULL_HANDLE;
+}
+
+VkRenderPass GetVulkanMainRenderPass() {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetVulkanMainRenderPass();
+    }
+    return VK_NULL_HANDLE;
+}
+
+uint32_t GetVulkanMinImageCount() {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetVulkanMinImageCount();
+    }
+    return 0;
+}
+
+uint32_t GetVulkanImageCount() {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetVulkanImageCount();
+    }
+    return 0;
+}
+
+VkSampleCountFlagBits GetVulkanMSAASamples() {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetVulkanMSAASamples();
+    }
+    return VK_SAMPLE_COUNT_1_BIT;
+}
+
+VkDescriptorSet GetVulkanTextureDescriptorSet(uint32_t textureId) {
+    if (QuarkVkRenderer* renderer = GetVulkanRenderer()) {
+        return renderer->GetTextureDescriptorSet(textureId);
+    }
+    return VK_NULL_HANDLE;
 }
 
 bool WindowShouldClose() {
