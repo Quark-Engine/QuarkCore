@@ -2057,10 +2057,25 @@ VkSurfaceFormatKHR QuarkVkRenderer::ChooseSwapSurfaceFormat(const std::vector<Vk
 }
 
 VkPresentModeKHR QuarkVkRenderer::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& modes) const {
+    if (m_targetFps == 0) {
+        for (const auto& mode : modes) {
+            if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) return mode;
+            if (mode == VK_PRESENT_MODE_MAILBOX_KHR) return mode;
+        }
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
     for (const auto& mode : modes) {
         if (mode == VK_PRESENT_MODE_MAILBOX_KHR) return mode;
     }
     return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+void QuarkVkRenderer::SetTargetFPS(int fps) {
+    m_targetFps = fps;
+    if (m_swapChain != VK_NULL_HANDLE) {
+        RecreateSwapChain();
+    }
 }
 
 VkExtent2D QuarkVkRenderer::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps) const {

@@ -408,6 +408,14 @@ void QuarkGLRenderer::EndDrawing() {
     m_drawing            = false;
 }
 
+void QuarkGLRenderer::SetTargetFPS(int fps) {
+    m_targetFps = fps;
+    if (m_context) {
+        if (fps == 0) SDL_GL_SetSwapInterval(0);
+        else SDL_GL_SetSwapInterval(1);
+    }
+}
+
 void QuarkGLRenderer::ClearBackground(Color c) {
     auto n = ToNormColor(c);
     glClearColor(n[0], n[1], n[2], n[3]);

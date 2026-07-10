@@ -175,7 +175,7 @@ public:
 
     int   GetScreenWidth()  const override { return m_width; }
     int   GetScreenHeight() const override { return m_height; }
-    void  SetTargetFPS(int fps)   override { m_targetFps = fps; }
+    void  SetTargetFPS(int fps)   override;
     float GetFrameTime()   const override { return m_frameTime; }
     bool  ShouldClose()     const override { return m_shouldClose; }
     void SetShouldClose(bool v)  { m_shouldClose = v; }

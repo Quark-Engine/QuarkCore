@@ -3,7 +3,7 @@
 
 int main() {
     qc::InitWindow(1280, 720, "QuarkCore - 3D Primitives Demo", qc::RendererType::Vulkan);
-    qc::SetTargetFPS(60);
+    qc::SetTargetFPS(0);
 
     qc::Camera3D camera = qc::CreateCamera3D();
     camera.position = { 10.0f, 10.0f, 10.0f };
@@ -48,6 +48,8 @@ int main() {
             qc::DrawText("Using: CubeV, SphereEx, CylinderEx", 20, 50, 16, qc::LIGHTGRAY);
 
         qc::EndDrawing();
+
+        qc::SetWindowTitle(("QuarkCore - 3D Primitives Demo | FPS: " + std::to_string(qc::GetFPS())).c_str());
     }
 
     qc::CloseWindow();
