@@ -11,6 +11,7 @@ int main()
     SetTargetFPS(60);
 
     Shader shader = LoadShader("resources/lighting.vs", "resources/lighting.fs");
+    Shader shadowShader = LoadShader("resources/shadow_depth.vs", "resources/shadow_depth.fs");
 
     int locViewPos = GetShaderLocation(shader, "viewPos");
     int locAmbient = GetShaderLocation(shader, "ambient");
@@ -18,6 +19,12 @@ int main()
     int locModel   = GetShaderLocation(shader, "uModel");
     int locView    = GetShaderLocation(shader, "uView");
     int locProj    = GetShaderLocation(shader, "uProjection");
+    int locLightViews[4];
+    int locLightProjections[4];
+    for (int i = 0; i < 4; ++i) {
+        locLightViews[i] = GetShaderLocation(shader, TextFormat("lightViews[%i]", i));
+        locLightProjections[i] = GetShaderLocation(shader, TextFormat("lightProjections[%i]", i));
+    }
 
     Vec4 ambient = {0.1f, 0.1f, 0.1f, 1.0f};
     Vec4 diffuse = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -26,10 +33,13 @@ int main()
     SetShaderValue(shader, locDiffuse, diffuse);
 
     Light lights[4];
-    lights[0] = CreateLight(LIGHT_POINT, Vec3{-2,1,-2}, Vec3{0,0,0}, YELLOW, shader);
-    lights[1] = CreateLight(LIGHT_POINT, Vec3{ 2,1, 2}, Vec3{0,0,0}, RED,    shader);
-    lights[2] = CreateLight(LIGHT_POINT, Vec3{-2,1, 2}, Vec3{0,0,0}, GREEN,  shader);
-    lights[3] = CreateLight(LIGHT_POINT, Vec3{ 2,1,-2}, Vec3{0,0,0}, BLUE,   shader);
+    lights[0] = CreateLight(LIGHT_POINT, Vec3{-3,4, 3}, Vec3{0,0,0}, YELLOW, shader);
+    lights[1] = CreateLight(LIGHT_POINT, Vec3{ 3,3, 3}, Vec3{0,0,0}, RED,    shader);
+    lights[2] = CreateLight(LIGHT_POINT, Vec3{-3,3,-3}, Vec3{0,0,0}, GREEN,  shader);
+    lights[3] = CreateLight(LIGHT_POINT, Vec3{ 3,3,-3}, Vec3{0,0,0}, BLUE,   shader);
+
+    for (int i = 0; i < 4; ++i)
+        lights[i].attenuation = 0.08f;
 
     qc::Texture2D tex = qc::GenCheckerTexture(
         256, 256, 32,
@@ -43,9 +53,24 @@ int main()
     UploadMesh(&cubeMesh,  false);
 
     Material mat = {};
+    mat.shader = &shader;
     mat.maps = new MaterialMap[12]{};
     mat.maps[MATERIAL_MAP_ALBEDO].color   = WHITE;
     mat.maps[MATERIAL_MAP_ALBEDO].texture = tex;
+
+    Material shadowMat = {};
+    shadowMat.shader = &shadowShader;
+
+    RenderTexture2D shadowMaps[4];
+    Camera3D shadowCameras[4];
+    for (int i = 0; i < 4; ++i) {
+        shadowMaps[i] = LoadRenderTexture(1024, 1024);
+        shadowCameras[i] = CreateCamera3D();
+        shadowCameras[i].position = lights[i].position;
+        shadowCameras[i].target = lights[i].target;
+        shadowCameras[i].up = Vec3{0.0f, 1.0f, 0.0f};
+        shadowCameras[i].fovy = 55.0f;
+    }
 
     Camera3D camera = CreateCamera3D();
     camera.position = Vec3{2.0f, 4.0f, 6.0f};
@@ -55,10 +80,50 @@ int main()
 
     while (!WindowShouldClose())
     {
+        float orbitTime = (float)GetTime() * 0.35f;
+        camera.position = Vec3{
+            std::sin(orbitTime) * 9.0f,
+            4.5f,
+            std::cos(orbitTime) * 9.0f
+        };
+        camera.target = Vec3{0.0f, 0.5f, 0.0f};
+
         if (IsKeyPressed(KeyboardKey::Y)) lights[0].enabled = !lights[0].enabled;
         if (IsKeyPressed(KeyboardKey::R)) lights[1].enabled = !lights[1].enabled;
         if (IsKeyPressed(KeyboardKey::G)) lights[2].enabled = !lights[2].enabled;
         if (IsKeyPressed(KeyboardKey::B)) lights[3].enabled = !lights[3].enabled;
+
+        Mat4 planeT = Mat4::identity();
+
+        Mat4 cubeT = Mat4::identity();
+        for (int i = 0; i < 4; ++i) {
+            BeginTextureMode(shadowMaps[i]);
+            ClearBackground(WHITE);
+            BeginMode3D(shadowCameras[i]);
+            BeginShaderMode(shadowShader);
+
+            int depthModel = GetShaderLocation(shadowShader, "uModel");
+            int depthView = GetShaderLocation(shadowShader, "uView");
+            int depthProj = GetShaderLocation(shadowShader, "uProjection");
+            SetShaderValueMatrix(shadowShader, depthView, GetMatrixModelview());
+            SetShaderValueMatrix(shadowShader, depthProj, GetMatrixProjection());
+            SetShaderValueMatrix(shadowShader, depthModel, cubeT.m);
+            DrawMesh(cubeMesh, shadowMat, cubeT);
+
+            Mat4 lightView{};
+            Mat4 lightProjection{};
+            for (int matrixIndex = 0; matrixIndex < 16; ++matrixIndex) {
+                lightView.m[matrixIndex] = GetMatrixModelview()[matrixIndex];
+                lightProjection.m[matrixIndex] = GetMatrixProjection()[matrixIndex];
+            }
+            SetShaderValueMatrix(shader, locLightViews[i], lightView.m);
+            SetShaderValueMatrix(shader, locLightProjections[i], lightProjection.m);
+            mat.maps[MATERIAL_MAP_HEIGHT + i].texture = shadowMaps[i].texture;
+
+            EndShaderMode();
+            EndMode3D();
+            EndTextureMode();
+        }
 
         BeginDrawing();
         ClearBackground(BLACK);
@@ -74,11 +139,11 @@ int main()
         for (int i = 0; i < 4; i++)
             UpdateLightValues(shader, lights[i]);
 
-        Mat4 planeT = Mat4::identity();
+        planeT = Mat4::identity();
         SetShaderValueMatrix(shader, locModel, planeT.m);
         DrawMesh(planeMesh, mat, planeT);
 
-        Mat4 cubeT = Mat4::identity();
+        cubeT = Mat4::identity();
         SetShaderValueMatrix(shader, locModel, cubeT.m);
         DrawMesh(cubeMesh, mat, cubeT);
 
@@ -105,8 +170,11 @@ int main()
 
     UnloadMesh(planeMesh);
     UnloadMesh(cubeMesh);
+    for (int i = 0; i < 4; ++i)
+        UnloadRenderTexture(shadowMaps[i]);
     delete[] mat.maps;
     UnloadShader(shader);
+    UnloadShader(shadowShader);
     CloseWindow();
     return 0;
 }

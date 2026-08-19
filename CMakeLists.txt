@@ -328,6 +328,19 @@ if(QC_BUILD_EXAMPLES)
                 )
             endforeach()
 
+            if(_target STREQUAL "quarkcore_3d_lights")
+                add_custom_command(TARGET ${_target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E make_directory
+                        $<TARGET_FILE_DIR:${_target}>/resources
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/lighting.vs
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/lighting.fs
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/shadow_depth.vs
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/shadow_depth.fs
+                        $<TARGET_FILE_DIR:${_target}>/resources
+                )
+            endif()
+
         endforeach()
     else()
         set(_RUNTIME_LIBS
