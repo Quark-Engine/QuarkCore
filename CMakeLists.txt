@@ -182,36 +182,40 @@ else()
               /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
         REQUIRED
     )
-    find_library(SHADERC_UTIL_LIB
-        NAMES shaderc_util
-        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
-              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
-        REQUIRED
-    )
-    find_library(GLSLANG_LIB
-        NAMES glslang
-        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
-              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
-        REQUIRED
-    )
-    find_library(SPIRV_LIB
-        NAMES SPIRV
-        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
-              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
-        REQUIRED
-    )
-    find_library(SPIRV_TOOLS_OPT_LIB
-        NAMES SPIRV-Tools-opt
-        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
-              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
-        REQUIRED
-    )
-    find_library(SPIRV_TOOLS_LIB
-        NAMES SPIRV-Tools
-        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
-              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
-        REQUIRED
-    )
+    if(APPLE)
+        find_library(SHADERC_UTIL_LIB
+            NAMES shaderc_util
+            PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+            REQUIRED
+        )
+        find_library(GLSLANG_LIB
+            NAMES glslang
+            PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+            REQUIRED
+        )
+        find_library(SPIRV_LIB
+            NAMES SPIRV
+            PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+            REQUIRED
+        )
+        find_library(SPIRV_TOOLS_OPT_LIB
+            NAMES SPIRV-Tools-opt
+            PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+            REQUIRED
+        )
+        find_library(SPIRV_TOOLS_LIB
+            NAMES SPIRV-Tools
+            PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+            REQUIRED
+        )
+        set(SHADERC_PLATFORM_LIBS
+            ${SHADERC_UTIL_LIB}
+            ${GLSLANG_LIB}
+            ${SPIRV_LIB}
+            ${SPIRV_TOOLS_OPT_LIB}
+            ${SPIRV_TOOLS_LIB}
+        )
+    endif()
 endif()
 
 set(SDL3_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
@@ -423,11 +427,7 @@ else()
             freetype
             Vulkan::Vulkan
             ${SHADERC_LIB}
-            ${SHADERC_UTIL_LIB}
-            ${GLSLANG_LIB}
-            ${SPIRV_LIB}
-            ${SPIRV_TOOLS_OPT_LIB}
-            ${SPIRV_TOOLS_LIB}
+            ${SHADERC_PLATFORM_LIBS}
             ${SPIRV_CROSS_GLSL_LIB}
             ${SPIRV_CROSS_CORE_LIB}
     )
