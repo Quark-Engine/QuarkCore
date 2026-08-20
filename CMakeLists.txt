@@ -182,6 +182,36 @@ else()
               /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
         REQUIRED
     )
+    find_library(SHADERC_UTIL_LIB
+        NAMES shaderc_util
+        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+        REQUIRED
+    )
+    find_library(GLSLANG_LIB
+        NAMES glslang
+        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+        REQUIRED
+    )
+    find_library(SPIRV_LIB
+        NAMES SPIRV
+        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+        REQUIRED
+    )
+    find_library(SPIRV_TOOLS_OPT_LIB
+        NAMES SPIRV-Tools-opt
+        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+        REQUIRED
+    )
+    find_library(SPIRV_TOOLS_LIB
+        NAMES SPIRV-Tools
+        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+        REQUIRED
+    )
 endif()
 
 set(SDL3_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
@@ -393,6 +423,11 @@ else()
             freetype
             Vulkan::Vulkan
             ${SHADERC_LIB}
+            ${SHADERC_UTIL_LIB}
+            ${GLSLANG_LIB}
+            ${SPIRV_LIB}
+            ${SPIRV_TOOLS_OPT_LIB}
+            ${SPIRV_TOOLS_LIB}
             ${SPIRV_CROSS_GLSL_LIB}
             ${SPIRV_CROSS_CORE_LIB}
     )
@@ -513,6 +548,21 @@ if(QC_BUILD_EXAMPLES)
             $<TARGET_FILE:SDL3::SDL3>
         )
 
+        if(NOT APPLE)
+            add_custom_command(TARGET QuarkCore POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${_RUNTIME_LIBS}
+                    $<TARGET_FILE_DIR:QuarkCore>
+                COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:QuarkCore>/$<IF:$<CONFIG:Debug>,libfreetyped.so.6,libfreetype.so.6>
+                COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:freetype> $<TARGET_FILE_DIR:QuarkCore>/$<IF:$<CONFIG:Debug>,libfreetyped.so.6,libfreetype.so.6>
+                COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:QuarkCore>/$<IF:$<CONFIG:Debug>,libassimpd.so.6,libassimp.so.6>
+                COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:assimp::assimp> $<TARGET_FILE_DIR:QuarkCore>/$<IF:$<CONFIG:Debug>,libassimpd.so.6,libassimp.so.6>
+                COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:QuarkCore>/libSDL3.so.0
+                COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:SDL3::SDL3> $<TARGET_FILE_DIR:QuarkCore>/libSDL3.so.0
+                COMMENT "Creating shared library symlinks next to QuarkCore (Linux)..."
+            )
+        endif()
+
         foreach(i RANGE ${_last})
             list(GET EXAMPLE_TARGETS ${i} _target)
             list(GET EXAMPLE_SOURCES ${i} _source)
@@ -531,17 +581,6 @@ if(QC_BUILD_EXAMPLES)
                     ${_RUNTIME_LIBS}
                     $<TARGET_FILE_DIR:${_target}>
             )
-            if(NOT APPLE)
-                add_custom_command(TARGET ${_target} POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:${_target}>/$<IF:$<CONFIG:Debug>,libfreetyped.so.6,libfreetype.so.6>
-                    COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:freetype> $<TARGET_FILE_DIR:${_target}>/$<IF:$<CONFIG:Debug>,libfreetyped.so.6,libfreetype.so.6>
-                    COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:${_target}>/$<IF:$<CONFIG:Debug>,libassimpd.so.6,libassimp.so.6>
-                    COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:assimp::assimp> $<TARGET_FILE_DIR:${_target}>/$<IF:$<CONFIG:Debug>,libassimpd.so.6,libassimp.so.6>
-                    COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:${_target}>/libSDL3.so.0
-                    COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:SDL3::SDL3> $<TARGET_FILE_DIR:${_target}>/libSDL3.so.0
-                    COMMENT "Creating shared library symlinks next to ${_target} (Linux)..."
-                )
-            endif()
         endforeach()
     endif()
 endif()
