@@ -128,6 +128,7 @@ struct VkTextureData {
 
 struct VkDrawItem {
     uint32_t textureDescSet;
+    uint32_t shaderProgramId = 0;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     uint32_t firstIndex  = 0;
     uint32_t indexCount  = 0;
@@ -165,8 +166,11 @@ struct VkRenderTargetData {
 struct VkShaderProgramData {
     VkShaderModule vertexModule   = VK_NULL_HANDLE;
     VkShaderModule fragmentModule = VK_NULL_HANDLE;
+    VkPipeline     pipeline       = VK_NULL_HANDLE;
     std::unordered_map<std::string, int> uniforms;
     std::unordered_map<std::string, int> attributes;
+    std::unordered_map<int, std::vector<uint8_t>> uniformValues;
+    std::unordered_map<int, int> uniformTypes;
 };
 
 class QuarkVkRenderer final : public IRenderer {
@@ -325,7 +329,10 @@ private:
     void CreateDescriptorSetLayout();
     void CreatePipeline2D();
     void CreateOffscreenPipeline2D();
-    VkPipeline CreatePipelineForRenderPass(VkRenderPass renderPass);
+    VkPipeline CreatePipelineForRenderPass(VkRenderPass renderPass,
+                                           VkShaderModule vertexModule = VK_NULL_HANDLE,
+                                           VkShaderModule fragmentModule = VK_NULL_HANDLE);
+    void CreateShaderPipelines();
     VkPipeline Create3DPipelineForRenderPass(VkRenderPass renderPass, VkPrimitiveTopology topology);
     void CreatePipeline3D();
     void CreateFramebuffers();

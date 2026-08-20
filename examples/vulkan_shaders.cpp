@@ -8,9 +8,16 @@ constexpr const char* kVkSimpleVert = R"(
 layout(location = 0) in vec2 aPosition;
 layout(location = 0) out vec2 vPos;
 
+layout(push_constant) uniform ScreenSize {
+    vec2 size;
+};
+
 void main() {
-    vPos = aPosition * 0.5 + 0.5;
-    gl_Position = vec4(aPosition, 0.0, 1.0);
+    vPos = vec2(aPosition.x / size.x, 1.0 - aPosition.y / size.y);
+    vec2 clipPosition = vec2(
+        (aPosition.x / size.x) * 2.0 - 1.0,
+        (aPosition.y / size.y) * 2.0 - 1.0);
+    gl_Position = vec4(clipPosition, 0.0, 1.0);
 }
 )";
 

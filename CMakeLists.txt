@@ -43,6 +43,80 @@ if(WIN32)
 
     target_link_libraries(Vulkan::Vulkan INTERFACE "${VULKAN_LIB_PATH}")
     set(VULKAN_RUNTIME_DLL "${VULKAN_DLL_PATH}" CACHE FILEPATH "" FORCE)
+
+    function(qc_add_shaderc_lib TARGET_NAME RELEASE_FILE DEBUG_FILE)
+        set(_release "${VULKAN_EXTERNAL_DIR}/lib/${RELEASE_FILE}")
+        set(_debug   "${VULKAN_EXTERNAL_DIR}/lib/${DEBUG_FILE}")
+
+        if(NOT EXISTS "${_release}")
+            message(FATAL_ERROR "Missing library: ${_release}\nPlace ${RELEASE_FILE} in external/Vulkan/lib/")
+        endif()
+        if(NOT EXISTS "${_debug}")
+            message(FATAL_ERROR "Missing library: ${_debug}\nPlace ${DEBUG_FILE} in external/Vulkan/lib/")
+        endif()
+
+        add_library(${TARGET_NAME} STATIC IMPORTED GLOBAL)
+        target_include_directories(${TARGET_NAME} INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
+        set_target_properties(${TARGET_NAME} PROPERTIES
+            IMPORTED_CONFIGURATIONS "Debug;Release"
+            IMPORTED_LOCATION_DEBUG   "${_debug}"
+            IMPORTED_LOCATION_RELEASE "${_release}"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    endfunction()
+
+    qc_add_shaderc_lib(shaderc_lib          "shaderc.lib"           "shadercd.lib")
+    qc_add_shaderc_lib(glslang_lib          "glslang.lib"           "glslangd.lib")
+    qc_add_shaderc_lib(shaderc_util_lib     "shaderc_util.lib"      "shaderc_utild.lib")
+    qc_add_shaderc_lib(SPIRV_lib            "SPIRV.lib"             "SPIRVd.lib")
+    qc_add_shaderc_lib(SPIRV_Tools_opt_lib  "SPIRV-Tools-opt.lib"   "SPIRV-Tools-optd.lib")
+    qc_add_shaderc_lib(SPIRV_Tools_lib      "SPIRV-Tools.lib"       "SPIRV-Toolsd.lib")
+
+    add_library(shaderc_combined INTERFACE IMPORTED GLOBAL)
+    target_link_libraries(shaderc_combined INTERFACE
+        shaderc_lib
+        glslang_lib
+        shaderc_util_lib
+        SPIRV_lib
+        SPIRV_Tools_opt_lib
+        SPIRV_Tools_lib
+    )
+
+    set(SPIRV_CROSS_CORE_LIB_DEBUG   "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-cored.lib")
+    set(SPIRV_CROSS_CORE_LIB_RELEASE "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-core.lib")
+    set(SPIRV_CROSS_GLSL_LIB_DEBUG   "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-glsld.lib")
+    set(SPIRV_CROSS_GLSL_LIB_RELEASE "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-glsl.lib")
+
+    foreach(_lib SPIRV_CROSS_CORE_LIB_DEBUG SPIRV_CROSS_CORE_LIB_RELEASE
+                 SPIRV_CROSS_GLSL_LIB_DEBUG SPIRV_CROSS_GLSL_LIB_RELEASE)
+        if(NOT EXISTS "${${_lib}}")
+            message(FATAL_ERROR "Missing library: ${${_lib}}\n"
+                                "Place it in external/Vulkan/lib/")
+        endif()
+    endforeach()
+
+    add_library(spirv-cross-core STATIC IMPORTED GLOBAL)
+    target_include_directories(spirv-cross-core INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
+    set_target_properties(spirv-cross-core PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_LOCATION_DEBUG   "${SPIRV_CROSS_CORE_LIB_DEBUG}"
+        IMPORTED_LOCATION_RELEASE "${SPIRV_CROSS_CORE_LIB_RELEASE}"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+    )
+
+    add_library(spirv-cross-glsl STATIC IMPORTED GLOBAL)
+    target_include_directories(spirv-cross-glsl INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
+    set_target_properties(spirv-cross-glsl PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_LOCATION_DEBUG   "${SPIRV_CROSS_GLSL_LIB_DEBUG}"
+        IMPORTED_LOCATION_RELEASE "${SPIRV_CROSS_GLSL_LIB_RELEASE}"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+    )
+
+    target_link_libraries(spirv-cross-glsl INTERFACE spirv-cross-core)
 else()
     find_package(Vulkan REQUIRED)
 endif()
@@ -243,6 +317,8 @@ target_link_libraries(QuarkCore
         freetype
         $<IF:$<PLATFORM_ID:Windows>,Vulkan::Vulkan,Vulkan::Vulkan>
         Vulkan::Vulkan
+        shaderc_combined
+        spirv-cross-glsl
 )
 
 set_target_properties(QuarkCore PROPERTIES UNITY_BUILD OFF)
@@ -261,6 +337,7 @@ endif()
 
 if(MSVC)
     target_compile_options(QuarkCore PRIVATE /W4 /permissive- /MP)
+    target_link_options(QuarkCore PRIVATE /IGNORE:4099)
 else()
     target_compile_options(QuarkCore PRIVATE -Wall -Wextra -Wpedantic)
 endif()

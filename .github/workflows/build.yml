@@ -84,7 +84,9 @@ jobs:
           libxinerama-dev \
           libxxf86vm-dev \
           libwayland-dev \
-          wayland-protocols
+          wayland-protocols \
+          libshaderc-dev \
+          spirv-cross
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DQC_BUILD_EXAMPLES=ON -DASSIMP_BUILD_ZLIB=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -G Ninja
@@ -123,7 +125,9 @@ jobs:
             ninja \
             molten-vk \
             vulkan-headers \
-            vulkan-loader
+            vulkan-loader \
+            shaderc \
+            spirv-cross
 
       - name: Configure CMake
         run: |

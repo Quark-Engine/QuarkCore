@@ -216,10 +216,11 @@ void QuarkVkRenderer::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color) {
 
     if (!drawItems->empty() &&
         drawItems->back().descriptorSet == it->second.descriptorSet &&
+        drawItems->back().shaderProgramId == m_currentShaderProgramId &&
         drawItems->back().firstIndex + drawItems->back().indexCount == firstIndex) {
         drawItems->back().indexCount += 3;
     } else {
-        drawItems->push_back({ 0, it->second.descriptorSet, firstIndex, 3 });
+        drawItems->push_back({ 0, m_currentShaderProgramId, it->second.descriptorSet, firstIndex, 3 });
     }
 }
 

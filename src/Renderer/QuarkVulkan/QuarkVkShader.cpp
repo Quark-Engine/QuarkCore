@@ -1,21 +1,16 @@
 #include "QuarkVkRenderer.hpp"
 
 #include <SDL3/SDL_vulkan.h>
+#include <shaderc/shaderc.hpp>
+#include <spirv_cross/spirv_glsl.hpp>
+
 #include <algorithm>
-#include <array>
-#include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <set>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-#if defined(_WIN32)
-#include <windows.h>
-#endif
 
 namespace qc {
 namespace {
@@ -61,122 +56,82 @@ bool ReadTextFile(const char* path, std::string& out) {
     return true;
 }
 
-std::filesystem::path FindGlslangValidator() {
-    const std::filesystem::path cwd = std::filesystem::current_path();
-    const std::array<std::filesystem::path, 4> candidates = {
-        cwd / "external" / "Vulkan" / "lib" / "glslangValidator.exe",
-        cwd / "external" / "Vulkan" / "lib" / "glslangValidator",
-        std::filesystem::path("external") / "Vulkan" / "lib" / "glslangValidator.exe",
-        std::filesystem::path("external") / "Vulkan" / "lib" / "glslangValidator"
-    };
+bool CompileGlslToSpirv(const std::string& source,
+                        shaderc_shader_kind shaderKind,
+                        const char* stageName,
+                        std::vector<uint32_t>& outSpirv) {
+    shaderc::Compiler compiler;
+    shaderc::CompileOptions options;
+    options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
 
-    for (const auto& candidate : candidates) {
-        std::error_code ec;
-        if (std::filesystem::exists(candidate, ec) && !ec) {
-            return candidate;
-        }
+    const shaderc::SpvCompilationResult result = compiler.CompileGlslToSpv(
+        source, shaderKind, "QuarkCore runtime shader", options);
+    if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
+        TraceLog(LogLevel::Error, "VULKAN",
+                 TextFormat("Failed to compile %s shader with Shaderc: %s",
+                            stageName, result.GetErrorMessage().c_str()));
+        return false;
     }
-    return {};
+
+    outSpirv.assign(result.cbegin(), result.cend());
+    return !outSpirv.empty();
 }
 
-bool RunCompilerProcess(const std::filesystem::path& validator,
-                        const std::filesystem::path& sourcePath,
-                        const std::filesystem::path& outputPath,
-                        const std::string& stageName) {
-#if defined(_WIN32)
-    const std::wstring validatorW = validator.wstring();
-    const std::wstring sourceW = sourcePath.wstring();
-    const std::wstring outputW = outputPath.wstring();
-    const std::wstring stageW(stageName.begin(), stageName.end());
-    std::wstring commandLine = L"\"" + validatorW + L"\" -V -S " + stageW + L" \"" + sourceW + L"\" -o \"" + outputW + L"\"";
+void ReflectShaderResources(VkShaderProgramData& programData,
+                           const std::vector<uint32_t>& spirv,
+                           const char* stageName) {
+    if (spirv.empty()) return;
 
-    STARTUPINFOW si{};
-    PROCESS_INFORMATION pi{};
-    si.cb = sizeof(si);
+    try {
+        spirv_cross::CompilerGLSL compiler(spirv);
+        const auto resources = compiler.get_shader_resources();
 
-    if (!CreateProcessW(validatorW.c_str(), commandLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
-        TraceLog(LogLevel::Error, "VULKAN", TextFormat("Failed to launch glslangValidator: %lu", GetLastError()));
-        return false;
+        for (const auto& resource : resources.stage_inputs) {
+            const std::string name = compiler.get_name(resource.id);
+            if (name.empty()) {
+                continue;
+            }
+            const uint32_t location = compiler.get_decoration(resource.id, spv::DecorationLocation);
+            programData.attributes[name] = static_cast<int>(location);
+        }
+
+        for (const auto& resource : resources.uniform_buffers) {
+            const std::string name = compiler.get_name(resource.id);
+            if (!name.empty() && programData.uniforms.find(name) == programData.uniforms.end()) {
+                const int binding = static_cast<int>(compiler.get_decoration(resource.id, spv::DecorationBinding));
+                programData.uniforms[name] = binding;
+            }
+        }
+
+        for (const auto& resource : resources.sampled_images) {
+            const std::string name = compiler.get_name(resource.id);
+            if (!name.empty() && programData.uniforms.find(name) == programData.uniforms.end()) {
+                const int binding = static_cast<int>(compiler.get_decoration(resource.id, spv::DecorationBinding));
+                programData.uniforms[name] = binding;
+            }
+        }
+    } catch (const std::exception& ex) {
+        TraceLog(LogLevel::Warn, "VULKAN",
+                 TextFormat("Failed to reflect %s shader resources: %s",
+                            stageName, ex.what()));
     }
-
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD exitCode = 0;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
-    return exitCode == 0;
-#else
-    std::ostringstream command;
-    command << '"' << validator.string() << '"' << " -V -S " << stageName << " "
-            << '"' << sourcePath.string() << '"' << " -o " << '"' << outputPath.string() << '"';
-    return std::system(command.str().c_str()) == 0;
-#endif
 }
 
-bool CompileGlslToSpirv(const std::string& source, const char* stageName, std::vector<uint32_t>& outSpirv) {
-    const std::filesystem::path validator = FindGlslangValidator();
-    if (validator.empty()) {
-        TraceLog(LogLevel::Error, "VULKAN", "glslangValidator was not found in external/Vulkan/lib.");
-        return false;
+void StoreUniformValue(VkShaderProgramData& programData,
+                      int locIndex,
+                      int uniformType,
+                      const void* value,
+                      size_t bytesPerElement,
+                      int count) {
+    if (locIndex < 0 || value == nullptr || count <= 0) {
+        return;
     }
 
-    std::error_code ec;
-    const std::filesystem::path tempBase = std::filesystem::temp_directory_path(ec);
-    std::filesystem::path tempDir = tempBase / "quarkvkshader";
-    for (int attempt = 0; attempt < 1000; ++attempt) {
-        tempDir = tempBase / (std::string("quarkvkshader-") + std::to_string(std::rand()) + std::to_string(attempt));
-        if (!std::filesystem::exists(tempDir, ec)) {
-            break;
-        }
-    }
-    std::filesystem::create_directories(tempDir, ec);
-    if (ec) {
-        TraceLog(LogLevel::Error, "VULKAN", "Failed to create temporary directory for shader compilation.");
-        return false;
-    }
-
-    const std::filesystem::path sourcePath = tempDir / (std::string("shader.") + stageName + ".glsl");
-    const std::filesystem::path outputPath = tempDir / "shader.spv";
-
-    {
-        std::ofstream sourceFile(sourcePath, std::ios::binary);
-        if (!sourceFile.is_open()) {
-            std::filesystem::remove_all(tempDir, ec);
-            return false;
-        }
-        sourceFile << source;
-    }
-
-    TraceLog(LogLevel::Trace, "VULKAN", TextFormat("Compiling shader with validator: %s", validator.string().c_str()));
-    const bool compiled = RunCompilerProcess(validator, sourcePath, outputPath, stageName);
-
-    if (!compiled || !std::filesystem::exists(outputPath, ec)) {
-        std::filesystem::remove_all(tempDir, ec);
-        TraceLog(LogLevel::Error, "VULKAN", TextFormat("Failed to compile %s shader with glslangValidator.", stageName));
-        return false;
-    }
-
-    std::ifstream binary(outputPath, std::ios::binary | std::ios::ate);
-    if (!binary.is_open()) {
-        std::filesystem::remove_all(tempDir, ec);
-        return false;
-    }
-
-    const std::streamsize size = binary.tellg();
-    binary.seekg(0);
-    if (size <= 0) {
-        std::filesystem::remove_all(tempDir, ec);
-        return false;
-    }
-
-    std::vector<char> bytes(static_cast<size_t>(size));
-    binary.read(bytes.data(), size);
-    outSpirv.clear();
-    outSpirv.resize(bytes.size() / sizeof(uint32_t));
-    std::memcpy(outSpirv.data(), bytes.data(), bytes.size());
-
-    std::filesystem::remove_all(tempDir, ec);
-    return true;
+    const size_t totalBytes = static_cast<size_t>(count) * bytesPerElement;
+    auto& storage = programData.uniformValues[locIndex];
+    storage.assign(static_cast<const uint8_t*>(value),
+                   static_cast<const uint8_t*>(value) + totalBytes);
+    programData.uniformTypes[locIndex] = uniformType;
 }
 
 } // namespace
@@ -219,20 +174,22 @@ Shader QuarkVkRenderer::LoadShaderFromMemory(const char* vs, const char* fs) {
     try {
         if (vs) {
             std::vector<uint32_t> spirv;
-            if (!CompileGlslToSpirv(vs, "vert", spirv)) {
+            if (!CompileGlslToSpirv(vs, shaderc_glsl_vertex_shader, "vertex", spirv)) {
                 return Shader{};
             }
+            ReflectShaderResources(programData, spirv, "vertex");
             programData.vertexModule = CreateShaderModule(spirv);
         }
 
         if (fs) {
             std::vector<uint32_t> spirv;
-            if (!CompileGlslToSpirv(fs, "frag", spirv)) {
+            if (!CompileGlslToSpirv(fs, shaderc_glsl_fragment_shader, "fragment", spirv)) {
                 if (programData.vertexModule != VK_NULL_HANDLE) {
                     vkDestroyShaderModule(m_device, programData.vertexModule, nullptr);
                 }
                 return Shader{};
             }
+            ReflectShaderResources(programData, spirv, "fragment");
             programData.fragmentModule = CreateShaderModule(spirv);
         }
     } catch (const std::exception& ex) {
@@ -246,6 +203,9 @@ Shader QuarkVkRenderer::LoadShaderFromMemory(const char* vs, const char* fs) {
         return Shader{};
     }
 
+    programData.pipeline = CreatePipelineForRenderPass(m_renderPass,
+                                                       programData.vertexModule,
+                                                       programData.fragmentModule);
     m_shaderPrograms[shaderId] = std::move(programData);
     return Shader{shaderId};
 }
@@ -257,6 +217,9 @@ void QuarkVkRenderer::UnloadShader(Shader& shader) {
 
     const auto it = m_shaderPrograms.find(shader.id);
     if (it != m_shaderPrograms.end()) {
+        if (it->second.pipeline != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, it->second.pipeline, nullptr);
+        }
         if (it->second.vertexModule != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
             vkDestroyShaderModule(m_device, it->second.vertexModule, nullptr);
         }
@@ -326,55 +289,216 @@ int QuarkVkRenderer::GetShaderAttributeLocation(const Shader& shader, const char
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, float value) {
-    (void)shader; (void)locIndex; (void)value;
+    if (shader.id == 0 || locIndex < 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_FLOAT, &value, sizeof(float), 1);
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, int value) {
-    (void)shader; (void)locIndex; (void)value;
+    if (shader.id == 0 || locIndex < 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_INT, &value, sizeof(int), 1);
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const Color& value) {
-    (void)shader; (void)locIndex; (void)value;
+    if (shader.id == 0 || locIndex < 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    const float rgba[4] = {
+        value.r / 255.0f,
+        value.g / 255.0f,
+        value.b / 255.0f,
+        value.a / 255.0f
+    };
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_VEC4, rgba, sizeof(float), 4);
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const qc::Vec2& value) {
-    (void)shader; (void)locIndex; (void)value;
+    if (shader.id == 0 || locIndex < 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    const float vec[2] = { value.x, value.y };
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_VEC2, vec, sizeof(float), 2);
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value) {
-    (void)shader; (void)locIndex; (void)value;
+    if (shader.id == 0 || locIndex < 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    const float vec[3] = { value.x, value.y, value.z };
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_VEC3, vec, sizeof(float), 3);
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const qc::Vec4& value) {
-    (void)shader; (void)locIndex; (void)value;
+    if (shader.id == 0 || locIndex < 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    const float vec[4] = { value.x, value.y, value.z, value.w };
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_VEC4, vec, sizeof(float), 4);
 }
 
 void QuarkVkRenderer::SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat) {
-    (void)shader; (void)locIndex; (void)mat;
+    if (shader.id == 0 || locIndex < 0 || mat == nullptr) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_FLOAT, mat, sizeof(float), 16);
 }
 
 void QuarkVkRenderer::SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit) {
-    (void)shader; (void)locIndex; (void)textureUnit;
+    if (shader.id == 0 || locIndex < 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_SAMPLER2D, &textureUnit, sizeof(int), 1);
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const void* value, int uniformType) {
-    (void)shader; (void)locIndex; (void)value; (void)uniformType;
+    if (shader.id == 0 || locIndex < 0 || value == nullptr) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+
+    switch (uniformType) {
+        case SHADER_UNIFORM_FLOAT:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float), 1);
+            break;
+        case SHADER_UNIFORM_VEC2:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float), 2);
+            break;
+        case SHADER_UNIFORM_VEC3:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float), 3);
+            break;
+        case SHADER_UNIFORM_VEC4:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float), 4);
+            break;
+        case SHADER_UNIFORM_INT:
+        case SHADER_UNIFORM_SAMPLER2D:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int), 1);
+            break;
+        case SHADER_UNIFORM_IVEC2:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int), 2);
+            break;
+        case SHADER_UNIFORM_IVEC3:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int), 3);
+            break;
+        case SHADER_UNIFORM_IVEC4:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int), 4);
+            break;
+        default:
+            break;
+    }
 }
 
 void QuarkVkRenderer::SetShaderValueV(const Shader& shader, int locIndex, const void* value, int uniformType, int count) {
-    (void)shader; (void)locIndex; (void)value; (void)uniformType; (void)count;
+    if (shader.id == 0 || locIndex < 0 || value == nullptr || count <= 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+
+    switch (uniformType) {
+        case SHADER_UNIFORM_FLOAT:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float), count);
+            break;
+        case SHADER_UNIFORM_VEC2:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float) * 2, count);
+            break;
+        case SHADER_UNIFORM_VEC3:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float) * 3, count);
+            break;
+        case SHADER_UNIFORM_VEC4:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float) * 4, count);
+            break;
+        case SHADER_UNIFORM_INT:
+        case SHADER_UNIFORM_SAMPLER2D:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int), count);
+            break;
+        case SHADER_UNIFORM_IVEC2:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int) * 2, count);
+            break;
+        case SHADER_UNIFORM_IVEC3:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int) * 3, count);
+            break;
+        case SHADER_UNIFORM_IVEC4:
+            StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int) * 4, count);
+            break;
+        default:
+            break;
+    }
 }
 
 void QuarkVkRenderer::SetShaderValueMatrix(const Shader& shader, int locIndex, const Matrix& mat) {
-    (void)shader; (void)locIndex; (void)mat;
+    if (shader.id == 0 || locIndex < 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    const float* data = mat.m;
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_FLOAT, data, sizeof(float), 16);
 }
 
 void QuarkVkRenderer::SetShaderValueTexture(const Shader& shader, int locIndex, const ITexture& texture) {
-    (void)shader; (void)locIndex; (void)texture;
+    if (shader.id == 0 || locIndex < 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    const int textureUnit = static_cast<int>(texture.id);
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_SAMPLER2D, &textureUnit, sizeof(int), 1);
 }
 
 void QuarkVkRenderer::SetShaderValueTextureUnit(const Shader& shader, int locIndex, const ITexture& texture, int textureUnit) {
-    (void)shader; (void)locIndex; (void)texture; (void)textureUnit;
+    (void)texture;
+    if (shader.id == 0 || locIndex < 0) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shader.id);
+    if (it == m_shaderPrograms.end()) {
+        return;
+    }
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_SAMPLER2D, &textureUnit, sizeof(int), 1);
 }
 
 } // namespace qc

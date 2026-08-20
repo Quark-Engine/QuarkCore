@@ -577,6 +577,7 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     CreateDescriptorSetLayout();
     CreatePipeline2D();
     CreateOffscreenPipeline2D();
+    CreateShaderPipelines();
     CreatePipeline3D();
     CreateFramebuffers();
     CreateCommandPool();
@@ -1524,7 +1525,9 @@ void QuarkVkRenderer::CreateWhiteTexture() {
     TraceLog(LogLevel::Trace, "VULKAN", "White fallback texture created.");
 }
 
-VkPipeline QuarkVkRenderer::CreatePipelineForRenderPass(VkRenderPass renderPass) {
+VkPipeline QuarkVkRenderer::CreatePipelineForRenderPass(VkRenderPass renderPass,
+                                                        VkShaderModule vertexModule,
+                                                        VkShaderModule fragmentModule) {
     if (m_device == VK_NULL_HANDLE || renderPass == VK_NULL_HANDLE) {
         return VK_NULL_HANDLE;
     }
@@ -1547,22 +1550,27 @@ VkPipeline QuarkVkRenderer::CreatePipelineForRenderPass(VkRenderPass renderPass)
         }
     }
 
-    const std::vector<uint32_t> vertCode(kQuadVertSpv.begin(), kQuadVertSpv.end());
-    const std::vector<uint32_t> fragCode(kQuadFragSpv.begin(), kQuadFragSpv.end());
-
-    VkShaderModule vertShader = CreateShaderModule(vertCode);
-    VkShaderModule fragShader = CreateShaderModule(fragCode);
+    bool ownsVertexModule = vertexModule == VK_NULL_HANDLE;
+    bool ownsFragmentModule = fragmentModule == VK_NULL_HANDLE;
+    if (ownsVertexModule) {
+        const std::vector<uint32_t> vertCode(kQuadVertSpv.begin(), kQuadVertSpv.end());
+        vertexModule = CreateShaderModule(vertCode);
+    }
+    if (ownsFragmentModule) {
+        const std::vector<uint32_t> fragCode(kQuadFragSpv.begin(), kQuadFragSpv.end());
+        fragmentModule = CreateShaderModule(fragCode);
+    }
 
     VkPipelineShaderStageCreateInfo vertStage{};
     vertStage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertStage.stage  = VK_SHADER_STAGE_VERTEX_BIT;
-    vertStage.module = vertShader;
+    vertStage.module = vertexModule;
     vertStage.pName  = "main";
 
     VkPipelineShaderStageCreateInfo fragStage{};
     fragStage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     fragStage.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragStage.module = fragShader;
+    fragStage.module = fragmentModule;
     fragStage.pName  = "main";
 
     VkVertexInputBindingDescription bindingDesc{};
@@ -1675,14 +1683,27 @@ VkPipeline QuarkVkRenderer::CreatePipelineForRenderPass(VkRenderPass renderPass)
 
     VkPipeline pipeline = VK_NULL_HANDLE;
     if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
-        vkDestroyShaderModule(m_device, fragShader, nullptr);
-        vkDestroyShaderModule(m_device, vertShader, nullptr);
+        if (ownsFragmentModule) vkDestroyShaderModule(m_device, fragmentModule, nullptr);
+        if (ownsVertexModule) vkDestroyShaderModule(m_device, vertexModule, nullptr);
         throw std::runtime_error("Failed to create Vulkan 2D pipeline.");
     }
 
-    vkDestroyShaderModule(m_device, fragShader, nullptr);
-    vkDestroyShaderModule(m_device, vertShader, nullptr);
+    if (ownsFragmentModule) vkDestroyShaderModule(m_device, fragmentModule, nullptr);
+    if (ownsVertexModule) vkDestroyShaderModule(m_device, vertexModule, nullptr);
     return pipeline;
+}
+
+void QuarkVkRenderer::CreateShaderPipelines() {
+    for (auto& [id, program] : m_shaderPrograms) {
+        (void)id;
+        if (program.pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, program.pipeline, nullptr);
+            program.pipeline = VK_NULL_HANDLE;
+        }
+        program.pipeline = CreatePipelineForRenderPass(m_renderPass,
+                                                       program.vertexModule,
+                                                       program.fragmentModule);
+    }
 }
 
 void QuarkVkRenderer::CreatePipeline2D() {
@@ -1898,6 +1919,7 @@ void QuarkVkRenderer::RecreateSwapChain() {
     CreateOffscreenRenderPass();
     CreatePipeline2D();
     CreateOffscreenPipeline2D();
+    CreateShaderPipelines();
     CreatePipeline3D();
     CreateFramebuffers();
     RecreateRenderTargetFramebuffers();
@@ -1959,6 +1981,13 @@ void QuarkVkRenderer::CleanupSwapChain() {
     if (m_pipeline3DTri != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_device, m_pipeline3DTri, nullptr);
         m_pipeline3DTri = VK_NULL_HANDLE;
+    }
+    for (auto& [id, shaderProgram] : m_shaderPrograms) {
+        (void)id;
+        if (shaderProgram.pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, shaderProgram.pipeline, nullptr);
+            shaderProgram.pipeline = VK_NULL_HANDLE;
+        }
     }
     if (m_pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
@@ -2854,10 +2883,11 @@ void QuarkVkRenderer::AppendQuadToBatch(
 
     if (!drawItems.empty() &&
         drawItems.back().descriptorSet == ds &&
+        drawItems.back().shaderProgramId == m_currentShaderProgramId &&
         drawItems.back().firstIndex + drawItems.back().indexCount == firstIndex) {
         drawItems.back().indexCount += 6;
     } else {
-        drawItems.push_back({ 0, ds, firstIndex, 6 });
+        drawItems.push_back({ 0, m_currentShaderProgramId, ds, firstIndex, 6 });
     }
 }
 
@@ -3037,8 +3067,12 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         }
     }
 
-    if (m_pipeline2D != VK_NULL_HANDLE) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline2D);
+    VkPipeline pipeline2D = m_pipeline2D;
+    if (m_currentShaderProgramId != 0) {
+        const auto shaderIt = m_shaderPrograms.find(m_currentShaderProgramId);
+        if (shaderIt != m_shaderPrograms.end() && shaderIt->second.pipeline != VK_NULL_HANDLE) {
+            pipeline2D = shaderIt->second.pipeline;
+        }
     }
     const VkPushConstants2D screenPushConstants{
         static_cast<float>(m_swapChainExtent.width),
@@ -3048,11 +3082,24 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, offsets);
     vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
+    VkPipeline boundPipeline = VK_NULL_HANDLE;
     for (const VkFramePass& pass : m_framePasses) {
         if (pass.renderTargetId != 0) continue;
         for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
             const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
             if (item.descriptorSet == VK_NULL_HANDLE) continue;
+
+            VkPipeline itemPipeline = pipeline2D;
+            if (item.shaderProgramId != 0) {
+                const auto shaderIt = m_shaderPrograms.find(item.shaderProgramId);
+                if (shaderIt != m_shaderPrograms.end() && shaderIt->second.pipeline != VK_NULL_HANDLE) {
+                    itemPipeline = shaderIt->second.pipeline;
+                }
+            }
+            if (itemPipeline != boundPipeline) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, itemPipeline);
+                boundPipeline = itemPipeline;
+            }
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     m_pipelineLayout, 0, 1, &item.descriptorSet, 0, nullptr);
             vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
