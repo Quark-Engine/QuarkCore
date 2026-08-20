@@ -2531,6 +2531,21 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
         }
 
         glBindTexture(GL_TEXTURE_2D, texId);
+        if (customShader && material && material->maps) {
+            for (int shadowIndex = 0; shadowIndex < 4; ++shadowIndex) {
+                const int mapIndex = MATERIAL_MAP_HEIGHT + shadowIndex;
+                if (!material->maps[mapIndex].texture.valid) continue;
+
+                const GLint shadowMapLoc = glGetUniformLocation(
+                    customShader->id, TextFormat("shadowMaps[%i]", shadowIndex));
+                if (shadowMapLoc >= 0) {
+                    glActiveTexture(GL_TEXTURE1 + shadowIndex);
+                    glBindTexture(GL_TEXTURE_2D, material->maps[mapIndex].texture.id);
+                    glUniform1i(shadowMapLoc, 1 + shadowIndex);
+                }
+            }
+            glActiveTexture(GL_TEXTURE0);
+        }
         glBindVertexArray(mesh.vaoId);
 
         if (mesh.eboId) {
@@ -2575,6 +2590,21 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Col
         }
 
         glBindTexture(GL_TEXTURE_2D, texId);
+        if (customShader && material && material->maps) {
+            for (int shadowIndex = 0; shadowIndex < 4; ++shadowIndex) {
+                const int mapIndex = MATERIAL_MAP_HEIGHT + shadowIndex;
+                if (!material->maps[mapIndex].texture.valid) continue;
+
+                const GLint shadowMapLoc = glGetUniformLocation(
+                    customShader->id, TextFormat("shadowMaps[%i]", shadowIndex));
+                if (shadowMapLoc >= 0) {
+                    glActiveTexture(GL_TEXTURE1 + shadowIndex);
+                    glBindTexture(GL_TEXTURE_2D, material->maps[mapIndex].texture.id);
+                    glUniform1i(shadowMapLoc, 1 + shadowIndex);
+                }
+            }
+            glActiveTexture(GL_TEXTURE0);
+        }
         glBindVertexArray(mesh.vaoId);
 
         if (mesh.eboId) {
