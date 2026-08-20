@@ -281,6 +281,10 @@ struct Vertex {
  * @brief 4x4 matrix for 3D transformations.
  */
 struct QCAPI Mat4 {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4201)
+#endif
     union {
         float m[16];
         float m16[16];
@@ -291,6 +295,9 @@ struct QCAPI Mat4 {
             float m12, m13, m14, m15;
         };
     };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
     Mat4() {
         for (int i = 0; i < 16; i++) m[i] = 0.0f;

@@ -146,6 +146,7 @@ public:
     virtual void SetShaderValueV([[maybe_unused]] const Shader& shader, int locIndex, const void* value, int uniformType, int count) = 0;
     virtual void SetShaderValueMatrix([[maybe_unused]] const Shader& shader, int locIndex, const Matrix& mat) = 0;
     virtual void SetShaderValueTexture([[maybe_unused]] const Shader& shader, int locIndex, const ITexture& texture) = 0;
+    virtual void SetShaderValueTextureUnit([[maybe_unused]] const Shader& shader, int locIndex, const ITexture& texture, int textureUnit) = 0;
 
 
 

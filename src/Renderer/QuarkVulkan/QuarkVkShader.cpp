@@ -373,4 +373,8 @@ void QuarkVkRenderer::SetShaderValueTexture(const Shader& shader, int locIndex, 
     (void)shader; (void)locIndex; (void)texture;
 }
 
+void QuarkVkRenderer::SetShaderValueTextureUnit(const Shader& shader, int locIndex, const ITexture& texture, int textureUnit) {
+    (void)shader; (void)locIndex; (void)texture; (void)textureUnit;
+}
+
 } // namespace qc

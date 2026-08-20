@@ -258,6 +258,7 @@ public:
     void   SetShaderValueV(const Shader& shader, int locIndex, const void* value, int uniformType, int count) override;
     void   SetShaderValueMatrix(const Shader& shader, int locIndex, const Matrix& mat) override;
     void   SetShaderValueTexture(const Shader& shader, int locIndex, const ITexture& texture) override;
+    void   SetShaderValueTextureUnit(const Shader& shader, int locIndex, const ITexture& texture, int textureUnit) override;
 
     void BeginMode2D(const Camera2D& camera) override;
     void EndMode2D() override;

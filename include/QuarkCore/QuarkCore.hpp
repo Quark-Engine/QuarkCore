@@ -1434,6 +1434,7 @@ QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const Matrix
  */
 QCAPI void SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit);
 QCAPI void SetShaderValueTexture(const Shader& shader, int locIndex, const Texture2D& texture);
+QCAPI void SetShaderValueTextureUnit(const Shader& shader, int locIndex, const Texture2D& texture, int textureUnit);
 
 /**
  * @brief Begin shader mode (use shader for subsequent drawing).

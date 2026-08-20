@@ -803,11 +803,6 @@ namespace {
         return value;
     }
 
-    static std::string ToLower(const std::u8string& value) {
-        std::string utf8String(value.begin(), value.end());
-        return ToLower(std::move(utf8String));
-    }
-
     static char* AllocatePathString(const std::string& path) {
         if (path.empty()) return nullptr;
         size_t size = path.size() + 1;
@@ -1290,6 +1285,10 @@ void SetShaderValueTexture(const Shader& s, int loc, const Texture2D& texture) {
     ITexture it{ texture.id, texture.width, texture.height, texture.valid };
     gRenderer.SetShaderValueTexture(s, loc, it);
 }
+void SetShaderValueTextureUnit(const Shader& s, int loc, const Texture2D& texture, int textureUnit) {
+    ITexture it{ texture.id, texture.width, texture.height, texture.valid };
+    gRenderer.SetShaderValueTextureUnit(s, loc, it, textureUnit);
+}
 
 void UnloadVertexArray(unsigned int vaoId) {
     if (vaoId) glDeleteVertexArrays(1, &vaoId);
@@ -1455,22 +1454,6 @@ static void FreeMeshCpuData(Mesh& mesh) {
     delete[] mesh.boneWeights; mesh.boneWeights = nullptr;
     delete[] mesh.animVertices; mesh.animVertices = nullptr;
     delete[] mesh.animNormals; mesh.animNormals = nullptr;
-}
-
-static void WriteObjFace(std::ofstream& out, int a, int b, int c, bool hasUV, bool hasNormal) {
-    out << "f " << a;
-    if (hasUV || hasNormal) out << "/";
-    if (hasUV) out << a;
-    if (hasNormal) out << "/" << a;
-    out << " " << b;
-    if (hasUV || hasNormal) out << "/";
-    if (hasUV) out << b;
-    if (hasNormal) out << "/" << b;
-    out << " " << c;
-    if (hasUV || hasNormal) out << "/";
-    if (hasUV) out << c;
-    if (hasNormal) out << "/" << c;
-    out << "\n";
 }
 
 static Vec3 CalculateTriangleTangent(const Vec3& p0, const Vec3& p1, const Vec3& p2,

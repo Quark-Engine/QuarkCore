@@ -1348,6 +1348,14 @@ void QuarkGLRenderer::SetShaderValueTexture(const Shader& s, int loc, const ITex
     SetShaderValueSampler(s, loc, 0);
 }
 
+void QuarkGLRenderer::SetShaderValueTextureUnit(const Shader& s, int loc, const ITexture& texture, int textureUnit) {
+    if (loc < 0 || textureUnit < 0) return;
+    glActiveTexture(GL_TEXTURE0 + textureUnit);
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+    SetShaderValueSampler(s, loc, textureUnit);
+    glActiveTexture(GL_TEXTURE0);
+}
+
 void QuarkGLRenderer::BeginMode2D(const Camera2D& cam) {
     m_camera2D = cam;
     m_camera2DActive = true;
@@ -2145,6 +2153,7 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
             mat.maps[MATERIAL_MAP_ALBEDO].texture.width = loadedTex.width;
             mat.maps[MATERIAL_MAP_ALBEDO].texture.height = loadedTex.height;
             mat.maps[MATERIAL_MAP_ALBEDO].texture.valid = loadedTex.valid;
+            mat.maps[MATERIAL_MAP_DIFFUSE].texture = mat.maps[MATERIAL_MAP_ALBEDO].texture;
         }
     }
 

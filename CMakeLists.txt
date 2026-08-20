@@ -197,7 +197,6 @@ set(GLAD_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/glad")
 
 add_library(glad STATIC "${GLAD_EXTERNAL_DIR}/src/glad.c")
 target_include_directories(glad PUBLIC "${GLAD_EXTERNAL_DIR}/include")
-target_compile_options(glad PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>, /w, -w>)
 set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 find_package(OpenGL REQUIRED)
@@ -220,10 +219,10 @@ add_library(QuarkCore SHARED
 
 if(WIN32)
     target_compile_definitions(QuarkCore PRIVATE _WIN32)
-elseif(UNIX)
-    target_compile_definitions(QuarkCore PRIVATE __linux__)
 elseif(APPLE)
     target_compile_definitions(QuarkCore PRIVATE __APPLE__)
+elseif(UNIX)
+    target_compile_definitions(QuarkCore PRIVATE __linux__)
 endif()
 
 target_include_directories(QuarkCore PUBLIC
