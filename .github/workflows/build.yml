@@ -86,7 +86,7 @@ jobs:
           libwayland-dev \
           wayland-protocols \
           libshaderc-dev \
-          spirv-cross \
+          libspirv-cross-c-shared-dev \
           spirv-headers
 
       - name: Configure CMake

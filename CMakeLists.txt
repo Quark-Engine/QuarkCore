@@ -1,3 +1,10 @@
+# ========================================================
+#
+#   QuarkCore CMake Configuration
+#   By QuarkEngine Development Team
+#
+# ========================================================
+
 cmake_minimum_required(VERSION 3.16)
 project(QuarkCore VERSION 0.1.0 LANGUAGES CXX C)
 
@@ -157,16 +164,18 @@ if(WIN32)
 else()
     find_package(Vulkan REQUIRED)
 
-    find_library(SHADERC_LIB NAMES shaderc_combined shaderc PATHS /opt/homebrew/lib /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu)
-    find_library(SPIRV_CROSS_GLSL_LIB NAMES spirv-cross-glsl PATHS /opt/homebrew/lib /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu)
-
-    if (NOT SHADERC_LIB)
-        set(SHADERC_LIB "shaderc_combined")
-    endif()
-
-    if (NOT SPIRV_CROSS_GLSL_LIB)
-        set(SPIRV_CROSS_GLSL_LIB "spirv-cross-glsl")
-    endif()
+    find_library(SHADERC_LIB
+        NAMES shaderc_combined shaderc
+        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+        REQUIRED
+    )
+    find_library(SPIRV_CROSS_GLSL_LIB
+        NAMES spirv-cross-glsl
+        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+        REQUIRED
+    )
 endif()
 
 set(SDL3_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
