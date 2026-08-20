@@ -23,22 +23,30 @@ function(qc_lib_dir OUT_VAR LIB_NAME)
     set(${OUT_VAR} "$<IF:$<CONFIG:Debug>,${BASE}/debug,${BASE}/release>" PARENT_SCOPE)
 endfunction()
 
-if(WIN32)
-    set(VULKAN_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/Vulkan")
+set(VULKAN_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/Vulkan")
 
+set(VULKAN_EXTRA_INCLUDES
+    "${VULKAN_EXTERNAL_DIR}/include"
+    "${VULKAN_EXTERNAL_DIR}/include/vulkan"
+    "${VULKAN_EXTERNAL_DIR}/include/shaderc"
+    "${VULKAN_EXTERNAL_DIR}/include/spirv_cross"
+    "${VULKAN_EXTERNAL_DIR}/include/spirv-headers"
+    "${VULKAN_EXTERNAL_DIR}/include/spirv-tools"
+    "${VULKAN_EXTERNAL_DIR}/include/glslang"
+)
+
+if(WIN32)
     add_library(Vulkan::Vulkan INTERFACE IMPORTED GLOBAL)
-    target_include_directories(Vulkan::Vulkan INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
+    target_include_directories(Vulkan::Vulkan INTERFACE ${VULKAN_EXTRA_INCLUDES})
 
     set(VULKAN_LIB_PATH "${VULKAN_EXTERNAL_DIR}/lib/vulkan-1.lib")
     set(VULKAN_DLL_PATH "${VULKAN_EXTERNAL_DIR}/lib/vulkan-1.dll")
 
     if(NOT EXISTS "${VULKAN_LIB_PATH}")
-        message(FATAL_ERROR "Vulkan import library not found: ${VULKAN_LIB_PATH}\n"
-                            "Place vulkan-1.lib in external/Vulkan/lib/")
+        message(FATAL_ERROR "Vulkan import library not found: ${VULKAN_LIB_PATH}\nPlace vulkan-1.lib in external/Vulkan/lib/")
     endif()
     if(NOT EXISTS "${VULKAN_DLL_PATH}")
-        message(FATAL_ERROR "Vulkan DLL not found: ${VULKAN_DLL_PATH}\n"
-                            "Place vulkan-1.dll in external/Vulkan/lib/")
+        message(FATAL_ERROR "Vulkan DLL not found: ${VULKAN_DLL_PATH}\nPlace vulkan-1.dll in external/Vulkan/lib/")
     endif()
 
     target_link_libraries(Vulkan::Vulkan INTERFACE "${VULKAN_LIB_PATH}")
@@ -56,7 +64,7 @@ if(WIN32)
         endif()
 
         add_library(${TARGET_NAME} STATIC IMPORTED GLOBAL)
-        target_include_directories(${TARGET_NAME} INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
+        target_include_directories(${TARGET_NAME} INTERFACE ${VULKAN_EXTRA_INCLUDES})
         set_target_properties(${TARGET_NAME} PROPERTIES
             IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
             IMPORTED_LOCATION_DEBUG   "${_debug}"
@@ -79,7 +87,7 @@ if(WIN32)
         endforeach()
 
         add_library(${TARGET_NAME} SHARED IMPORTED GLOBAL)
-        target_include_directories(${TARGET_NAME} INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
+        target_include_directories(${TARGET_NAME} INTERFACE ${VULKAN_EXTRA_INCLUDES})
         
         set_target_properties(${TARGET_NAME} PROPERTIES
             IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
@@ -94,10 +102,10 @@ if(WIN32)
         )
     endfunction()
 
-    qc_add_shaderc_lib(shaderc_lib          "shaderc.lib"           "shadercd.lib")
-    qc_add_shaderc_lib(glslang_lib          "glslang.lib"           "glslangd.lib")
-    qc_add_shaderc_lib(shaderc_util_lib     "shaderc_util.lib"      "shaderc_utild.lib")
-    qc_add_shaderc_lib(SPIRV_lib            "SPIRV.lib"             "SPIRVd.lib")
+    qc_add_shaderc_lib(shaderc_lib           "shaderc.lib"           "shadercd.lib")
+    qc_add_shaderc_lib(glslang_lib           "glslang.lib"           "glslangd.lib")
+    qc_add_shaderc_lib(shaderc_util_lib      "shaderc_util.lib"      "shaderc_utild.lib")
+    qc_add_shaderc_lib(SPIRV_lib             "SPIRV.lib"             "SPIRVd.lib")
 
     qc_add_shared_spirv_lib(SPIRV_Tools_opt_lib "SPIRV-Tools-opt")
     qc_add_shared_spirv_lib(SPIRV_Tools_lib     "SPIRV-Tools")
@@ -120,13 +128,12 @@ if(WIN32)
     foreach(_lib SPIRV_CROSS_CORE_LIB_DEBUG SPIRV_CROSS_CORE_LIB_RELEASE
                  SPIRV_CROSS_GLSL_LIB_DEBUG SPIRV_CROSS_GLSL_LIB_RELEASE)
         if(NOT EXISTS "${${_lib}}")
-            message(FATAL_ERROR "Missing library: ${${_lib}}\n"
-                                "Place it in external/Vulkan/lib/")
+            message(FATAL_ERROR "Missing library: ${${_lib}}\nPlace it in external/Vulkan/lib/")
         endif()
     endforeach()
 
     add_library(spirv-cross-core STATIC IMPORTED GLOBAL)
-    target_include_directories(spirv-cross-core INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
+    target_include_directories(spirv-cross-core INTERFACE ${VULKAN_EXTRA_INCLUDES})
     set_target_properties(spirv-cross-core PROPERTIES
         IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION_DEBUG   "${SPIRV_CROSS_CORE_LIB_DEBUG}"
@@ -136,7 +143,7 @@ if(WIN32)
     )
 
     add_library(spirv-cross-glsl STATIC IMPORTED GLOBAL)
-    target_include_directories(spirv-cross-glsl INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
+    target_include_directories(spirv-cross-glsl INTERFACE ${VULKAN_EXTRA_INCLUDES})
     set_target_properties(spirv-cross-glsl PROPERTIES
         IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION_DEBUG   "${SPIRV_CROSS_GLSL_LIB_DEBUG}"
@@ -146,12 +153,23 @@ if(WIN32)
     )
 
     target_link_libraries(spirv-cross-glsl INTERFACE spirv-cross-core)
+
 else()
     find_package(Vulkan REQUIRED)
+
+    find_library(SHADERC_LIB NAMES shaderc_combined shaderc PATHS /opt/homebrew/lib /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu)
+    find_library(SPIRV_CROSS_GLSL_LIB NAMES spirv-cross-glsl PATHS /opt/homebrew/lib /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu)
+
+    if (NOT SHADERC_LIB)
+        set(SHADERC_LIB "shaderc_combined")
+    endif()
+
+    if (NOT SPIRV_CROSS_GLSL_LIB)
+        set(SPIRV_CROSS_GLSL_LIB "spirv-cross-glsl")
+    endif()
 endif()
 
 set(SDL3_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
-
 add_library(SDL3::SDL3 SHARED IMPORTED GLOBAL)
 target_include_directories(SDL3::SDL3 INTERFACE "${SDL3_EXTERNAL_DIR}/include")
 
@@ -192,7 +210,6 @@ else()
 endif()
 
 set(ZLIB_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
-
 add_library(ZLIB::ZLIB STATIC IMPORTED GLOBAL)
 target_include_directories(ZLIB::ZLIB INTERFACE "${ZLIB_EXTERNAL_DIR}/include")
 
@@ -215,7 +232,6 @@ elseif(WIN32)
 endif()
 
 set(ASSIMP_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
-
 add_library(assimp::assimp SHARED IMPORTED GLOBAL)
 target_include_directories(assimp::assimp INTERFACE "${ASSIMP_EXTERNAL_DIR}/include")
 
@@ -256,7 +272,6 @@ else()
 endif()
 
 set(FREETYPE_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/freetype")
-
 add_library(freetype SHARED IMPORTED GLOBAL)
 target_include_directories(freetype INTERFACE "${FREETYPE_EXTERNAL_DIR}/include")
 
@@ -297,7 +312,6 @@ else()
 endif()
 
 set(GLAD_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/glad")
-
 add_library(glad STATIC "${GLAD_EXTERNAL_DIR}/src/glad.c")
 target_include_directories(glad PUBLIC "${GLAD_EXTERNAL_DIR}/include")
 set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -330,6 +344,11 @@ endif()
 
 target_include_directories(QuarkCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${VULKAN_EXTRA_INCLUDES}
+    /usr/include/spirv_cross
+    /usr/include/spirv-cross
+    /opt/homebrew/include
+    /opt/homebrew/include/spirv_cross
 )
 
 target_compile_definitions(QuarkCore PRIVATE
@@ -337,17 +356,31 @@ target_compile_definitions(QuarkCore PRIVATE
     NOMINMAX
 )
 
-target_link_libraries(QuarkCore
-    PUBLIC
-        SDL3::SDL3
-        glad
-        OpenGL::GL
-        assimp::assimp
-        freetype
-        Vulkan::Vulkan
-        shaderc_combined
-        spirv-cross-glsl
-)
+if(WIN32)
+    target_link_libraries(QuarkCore
+        PUBLIC
+            SDL3::SDL3
+            glad
+            OpenGL::GL
+            assimp::assimp
+            freetype
+            Vulkan::Vulkan
+            shaderc_combined
+            spirv-cross-glsl
+    )
+else()
+    target_link_libraries(QuarkCore
+        PUBLIC
+            SDL3::SDL3
+            glad
+            OpenGL::GL
+            assimp::assimp
+            freetype
+            Vulkan::Vulkan
+            ${SHADERC_LIB}
+            ${SPIRV_CROSS_GLSL_LIB}
+    )
+endif()
 
 set_target_properties(QuarkCore PROPERTIES UNITY_BUILD OFF)
 

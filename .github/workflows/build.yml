@@ -86,7 +86,8 @@ jobs:
           libwayland-dev \
           wayland-protocols \
           libshaderc-dev \
-          spirv-cross
+          spirv-cross \
+          spirv-headers
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DQC_BUILD_EXAMPLES=ON -DASSIMP_BUILD_ZLIB=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -G Ninja
@@ -136,6 +137,8 @@ jobs:
           -DQC_BUILD_EXAMPLES=ON \
           -DASSIMP_BUILD_ZLIB=OFF \
           -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+          -DCMAKE_LIBRARY_PATH="/opt/homebrew/lib" \
+          -DCMAKE_INCLUDE_PATH="/opt/homebrew/include" \
           -G Ninja
 
       - name: Build
