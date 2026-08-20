@@ -288,12 +288,19 @@ struct QCAPI Mat4 {
     union {
         float m[16];
         float m16[16];
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
         struct {
             float m0, m1, m2, m3;
             float m4, m5, m6, m7;
             float m8, m9, m10, m11;
             float m12, m13, m14, m15;
         };
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
     };
 #if defined(_MSC_VER)
 #pragma warning(pop)

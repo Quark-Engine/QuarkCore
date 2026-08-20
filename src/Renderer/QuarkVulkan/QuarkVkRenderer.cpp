@@ -538,69 +538,6 @@ bool RunCompilerProcess(const std::filesystem::path& validator,
 #endif
 }
 
-bool CompileGlslToSpirv(const std::string& source, const char* stageName, std::vector<uint32_t>& outSpirv) {
-    const std::filesystem::path validator = FindGlslangValidator();
-    if (validator.empty()) {
-        TraceLog(LogLevel::Error, "VULKAN", "glslangValidator was not found in external/Vulkan/lib.");
-        return false;
-    }
-
-    std::error_code ec;
-    const std::filesystem::path tempBase = std::filesystem::temp_directory_path(ec);
-    std::filesystem::path tempDir = tempBase / "quarkvkshader";
-    for (int attempt = 0; attempt < 1000; ++attempt) {
-        tempDir = tempBase / (std::string("quarkvkshader-") + std::to_string(std::rand()) + std::to_string(attempt));
-        if (!std::filesystem::exists(tempDir, ec)) {
-            break;
-        }
-    }
-    std::filesystem::create_directories(tempDir, ec);
-    if (ec) {
-        TraceLog(LogLevel::Error, "VULKAN", "Failed to create temporary directory for shader compilation.");
-        return false;
-    }
-
-    const std::filesystem::path sourcePath = tempDir / (std::string("shader.") + stageName + ".glsl");
-    const std::filesystem::path outputPath = tempDir / "shader.spv";
-
-    {
-        std::ofstream sourceFile(sourcePath, std::ios::binary);
-        if (!sourceFile.is_open()) {
-            std::filesystem::remove_all(tempDir, ec);
-            return false;
-        }
-        sourceFile << source;
-    }
-
-    const bool compiled = RunCompilerProcess(validator, sourcePath, outputPath, stageName);
-    if (!compiled || !std::filesystem::exists(outputPath, ec)) {
-        std::filesystem::remove_all(tempDir, ec);
-        TraceLog(LogLevel::Error, "VULKAN", TextFormat("Failed to compile embedded %s shader.", stageName));
-        return false;
-    }
-
-    std::ifstream binary(outputPath, std::ios::binary | std::ios::ate);
-    if (!binary.is_open()) {
-        std::filesystem::remove_all(tempDir, ec);
-        return false;
-    }
-
-    const std::streamsize size = binary.tellg();
-    binary.seekg(0);
-    if (size <= 0) {
-        std::filesystem::remove_all(tempDir, ec);
-        return false;
-    }
-
-    std::vector<char> bytes(static_cast<size_t>(size));
-    binary.read(bytes.data(), size);
-    outSpirv.resize(bytes.size() / sizeof(uint32_t));
-    std::memcpy(outSpirv.data(), bytes.data(), bytes.size());
-
-    std::filesystem::remove_all(tempDir, ec);
-    return true;
-}
-
 bool HasStencilComponent(VkFormat format) {
     return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
@@ -2724,7 +2661,7 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     m_renderTargets[rtId] = rt;
 
     TraceLog(LogLevel::Info, "VULKAN", TextFormat("Render target created (%ux%u).", tex.width, tex.height));
-    return IRenderTexture{ rtId };
+    return IRenderTexture{ rtId, {}, 0 };
 }
 
 void QuarkVkRenderer::DestroyRenderTargetInternal(uint32_t renderTargetId) {
@@ -2961,25 +2898,6 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         whiteDescriptorSet = whiteTexIt->second.descriptorSet;
     }
     
-    auto inlineTransition = [&](VkImage image,
-                                 VkImageLayout oldLayout, VkImageLayout newLayout,
-                                 VkAccessFlags srcAccess, VkAccessFlags dstAccess,
-                                 VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage) {
-        VkImageMemoryBarrier barrier{};
-        barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.oldLayout                       = oldLayout;
-        barrier.newLayout                       = newLayout;
-        barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image                           = image;
-        barrier.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.levelCount     = 1;
-        barrier.subresourceRange.layerCount     = 1;
-        barrier.srcAccessMask                   = srcAccess;
-        barrier.dstAccessMask                   = dstAccess;
-        vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    };
-
     for (const VkFramePass& pass : m_framePasses) {
         if (pass.renderTargetId == 0) continue;
 
