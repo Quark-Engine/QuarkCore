@@ -247,7 +247,12 @@ target_link_libraries(QuarkCore
 
 set_target_properties(QuarkCore PROPERTIES UNITY_BUILD OFF)
 
-if(UNIX)
+if(APPLE)
+    set_target_properties(QuarkCore PROPERTIES
+        BUILD_RPATH "@loader_path"
+        INSTALL_RPATH "@loader_path"
+    )
+elseif(UNIX)
     set_target_properties(QuarkCore PROPERTIES
         BUILD_RPATH "$ORIGIN"
         INSTALL_RPATH "$ORIGIN"
