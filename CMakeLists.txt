@@ -165,13 +165,19 @@ else()
     find_package(Vulkan REQUIRED)
 
     find_library(SHADERC_LIB
-        NAMES shaderc_combined shaderc
+        NAMES shaderc shaderc_combined
         PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
               /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
         REQUIRED
     )
     find_library(SPIRV_CROSS_GLSL_LIB
         NAMES spirv-cross-glsl
+        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+        REQUIRED
+    )
+    find_library(SPIRV_CROSS_CORE_LIB
+        NAMES spirv-cross-core
         PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
               /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
         REQUIRED
@@ -388,6 +394,7 @@ else()
             Vulkan::Vulkan
             ${SHADERC_LIB}
             ${SPIRV_CROSS_GLSL_LIB}
+            ${SPIRV_CROSS_CORE_LIB}
     )
 endif()
 
