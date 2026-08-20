@@ -46,6 +46,7 @@ struct ImageFileData {
 };
 
 extern WindowState gWin;
+extern TextureFilterMode gTextureFilterMode;
 
 QCAPI bool LoadImageFile(const char* path, ImageFileData& out, int desiredChannels = 4);
 

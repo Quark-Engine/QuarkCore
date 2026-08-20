@@ -36,6 +36,8 @@ QuarkVkRenderer gVkRenderer;
 IRenderer* gRendererPtr = nullptr;
 RendererType gCurrentBackend = RendererType::Auto;
 bool gVulkanLibraryLoaded = false;
+int gRequestedMSAASamples = 1;
+TextureFilterMode gTextureFilterMode = TextureFilterMode::Linear;
 
 #define gRenderer (*gRendererPtr)
 
@@ -134,6 +136,10 @@ static bool InitOpenGLBackend(int width, int height, const char* title) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    if (gRequestedMSAASamples > 1) {
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, gRequestedMSAASamples);
+    }
 
     TraceLog(LogLevel::Info, "RENDERER", "Backend selected: OpenGL");
 
@@ -152,6 +158,14 @@ static bool InitOpenGLBackend(int width, int height, const char* title) {
     gRenderer.SetTargetFPS(gWin.targetFps);
     gCurrentBackend = RendererType::OpenGL;
     return true;
+}
+
+void SetMSAASamples(int samples) {
+    gRequestedMSAASamples = (samples == 2 || samples == 4 || samples == 8) ? samples : 1;
+}
+
+void SetTextureFilterMode(TextureFilterMode mode) {
+    gTextureFilterMode = mode;
 }
 
 static bool InitVulkanBackend(int width, int height, const char* title) {

@@ -640,6 +640,14 @@ struct Event {
  */
 QCAPI void InitWindow(int width, int height, const char* title, RendererType rendererType = RendererType::Auto);
 
+enum class TextureFilterMode {
+    Nearest,
+    Linear
+};
+
+QCAPI void SetMSAASamples(int samples);
+QCAPI void SetTextureFilterMode(TextureFilterMode mode);
+
 /**
  * @brief Get the currently active rendering backend.
  */
