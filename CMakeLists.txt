@@ -58,9 +58,37 @@ if(WIN32)
         add_library(${TARGET_NAME} STATIC IMPORTED GLOBAL)
         target_include_directories(${TARGET_NAME} INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
         set_target_properties(${TARGET_NAME} PROPERTIES
-            IMPORTED_CONFIGURATIONS "Debug;Release"
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
             IMPORTED_LOCATION_DEBUG   "${_debug}"
             IMPORTED_LOCATION_RELEASE "${_release}"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    endfunction()
+
+    function(qc_add_shared_spirv_lib TARGET_NAME BASE_NAME)
+        set(_lib_rel "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}.lib")
+        set(_lib_dbg "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}d.lib")
+        set(_dll_rel "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}.dll")
+        set(_dll_dbg "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}d.dll")
+
+        foreach(_file IN ITEMS "${_lib_rel}" "${_lib_dbg}" "${_dll_rel}" "${_dll_dbg}")
+            if(NOT EXISTS "${_file}")
+                message(FATAL_ERROR "Missing required file: ${_file}\nPlace it in external/Vulkan/lib/")
+            endif()
+        endforeach()
+
+        add_library(${TARGET_NAME} SHARED IMPORTED GLOBAL)
+        target_include_directories(${TARGET_NAME} INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
+        
+        set_target_properties(${TARGET_NAME} PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_IMPLIB_DEBUG     "${_lib_dbg}"
+            IMPORTED_IMPLIB_RELEASE   "${_lib_rel}"
+            IMPORTED_LOCATION_DEBUG   "${_dll_dbg}"
+            IMPORTED_LOCATION_RELEASE "${_dll_rel}"
+            MAP_IMPORTED_CONFIG_DEBUG Debug
+            MAP_IMPORTED_CONFIG_RELEASE Release
             MAP_IMPORTED_CONFIG_MINSIZEREL Release
             MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
         )
@@ -70,8 +98,9 @@ if(WIN32)
     qc_add_shaderc_lib(glslang_lib          "glslang.lib"           "glslangd.lib")
     qc_add_shaderc_lib(shaderc_util_lib     "shaderc_util.lib"      "shaderc_utild.lib")
     qc_add_shaderc_lib(SPIRV_lib            "SPIRV.lib"             "SPIRVd.lib")
-    qc_add_shaderc_lib(SPIRV_Tools_opt_lib  "SPIRV-Tools-opt.lib"   "SPIRV-Tools-optd.lib")
-    qc_add_shaderc_lib(SPIRV_Tools_lib      "SPIRV-Tools.lib"       "SPIRV-Toolsd.lib")
+
+    qc_add_shared_spirv_lib(SPIRV_Tools_opt_lib "SPIRV-Tools-opt")
+    qc_add_shared_spirv_lib(SPIRV_Tools_lib     "SPIRV-Tools")
 
     add_library(shaderc_combined INTERFACE IMPORTED GLOBAL)
     target_link_libraries(shaderc_combined INTERFACE
@@ -99,7 +128,7 @@ if(WIN32)
     add_library(spirv-cross-core STATIC IMPORTED GLOBAL)
     target_include_directories(spirv-cross-core INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
     set_target_properties(spirv-cross-core PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION_DEBUG   "${SPIRV_CROSS_CORE_LIB_DEBUG}"
         IMPORTED_LOCATION_RELEASE "${SPIRV_CROSS_CORE_LIB_RELEASE}"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
@@ -109,7 +138,7 @@ if(WIN32)
     add_library(spirv-cross-glsl STATIC IMPORTED GLOBAL)
     target_include_directories(spirv-cross-glsl INTERFACE "${VULKAN_EXTERNAL_DIR}/include")
     set_target_properties(spirv-cross-glsl PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION_DEBUG   "${SPIRV_CROSS_GLSL_LIB_DEBUG}"
         IMPORTED_LOCATION_RELEASE "${SPIRV_CROSS_GLSL_LIB_RELEASE}"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
@@ -128,7 +157,7 @@ target_include_directories(SDL3::SDL3 INTERFACE "${SDL3_EXTERNAL_DIR}/include")
 
 if(MSVC)
     set_target_properties(SDL3::SDL3 PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.lib"
         IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.lib"
         IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
@@ -138,7 +167,7 @@ if(MSVC)
     )
 elseif(WIN32)
     set_target_properties(SDL3::SDL3 PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.dll.a"
         IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.dll.a"
         IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
@@ -148,14 +177,14 @@ elseif(WIN32)
     )
 elseif(APPLE)
     set_target_properties(SDL3::SDL3 PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.0.dylib"
         IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.0.dylib"
         IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.0.dylib"
     )
 else()
     set_target_properties(SDL3::SDL3 PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
         IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.so.0.4.8"
         IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
@@ -169,7 +198,7 @@ target_include_directories(ZLIB::ZLIB INTERFACE "${ZLIB_EXTERNAL_DIR}/include")
 
 if(MSVC)
     set_target_properties(ZLIB::ZLIB PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.lib"
         IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.lib"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
@@ -177,7 +206,7 @@ if(MSVC)
     )
 elseif(WIN32)
     set_target_properties(ZLIB::ZLIB PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.a"
         IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.a"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
@@ -192,7 +221,7 @@ target_include_directories(assimp::assimp INTERFACE "${ASSIMP_EXTERNAL_DIR}/incl
 
 if(MSVC)
     set_target_properties(assimp::assimp PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_IMPLIB_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.lib"
         IMPORTED_IMPLIB_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.lib"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll"
@@ -202,7 +231,7 @@ if(MSVC)
     )
 elseif(WIN32)
     set_target_properties(assimp::assimp PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_IMPLIB_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimpd.dll.a"
         IMPORTED_IMPLIB_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.dll.a"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll"
@@ -212,14 +241,14 @@ elseif(WIN32)
     )
 elseif(APPLE)
     set_target_properties(assimp::assimp PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.6.0.5.dylib"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimpd.6.0.5.dylib"
         IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.6.0.5.dylib"
     )
 else()
     set_target_properties(assimp::assimp PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.so.6.0.5"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/libassimpd.so.6.0.5"
         IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/libassimp.so.6.0.5"
@@ -233,7 +262,7 @@ target_include_directories(freetype INTERFACE "${FREETYPE_EXTERNAL_DIR}/include"
 
 if(MSVC)
     set_target_properties(freetype PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_IMPLIB_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.lib"
         IMPORTED_IMPLIB_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.lib"
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll"
@@ -243,7 +272,7 @@ if(MSVC)
     )
 elseif(WIN32)
     set_target_properties(freetype PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_IMPLIB_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.dll.a"
         IMPORTED_IMPLIB_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.dll.a"
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll"
@@ -253,14 +282,14 @@ elseif(WIN32)
     )
 elseif(APPLE)
     set_target_properties(freetype PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.6.20.6.dylib"
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.6.20.6.dylib"
         IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.6.20.6.dylib"
     )
 else()
     set_target_properties(freetype PROPERTIES
-        IMPORTED_CONFIGURATIONS "Debug;Release"
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
         IMPORTED_LOCATION "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.so.6.20.6"
         IMPORTED_LOCATION_DEBUG   "${FREETYPE_EXTERNAL_DIR}/lib/debug/libfreetyped.so.6.20.6"
         IMPORTED_LOCATION_RELEASE "${FREETYPE_EXTERNAL_DIR}/lib/release/libfreetype.so.6.20.6"
@@ -315,7 +344,6 @@ target_link_libraries(QuarkCore
         OpenGL::GL
         assimp::assimp
         freetype
-        $<IF:$<PLATFORM_ID:Windows>,Vulkan::Vulkan,Vulkan::Vulkan>
         Vulkan::Vulkan
         shaderc_combined
         spirv-cross-glsl
@@ -375,6 +403,10 @@ if(QC_BUILD_EXAMPLES)
             $<IF:$<CONFIG:Debug>,${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll,${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll>
             $<IF:$<CONFIG:Debug>,${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll,${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.dll>
             $<IF:$<CONFIG:Debug>,${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll,${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.dll>
+            "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools.dll"
+            "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Toolsd.dll"
+            "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-opt.dll"
+            "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-optd.dll"
             "${VULKAN_RUNTIME_DLL}"
         )
 
@@ -382,11 +414,14 @@ if(QC_BUILD_EXAMPLES)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${_RUNTIME_DLLS}
                 $<TARGET_FILE_DIR:QuarkCore>
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-optd.dll"
+                "$<TARGET_FILE_DIR:QuarkCore>/SPIRV-Tools-opt.dll"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Toolsd.dll"
+                "$<TARGET_FILE_DIR:QuarkCore>/SPIRV-Tools.dll"
             COMMENT "Copying DLLs next to QuarkCore..."
         )
-
-        list(LENGTH EXAMPLE_TARGETS _count)
-        math(EXPR _last "${_count} - 1")
 
         foreach(i RANGE ${_last})
             list(GET EXAMPLE_TARGETS ${i} _target)
@@ -398,16 +433,15 @@ if(QC_BUILD_EXAMPLES)
             add_custom_command(TARGET ${_target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     $<TARGET_FILE:QuarkCore>
+                    ${_RUNTIME_DLLS}
                     $<TARGET_FILE_DIR:${_target}>
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-optd.dll"
+                    "$<TARGET_FILE_DIR:${_target}>/SPIRV-Tools-opt.dll"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Toolsd.dll"
+                    "$<TARGET_FILE_DIR:${_target}>/SPIRV-Tools.dll"
             )
-
-            foreach(_dll IN LISTS _RUNTIME_DLLS)
-                add_custom_command(TARGET ${_target} POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        ${_dll}
-                        $<TARGET_FILE_DIR:${_target}>
-                )
-            endforeach()
 
             if(_target STREQUAL "quarkcore_3d_lights")
                 add_custom_command(TARGET ${_target} POST_BUILD
