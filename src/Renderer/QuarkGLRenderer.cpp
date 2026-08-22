@@ -243,19 +243,60 @@ void QuarkGLRenderer::Init(SDL_Window* window, int width, int height) {
         throw std::runtime_error("Failed to initialize GLAD");
     }
 
+    const char* vendor   = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+    const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+    const char* version  = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    const char* glsl     = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION));
+
+    GLint maxTexSize = 0, max3DTexSize = 0, maxCubeMapSize = 0, maxArrayLayers = 0;
+    GLint maxSamples = 0, maxAttribs = 0, maxUBO = 0, maxColorAttach = 0, maxRenderbufferSize = 0;
+    GLint maxVertUniforms = 0, maxFragUniforms = 0, maxCombinedTexUnits = 0;
+    GLint maxViewportDims[2] = {0, 0};
+
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTexSize);
+    glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &max3DTexSize);
+    glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, &maxCubeMapSize);
+    glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &maxArrayLayers);
+    glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maxRenderbufferSize);
+    glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS, &maxColorAttach);
+    glGetIntegerv(GL_MAX_VIEWPORT_DIMS, maxViewportDims);
+    glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+    glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &maxAttribs);
+    glGetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, &maxVertUniforms);
+    glGetIntegerv(GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, &maxFragUniforms);
+    glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &maxUBO);
+    glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &maxCombinedTexUnits);
+
+    GLint numExtensions = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &numExtensions);
+
+    TraceLog(LogLevel::Info, "OPENGL", TextFormat("GPU / Renderer: %s", renderer ? renderer : "Unknown"));
+    TraceLog(LogLevel::Info, "OPENGL", TextFormat("Vendor: %s", vendor ? vendor : "Unknown"));
+    TraceLog(LogLevel::Info, "OPENGL", TextFormat("OpenGL Version: %s", version ? version : "Unknown"));
+    TraceLog(LogLevel::Info, "OPENGL", TextFormat("GLSL Version: %s", glsl ? glsl : "Unknown"));
+    TraceLog(LogLevel::Info, "OPENGL", TextFormat("Context Config: Initial Viewport %dx%d, Extensions Count: %d", width, height, numExtensions));
+    TraceLog(LogLevel::Trace, "OPENGL", TextFormat("Limits: Max 2D Texture: %d, Max 3D Texture: %d, Max CubeMap: %d, Max Array Layers: %d", maxTexSize, max3DTexSize, maxCubeMapSize, maxArrayLayers));
+    TraceLog(LogLevel::Trace, "OPENGL", TextFormat("Limits: Max MSAA Samples: %dx, Max Vertex Attribs: %d, Max Combined Texture Units: %d", maxSamples, maxAttribs, maxCombinedTexUnits));
+    TraceLog(LogLevel::Trace, "OPENGL", TextFormat("Limits: Max UBO Bindings: %d, Max Vertex Uniforms: %d, Max Fragment Uniforms: %d", maxUBO, maxVertUniforms, maxFragUniforms));
+    TraceLog(LogLevel::Trace, "OPENGL", TextFormat("Limits: Max Color Attachments: %d, Max Renderbuffer: %d, Max Viewport: %dx%d", maxColorAttach, maxRenderbufferSize, maxViewportDims[0], maxViewportDims[1]));
+
     InitGL();
 
     if (m_vsyncExplicitlySet) {
         SDL_GL_SetSwapInterval(m_vsync ? 1 : 0);
+        TraceLog(LogLevel::Info, "OPENGL", TextFormat("VSync configured: %s (Swap Interval: %d)", m_vsync ? "ON" : "OFF", m_vsync ? 1 : 0));
     }
 
     m_lastFrameCounter = SDL_GetPerformanceCounter();
+    TraceLog(LogLevel::Info, "OPENGL", "OpenGL renderer initialized successfully.");
 }
 
 void QuarkGLRenderer::Shutdown() {
     if (m_window == nullptr) {
         return;
     }
+
+    TraceLog(LogLevel::Info, "OPENGL", "Shutting down OpenGL renderer...");
 
     for (auto& [id, fd] : m_fonts)
         if (fd.atlasTexture) glDeleteTextures(1, &fd.atlasTexture);
@@ -337,6 +378,7 @@ void QuarkGLRenderer::Shutdown() {
     }
 
     m_window = nullptr;
+    TraceLog(LogLevel::Info, "OPENGL", "OpenGL renderer shut down successfully.");
 }
 
 void QuarkGLRenderer::InitGL() {
@@ -449,8 +491,9 @@ GLuint QuarkGLRenderer::CreateTextureFromRgba(const uint8_t* px, int w, int h) {
     glGenTextures(1, &id);
     glBindTexture(GL_TEXTURE_2D, id);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    const GLint texture_filter = gTextureFilterMode == TextureFilterMode::Nearest ? GL_NEAREST : GL_LINEAR;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, texture_filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, texture_filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
@@ -459,30 +502,38 @@ GLuint QuarkGLRenderer::CreateTextureFromRgba(const uint8_t* px, int w, int h) {
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Created GPU texture (ID: %u, %dx%d, Format: RGBA8, Filter: %s)",
+        id, w, h, gTextureFilterMode == TextureFilterMode::Nearest ? "Nearest" : "Linear"));
     return id;
 }
 
 GLuint QuarkGLRenderer::CompileGLShader(GLenum type, const char* src) {
+    const char* stageName = (type == GL_VERTEX_SHADER ? "vertex" : (type == GL_FRAGMENT_SHADER ? "fragment" : "unknown"));
+    TraceLog(LogLevel::Trace, "SHADER", TextFormat("[OpenGL] Compiling %s shader...", stageName));
+
     GLuint s = glCreateShader(type);
 
     glShaderSource(s, 1, &src, nullptr);
     glCompileShader(s);
 
-    GLint ok;
+    GLint ok = 0;
     glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
 
     if (!ok) {
-        char log[512];
-        glGetShaderInfoLog(s, 512, nullptr, log);
+        char log[1024];
+        glGetShaderInfoLog(s, sizeof(log), nullptr, log);
+        TraceLog(LogLevel::Error, "SHADER", TextFormat("[OpenGL] %s shader compile failed: %s", stageName, log));
 
         glDeleteShader(s);
         throw std::runtime_error(std::string("Shader compile: ") + log);
     }
 
+    TraceLog(LogLevel::Trace, "SHADER", TextFormat("[OpenGL] Compiled %s shader (ID: %u)", stageName, s));
     return s;
 }
 
 GLuint QuarkGLRenderer::CreateDefaultProgram() {
+    TraceLog(LogLevel::Trace, "SHADER", "[OpenGL] Creating default 2D shader program...");
     GLuint vs = CompileGLShader(GL_VERTEX_SHADER,   kVS2D);
     GLuint fs = CompileGLShader(GL_FRAGMENT_SHADER, kFS2D);
     GLuint p  = glCreateProgram();
@@ -494,17 +545,18 @@ GLuint QuarkGLRenderer::CreateDefaultProgram() {
     glDeleteShader(vs);
     glDeleteShader(fs);
 
-    GLint ok;
+    GLint ok = 0;
     glGetProgramiv(p, GL_LINK_STATUS, &ok);
 
     if (!ok) {
-        char log[512];
-
-        glGetProgramInfoLog(p, 512, nullptr, log);
+        char log[1024];
+        glGetProgramInfoLog(p, sizeof(log), nullptr, log);
+        TraceLog(LogLevel::Error, "SHADER", TextFormat("[OpenGL] Default 2D shader link error: %s", log));
         glDeleteProgram(p);
 
         throw std::runtime_error(std::string("Program link: ") + log);
     }
+    TraceLog(LogLevel::Info, "SHADER", TextFormat("[OpenGL] Default 2D shader program created (ID: %u)", p));
     return p;
 }
 
@@ -769,7 +821,7 @@ void QuarkGLRenderer::DrawTextureNPatch(ITexture t, Rectangle src, Rectangle dst
 }
 
 ITexture QuarkGLRenderer::LoadTexture(const char* path) {
-    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("Loading texture from: %s", path));
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Loading texture from: %s", path ? path : "<null>"));
 
     ImageFileData img;
     ITexture t{};
@@ -781,17 +833,21 @@ ITexture QuarkGLRenderer::LoadTexture(const char* path) {
         t.height = img.height;
         t.valid = true;
 
-        TraceLog(LogLevel::Info, "TEXTURE", TextFormat("Texture loaded successfully: %s (%dx%d)", path, t.width, t.height));
+        TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[OpenGL] Texture loaded successfully: %s (%dx%d, %zu bytes, ID: %u)",
+            path ? path : "<null>", t.width, t.height, img.pixels.size(), t.id));
     }
     else {
-        TraceLog(LogLevel::Error, "TEXTURE", TextFormat("Failed to load texture: %s", path));
+        TraceLog(LogLevel::Error, "TEXTURE", TextFormat("[OpenGL] Failed to load texture: %s", path ? path : "<null>"));
     }
 
     return t;
 }
 
 void QuarkGLRenderer::UnloadTexture(ITexture& t) {
-    if(t.id) glDeleteTextures(1, &t.id);
+    if(t.id) {
+        TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[OpenGL] Texture unloaded (ID: %u, %dx%d)", t.id, t.width, t.height));
+        glDeleteTextures(1, &t.id);
+    }
     t = {};
 }
 
@@ -831,10 +887,14 @@ IRenderTexture QuarkGLRenderer::LoadRenderTexture(int w, int h) {
     rt.texture.width = w;
     rt.texture.height = h;
     rt.texture.valid = true;
+    TraceLog(LogLevel::Info, "RENDER_TARGET", TextFormat("[OpenGL] Render texture created: %dx%d (FBO ID: %u, Color Tex ID: %u, Depth RBO ID: %u, Format: RGBA8/Depth24)",
+        w, h, rt.id, rt.texture.id, rt.depthId));
     return rt;
 }
 
 void QuarkGLRenderer::UnloadRenderTexture(IRenderTexture rt) {
+    TraceLog(LogLevel::Info, "RENDER_TARGET", TextFormat("[OpenGL] Render texture unloaded (FBO ID: %u, Color Tex ID: %u, Depth RBO ID: %u)",
+        rt.id, rt.texture.id, rt.depthId));
     if(rt.id)
         glDeleteFramebuffers(1, &rt.id);
     if(rt.depthId)
@@ -865,6 +925,7 @@ ITexture QuarkGLRenderer::GenCheckerTexture(int w, int h, int cell, Color ca, Co
     t.width = w;
     t.height = h;
     t.valid = true;
+    TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[OpenGL] Generated checker texture: %dx%d (Cell: %dpx, ID: %u)", w, h, cell, t.id));
     return t;
 }
 
@@ -889,11 +950,16 @@ void QuarkGLRenderer::EndTextureMode() {
 }
 
 bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, FontData& out) {
+    TraceLog(LogLevel::Trace, "FONT", TextFormat("[OpenGL] FreeType initializing font: %s (size: %d pt)", filePath ? filePath : "<null>", pointSize));
     FT_Library ft = nullptr;
-    if (FT_Init_FreeType(&ft) != 0) return false;
+    if (FT_Init_FreeType(&ft) != 0) {
+        TraceLog(LogLevel::Error, "FONT", "[OpenGL] Failed to initialize FreeType library");
+        return false;
+    }
 
     FT_Face face = nullptr;
     if (FT_New_Face(ft, filePath, 0, &face) != 0) {
+        TraceLog(LogLevel::Error, "FONT", TextFormat("[OpenGL] FreeType failed to open font file: %s", filePath ? filePath : "<null>"));
         FT_Done_FreeType(ft);
         return false;
     }
@@ -904,6 +970,7 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
     constexpr int AW = 1024, AH = 1024;
     std::vector<uint8_t> atlas((size_t)AW * AH * 4, 0);
     int penX = 1, penY = 1, rowH = 0;
+    int renderedGlyphs = 0;
 
     for (unsigned char c = 32; c < 127; ++c) {
         if (FT_Load_Char(face, c, FT_LOAD_RENDER|FT_LOAD_TARGET_NORMAL) != 0) continue;
@@ -919,6 +986,7 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
         }
 
         if (penY + gh + 1 > AH) {
+            TraceLog(LogLevel::Warn, "FONT", TextFormat("[OpenGL] Font atlas overflow (%dx%d) for font: %s", AW, AH, filePath ? filePath : "<null>"));
             FT_Done_Face(face);
             FT_Done_FreeType(ft);
             return false;
@@ -943,6 +1011,7 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
         g.height = gh;
         penX += gw + 1;
         rowH  = std::max(rowH, gh);
+        renderedGlyphs++;
     }
 
     out.atlasTexture = CreateTextureFromRgba(atlas.data(), AW, AH);
@@ -951,6 +1020,11 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
     out.descent      = (int)(face->size->metrics.descender / 64);
     out.lineHeight   = (int)(face->size->metrics.height    / 64);
     out.lineGap      = out.lineHeight - (out.ascent - out.descent);
+
+    const char* family = face->family_name ? face->family_name : "Unknown";
+    const char* style  = face->style_name ? face->style_name : "Regular";
+    TraceLog(LogLevel::Info, "FONT", TextFormat("[OpenGL] Font rasterized: %s (%s %s, %d glyphs, Atlas: %dx%d, Ascent: %d, Descent: %d, LineHeight: %d)",
+        filePath ? filePath : "<in-memory>", family, style, renderedGlyphs, AW, AH, out.ascent, out.descent, out.lineHeight));
 
     FT_Done_Face(face);
     FT_Done_FreeType(ft);
@@ -1045,19 +1119,22 @@ Vec2 QuarkGLRenderer::MeasureTextWithFontData(const FontData& fd, const char* te
 
 IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize) {
     if (filePath == nullptr) {
-        TraceLog(LogLevel::Info, "FONT", "Loading default system font...");
+        TraceLog(LogLevel::Info, "FONT", "[OpenGL] Loading default system font...");
 
         IFont handle{};
         handle.id = this->EnsureDefaultFont();
 
-        if (handle.id) TraceLog(LogLevel::Info, "FONT", "Default font loaded");
+        if (handle.id) TraceLog(LogLevel::Info, "FONT", TextFormat("[OpenGL] Default font loaded (Font ID: %u)", handle.id));
         return handle;
     }
 
-    TraceLog(LogLevel::Trace, "FONT", TextFormat("Loading font: %s (size: %d)", filePath, fontSize));
+    TraceLog(LogLevel::Trace, "FONT", TextFormat("[OpenGL] Loading font file: %s (size: %d pt)", filePath, fontSize));
 
     FontData fd{};
-    if (!LoadFontInternal(filePath, fontSize, fd)) return IFont{};
+    if (!LoadFontInternal(filePath, fontSize, fd)) {
+        TraceLog(LogLevel::Error, "FONT", TextFormat("[OpenGL] Failed to load font: %s", filePath));
+        return IFont{};
+    }
 
     uint32_t id = m_nextFontId++;
     m_fonts[id] = std::move(fd);
@@ -1065,19 +1142,22 @@ IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize) {
     IFont handle{};
     handle.id = id;
 
-    TraceLog(LogLevel::Info, "FONT", TextFormat("Font loaded successfully: %s", filePath));
+    TraceLog(LogLevel::Info, "FONT", TextFormat("[OpenGL] Font loaded successfully: %s (BaseSize: %d, Atlas ID: %u, Font ID: %u)",
+        filePath, fd.baseSize, fd.atlasTexture, id));
     return handle;
 }
 
 void QuarkGLRenderer::UnloadFont(IFont& font) {
     auto it = m_fonts.find(font.id);
     if (it != m_fonts.end()) {
+        GLuint atlasId = it->second.atlasTexture;
         if (it->second.atlasTexture)
             glDeleteTextures(1, &it->second.atlasTexture);
 
         if (font.id == m_defaultFontId) m_defaultFontId = 0;
 
         m_fonts.erase(it);
+        TraceLog(LogLevel::Info, "FONT", TextFormat("[OpenGL] Font unloaded (Font ID: %u, Atlas ID: %u)", font.id, atlasId));
     }
 
     font.id = 0;
@@ -1127,14 +1207,17 @@ void QuarkGLRenderer::EndShaderMode() {
 }
 
 Shader QuarkGLRenderer::LoadShader(const char* vsFileName, const char* fsFileName) {
+    TraceLog(LogLevel::Trace, "SHADER", TextFormat("[OpenGL] Loading shader files: VS='%s', FS='%s'",
+        vsFileName ? vsFileName : "<none>", fsFileName ? fsFileName : "<none>"));
     std::string vsSource, fsSource;
     if (vsFileName) {
         std::ifstream vsFile(vsFileName);
         if (vsFile.is_open()) {
             vsSource.assign((std::istreambuf_iterator<char>(vsFile)),
                             (std::istreambuf_iterator<char>()));
+            TraceLog(LogLevel::Trace, "SHADER", TextFormat("[OpenGL] Read vertex shader file '%s' (%zu bytes)", vsFileName, vsSource.size()));
         } else {
-            TraceLog(LogLevel::Error, "SHADER", TextFormat("Failed to open vertex shader file: %s", vsFileName));
+            TraceLog(LogLevel::Error, "SHADER", TextFormat("[OpenGL] Failed to open vertex shader file: %s", vsFileName));
             return Shader{};
         }
     }
@@ -1144,8 +1227,9 @@ Shader QuarkGLRenderer::LoadShader(const char* vsFileName, const char* fsFileNam
         if (fsFile.is_open()) {
             fsSource.assign((std::istreambuf_iterator<char>(fsFile)),
                             (std::istreambuf_iterator<char>()));
+            TraceLog(LogLevel::Trace, "SHADER", TextFormat("[OpenGL] Read fragment shader file '%s' (%zu bytes)", fsFileName, fsSource.size()));
         } else {
-            TraceLog(LogLevel::Error, "SHADER", TextFormat("Failed to open fragment shader file: %s", fsFileName));
+            TraceLog(LogLevel::Error, "SHADER", TextFormat("[OpenGL] Failed to open fragment shader file: %s", fsFileName));
             return Shader{};
         }
     }
@@ -1163,7 +1247,7 @@ Shader QuarkGLRenderer::LoadShaderFromMemory(const char* vsSource, const char* f
     if (fsSource) {
         fs = CompileGLShader(GL_FRAGMENT_SHADER, fsSource);
         if (fs == 0) {
-            glDeleteShader(vs);
+            if (vs) glDeleteShader(vs);
             return Shader{};
         }
     }
@@ -1176,24 +1260,34 @@ Shader QuarkGLRenderer::LoadShaderFromMemory(const char* vsSource, const char* f
     if (vs) glDeleteShader(vs);
     if (fs) glDeleteShader(fs);
 
-    GLint ok; glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    GLint ok = 0;
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
     if (!ok) {
-        char log[512];
-        glGetProgramInfoLog(p, 512, nullptr, log);
-        TraceLog(LogLevel::Error, "SHADER", TextFormat("Program link error: %s", log));
+        char log[1024];
+        glGetProgramInfoLog(p, sizeof(log), nullptr, log);
+        TraceLog(LogLevel::Error, "SHADER", TextFormat("[OpenGL] Program link error: %s", log));
         glDeleteProgram(p);
         return Shader{};
     }
 
+    GLint numUniforms = 0, numAttribs = 0;
+    glGetProgramiv(p, GL_ACTIVE_UNIFORMS, &numUniforms);
+    glGetProgramiv(p, GL_ACTIVE_ATTRIBUTES, &numAttribs);
+
     Shader result{p};
+    int foundLocCount = 0;
     for (int i = 0; i < SHADER_LOC_COUNT; ++i) {
         result.locs[i] = GetShaderLocation(result, static_cast<ShaderLocationIndex>(i));
+        if (result.locs[i] != -1) foundLocCount++;
     }
+    TraceLog(LogLevel::Info, "SHADER", TextFormat("[OpenGL] Shader program linked successfully (ID: %u, Active Uniforms: %d, Active Attributes: %d, Standard Locs: %d/%d)",
+        p, numUniforms, numAttribs, foundLocCount, SHADER_LOC_COUNT));
     return result;
 }
 
 void QuarkGLRenderer::UnloadShader(Shader& sh) {
     if (sh.id) {
+        TraceLog(LogLevel::Info, "SHADER", TextFormat("[OpenGL] Shader program unloaded (ID: %u)", sh.id));
         glDeleteProgram(sh.id);
         sh.id = 0;
     }
@@ -2123,14 +2217,17 @@ void QuarkGLRenderer::DrawGrid(int slices,float spacing) {
 }
 
 Model QuarkGLRenderer::LoadModel(const char* filePath) {
-    TraceLog(LogLevel::Trace, "MODEL", TextFormat("Loading model: %s", filePath));
+    TraceLog(LogLevel::Info, "MODEL", TextFormat("[OpenGL] Loading 3D model: %s", filePath ? filePath : "<null>"));
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(filePath, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs);
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
-        TraceLog(LogLevel::Error, "MODEL", TextFormat("Failed to load model %s: %s", filePath, importer.GetErrorString()));
+        TraceLog(LogLevel::Error, "MODEL", TextFormat("[OpenGL] Failed to load model %s: %s", filePath ? filePath : "<null>", importer.GetErrorString()));
         return Model{};
     }
+
+    TraceLog(LogLevel::Trace, "MODEL", TextFormat("[OpenGL] Assimp scene parsed: %u meshes, %u materials, %u textures, %u animations",
+        scene->mNumMeshes, scene->mNumMaterials, scene->mNumTextures, scene->mNumAnimations));
 
     Model model{};
     model.meshCount = scene->mNumMeshes;
@@ -2157,7 +2254,7 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
 
         aiString path;
         if (AI_SUCCESS == material->GetTexture(aiTextureType_DIFFUSE, 0, &path)) {
-            std::string texturePath = filePath;
+            std::string texturePath = filePath ? filePath : "";
             size_t lastSlash = texturePath.find_last_of("/\\");
             if (lastSlash != std::string::npos) {
                 texturePath = texturePath.substr(0, lastSlash + 1);
@@ -2165,6 +2262,7 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
                 texturePath = "";
             }
             texturePath += path.C_Str();
+            TraceLog(LogLevel::Trace, "MODEL", TextFormat("[OpenGL] Model material #%u loading diffuse texture: %s", i, texturePath.c_str()));
             ITexture loadedTex = this->LoadTexture(texturePath.c_str());
             mat.maps[MATERIAL_MAP_ALBEDO].texture.id = loadedTex.id;
             mat.maps[MATERIAL_MAP_ALBEDO].texture.width = loadedTex.width;
@@ -2173,6 +2271,9 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
             mat.maps[MATERIAL_MAP_DIFFUSE].texture = mat.maps[MATERIAL_MAP_ALBEDO].texture;
         }
     }
+
+    int totalVertices = 0;
+    int totalTriangles = 0;
 
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
         aiMesh* mesh = scene->mMeshes[i];
@@ -2212,6 +2313,9 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
 
         qMesh.vertexCount = mesh->mNumVertices;
         qMesh.triangleCount = mesh->mNumFaces;
+        totalVertices += qMesh.vertexCount;
+        totalTriangles += qMesh.triangleCount;
+
         qMesh.vertices = new float[qMesh.vertexCount * 3];
         qMesh.normals = new float[qMesh.vertexCount * 3];
         qMesh.texcoords = new float[qMesh.vertexCount * 2];
@@ -2256,9 +2360,14 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
         glBindVertexArray(0);
 
         model.meshMaterial[i] = mesh->mMaterialIndex;
+
+        const char* meshName = mesh->mName.length > 0 ? mesh->mName.C_Str() : "unnamed";
+        TraceLog(LogLevel::Trace, "MODEL", TextFormat("[OpenGL] Mesh #%u ('%s'): %d vertices, %d triangles, VAO: %u, Material: #%d",
+            i, meshName, qMesh.vertexCount, qMesh.triangleCount, qMesh.vaoId, model.meshMaterial[i]));
     }
 
-    TraceLog(LogLevel::Info, "MODEL", TextFormat("Model loaded successfully: %s (%d meshes, %d materials)", filePath, model.meshCount, model.materialCount));
+    TraceLog(LogLevel::Info, "MODEL", TextFormat("[OpenGL] Model loaded successfully: %s (%d meshes, %d materials, %d total vertices, %d total triangles)",
+        filePath ? filePath : "<null>", model.meshCount, model.materialCount, totalVertices, totalTriangles));
     return model;
 }
 
@@ -2307,6 +2416,7 @@ void  QuarkGLRenderer::UnloadModel(Model& model) {
     delete[] model.meshMaterial;
     model.meshMaterial = nullptr;
 
+    TraceLog(LogLevel::Info, "MODEL", TextFormat("[OpenGL] Model unloaded (%d meshes, %d materials)", model.meshCount, model.materialCount));
     model = {};
 }
 
@@ -2376,6 +2486,8 @@ void QuarkGLRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(6 * sizeof(float)));
 
     glBindVertexArray(0);
+    TraceLog(LogLevel::Trace, "MESH", TextFormat("[OpenGL] Uploaded mesh to GPU (VAO: %u, VBO: %u, EBO: %u, %d vertices, %d triangles, dynamic: %s)",
+        mesh.vaoId, mesh.vboId, mesh.eboId, mesh.vertexCount, mesh.triangleCount, dynamic ? "yes" : "no"));
 }
 
 void QuarkGLRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) {
@@ -2413,8 +2525,10 @@ void QuarkGLRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, 
 }
 
 void QuarkGLRenderer::UnloadMesh(Mesh& mesh) {
-    if (mesh.vaoId)
+    if (mesh.vaoId) {
+        TraceLog(LogLevel::Trace, "MESH", TextFormat("[OpenGL] Unloaded mesh from GPU (VAO: %u, VBO: %u, EBO: %u)", mesh.vaoId, mesh.vboId, mesh.eboId));
         glDeleteVertexArrays(1, &mesh.vaoId);
+    }
     if (mesh.vboId)
         glDeleteBuffers(1, &mesh.vboId);
     if (mesh.eboId)

@@ -176,9 +176,10 @@ void QuarkVkRenderer::DrawTextureNPatch(ITexture texture, Rectangle source, Rect
 }
 
 ITexture QuarkVkRenderer::LoadTexture(const char* filePath) {
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Loading texture from: %s", filePath ? filePath : "<null>"));
     ImageFileData img;
     if (!LoadImageFile(filePath, img, 4)) {
-        TraceLog(LogLevel::Warn, "VULKAN", TextFormat("Failed to load texture: %s", filePath ? filePath : "<null>"));
+        TraceLog(LogLevel::Error, "TEXTURE", TextFormat("[Vulkan] Failed to load texture image: %s", filePath ? filePath : "<null>"));
         return ITexture{};
     }
 
@@ -187,9 +188,12 @@ ITexture QuarkVkRenderer::LoadTexture(const char* filePath) {
                                static_cast<uint32_t>(img.width),
                                static_cast<uint32_t>(img.height),
                                textureId)) {
-        TraceLog(LogLevel::Warn, "VULKAN", TextFormat("Failed to upload texture to Vulkan: %s", filePath ? filePath : "<null>"));
+        TraceLog(LogLevel::Error, "TEXTURE", TextFormat("[Vulkan] Failed to upload texture to GPU: %s", filePath ? filePath : "<null>"));
         return ITexture{};
     }
+
+    TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[Vulkan] Texture loaded successfully: %s (%dx%d, %zu bytes, ID: %u)",
+        filePath ? filePath : "<null>", img.width, img.height, img.pixels.size(), textureId));
 
     return ITexture{
         textureId,
@@ -223,6 +227,7 @@ void QuarkVkRenderer::UnloadTexture(ITexture& texture) {
         return;
     }
 
+    TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[Vulkan] Texture unloaded (ID: %u, %dx%d)", texture.id, texture.width, texture.height));
     DestroyTexture(texture.id);
     texture = ITexture{};
 }
@@ -279,6 +284,8 @@ ITexture QuarkVkRenderer::GenCheckerTexture(int width, int height, int cellSize,
                                textureId)) {
         return ITexture{};
     }
+
+    TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[Vulkan] Generated checker texture: %dx%d (Cell: %dpx, ID: %u)", width, height, cellSize, textureId));
 
     return ITexture{
         textureId,

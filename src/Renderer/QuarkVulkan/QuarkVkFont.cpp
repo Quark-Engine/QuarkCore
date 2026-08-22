@@ -1,4 +1,4 @@
-﻿#include "QuarkVkRenderer.hpp"
+#include "QuarkVkRenderer.hpp"
 
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
@@ -47,33 +47,40 @@ static float NormalizeColorComponent(std::uint8_t value) {
 
 bool QuarkVkRenderer::LoadFontInternal(const char* filePath, int pointSize, FontData& out) {
     if (!filePath || pointSize <= 0) {
+        TraceLog(LogLevel::Warn, "FONT", "[Vulkan] Cannot load font: file path is null or invalid point size");
         return false;
     }
 
+    TraceLog(LogLevel::Trace, "FONT", TextFormat("[Vulkan] FreeType initializing font: %s (size: %d pt)", filePath, pointSize));
+
     FT_Library ft = nullptr;
     if (FT_Init_FreeType(&ft) != 0) {
+        TraceLog(LogLevel::Error, "FONT", "[Vulkan] Failed to initialize FreeType library");
         return false;
     }
 
     FT_Face face = nullptr;
     if (FT_New_Face(ft, filePath, 0, &face) != 0) {
+        TraceLog(LogLevel::Error, "FONT", TextFormat("[Vulkan] FreeType failed to open font file: %s", filePath));
         FT_Done_FreeType(ft);
         return false;
     }
 
     if (FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(pointSize)) != 0) {
+        TraceLog(LogLevel::Error, "FONT", TextFormat("[Vulkan] FreeType failed to set pixel size %d for: %s", pointSize, filePath));
         FT_Done_Face(face);
         FT_Done_FreeType(ft);
         return false;
     }
 
-    constexpr int atlasWidth = 512;
-    constexpr int atlasHeight = 512;
+    constexpr int atlasWidth = 1024;
+    constexpr int atlasHeight = 1024;
     std::vector<unsigned char> atlas(atlasWidth * atlasHeight * 4, 0);
 
     int penX = 1;
     int penY = 1;
     int rowH = 0;
+    int renderedGlyphs = 0;
 
     for (int c = 32; c <= 126; ++c) {
         if (FT_Load_Char(face, c, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0) {
@@ -101,6 +108,7 @@ bool QuarkVkRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
             penY += rowH + 1;
             rowH = 0;
             if (penY + 1 > atlasHeight) {
+                TraceLog(LogLevel::Warn, "FONT", TextFormat("[Vulkan] Font atlas overflow (%dx%d) for font: %s", atlasWidth, atlasHeight, filePath));
                 FT_Done_Face(face);
                 FT_Done_FreeType(ft);
                 return false;
@@ -127,10 +135,12 @@ bool QuarkVkRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
 
         penX += gw + 1;
         rowH = std::max(rowH, gh);
+        renderedGlyphs++;
     }
 
     uint32_t textureId = 0;
     if (!CreateTextureFromRGBA(atlas.data(), atlasWidth, atlasHeight, textureId)) {
+        TraceLog(LogLevel::Error, "FONT", TextFormat("[Vulkan] Failed to create atlas texture for font: %s", filePath));
         FT_Done_Face(face);
         FT_Done_FreeType(ft);
         return false;
@@ -142,6 +152,11 @@ bool QuarkVkRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
     out.descent        = static_cast<int>(face->size->metrics.descender / 64);
     out.lineHeight     = static_cast<int>(face->size->metrics.height / 64);
     out.lineGap        = out.lineHeight - (out.ascent - out.descent);
+
+    const char* family = face->family_name ? face->family_name : "Unknown";
+    const char* style  = face->style_name ? face->style_name : "Regular";
+    TraceLog(LogLevel::Info, "FONT", TextFormat("[Vulkan] Font rasterized: %s (%s %s, %d glyphs, Atlas: %dx%d, Ascent: %d, Descent: %d, LineHeight: %d)",
+        filePath, family, style, renderedGlyphs, atlasWidth, atlasHeight, out.ascent, out.descent, out.lineHeight));
 
     FT_Done_Face(face);
     FT_Done_FreeType(ft);
@@ -324,18 +339,27 @@ int QuarkVkRenderer::MeasureText(const char* text, int fontSize) {
 
 IFont QuarkVkRenderer::LoadFont(const char* filePath, int fontSize) {
     if (!filePath || fontSize <= 0) {
+        TraceLog(LogLevel::Info, "FONT", "[Vulkan] Loading default system font...");
         const uint32_t id = EnsureDefaultFont();
+        if (id) TraceLog(LogLevel::Info, "FONT", TextFormat("[Vulkan] Default font loaded (Font ID: %u)", id));
         return IFont{ id };
     }
 
+    TraceLog(LogLevel::Trace, "FONT", TextFormat("[Vulkan] Loading font file: %s (size: %d pt)", filePath, fontSize));
+
     FontData fd{};
     if (!LoadFontInternal(filePath, fontSize, fd)) {
-        TraceLog(LogLevel::Warn, "VULKAN", TextFormat("Failed to load font: %s", filePath));
+        TraceLog(LogLevel::Error, "FONT", TextFormat("[Vulkan] Failed to load font: %s", filePath));
         return IFont{};
     }
 
     const uint32_t id = m_nextFontId++;
+    const uint32_t atlasId = fd.atlasTextureId;
+    const int baseSize = fd.baseSize;
     m_fonts[id] = std::move(fd);
+
+    TraceLog(LogLevel::Info, "FONT", TextFormat("[Vulkan] Font loaded successfully: %s (BaseSize: %d, Atlas ID: %u, Font ID: %u)",
+        filePath, baseSize, atlasId, id));
     return IFont{ id };
 }
 
@@ -346,6 +370,7 @@ void QuarkVkRenderer::UnloadFont(IFont& font) {
 
     const auto it = m_fonts.find(font.id);
     if (it != m_fonts.end()) {
+        const uint32_t atlasId = it->second.atlasTextureId;
         if (it->second.atlasTextureId != 0) {
             DestroyTexture(it->second.atlasTextureId);
         }
@@ -353,6 +378,7 @@ void QuarkVkRenderer::UnloadFont(IFont& font) {
             m_defaultFontId = 0;
         }
         m_fonts.erase(it);
+        TraceLog(LogLevel::Info, "FONT", TextFormat("[Vulkan] Font unloaded (Font ID: %u, Atlas ID: %u)", font.id, atlasId));
     }
 
     font.id = 0;

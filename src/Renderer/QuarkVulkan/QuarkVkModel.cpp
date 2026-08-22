@@ -93,6 +93,7 @@ static Material LoadAssimpMaterial(QuarkVkRenderer& renderer, const char* filePa
     if (AI_SUCCESS == source->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath)) {
         std::string resolvedPath = GetModelDirectory(filePath);
         resolvedPath += texturePath.C_Str();
+        TraceLog(LogLevel::Trace, "MODEL", TextFormat("[Vulkan] Model material loading diffuse texture: %s", resolvedPath.c_str()));
 
         ITexture loadedTex = renderer.LoadTexture(resolvedPath.c_str());
         if (loadedTex.valid) {
@@ -151,7 +152,7 @@ static Color ReadVertexColor(const Mesh& mesh, int index, Color fallback) {
 } // namespace
 
 Model QuarkVkRenderer::LoadModel(const char* filePath) {
-    TraceLog(LogLevel::Trace, "MODEL", TextFormat("Loading model: %s", filePath ? filePath : "<null>"));
+    TraceLog(LogLevel::Info, "MODEL", TextFormat("[Vulkan] Loading 3D model: %s", filePath ? filePath : "<null>"));
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(
@@ -160,10 +161,13 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
     );
 
     if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || !scene->mRootNode) {
-        TraceLog(LogLevel::Error, "MODEL", TextFormat("Failed to load model %s: %s",
+        TraceLog(LogLevel::Error, "MODEL", TextFormat("[Vulkan] Failed to load model %s: %s",
             filePath ? filePath : "<null>", importer.GetErrorString()));
         return Model{};
     }
+
+    TraceLog(LogLevel::Trace, "MODEL", TextFormat("[Vulkan] Assimp scene parsed: %u meshes, %u materials, %u textures, %u animations",
+        scene->mNumMeshes, scene->mNumMaterials, scene->mNumTextures, scene->mNumAnimations));
 
     Model model{};
     model.directory = GetModelDirectory(filePath);
@@ -177,6 +181,9 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
         model.materials[i] = LoadAssimpMaterial(*this, filePath, scene->mMaterials[i]);
     }
 
+    int totalVertices = 0;
+    int totalTriangles = 0;
+
     for (int i = 0; i < model.meshCount; ++i) {
         const aiMesh* sourceMesh = scene->mMeshes[i];
         if (!sourceMesh) {
@@ -186,6 +193,9 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
         Mesh& dst = model.meshes[i];
         dst.vertexCount = static_cast<int>(sourceMesh->mNumVertices);
         dst.triangleCount = static_cast<int>(sourceMesh->mNumFaces);
+        totalVertices += dst.vertexCount;
+        totalTriangles += dst.triangleCount;
+
         dst.vertices = (dst.vertexCount > 0) ? new float[dst.vertexCount * 3]{} : nullptr;
         dst.normals = (dst.vertexCount > 0) ? new float[dst.vertexCount * 3]{} : nullptr;
         dst.texcoords = (dst.vertexCount > 0) ? new float[dst.vertexCount * 2]{} : nullptr;
@@ -220,10 +230,14 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
         }
 
         model.meshMaterial[i] = static_cast<int>(sourceMesh->mMaterialIndex);
+
+        const char* meshName = sourceMesh->mName.length > 0 ? sourceMesh->mName.C_Str() : "unnamed";
+        TraceLog(LogLevel::Trace, "MODEL", TextFormat("[Vulkan] Mesh #%d ('%s'): %d vertices, %d triangles, Material: #%d",
+            i, meshName, dst.vertexCount, dst.triangleCount, model.meshMaterial[i]));
     }
 
-    TraceLog(LogLevel::Info, "MODEL", TextFormat("Model loaded successfully: %s (%d meshes, %d materials)",
-        filePath ? filePath : "<null>", model.meshCount, model.materialCount));
+    TraceLog(LogLevel::Info, "MODEL", TextFormat("[Vulkan] Model loaded successfully: %s (%d meshes, %d materials, %d total vertices, %d total triangles)",
+        filePath ? filePath : "<null>", model.meshCount, model.materialCount, totalVertices, totalTriangles));
     return model;
 }
 
@@ -268,6 +282,8 @@ void QuarkVkRenderer::UnloadModel(Model& model) {
     model.currentPose.transform = nullptr;
     delete[] model.boneMatrices;
     model.boneMatrices = nullptr;
+
+    TraceLog(LogLevel::Info, "MODEL", TextFormat("[Vulkan] Model unloaded (%d meshes, %d materials)", model.meshCount, model.materialCount));
 
     model.meshCount = 0;
     model.materialCount = 0;
@@ -337,6 +353,8 @@ void QuarkVkRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
 
     if (mesh.vertexCount < 0) mesh.vertexCount = 0;
     if (mesh.triangleCount < 0) mesh.triangleCount = 0;
+
+    TraceLog(LogLevel::Trace, "MESH", TextFormat("[Vulkan] Uploaded mesh to CPU staging (%d vertices, %d triangles)", mesh.vertexCount, mesh.triangleCount));
 }
 
 void QuarkVkRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) {
@@ -374,6 +392,7 @@ void QuarkVkRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, 
 }
 
 void QuarkVkRenderer::UnloadMesh(Mesh& mesh) {
+    TraceLog(LogLevel::Trace, "MESH", TextFormat("[Vulkan] Unloaded mesh (%d vertices, %d triangles)", mesh.vertexCount, mesh.triangleCount));
     FreeMeshCpuData(mesh);
     mesh.vaoId = 0;
     mesh.vboId = 0;

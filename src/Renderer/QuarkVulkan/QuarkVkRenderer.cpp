@@ -1,4 +1,5 @@
 #include "QuarkVkRenderer.hpp"
+#include "../../QuarkInternal.hpp"
 
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_vulkan.h>
@@ -542,6 +543,73 @@ bool HasStencilComponent(VkFormat format) {
     return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
 
+const char* GetVulkanVendorName(uint32_t vendorID) {
+    switch (vendorID) {
+        case 0x10DE: return "NVIDIA";
+        case 0x1002: return "AMD";
+        case 0x8086: return "Intel";
+        case 0x13B5: return "ARM";
+        case 0x5143: return "Qualcomm";
+        case 0x1010: return "ImgTec";
+        case 0x106B: return "Apple";
+        case 0x1414: return "Microsoft";
+        case 0x10005: return "Mesa";
+        default:     return "Unknown";
+    }
+}
+
+const char* GetVulkanDeviceTypeString(VkPhysicalDeviceType type) {
+    switch (type) {
+        case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return "Integrated GPU";
+        case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:   return "Discrete GPU";
+        case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:    return "Virtual GPU";
+        case VK_PHYSICAL_DEVICE_TYPE_CPU:            return "CPU (Software)";
+        default:                                     return "Other";
+    }
+}
+
+std::string FormatVulkanDriverVersion(uint32_t vendorID, uint32_t driverVersion) {
+    if (vendorID == 0x10DE) { // NVIDIA
+        return TextFormat("%u.%u.%u.%u",
+            (driverVersion >> 22) & 0x3FF,
+            (driverVersion >> 14) & 0x0FF,
+            (driverVersion >> 6)  & 0x0FF,
+            (driverVersion)       & 0x03F);
+    }
+#if defined(_WIN32)
+    if (vendorID == 0x8086) { // Intel
+        return TextFormat("%u.%u", (driverVersion >> 14), (driverVersion & 0x3FFF));
+    }
+#endif
+    return TextFormat("%u.%u.%u",
+        VK_VERSION_MAJOR(driverVersion),
+        VK_VERSION_MINOR(driverVersion),
+        VK_VERSION_PATCH(driverVersion));
+}
+
+const char* GetPresentModeString(VkPresentModeKHR mode) {
+    switch (mode) {
+        case VK_PRESENT_MODE_IMMEDIATE_KHR:    return "IMMEDIATE (VSync OFF, uncapped)";
+        case VK_PRESENT_MODE_MAILBOX_KHR:      return "MAILBOX (Triple Buffering)";
+        case VK_PRESENT_MODE_FIFO_KHR:         return "FIFO (VSync ON)";
+        case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "FIFO_RELAXED (Adaptive VSync)";
+        default:                               return "Unknown";
+    }
+}
+
+const char* GetVkFormatString(VkFormat format) {
+    switch (format) {
+        case VK_FORMAT_B8G8R8A8_UNORM: return "B8G8R8A8_UNORM";
+        case VK_FORMAT_B8G8R8A8_SRGB:  return "B8G8R8A8_SRGB";
+        case VK_FORMAT_R8G8B8A8_UNORM: return "R8G8B8A8_UNORM";
+        case VK_FORMAT_R8G8B8A8_SRGB:  return "R8G8B8A8_SRGB";
+        case VK_FORMAT_D32_SFLOAT:     return "D32_SFLOAT";
+        case VK_FORMAT_D32_SFLOAT_S8_UINT: return "D32_SFLOAT_S8_UINT";
+        case VK_FORMAT_D24_UNORM_S8_UINT:  return "D24_UNORM_S8_UINT";
+        default:                       return "VkFormat(Other)";
+    }
+}
+
 } // namespace
 
 QuarkVkRenderer::~QuarkVkRenderer() {
@@ -552,10 +620,11 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     uint32_t version = 0;
     vkEnumerateInstanceVersion(&version);
 
-    TraceLog(LogLevel::Info, "VULKAN", TextFormat("Initializing Vulkan renderer... (API %d.%d.%d)",
+    TraceLog(LogLevel::Info, "VULKAN", TextFormat("Initializing Vulkan renderer... (Supported Instance API: %d.%d.%d, Window: %dx%d)",
         VK_VERSION_MAJOR(version),
         VK_VERSION_MINOR(version),
-        VK_VERSION_PATCH(version)));
+        VK_VERSION_PATCH(version),
+        width, height));
 
 #ifdef __APPLE__
     TraceLog(LogLevel::Info, "VULKAN", "Apple platform detected, using MoltenVK...");
@@ -735,6 +804,7 @@ void QuarkVkRenderer::Shutdown() {
     m_main3DBatch.lineVertices.clear();
     m_frameTriangleVertices3D.clear();
     m_frameLineVertices3D.clear();
+    TraceLog(LogLevel::Info, "VULKAN", "Vulkan renderer shut down successfully.");
 }
 
 void QuarkVkRenderer::BeginDrawing() {
@@ -1008,23 +1078,69 @@ void QuarkVkRenderer::PickPhysicalDevice() {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
     if (deviceCount == 0) {
+        TraceLog(LogLevel::Error, "VULKAN", "Failed to find GPUs with Vulkan support.");
         throw std::runtime_error("Failed to find GPUs with Vulkan support.");
     }
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
 
-    for (const auto& device : devices) {
-        if (IsDeviceSuitable(device)) {
+    TraceLog(LogLevel::Info, "VULKAN", TextFormat("Found %u physical device(s) with Vulkan support:", deviceCount));
+
+    for (uint32_t i = 0; i < deviceCount; ++i) {
+        VkPhysicalDevice device = devices[i];
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(device, &props);
+
+        VkPhysicalDeviceMemoryProperties memProps;
+        vkGetPhysicalDeviceMemoryProperties(device, &memProps);
+        uint64_t vramBytes = 0;
+        uint64_t hostBytes = 0;
+        for (uint32_t h = 0; h < memProps.memoryHeapCount; ++h) {
+            if (memProps.memoryHeaps[h].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+                vramBytes += memProps.memoryHeaps[h].size;
+            } else {
+                hostBytes += memProps.memoryHeaps[h].size;
+            }
+        }
+        double vramGb = static_cast<double>(vramBytes) / (1024.0 * 1024.0 * 1024.0);
+        double hostGb = static_cast<double>(hostBytes) / (1024.0 * 1024.0 * 1024.0);
+
+        const char* devType = GetVulkanDeviceTypeString(props.deviceType);
+        const char* vendorName = GetVulkanVendorName(props.vendorID);
+        std::string driverVer = FormatVulkanDriverVersion(props.vendorID, props.driverVersion);
+        bool suitable = IsDeviceSuitable(device);
+
+        TraceLog(LogLevel::Info, "VULKAN", TextFormat("  [%u] GPU: %s (%s)", i, props.deviceName, devType));
+        TraceLog(LogLevel::Info, "VULKAN", TextFormat("      Vendor: %s (0x%04X), Device ID: 0x%04X, Driver: %s",
+            vendorName, props.vendorID, props.deviceID, driverVer.c_str()));
+        TraceLog(LogLevel::Info, "VULKAN", TextFormat("      Vulkan API: %d.%d.%d, VRAM: %.2f GB, Shared RAM: %.2f GB (Suitable: %s)",
+            VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion), VK_VERSION_PATCH(props.apiVersion),
+            vramGb, hostGb, suitable ? "Yes" : "No"));
+
+        if (m_physicalDevice == VK_NULL_HANDLE && suitable) {
             m_physicalDevice = device;
-            VkPhysicalDeviceProperties props;
-            vkGetPhysicalDeviceProperties(device, &props);
-            TraceLog(LogLevel::Info, "VULKAN", TextFormat("Selected physical device: %s", props.deviceName));
-            break;
         }
     }
+
     if (m_physicalDevice == VK_NULL_HANDLE) {
+        TraceLog(LogLevel::Error, "VULKAN", "Failed to find a suitable Vulkan physical device.");
         throw std::runtime_error("Failed to find a suitable Vulkan physical device.");
     }
+
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
+    TraceLog(LogLevel::Info, "VULKAN", TextFormat("Selected physical device: %s (%s, Vendor: %s)",
+        props.deviceName, GetVulkanDeviceTypeString(props.deviceType), GetVulkanVendorName(props.vendorID)));
+
+    const VkPhysicalDeviceLimits& lim = props.limits;
+    TraceLog(LogLevel::Trace, "VULKAN", TextFormat("Limits: Max 2D Image: %ux%u, Max 3D Image: %u, Max Cube: %u, Max Layers: %u",
+        lim.maxImageDimension2D, lim.maxImageDimension3D, lim.maxImageDimensionCube, lim.maxImageArrayLayers));
+    TraceLog(LogLevel::Trace, "VULKAN", TextFormat("Limits: Max UBO Range: %u bytes, Max SSBO Range: %u bytes, Max Push Constants: %u bytes",
+        lim.maxUniformBufferRange, lim.maxStorageBufferRange, lim.maxPushConstantsSize));
+    TraceLog(LogLevel::Trace, "VULKAN", TextFormat("Limits: Max Sampler Anisotropy: %.1fx, Max Color Attachments: %u, Max Bound Sets: %u",
+        lim.maxSamplerAnisotropy, lim.maxColorAttachments, lim.maxBoundDescriptorSets));
+    TraceLog(LogLevel::Trace, "VULKAN", TextFormat("Limits: Max Vertex Input Attribs: %u, Max Vertex Bindings: %u, Max Memory Allocations: %u",
+        lim.maxVertexInputAttributes, lim.maxVertexInputBindings, lim.maxMemoryAllocationCount));
 }
 
 void QuarkVkRenderer::CreateLogicalDevice() {
@@ -1058,11 +1174,13 @@ void QuarkVkRenderer::CreateLogicalDevice() {
     createInfo.enabledLayerCount       = 0;
 
     if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS) {
+        TraceLog(LogLevel::Error, "VULKAN", "Failed to create Vulkan logical device.");
         throw std::runtime_error("Failed to create Vulkan logical device.");
     }
     vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
     vkGetDeviceQueue(m_device, indices.presentFamily.value(),  0, &m_presentQueue);
-    TraceLog(LogLevel::Info, "VULKAN", "Logical device and queues created.");
+    TraceLog(LogLevel::Info, "VULKAN", TextFormat("Logical device created successfully (Graphics Queue: #%u, Present Queue: #%u, Extensions: %zu).",
+        indices.graphicsFamily.value(), indices.presentFamily.value(), kDeviceExtensions.size()));
 }
 
 void QuarkVkRenderer::CreateSwapChain() {
@@ -1110,6 +1228,7 @@ void QuarkVkRenderer::CreateSwapChain() {
     createInfo.oldSwapchain   = VK_NULL_HANDLE;
 
     if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain) != VK_SUCCESS) {
+        TraceLog(LogLevel::Error, "VULKAN", "Failed to create Vulkan swap chain.");
         throw std::runtime_error("Failed to create Vulkan swap chain.");
     }
 
@@ -1120,8 +1239,10 @@ void QuarkVkRenderer::CreateSwapChain() {
     m_swapChainImageFormat = surfaceFormat.format;
     m_swapChainExtent      = extent;
 
-    TraceLog(LogLevel::Info, "VULKAN", TextFormat("Swapchain created (Extent: %ux%u, Format: %d)",
-        m_swapChainExtent.width, m_swapChainExtent.height, m_swapChainImageFormat));
+    TraceLog(LogLevel::Info, "VULKAN", TextFormat("Swapchain created: %ux%u, Images: %u, Format: %s (%d), PresentMode: %s, MSAA: %dx",
+        m_swapChainExtent.width, m_swapChainExtent.height, imageCount,
+        GetVkFormatString(m_swapChainImageFormat), m_swapChainImageFormat,
+        GetPresentModeString(presentMode), m_requestedMsaaSamples));
 }
 
 void QuarkVkRenderer::CreateImageViews() {
@@ -2613,9 +2734,14 @@ bool QuarkVkRenderer::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t
 bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
                                              uint32_t width, uint32_t height,
                                              uint32_t& outId) {
-    if (!rgba || width == 0 || height == 0) return false;
+    if (!rgba || width == 0 || height == 0) {
+        TraceLog(LogLevel::Warn, "TEXTURE", "[Vulkan] Cannot create texture: invalid parameters (null data or zero size)");
+        return false;
+    }
 
     const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4u;
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Creating GPU texture: %ux%u (%llu bytes RGBA8)",
+        width, height, static_cast<unsigned long long>(imageSize)));
 
     VkBuffer       stagingBuffer = VK_NULL_HANDLE;
     VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
@@ -2623,6 +2749,7 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       stagingBuffer, stagingMemory)) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to allocate staging buffer for texture upload");
         return false;
     }
 
@@ -2651,6 +2778,7 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
     imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateImage(m_device, &imageInfo, nullptr, &tex.image) != VK_SUCCESS) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkImage");
         vkDestroyBuffer(m_device, stagingBuffer, nullptr);
         vkFreeMemory(m_device, stagingMemory, nullptr);
         return false;
@@ -2665,6 +2793,7 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
     allocInfo.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     if (vkAllocateMemory(m_device, &allocInfo, nullptr, &tex.memory) != VK_SUCCESS) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to allocate device memory for texture");
         vkDestroyImage(m_device, tex.image, nullptr);
         vkDestroyBuffer(m_device, stagingBuffer, nullptr);
         vkFreeMemory(m_device, stagingMemory, nullptr);
@@ -2679,6 +2808,7 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
         !TransitionImageLayout(tex.image, imageInfo.format,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed image transitions or buffer copy for texture");
         vkFreeMemory(m_device, tex.memory, nullptr);
         vkDestroyImage(m_device, tex.image, nullptr);
         vkDestroyBuffer(m_device, stagingBuffer, nullptr);
@@ -2701,6 +2831,7 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
     viewInfo.subresourceRange.layerCount     = 1;
 
     if (vkCreateImageView(m_device, &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkImageView");
         vkFreeMemory(m_device, tex.memory, nullptr);
         vkDestroyImage(m_device, tex.image, nullptr);
         return false;
@@ -2708,8 +2839,8 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter    = VK_FILTER_LINEAR;
-    samplerInfo.minFilter    = VK_FILTER_LINEAR;
+    samplerInfo.magFilter    = (gTextureFilterMode == TextureFilterMode::Nearest) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+    samplerInfo.minFilter    = (gTextureFilterMode == TextureFilterMode::Nearest) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
     samplerInfo.mipmapMode   = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -2717,6 +2848,7 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
     samplerInfo.maxLod       = 1.0f;
 
     if (vkCreateSampler(m_device, &samplerInfo, nullptr, &tex.sampler) != VK_SUCCESS) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkSampler");
         vkDestroyImageView(m_device, tex.view, nullptr);
         vkFreeMemory(m_device, tex.memory, nullptr);
         vkDestroyImage(m_device, tex.image, nullptr);
@@ -2724,6 +2856,7 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
     }
 
     if (!AllocateTextureDescriptorSet(tex.descriptorSet)) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to allocate texture descriptor set");
         vkDestroySampler(m_device, tex.sampler, nullptr);
         vkDestroyImageView(m_device, tex.view, nullptr);
         vkFreeMemory(m_device, tex.memory, nullptr);
@@ -2747,6 +2880,9 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
 
     outId = m_nextTextureId++;
     m_textures[outId] = tex;
+
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Texture uploaded to GPU (ID: %u, %ux%u, Mem: %llu bytes, DS: %p)",
+        outId, width, height, static_cast<unsigned long long>(memReq.size), (void*)tex.descriptorSet));
     return true;
 }
 
@@ -2755,6 +2891,8 @@ void QuarkVkRenderer::DestroyTexture(uint32_t textureId) {
     if (it == m_textures.end()) return;
 
     VkTextureData& tex = it->second;
+    TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[Vulkan] Texture destroyed (ID: %u, %ux%u)", textureId, tex.width, tex.height));
+
     if (tex.sampler  != VK_NULL_HANDLE) vkDestroySampler   (m_device, tex.sampler,  nullptr);
     if (tex.view     != VK_NULL_HANDLE) vkDestroyImageView (m_device, tex.view,     nullptr);
     if (tex.image    != VK_NULL_HANDLE) vkDestroyImage     (m_device, tex.image,    nullptr);
@@ -2904,13 +3042,17 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     rt.depthView   = depthView;
     m_renderTargets[rtId] = rt;
 
-    TraceLog(LogLevel::Info, "VULKAN", TextFormat("Render target created (%ux%u).", tex.width, tex.height));
+    TraceLog(LogLevel::Info, "RENDER_TARGET", TextFormat("[Vulkan] Render target created: %ux%u (Target ID: %u, Color Tex ID: %u, Depth Buffer: yes)",
+        tex.width, tex.height, rtId, textureId));
     return IRenderTexture{ rtId, {}, 0 };
 }
 
 void QuarkVkRenderer::DestroyRenderTargetInternal(uint32_t renderTargetId) {
     auto it = m_renderTargets.find(renderTargetId);
     if (it == m_renderTargets.end()) return;
+
+    TraceLog(LogLevel::Info, "RENDER_TARGET", TextFormat("[Vulkan] Render target destroyed (Target ID: %u, %ux%u)",
+        renderTargetId, it->second.width, it->second.height));
 
     const uint32_t textureId = it->second.textureId;
     if (it->second.framebuffer != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
@@ -2935,8 +3077,11 @@ VkShaderModule QuarkVkRenderer::CreateShaderModule(const std::vector<uint32_t>& 
 
     VkShaderModule shaderModule = VK_NULL_HANDLE;
     if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        TraceLog(LogLevel::Error, "VULKAN", "[Vulkan] Failed to create Vulkan shader module.");
         throw std::runtime_error("Failed to create Vulkan shader module.");
     }
+    TraceLog(LogLevel::Trace, "SHADER", TextFormat("[Vulkan] Created VkShaderModule (%zu words / %zu bytes, Handle: %p)",
+        spirv.size(), createInfo.codeSize, (void*)shaderModule));
     return shaderModule;
 }
 

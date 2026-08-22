@@ -60,6 +60,7 @@ bool CompileGlslToSpirv(const std::string& source,
                         shaderc_shader_kind shaderKind,
                         const char* stageName,
                         std::vector<uint32_t>& outSpirv) {
+    TraceLog(LogLevel::Trace, "SHADER", TextFormat("[Vulkan] Compiling %s GLSL to SPIR-V (%zu bytes source)...", stageName, source.size()));
     shaderc::Compiler compiler;
     shaderc::CompileOptions options;
     options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
@@ -67,13 +68,15 @@ bool CompileGlslToSpirv(const std::string& source,
     const shaderc::SpvCompilationResult result = compiler.CompileGlslToSpv(
         source, shaderKind, "QuarkCore runtime shader", options);
     if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
-        TraceLog(LogLevel::Error, "VULKAN",
-                 TextFormat("Failed to compile %s shader with Shaderc: %s",
+        TraceLog(LogLevel::Error, "SHADER",
+                 TextFormat("[Vulkan] Failed to compile %s shader with Shaderc: %s",
                             stageName, result.GetErrorMessage().c_str()));
         return false;
     }
 
     outSpirv.assign(result.cbegin(), result.cend());
+    TraceLog(LogLevel::Trace, "SHADER", TextFormat("[Vulkan] Compiled %s shader to %zu SPIR-V words (%zu bytes)",
+        stageName, outSpirv.size(), outSpirv.size() * sizeof(uint32_t)));
     return !outSpirv.empty();
 }
 
@@ -85,6 +88,8 @@ void ReflectShaderResources(VkShaderProgramData& programData,
     try {
         spirv_cross::CompilerGLSL compiler(spirv);
         const auto resources = compiler.get_shader_resources();
+        int attribCount = 0;
+        int uniformCount = 0;
 
         for (const auto& resource : resources.stage_inputs) {
             const std::string name = compiler.get_name(resource.id);
@@ -93,6 +98,7 @@ void ReflectShaderResources(VkShaderProgramData& programData,
             }
             const uint32_t location = compiler.get_decoration(resource.id, spv::DecorationLocation);
             programData.attributes[name] = static_cast<int>(location);
+            attribCount++;
         }
 
         for (const auto& resource : resources.uniform_buffers) {
@@ -100,6 +106,7 @@ void ReflectShaderResources(VkShaderProgramData& programData,
             if (!name.empty() && programData.uniforms.find(name) == programData.uniforms.end()) {
                 const int binding = static_cast<int>(compiler.get_decoration(resource.id, spv::DecorationBinding));
                 programData.uniforms[name] = binding;
+                uniformCount++;
             }
         }
 
@@ -108,11 +115,15 @@ void ReflectShaderResources(VkShaderProgramData& programData,
             if (!name.empty() && programData.uniforms.find(name) == programData.uniforms.end()) {
                 const int binding = static_cast<int>(compiler.get_decoration(resource.id, spv::DecorationBinding));
                 programData.uniforms[name] = binding;
+                uniformCount++;
             }
         }
+
+        TraceLog(LogLevel::Trace, "SHADER", TextFormat("[Vulkan] Reflected %s stage: %d attributes, %d uniform/sampler bindings",
+            stageName, attribCount, uniformCount));
     } catch (const std::exception& ex) {
-        TraceLog(LogLevel::Warn, "VULKAN",
-                 TextFormat("Failed to reflect %s shader resources: %s",
+        TraceLog(LogLevel::Warn, "SHADER",
+                 TextFormat("[Vulkan] Failed to reflect %s shader resources: %s",
                             stageName, ex.what()));
     }
 }
@@ -147,15 +158,17 @@ void QuarkVkRenderer::EndShaderMode() {
 }
 
 Shader QuarkVkRenderer::LoadShader(const char* vs, const char* fs) {
+    TraceLog(LogLevel::Trace, "SHADER", TextFormat("[Vulkan] Loading shader files: VS='%s', FS='%s'",
+        vs ? vs : "<none>", fs ? fs : "<none>"));
     std::string vsSource;
     std::string fsSource;
 
     if (vs && !ReadTextFile(vs, vsSource)) {
-        TraceLog(LogLevel::Error, "VULKAN", TextFormat("Failed to open vertex shader file: %s", vs));
+        TraceLog(LogLevel::Error, "SHADER", TextFormat("[Vulkan] Failed to open vertex shader file: %s", vs));
         return Shader{};
     }
     if (fs && !ReadTextFile(fs, fsSource)) {
-        TraceLog(LogLevel::Error, "VULKAN", TextFormat("Failed to open fragment shader file: %s", fs));
+        TraceLog(LogLevel::Error, "SHADER", TextFormat("[Vulkan] Failed to open fragment shader file: %s", fs));
         return Shader{};
     }
 
@@ -193,7 +206,7 @@ Shader QuarkVkRenderer::LoadShaderFromMemory(const char* vs, const char* fs) {
             programData.fragmentModule = CreateShaderModule(spirv);
         }
     } catch (const std::exception& ex) {
-        TraceLog(LogLevel::Error, "VULKAN", TextFormat("Shader compilation failed: %s", ex.what()));
+        TraceLog(LogLevel::Error, "SHADER", TextFormat("[Vulkan] Shader compilation failed: %s", ex.what()));
         if (programData.vertexModule != VK_NULL_HANDLE) {
             vkDestroyShaderModule(m_device, programData.vertexModule, nullptr);
         }
@@ -206,6 +219,8 @@ Shader QuarkVkRenderer::LoadShaderFromMemory(const char* vs, const char* fs) {
     programData.pipeline = CreatePipelineForRenderPass(m_renderPass,
                                                        programData.vertexModule,
                                                        programData.fragmentModule);
+    TraceLog(LogLevel::Info, "SHADER", TextFormat("[Vulkan] Shader program created successfully (ID: %u, Attributes: %zu, Uniforms: %zu, Pipeline: %p)",
+        shaderId, programData.attributes.size(), programData.uniforms.size(), (void*)programData.pipeline));
     m_shaderPrograms[shaderId] = std::move(programData);
     return Shader{shaderId};
 }
@@ -217,6 +232,7 @@ void QuarkVkRenderer::UnloadShader(Shader& shader) {
 
     const auto it = m_shaderPrograms.find(shader.id);
     if (it != m_shaderPrograms.end()) {
+        TraceLog(LogLevel::Info, "SHADER", TextFormat("[Vulkan] Shader program unloaded (ID: %u)", shader.id));
         if (it->second.pipeline != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
             vkDestroyPipeline(m_device, it->second.pipeline, nullptr);
         }
