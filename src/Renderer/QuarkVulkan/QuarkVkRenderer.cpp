@@ -2078,7 +2078,8 @@ VkSurfaceFormatKHR QuarkVkRenderer::ChooseSwapSurfaceFormat(const std::vector<Vk
 }
 
 VkPresentModeKHR QuarkVkRenderer::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& modes) const {
-    if (m_targetFps == 0) {
+    const bool vsync = m_vsyncExplicitlySet ? m_vsync : (m_targetFps != 0);
+    if (!vsync) {
         for (const auto& mode : modes) {
             if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) return mode;
             if (mode == VK_PRESENT_MODE_MAILBOX_KHR) return mode;
@@ -2086,17 +2087,26 @@ VkPresentModeKHR QuarkVkRenderer::ChooseSwapPresentMode(const std::vector<VkPres
         return VK_PRESENT_MODE_FIFO_KHR;
     }
 
-    for (const auto& mode : modes) {
-        if (mode == VK_PRESENT_MODE_MAILBOX_KHR) return mode;
-    }
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
 void QuarkVkRenderer::SetTargetFPS(int fps) {
     m_targetFps = fps;
+    if (!m_vsyncExplicitlySet && m_swapChain != VK_NULL_HANDLE) {
+        RecreateSwapChain();
+    }
+}
+
+bool QuarkVkRenderer::SetVSync(bool enabled) {
+    if (m_vsync == enabled && m_vsyncExplicitlySet) {
+        return true;
+    }
+    m_vsync = enabled;
+    m_vsyncExplicitlySet = true;
     if (m_swapChain != VK_NULL_HANDLE) {
         RecreateSwapChain();
     }
+    return true;
 }
 
 VkExtent2D QuarkVkRenderer::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps) const {

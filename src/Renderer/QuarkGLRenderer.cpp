@@ -245,6 +245,10 @@ void QuarkGLRenderer::Init(SDL_Window* window, int width, int height) {
 
     InitGL();
 
+    if (m_vsyncExplicitlySet) {
+        SDL_GL_SetSwapInterval(m_vsync ? 1 : 0);
+    }
+
     m_lastFrameCounter = SDL_GetPerformanceCounter();
 }
 
@@ -410,10 +414,22 @@ void QuarkGLRenderer::EndDrawing() {
 
 void QuarkGLRenderer::SetTargetFPS(int fps) {
     m_targetFps = fps;
-    if (m_context) {
+    if (!m_vsyncExplicitlySet && m_context) {
         if (fps == 0) SDL_GL_SetSwapInterval(0);
         else SDL_GL_SetSwapInterval(1);
     }
+}
+
+bool QuarkGLRenderer::SetVSync(bool enabled) {
+    m_vsync = enabled;
+    m_vsyncExplicitlySet = true;
+    if (m_context) {
+        if (!SDL_GL_SetSwapInterval(enabled ? 1 : 0)) {
+            TraceLog(LogLevel::Warn, "RENDERER", (std::string("SDL_GL_SetSwapInterval failed: ") + SDL_GetError()).c_str());
+            return false;
+        }
+    }
+    return true;
 }
 
 void QuarkGLRenderer::ClearBackground(Color c) {

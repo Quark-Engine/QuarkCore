@@ -19,6 +19,8 @@ struct WindowState {
 
     bool  shouldClose       = false;
     int   targetFps         = 60;
+    bool  vsync             = true;
+    bool  vsyncSet          = false;
     LogLevel minimumLogLevel = LogLevel::Trace;
 
     std::array<bool, SDL_SCANCODE_COUNT> currentKeys{};

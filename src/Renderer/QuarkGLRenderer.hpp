@@ -177,6 +177,7 @@ public:
     int   GetScreenWidth()  const override { return m_width; }
     int   GetScreenHeight() const override { return m_height; }
     void  SetTargetFPS(int fps)   override;
+    bool  SetVSync(bool enabled)  override;
     float GetFrameTime()   const override { return m_frameTime; }
     bool  ShouldClose()     const override { return m_shouldClose; }
     void SetShouldClose(bool v)  { m_shouldClose = v; }
@@ -273,6 +274,8 @@ private:
     int           m_width    = 0;
     int           m_height   = 0;
     int           m_targetFps = 60;
+    bool          m_vsync     = true;
+    bool          m_vsyncExplicitlySet = false;
     float         m_frameTime = 0.f;
     bool          m_drawing  = false;
     bool          m_shouldClose = false;

@@ -275,6 +275,7 @@ public:
     int   GetScreenWidth()  const override { return m_width; }
     int   GetScreenHeight() const override { return m_height; }
     void  SetTargetFPS(int fps)   override;
+    bool  SetVSync(bool enabled)  override;
     float GetFrameTime()   const override { return m_frameTime; }
 
     void         PushMatrix() override;
@@ -466,6 +467,8 @@ private:
     int         m_width     = 0;
     int         m_height    = 0;
     int         m_targetFps = 60;
+    bool        m_vsync     = true;
+    bool        m_vsyncExplicitlySet = false;
     float       m_frameTime = 0.f;
     uint64_t    m_lastFrameCounter   = 0;
     bool        m_drawing            = false;

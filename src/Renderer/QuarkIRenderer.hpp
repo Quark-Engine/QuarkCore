@@ -14,6 +14,7 @@ public:
     virtual void  Shutdown() = 0;
     virtual bool  ShouldClose() const = 0;
     virtual void  SetTargetFPS(int fps) = 0;
+    virtual bool  SetVSync(bool enabled) = 0;
     virtual float GetFrameTime() const = 0;
     virtual int   GetScreenWidth() const = 0;
     virtual int   GetScreenHeight() const = 0;

@@ -1029,6 +1029,14 @@ QCAPI const char* TextFormat(const char* format, ...);
  */
 QCAPI void SetTargetFPS(int fps);
 /**
+ * @brief Enable or disable vertical synchronization (VSync).
+ *
+ * @param enabled True to enable VSync, false to disable.
+ * @return true on success.
+ * @return false on failure.
+ */
+QCAPI bool SetVSync(bool enabled);
+/**
  * @brief Get the frame time.
  *
  * @return Frame time as a float.

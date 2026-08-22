@@ -156,6 +156,9 @@ static bool InitOpenGLBackend(int width, int height, const char* title) {
     gRendererPtr = &gGLRenderer;
     gRenderer.Init(gWin.window, width, height);
     gRenderer.SetTargetFPS(gWin.targetFps);
+    if (gWin.vsyncSet) {
+        gRenderer.SetVSync(gWin.vsync);
+    }
     gCurrentBackend = RendererType::OpenGL;
     return true;
 }
@@ -188,6 +191,9 @@ static bool InitVulkanBackend(int width, int height, const char* title) {
     gRendererPtr = &gVkRenderer;
     gRenderer.Init(gWin.window, width, height);
     gRenderer.SetTargetFPS(gWin.targetFps);
+    if (gWin.vsyncSet) {
+        gRenderer.SetVSync(gWin.vsync);
+    }
     gCurrentBackend = RendererType::Vulkan;
     return true;
 }
@@ -363,6 +369,13 @@ int GetScreenHeight() { return gRendererPtr ? gRenderer.GetScreenHeight() : 0; }
 void SetTargetFPS(int fps) {
     gWin.targetFps = fps;
     if (gRendererPtr) gRenderer.SetTargetFPS(fps);
+}
+
+bool SetVSync(bool enabled) {
+    gWin.vsync = enabled;
+    gWin.vsyncSet = true;
+    if (gRendererPtr) return gRenderer.SetVSync(enabled);
+    return true;
 }
 
 float GetFrameTime()  { return gRendererPtr ? gRenderer.GetFrameTime() : 0.0f; }
