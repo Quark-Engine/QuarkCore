@@ -315,6 +315,7 @@ public:
     VkRenderPass          GetVulkanMainRenderPass() const { return m_renderPass; }
     uint32_t              GetVulkanMinImageCount() const { return m_swapChainMinImageCount; }
     uint32_t              GetVulkanImageCount() const { return static_cast<uint32_t>(m_swapChainImages.size()); }
+    void                  SetMSAASamples(int samples);
     VkSampleCountFlagBits GetVulkanMSAASamples() const { return m_msaaSamples; }
     VkDescriptorSet       GetTextureDescriptorSet(uint32_t textureId) const;
 
@@ -378,8 +379,12 @@ private:
                                    uint32_t width, uint32_t height,
                                    uint32_t& outId);
     void     DestroyTexture(uint32_t textureId);
+    void     CreateMSAAColorResources();
+    void     DestroyMSAAColorResources();
+    VkSampleCountFlagBits GetSampleCountForSamples(int samples) const;
     bool     CreateDepthResources(uint32_t width, uint32_t height,
-                                  VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView);
+                                  VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView,
+                                  VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
     void     DestroyDepthResources(VkImage& image, VkDeviceMemory& memory, VkImageView& view);
 
     IRenderTexture CreateRenderTargetInternal(int width, int height);
@@ -517,7 +522,11 @@ private:
     uint32_t m_imageIndex   = 0;
     uint32_t m_graphicsQueueFamily = UINT32_MAX;
     uint32_t m_swapChainMinImageCount = 0;
-    VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkImage               m_msaaColorImage       = VK_NULL_HANDLE;
+    VkDeviceMemory        m_msaaColorMemory      = VK_NULL_HANDLE;
+    VkImageView           m_msaaColorImageView   = VK_NULL_HANDLE;
+    int                   m_requestedMsaaSamples = 1;
+    VkSampleCountFlagBits m_msaaSamples          = VK_SAMPLE_COUNT_1_BIT;
 
     uint32_t m_whiteTextureId = 0;
 

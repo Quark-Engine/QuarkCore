@@ -165,6 +165,7 @@ static bool InitOpenGLBackend(int width, int height, const char* title) {
 
 void SetMSAASamples(int samples) {
     gRequestedMSAASamples = (samples == 2 || samples == 4 || samples == 8) ? samples : 1;
+    gVkRenderer.SetMSAASamples(gRequestedMSAASamples);
 }
 
 void SetTextureFilterMode(TextureFilterMode mode) {
@@ -189,6 +190,7 @@ static bool InitVulkanBackend(int width, int height, const char* title) {
         throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
 
     gRendererPtr = &gVkRenderer;
+    gVkRenderer.SetMSAASamples(gRequestedMSAASamples);
     gRenderer.Init(gWin.window, width, height);
     gRenderer.SetTargetFPS(gWin.targetFps);
     if (gWin.vsyncSet) {

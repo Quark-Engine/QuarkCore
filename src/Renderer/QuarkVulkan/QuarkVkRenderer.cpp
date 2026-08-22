@@ -569,6 +569,7 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     CreateInstance();
     CreateSurface();
     PickPhysicalDevice();
+    m_msaaSamples = GetSampleCountForSamples(m_requestedMsaaSamples);
     CreateLogicalDevice();
     CreateSwapChain();
     CreateImageViews();
@@ -727,7 +728,9 @@ void QuarkVkRenderer::Shutdown() {
     m_activeRenderTargetId = 0;
     m_graphicsQueueFamily = UINT32_MAX;
     m_swapChainMinImageCount = 0;
+    DestroyMSAAColorResources();
     m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+    m_requestedMsaaSamples = 1;
     m_main3DBatch.triangleVertices.clear();
     m_main3DBatch.lineVertices.clear();
     m_frameTriangleVertices3D.clear();
@@ -1150,61 +1153,141 @@ void QuarkVkRenderer::CreateImageViews() {
 void QuarkVkRenderer::CreateRenderPass() {
     m_depthFormat = FindDepthFormat();
 
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format         = m_swapChainImageFormat;
-    colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    if (m_msaaSamples > VK_SAMPLE_COUNT_1_BIT) {
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format         = m_swapChainImageFormat;
+        colorAttachment.samples        = m_msaaSamples;
+        colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentDescription depthAttachment{};
-    depthAttachment.format         = m_depthFormat;
-    depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        VkAttachmentDescription depthAttachment{};
+        depthAttachment.format         = m_depthFormat;
+        depthAttachment.samples        = m_msaaSamples;
+        depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        VkAttachmentDescription colorAttachmentResolve{};
+        colorAttachmentResolve.format         = m_swapChainImageFormat;
+        colorAttachmentResolve.samples        = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachmentResolve.loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachmentResolve.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachmentResolve.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachmentResolve.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachmentResolve.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        VkAttachmentReference colorAttachmentRef{};
+        colorAttachmentRef.attachment = 0;
+        colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments    = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
+        VkAttachmentReference depthAttachmentRef{};
+        depthAttachmentRef.attachment = 1;
+        depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass    = 0;
-    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependency.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        VkAttachmentReference colorAttachmentResolveRef{};
+        colorAttachmentResolveRef.attachment = 2;
+        colorAttachmentResolveRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    renderPassInfo.pAttachments    = attachments.data();
-    renderPassInfo.subpassCount    = 1;
-    renderPassInfo.pSubpasses      = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies   = &dependency;
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount    = 1;
+        subpass.pColorAttachments       = &colorAttachmentRef;
+        subpass.pDepthStencilAttachment = &depthAttachmentRef;
+        subpass.pResolveAttachments     = &colorAttachmentResolveRef;
 
-    if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan render pass.");
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass    = 0;
+        dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.srcAccessMask = 0;
+        dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        std::array<VkAttachmentDescription, 3> attachments = {
+            colorAttachment, depthAttachment, colorAttachmentResolve
+        };
+
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        renderPassInfo.pAttachments    = attachments.data();
+        renderPassInfo.subpassCount    = 1;
+        renderPassInfo.pSubpasses      = &subpass;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies   = &dependency;
+
+        if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create Vulkan render pass.");
+        }
+    } else {
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format         = m_swapChainImageFormat;
+        colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        VkAttachmentDescription depthAttachment{};
+        depthAttachment.format         = m_depthFormat;
+        depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
+        depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentReference colorAttachmentRef{};
+        colorAttachmentRef.attachment = 0;
+        colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentReference depthAttachmentRef{};
+        depthAttachmentRef.attachment = 1;
+        depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount    = 1;
+        subpass.pColorAttachments       = &colorAttachmentRef;
+        subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass    = 0;
+        dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependency.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        renderPassInfo.pAttachments    = attachments.data();
+        renderPassInfo.subpassCount    = 1;
+        renderPassInfo.pSubpasses      = &subpass;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies   = &dependency;
+
+        if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create Vulkan render pass.");
+        }
     }
     TraceLog(LogLevel::Trace, "VULKAN", "Swapchain render pass created.");
 }
@@ -1364,6 +1447,8 @@ bool QuarkVkRenderer::AllocateTextureDescriptorSet(VkDescriptorSet& outSet) {
 }
 
 void QuarkVkRenderer::CreateFramebuffers() {
+    CreateMSAAColorResources();
+
     m_swapChainDepthImages.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
     m_swapChainDepthMemories.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
     m_swapChainDepthImageViews.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
@@ -1372,7 +1457,8 @@ void QuarkVkRenderer::CreateFramebuffers() {
         if (!CreateDepthResources(m_swapChainExtent.width, m_swapChainExtent.height,
                                   m_swapChainDepthImages[i],
                                   m_swapChainDepthMemories[i],
-                                  m_swapChainDepthImageViews[i])) {
+                                  m_swapChainDepthImageViews[i],
+                                  m_msaaSamples)) {
             throw std::runtime_error("Failed to create Vulkan depth resources.");
         }
     }
@@ -1380,10 +1466,19 @@ void QuarkVkRenderer::CreateFramebuffers() {
     m_swapChainFramebuffers.resize(m_swapChainImageViews.size());
 
     for (size_t i = 0; i < m_swapChainImageViews.size(); ++i) {
-        std::array<VkImageView, 2> attachments = {
-            m_swapChainImageViews[i],
-            m_swapChainDepthImageViews[i]
-        };
+        std::vector<VkImageView> attachments;
+        if (m_msaaSamples > VK_SAMPLE_COUNT_1_BIT) {
+            attachments = {
+                m_msaaColorImageView,
+                m_swapChainDepthImageViews[i],
+                m_swapChainImageViews[i]
+            };
+        } else {
+            attachments = {
+                m_swapChainImageViews[i],
+                m_swapChainDepthImageViews[i]
+            };
+        }
 
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -1623,7 +1718,7 @@ VkPipeline QuarkVkRenderer::CreatePipelineForRenderPass(VkRenderPass renderPass,
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.rasterizationSamples = (renderPass == m_renderPass) ? m_msaaSamples : VK_SAMPLE_COUNT_1_BIT;
     multisampling.sampleShadingEnable  = VK_FALSE;
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
@@ -1813,7 +1908,7 @@ VkPipeline QuarkVkRenderer::Create3DPipelineForRenderPass(VkRenderPass renderPas
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.rasterizationSamples = (renderPass == m_renderPass) ? m_msaaSamples : VK_SAMPLE_COUNT_1_BIT;
     multisampling.sampleShadingEnable  = VK_FALSE;
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
@@ -1927,6 +2022,8 @@ void QuarkVkRenderer::RecreateSwapChain() {
 
 void QuarkVkRenderer::CleanupSwapChain() {
     TraceLog(LogLevel::Trace, "VULKAN", "Cleaning up swapchain resources...");
+
+    DestroyMSAAColorResources();
 
     for (auto& [id, rt] : m_renderTargets) {
         (void)id;
@@ -2190,7 +2287,8 @@ bool QuarkVkRenderer::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
 }
 
 bool QuarkVkRenderer::CreateDepthResources(uint32_t width, uint32_t height,
-                                           VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView) {
+                                           VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView,
+                                           VkSampleCountFlagBits samples) {
     outImage = VK_NULL_HANDLE;
     outMemory = VK_NULL_HANDLE;
     outView = VK_NULL_HANDLE;
@@ -2207,7 +2305,7 @@ bool QuarkVkRenderer::CreateDepthResources(uint32_t width, uint32_t height,
     imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.samples       = samples;
     imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateImage(m_device, &imageInfo, nullptr, &outImage) != VK_SUCCESS) {
@@ -2267,6 +2365,113 @@ void QuarkVkRenderer::DestroyDepthResources(VkImage& image, VkDeviceMemory& memo
     if (memory != VK_NULL_HANDLE) {
         vkFreeMemory(m_device, memory, nullptr);
         memory = VK_NULL_HANDLE;
+    }
+}
+
+VkSampleCountFlagBits QuarkVkRenderer::GetSampleCountForSamples(int samples) const {
+    if (samples <= 1 || m_physicalDevice == VK_NULL_HANDLE) return VK_SAMPLE_COUNT_1_BIT;
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
+    VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
+
+    VkSampleCountFlagBits requested = VK_SAMPLE_COUNT_1_BIT;
+    if (samples >= 8) requested = VK_SAMPLE_COUNT_8_BIT;
+    else if (samples >= 4) requested = VK_SAMPLE_COUNT_4_BIT;
+    else if (samples >= 2) requested = VK_SAMPLE_COUNT_2_BIT;
+
+    if (counts & requested) {
+        return requested;
+    }
+    if (samples >= 8 && (counts & VK_SAMPLE_COUNT_4_BIT)) return VK_SAMPLE_COUNT_4_BIT;
+    if (samples >= 4 && (counts & VK_SAMPLE_COUNT_2_BIT)) return VK_SAMPLE_COUNT_2_BIT;
+    return VK_SAMPLE_COUNT_1_BIT;
+}
+
+void QuarkVkRenderer::SetMSAASamples(int samples) {
+    m_requestedMsaaSamples = (samples == 2 || samples == 4 || samples == 8) ? samples : 1;
+    if (m_physicalDevice != VK_NULL_HANDLE) {
+        VkSampleCountFlagBits newSamples = GetSampleCountForSamples(m_requestedMsaaSamples);
+        if (newSamples != m_msaaSamples) {
+            m_msaaSamples = newSamples;
+            if (m_swapChain != VK_NULL_HANDLE) {
+                RecreateSwapChain();
+            }
+        }
+    }
+}
+
+void QuarkVkRenderer::CreateMSAAColorResources() {
+    if (m_msaaSamples <= VK_SAMPLE_COUNT_1_BIT) {
+        return;
+    }
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width  = m_swapChainExtent.width;
+    imageInfo.extent.height = m_swapChainExtent.height;
+    imageInfo.extent.depth  = 1;
+    imageInfo.mipLevels     = 1;
+    imageInfo.arrayLayers   = 1;
+    imageInfo.format        = m_swapChainImageFormat;
+    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage         = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    imageInfo.samples       = m_msaaSamples;
+    imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(m_device, &imageInfo, nullptr, &m_msaaColorImage) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create MSAA color image.");
+    }
+
+    VkMemoryRequirements memReq{};
+    vkGetImageMemoryRequirements(m_device, m_msaaColorImage, &memReq);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize  = memReq.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &m_msaaColorMemory) != VK_SUCCESS) {
+        vkDestroyImage(m_device, m_msaaColorImage, nullptr);
+        m_msaaColorImage = VK_NULL_HANDLE;
+        throw std::runtime_error("Failed to allocate MSAA color image memory.");
+    }
+
+    vkBindImageMemory(m_device, m_msaaColorImage, m_msaaColorMemory, 0);
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image                           = m_msaaColorImage;
+    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format                          = m_swapChainImageFormat;
+    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel   = 0;
+    viewInfo.subresourceRange.levelCount     = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount     = 1;
+
+    if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_msaaColorImageView) != VK_SUCCESS) {
+        vkFreeMemory(m_device, m_msaaColorMemory, nullptr);
+        m_msaaColorMemory = VK_NULL_HANDLE;
+        vkDestroyImage(m_device, m_msaaColorImage, nullptr);
+        m_msaaColorImage = VK_NULL_HANDLE;
+        throw std::runtime_error("Failed to create MSAA color image view.");
+    }
+}
+
+void QuarkVkRenderer::DestroyMSAAColorResources() {
+    if (m_msaaColorImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(m_device, m_msaaColorImageView, nullptr);
+        m_msaaColorImageView = VK_NULL_HANDLE;
+    }
+    if (m_msaaColorImage != VK_NULL_HANDLE) {
+        vkDestroyImage(m_device, m_msaaColorImage, nullptr);
+        m_msaaColorImage = VK_NULL_HANDLE;
+    }
+    if (m_msaaColorMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(m_device, m_msaaColorMemory, nullptr);
+        m_msaaColorMemory = VK_NULL_HANDLE;
     }
 }
 
