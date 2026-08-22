@@ -1,13 +1,19 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkCore/Quark3D.hpp"
 #include "Renderer/QuarkIRenderer.hpp"
+#if defined(QC_ENABLE_OPENGL)
 #include "Renderer/QuarkGLRenderer.hpp"
+#endif
+#if defined(QC_ENABLE_VULKAN)
 #include "Renderer/QuarkVulkan/QuarkVkRenderer.hpp"
+#endif
 #include "QuarkInternal.hpp"
 
 #include <SDL3/SDL.h>
+#if defined(QC_ENABLE_VULKAN)
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
+#endif
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -31,8 +37,12 @@
 
 namespace qc {
 
+#if defined(QC_ENABLE_OPENGL)
 QuarkGLRenderer gGLRenderer;
+#endif
+#if defined(QC_ENABLE_VULKAN)
 QuarkVkRenderer gVkRenderer;
+#endif
 IRenderer* gRendererPtr = nullptr;
 RendererType gCurrentBackend = RendererType::Auto;
 bool gVulkanLibraryLoaded = false;
@@ -123,13 +133,16 @@ static void CleanupBackendInitFailure() {
     }
 
     if (gVulkanLibraryLoaded) {
+#if defined(QC_ENABLE_VULKAN)
         SDL_Vulkan_UnloadLibrary();
+#endif
         gVulkanLibraryLoaded = false;
     }
 
     gCurrentBackend = RendererType::Auto;
 }
 
+#if defined(QC_ENABLE_OPENGL)
 static bool InitOpenGLBackend(int width, int height, const char* title) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
@@ -162,16 +175,20 @@ static bool InitOpenGLBackend(int width, int height, const char* title) {
     gCurrentBackend = RendererType::OpenGL;
     return true;
 }
+#endif
 
 void SetMSAASamples(int samples) {
     gRequestedMSAASamples = (samples == 2 || samples == 4 || samples == 8) ? samples : 1;
+#if defined(QC_ENABLE_VULKAN)
     gVkRenderer.SetMSAASamples(gRequestedMSAASamples);
+#endif
 }
 
 void SetTextureFilterMode(TextureFilterMode mode) {
     gTextureFilterMode = mode;
 }
 
+#if defined(QC_ENABLE_VULKAN)
 static bool InitVulkanBackend(int width, int height, const char* title) {
     TraceLog(LogLevel::Info, "RENDERER", "Backend selected: Vulkan");
 
@@ -199,6 +216,7 @@ static bool InitVulkanBackend(int width, int height, const char* title) {
     gCurrentBackend = RendererType::Vulkan;
     return true;
 }
+#endif
 
 void InitWindow(int width, int height, const char* title, RendererType rendererType) {
     TraceLog(LogLevel::Info, "WINDOW", TextFormat("Starting window creation: %s (%dx%d)", title ? title : "Quark", width, height));
@@ -213,11 +231,19 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
         throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
 
     auto initVulkan = [&]() {
+#if defined(QC_ENABLE_VULKAN)
         InitVulkanBackend(width, height, title);
+#else
+        throw std::runtime_error("QuarkCore was built without Vulkan support");
+#endif
     };
 
     auto initOpenGL = [&]() {
+#if defined(QC_ENABLE_OPENGL)
         InitOpenGLBackend(width, height, title);
+#else
+        throw std::runtime_error("QuarkCore was built without OpenGL support");
+#endif
     };
 
     try {
@@ -251,7 +277,9 @@ void CloseWindow() {
         gRendererPtr = nullptr;
     }
     if (gVulkanLibraryLoaded) {
+#if defined(QC_ENABLE_VULKAN)
         SDL_Vulkan_UnloadLibrary();
+#endif
         gVulkanLibraryLoaded = false;
     }
     if (gWin.window) {
@@ -267,6 +295,7 @@ RendererType GetCurrentBackend() {
     return gCurrentBackend;
 }
 
+#if defined(QC_ENABLE_VULKAN)
 static QuarkVkRenderer* GetVulkanRenderer() {
     if (!gRendererPtr || gRendererPtr->GetType() != RendererType::Vulkan) {
         return nullptr;
@@ -350,6 +379,19 @@ VkDescriptorSet GetVulkanTextureDescriptorSet(uint32_t textureId) {
     }
     return VK_NULL_HANDLE;
 }
+#else
+VkInstance GetVulkanInstance() { return VK_NULL_HANDLE; }
+VkPhysicalDevice GetVulkanPhysicalDevice() { return VK_NULL_HANDLE; }
+VkDevice GetVulkanDevice() { return VK_NULL_HANDLE; }
+uint32_t GetVulkanGraphicsQueueFamily() { return UINT32_MAX; }
+VkQueue GetVulkanGraphicsQueue() { return VK_NULL_HANDLE; }
+VkDescriptorPool GetVulkanDescriptorPool() { return VK_NULL_HANDLE; }
+VkRenderPass GetVulkanMainRenderPass() { return VK_NULL_HANDLE; }
+uint32_t GetVulkanMinImageCount() { return 0; }
+uint32_t GetVulkanImageCount() { return 0; }
+VkSampleCountFlagBits GetVulkanMSAASamples() { return VK_SAMPLE_COUNT_1_BIT; }
+VkDescriptorSet GetVulkanTextureDescriptorSet(uint32_t) { return VK_NULL_HANDLE; }
+#endif
 
 bool WindowShouldClose() {
     if (!gWin.eventsReady) {
@@ -1325,11 +1367,19 @@ void SetShaderValueTextureUnit(const Shader& s, int loc, const Texture2D& textur
 }
 
 void UnloadVertexArray(unsigned int vaoId) {
+#if defined(QC_ENABLE_OPENGL)
     if (vaoId) glDeleteVertexArrays(1, &vaoId);
+#else
+    (void)vaoId;
+#endif
 }
 
 void UnloadVertexBuffer(unsigned int vboId) {
+#if defined(QC_ENABLE_OPENGL)
     if (vboId) glDeleteBuffers(1, &vboId);
+#else
+    (void)vboId;
+#endif
 }
 
 Material LoadMaterialDefault() {

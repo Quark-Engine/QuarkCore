@@ -1,7 +1,7 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkCore/Quark3D.hpp"
 #include "QuarkInternal.hpp"
-#include "Renderer/QuarkGLRenderer.hpp"
+#include "Renderer/QuarkIRenderer.hpp"
 
 namespace qc {
 

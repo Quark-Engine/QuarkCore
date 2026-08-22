@@ -339,20 +339,11 @@ set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 find_package(OpenGL REQUIRED)
 
-add_library(QuarkCore SHARED
-    src/QuarkCore.cpp
+add_library(QuarkCore STATIC
     src/QuarkEvent.cpp
     src/QuarkLights.cpp
     src/QuarkWindow.cpp
     src/QuarkImage.cpp
-    src/Renderer/QuarkGLRenderer.cpp
-    src/Renderer/QuarkVulkan/QuarkVkRenderer.cpp
-    src/Renderer/QuarkVulkan/QuarkVkDraw2D.cpp
-    src/Renderer/QuarkVulkan/QuarkVkDraw3D.cpp
-    src/Renderer/QuarkVulkan/QuarkVkShader.cpp
-    src/Renderer/QuarkVulkan/QuarkVkTexture.cpp
-    src/Renderer/QuarkVulkan/QuarkVkModel.cpp
-    src/Renderer/QuarkVulkan/QuarkVkFont.cpp
 )
 
 if(WIN32)
@@ -372,35 +363,21 @@ target_include_directories(QuarkCore PUBLIC
     /opt/homebrew/include/spirv_cross
 )
 
-target_compile_definitions(QuarkCore PRIVATE
-    QUARKCORE_BUILD_DLL
-    NOMINMAX
-)
+target_compile_definitions(QuarkCore PRIVATE QUARKCORE_BUILD_DLL NOMINMAX)
 
 if(WIN32)
     target_link_libraries(QuarkCore
         PUBLIC
             SDL3::SDL3
-            glad
-            OpenGL::GL
             assimp::assimp
             freetype
-            Vulkan::Vulkan
-            shaderc_combined
-            spirv-cross-glsl
     )
 else()
     target_link_libraries(QuarkCore
         PUBLIC
             SDL3::SDL3
-            glad
-            OpenGL::GL
             assimp::assimp
             freetype
-            Vulkan::Vulkan
-            ${SHADERC_LIB}
-            ${SPIRV_CROSS_GLSL_LIB}
-            ${SPIRV_CROSS_CORE_LIB}
     )
 endif()
 
@@ -424,6 +401,87 @@ if(MSVC)
 else()
     target_compile_options(QuarkCore PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
+    add_library(${TARGET_NAME} SHARED src/QuarkCore.cpp)
+    target_link_libraries(${TARGET_NAME} PUBLIC QuarkCore)
+    if(MSVC)
+        target_link_options(${TARGET_NAME} PRIVATE "/WHOLEARCHIVE:$<TARGET_FILE:QuarkCore>")
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_options(${TARGET_NAME} PRIVATE
+            "-Wl,--whole-archive" "$<TARGET_FILE:QuarkCore>" "-Wl,--no-whole-archive"
+        )
+    endif()
+
+    if(BACKEND_NAME STREQUAL "OPENGL")
+        target_sources(${TARGET_NAME} PRIVATE src/Renderer/QuarkGLRenderer.cpp)
+        target_compile_definitions(${TARGET_NAME} PRIVATE QC_ENABLE_OPENGL)
+        target_link_libraries(${TARGET_NAME} PUBLIC
+            SDL3::SDL3
+            glad
+            OpenGL::GL
+            assimp::assimp
+            freetype
+        )
+    elseif(BACKEND_NAME STREQUAL "VULKAN")
+        target_sources(${TARGET_NAME} PRIVATE
+            src/Renderer/QuarkGLRenderer.cpp
+            src/Renderer/QuarkVulkan/QuarkVkRenderer.cpp
+            src/Renderer/QuarkVulkan/QuarkVkDraw2D.cpp
+            src/Renderer/QuarkVulkan/QuarkVkDraw3D.cpp
+            src/Renderer/QuarkVulkan/QuarkVkShader.cpp
+            src/Renderer/QuarkVulkan/QuarkVkTexture.cpp
+            src/Renderer/QuarkVulkan/QuarkVkModel.cpp
+            src/Renderer/QuarkVulkan/QuarkVkFont.cpp
+        )
+        target_compile_definitions(${TARGET_NAME} PRIVATE
+            QC_ENABLE_OPENGL
+            QC_ENABLE_VULKAN
+        )
+        if(WIN32)
+            target_link_libraries(${TARGET_NAME} PUBLIC
+                SDL3::SDL3
+                glad
+                OpenGL::GL
+                assimp::assimp
+                freetype
+                Vulkan::Vulkan
+                shaderc_combined
+                spirv-cross-glsl
+            )
+        else()
+            target_link_libraries(${TARGET_NAME} PUBLIC
+                SDL3::SDL3
+                assimp::assimp
+                freetype
+                Vulkan::Vulkan
+                ${SHADERC_LIB}
+                ${SPIRV_CROSS_GLSL_LIB}
+                ${SPIRV_CROSS_CORE_LIB}
+            )
+        endif()
+    else()
+        message(FATAL_ERROR "Unknown QuarkCore backend: ${BACKEND_NAME}")
+    endif()
+
+    target_include_directories(${TARGET_NAME} PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_compile_definitions(${TARGET_NAME} PRIVATE QUARKCORE_BUILD_DLL NOMINMAX)
+    set_target_properties(${TARGET_NAME} PROPERTIES UNITY_BUILD OFF)
+
+    if(MSVC)
+        target_compile_options(${TARGET_NAME} PRIVATE /W4 /permissive- /MP)
+        target_link_options(${TARGET_NAME} PRIVATE /IGNORE:4099)
+    else()
+        target_compile_options(${TARGET_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endfunction()
+
+qc_configure_backend_target(QuarkCore-OpenGL OPENGL)
+qc_configure_backend_target(QuarkCore-Vulkan VULKAN)
+add_library(QuarkCore::OpenGL ALIAS QuarkCore-OpenGL)
+add_library(QuarkCore::Vulkan ALIAS QuarkCore-Vulkan)
 
 if(QC_BUILD_EXAMPLES)
     set(EXAMPLE_TARGETS
@@ -484,12 +542,17 @@ if(QC_BUILD_EXAMPLES)
             list(GET EXAMPLE_TARGETS ${i} _target)
             list(GET EXAMPLE_SOURCES ${i} _source)
 
+            set(_backend_target QuarkCore-OpenGL)
+            if(_target MATCHES "^quarkcore_vulkan")
+                set(_backend_target QuarkCore-Vulkan)
+            endif()
+
             add_executable(${_target} ${_source})
-            target_link_libraries(${_target} PRIVATE QuarkCore)
+            target_link_libraries(${_target} PRIVATE ${_backend_target})
 
             add_custom_command(TARGET ${_target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    $<TARGET_FILE:QuarkCore>
+                    $<TARGET_FILE:${_backend_target}>
                     ${_RUNTIME_DLLS}
                     $<TARGET_FILE_DIR:${_target}>
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -540,8 +603,13 @@ if(QC_BUILD_EXAMPLES)
             list(GET EXAMPLE_TARGETS ${i} _target)
             list(GET EXAMPLE_SOURCES ${i} _source)
 
+            set(_backend_target QuarkCore-OpenGL)
+            if(_target MATCHES "^quarkcore_vulkan")
+                set(_backend_target QuarkCore-Vulkan)
+            endif()
+
             add_executable(${_target} ${_source})
-            target_link_libraries(${_target} PRIVATE QuarkCore)
+            target_link_libraries(${_target} PRIVATE ${_backend_target})
 
             set_target_properties(${_target} PROPERTIES
                 BUILD_RPATH "$ORIGIN"
@@ -550,7 +618,7 @@ if(QC_BUILD_EXAMPLES)
 
             add_custom_command(TARGET ${_target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    $<TARGET_FILE:QuarkCore>
+                    $<TARGET_FILE:${_backend_target}>
                     ${_RUNTIME_LIBS}
                     $<TARGET_FILE_DIR:${_target}>
             )
