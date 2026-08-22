@@ -5,6 +5,7 @@
 #include <spirv_cross/spirv_glsl.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <fstream>
 #include <set>
@@ -216,9 +217,51 @@ Shader QuarkVkRenderer::LoadShaderFromMemory(const char* vs, const char* fs) {
         return Shader{};
     }
 
-    programData.pipeline = CreatePipelineForRenderPass(m_renderPass,
-                                                       programData.vertexModule,
-                                                       programData.fragmentModule);
+    programData.supports3D = programData.attributes.find("aNormal") != programData.attributes.end() ||
+                             programData.uniforms.find("matrices") != programData.uniforms.end();
+
+    if (programData.supports3D) {
+        programData.pipeline3D = Create3DPipelineForRenderPass(m_renderPass,
+                                                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                                               programData.vertexModule,
+                                                               programData.fragmentModule);
+        if (Allocate3DDescriptorSet(programData.descriptorSet3D)) {
+            const auto whiteIt = m_textures.find(m_whiteTextureId);
+            if (whiteIt != m_textures.end()) {
+                VkDescriptorImageInfo imageInfo{};
+                imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                imageInfo.imageView = whiteIt->second.view;
+                imageInfo.sampler = whiteIt->second.sampler;
+                std::array<VkDescriptorImageInfo, 4> shadowImages{ imageInfo, imageInfo, imageInfo, imageInfo };
+                VkDescriptorBufferInfo bufferInfo{};
+                bufferInfo.buffer = m_3DDummyBuffer;
+                bufferInfo.offset = 0;
+                bufferInfo.range = 192;
+                VkDescriptorBufferInfo shadowBufferInfo = bufferInfo;
+                shadowBufferInfo.offset = 512;
+                shadowBufferInfo.range = 512;
+                VkDescriptorBufferInfo lightBufferInfo = bufferInfo;
+                lightBufferInfo.offset = 1024;
+                lightBufferInfo.range = 320;
+                std::array<VkWriteDescriptorSet, 5> writes{};
+                writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, programData.descriptorSet3D, 0, 0, 1,
+                              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &bufferInfo, nullptr };
+                writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, programData.descriptorSet3D, 1, 0, 1,
+                              VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &imageInfo, nullptr, nullptr };
+                writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, programData.descriptorSet3D, 2, 0, 4,
+                              VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowImages.data(), nullptr, nullptr };
+                writes[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, programData.descriptorSet3D, 3, 0, 1,
+                              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &shadowBufferInfo, nullptr };
+                writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, programData.descriptorSet3D, 4, 0, 1,
+                              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &lightBufferInfo, nullptr };
+                vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            }
+        }
+    } else {
+        programData.pipeline = CreatePipelineForRenderPass(m_renderPass,
+                                                           programData.vertexModule,
+                                                           programData.fragmentModule);
+    }
     TraceLog(LogLevel::Info, "SHADER", TextFormat("[Vulkan] Shader program created successfully (ID: %u, Attributes: %zu, Uniforms: %zu, Pipeline: %p)",
         shaderId, programData.attributes.size(), programData.uniforms.size(), (void*)programData.pipeline));
     m_shaderPrograms[shaderId] = std::move(programData);
@@ -235,6 +278,9 @@ void QuarkVkRenderer::UnloadShader(Shader& shader) {
         TraceLog(LogLevel::Info, "SHADER", TextFormat("[Vulkan] Shader program unloaded (ID: %u)", shader.id));
         if (it->second.pipeline != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
             vkDestroyPipeline(m_device, it->second.pipeline, nullptr);
+        }
+        if (it->second.pipeline3D != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, it->second.pipeline3D, nullptr);
         }
         if (it->second.vertexModule != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
             vkDestroyShaderModule(m_device, it->second.vertexModule, nullptr);
@@ -399,6 +445,7 @@ void QuarkVkRenderer::SetShaderValueSampler(const Shader& shader, int locIndex, 
         return;
     }
     StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_SAMPLER2D, &textureUnit, sizeof(int), 1);
+    Update3DDescriptorSet(it->second);
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const void* value, int uniformType) {
@@ -506,7 +553,6 @@ void QuarkVkRenderer::SetShaderValueTexture(const Shader& shader, int locIndex, 
 }
 
 void QuarkVkRenderer::SetShaderValueTextureUnit(const Shader& shader, int locIndex, const ITexture& texture, int textureUnit) {
-    (void)texture;
     if (shader.id == 0 || locIndex < 0) {
         return;
     }
@@ -514,7 +560,64 @@ void QuarkVkRenderer::SetShaderValueTextureUnit(const Shader& shader, int locInd
     if (it == m_shaderPrograms.end()) {
         return;
     }
-    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_SAMPLER2D, &textureUnit, sizeof(int), 1);
+    const int textureId = texture.valid ? static_cast<int>(texture.id) : textureUnit;
+    StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_SAMPLER2D, &textureId, sizeof(int), 1);
+    Update3DDescriptorSet(it->second);
+}
+
+void QuarkVkRenderer::Update3DDescriptorSet(VkShaderProgramData& program) {
+    if (program.descriptorSet3D == VK_NULL_HANDLE) return;
+
+    const auto whiteIt = m_textures.find(m_whiteTextureId);
+    if (whiteIt == m_textures.end()) return;
+
+    const VkTextureData& white = whiteIt->second;
+    std::array<VkDescriptorImageInfo, 4> shadowImages{};
+    for (auto& image : shadowImages) {
+        image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        image.imageView = white.view;
+        image.sampler = white.sampler;
+    }
+    VkDescriptorImageInfo albedo = shadowImages[0];
+
+    const auto textureFromUniform = [&](const char* name, VkDescriptorImageInfo& output) {
+        const auto locationIt = program.uniforms.find(name);
+        if (locationIt == program.uniforms.end()) return;
+        const auto valueIt = program.uniformValues.find(locationIt->second);
+        if (valueIt == program.uniformValues.end() || valueIt->second.size() < sizeof(int)) return;
+        int textureId = 0;
+        std::memcpy(&textureId, valueIt->second.data(), sizeof(textureId));
+        const auto textureIt = m_textures.find(static_cast<uint32_t>(textureId));
+        if (textureIt != m_textures.end()) {
+            output.imageView = textureIt->second.view;
+            output.sampler = textureIt->second.sampler;
+        }
+    };
+
+    textureFromUniform("uTexture", albedo);
+    const auto shadowsIt = program.uniforms.find("shadowMaps");
+    if (shadowsIt != program.uniforms.end()) {
+        const auto valuesIt = program.uniformValues.find(shadowsIt->second);
+        if (valuesIt != program.uniformValues.end()) {
+            const size_t count = std::min<size_t>(4, valuesIt->second.size() / sizeof(int));
+            for (size_t i = 0; i < count; ++i) {
+                int textureId = 0;
+                std::memcpy(&textureId, valuesIt->second.data() + i * sizeof(int), sizeof(textureId));
+                const auto textureIt = m_textures.find(static_cast<uint32_t>(textureId));
+                if (textureIt != m_textures.end()) {
+                    shadowImages[i].imageView = textureIt->second.view;
+                    shadowImages[i].sampler = textureIt->second.sampler;
+                }
+            }
+        }
+    }
+
+    std::array<VkWriteDescriptorSet, 2> writes{};
+    writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, program.descriptorSet3D,
+                  1, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &albedo, nullptr, nullptr };
+    writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, program.descriptorSet3D,
+                  2, 0, 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowImages.data(), nullptr, nullptr };
+    vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
 } // namespace qc

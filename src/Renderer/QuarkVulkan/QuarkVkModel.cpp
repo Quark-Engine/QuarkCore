@@ -421,19 +421,40 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
             1.0f
         };
         const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
+        Vec4 normal = finalTransform * Vec4{
+            mesh.normals ? mesh.normals[vertexIndex * 3 + 0] : 0.0f,
+            mesh.normals ? mesh.normals[vertexIndex * 3 + 1] : 1.0f,
+            mesh.normals ? mesh.normals[vertexIndex * 3 + 2] : 0.0f,
+            0.0f
+        };
+        const float normalLength = std::sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+        if (normalLength > 0.0f) {
+            normal.x /= normalLength;
+            normal.y /= normalLength;
+            normal.z /= normalLength;
+        }
         vertices.push_back(Vk3DVertex{
             clip.x,
             clip.y,
             clip.z,
             clip.w,
-            0.0f,
-            0.0f,
+            mesh.texcoords ? mesh.texcoords[vertexIndex * 2 + 0] : 0.0f,
+            mesh.texcoords ? mesh.texcoords[vertexIndex * 2 + 1] : 0.0f,
             NormalizeColorComponent(color.r),
             NormalizeColorComponent(color.g),
             NormalizeColorComponent(color.b),
-            NormalizeColorComponent(color.a)
+            NormalizeColorComponent(color.a),
+            normal.x,
+            normal.y,
+            normal.z,
+            0.0f,
+            world.x, world.y, world.z, 1.0f
         });
     };
+
+    if (vertices.empty() && m_activeRenderTargetId == 0) {
+        m_main3DBatch.shaderProgramId = m_currentShaderProgramId;
+    }
 
     auto pushTriangle = [&](int i0, int i1, int i2) {
         if (i0 < 0 || i1 < 0 || i2 < 0 ||

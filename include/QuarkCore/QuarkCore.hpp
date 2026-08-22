@@ -1351,6 +1351,8 @@ QCAPI Shader LoadShader(const char* vsFileName, const char* fsFileName);
  */
 QCAPI Shader LoadShaderFromMemory(const char* vsSource, const char* fsSource);
 
+QCAPI void Set3DLightEnabled(int index, bool enabled);
+
 /**
  * @brief Check if shader is valid.
  * @param shader Shader to check.

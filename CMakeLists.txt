@@ -433,6 +433,7 @@ if(QC_BUILD_EXAMPLES)
         quarkcore_meshes
         quarkcore_vulkan
         quarkcore_vulkan_shaders
+        quarkcore_vulkan_3d_shadows
         quarkcore_lights
         quarkcore_files
         quarkcore_3d_lights
@@ -445,6 +446,7 @@ if(QC_BUILD_EXAMPLES)
         examples/meshes.cpp
         examples/vulkan.cpp
         examples/vulkan_shaders.cpp
+        examples/vulkan_3d_shadows.cpp
         examples/light.cpp
         examples/file_operations.cpp
         examples/3d_light.cpp

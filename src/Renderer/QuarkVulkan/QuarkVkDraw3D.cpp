@@ -52,12 +52,17 @@ Vk3DVertex QuarkVkRenderer::Transform3DVertex(Vec3 position, Color color) const 
         static_cast<float>(color.r) / 255.0f,
         static_cast<float>(color.g) / 255.0f,
         static_cast<float>(color.b) / 255.0f,
-        static_cast<float>(color.a) / 255.0f
+        static_cast<float>(color.a) / 255.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        position.x, position.y, position.z, 1.0f
     };
 }
 
 void QuarkVkRenderer::AppendTriangle3D(std::vector<Vk3DVertex>& vertices,
                                        Vec3 a, Vec3 b, Vec3 c, Color color) {
+    if (vertices.empty() && m_activeRenderTargetId == 0) {
+        m_main3DBatch.shaderProgramId = m_currentShaderProgramId;
+    }
     vertices.push_back(Transform3DVertex(a, color));
     vertices.push_back(Transform3DVertex(b, color));
     vertices.push_back(Transform3DVertex(c, color));
@@ -83,6 +88,12 @@ void QuarkVkRenderer::BeginMode3D(const Camera3D& camera) {
 }
 
 void QuarkVkRenderer::EndMode3D() {}
+
+void QuarkVkRenderer::Set3DLightEnabled(int index, bool enabled) {
+    if (index >= 0 && index < static_cast<int>(m_3DLightEnabled.size())) {
+        m_3DLightEnabled[static_cast<size_t>(index)] = enabled;
+    }
+}
 
 void QuarkVkRenderer::Set3DView(const Mat4& view, const Mat4& projection) {
     m_viewMatrix       = view;

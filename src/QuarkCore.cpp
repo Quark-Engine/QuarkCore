@@ -820,6 +820,11 @@ Shader LoadShaderFromMemory(const char* vs, const char* fs) {
     return gRenderer.LoadShaderFromMemory(vs, fs);
 }
 
+void Set3DLightEnabled(int index, bool enabled) {
+    EnsureInitialized();
+    gRenderer.Set3DLightEnabled(index, enabled);
+}
+
 void UnloadShader(Shader& shader)                                    { gRenderer.UnloadShader(shader); }
 bool IsShaderValid(const Shader& shader)                             { return gRenderer.isShaderValid(const_cast<Shader&>(shader)); }
 bool IsShaderReady(Shader shader)                                    { return IsShaderValid(shader); }

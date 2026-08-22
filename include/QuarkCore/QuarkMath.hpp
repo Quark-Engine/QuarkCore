@@ -383,7 +383,7 @@ struct QCAPI Mat4 {
         Mat4 result{};
         float f = 1.0f / std::tan(fov * 0.5f);
         result.m[0] = f / aspect;
-        result.m[5] = f;
+        result.m[5] = -f;
         result.m[10] = far / (near - far);
         result.m[11] = -1.0f;
         result.m[14] = (far * near) / (near - far);

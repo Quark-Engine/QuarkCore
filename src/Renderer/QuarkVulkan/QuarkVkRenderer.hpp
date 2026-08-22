@@ -89,6 +89,15 @@ struct Vk3DVertex {
     float x, y, z, w;
     float u, v;
     float r, g, b, a;
+    float nx, ny, nz, nw;
+    float wx, wy, wz, ww;
+};
+
+struct Vk3DPushConstants {
+    float lightPositions[4][4];
+    float lightColors[4][4];
+    float timeData[4];
+    float lightEnabled[4];
 };
 
 struct VkPushConstants2D {
@@ -124,6 +133,7 @@ struct VkTextureData {
 
     uint32_t width  = 0;
     uint32_t height = 0;
+    bool      isRenderTarget = false;
 };
 
 struct VkDrawItem {
@@ -167,6 +177,9 @@ struct VkShaderProgramData {
     VkShaderModule vertexModule   = VK_NULL_HANDLE;
     VkShaderModule fragmentModule = VK_NULL_HANDLE;
     VkPipeline     pipeline       = VK_NULL_HANDLE;
+    VkPipeline     pipeline3D     = VK_NULL_HANDLE;
+    VkDescriptorSet descriptorSet3D = VK_NULL_HANDLE;
+    bool            supports3D    = false;
     std::unordered_map<std::string, int> uniforms;
     std::unordered_map<std::string, int> attributes;
     std::unordered_map<int, std::vector<uint8_t>> uniformValues;
@@ -268,6 +281,7 @@ public:
     void EndMode2D() override;
     void BeginMode3D(const Camera3D& camera) override;
     void EndMode3D() override;
+    void Set3DLightEnabled(int index, bool enabled) override;
     Camera2D GetCamera2D()    const override { return m_camera2D; }
     bool     ShouldClose()    const override { return m_shouldClose; }
     void     SetShouldClose(bool v)          { m_shouldClose = v; }
@@ -335,7 +349,9 @@ private:
                                            VkShaderModule vertexModule = VK_NULL_HANDLE,
                                            VkShaderModule fragmentModule = VK_NULL_HANDLE);
     void CreateShaderPipelines();
-    VkPipeline Create3DPipelineForRenderPass(VkRenderPass renderPass, VkPrimitiveTopology topology);
+    VkPipeline Create3DPipelineForRenderPass(VkRenderPass renderPass, VkPrimitiveTopology topology,
+                                             VkShaderModule vertexModule = VK_NULL_HANDLE,
+                                             VkShaderModule fragmentModule = VK_NULL_HANDLE);
     void CreatePipeline3D();
     void CreateFramebuffers();
     void CreateCommandPool();
@@ -346,6 +362,8 @@ private:
 
     bool CreateDescriptorPoolSlab(uint32_t maxSets, VkDescriptorPool& outPool);
     bool AllocateTextureDescriptorSet(VkDescriptorSet& outSet);
+    bool Allocate3DDescriptorSet(VkDescriptorSet& outSet);
+    void Update3DDescriptorSet(VkShaderProgramData& program);
 
     void RecreateSwapChain();
     void CleanupSwapChain();
@@ -428,6 +446,7 @@ private:
     struct Vk3DGeometryBatch {
         std::vector<Vk3DVertex> triangleVertices;
         std::vector<Vk3DVertex> lineVertices;
+        uint32_t shaderProgramId = 0;
     };
 
     std::vector<Vk3DVertex>&       GetActive3DTriangleVertices();
@@ -504,10 +523,15 @@ private:
     std::vector<VkFramebuffer> m_swapChainFramebuffers;
 
     VkDescriptorSetLayout         m_descriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout         m_descriptorSetLayout3D = VK_NULL_HANDLE;
     std::vector<VkDescriptorPool> m_descriptorPools;
     VkDescriptorPool              m_imguiDescriptorPool = VK_NULL_HANDLE;
+    VkBuffer                      m_3DDummyBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory                 m_3DDummyMemory = VK_NULL_HANDLE;
+    void*                          m_3DDummyMapped = nullptr;
 
     VkPipelineLayout m_pipelineLayout      = VK_NULL_HANDLE;
+    VkPipelineLayout m_pipelineLayout3D    = VK_NULL_HANDLE;
     VkPipeline       m_pipeline2D          = VK_NULL_HANDLE;
     VkPipeline       m_offscreenPipeline2D = VK_NULL_HANDLE;
     VkPipeline       m_pipeline3DTri       = VK_NULL_HANDLE;
@@ -532,6 +556,7 @@ private:
 
     uint32_t m_nextShaderProgramId = 1;
     uint32_t m_currentShaderProgramId = 0;
+    std::array<bool, 4> m_3DLightEnabled{ true, true, true, true };
     std::unordered_map<uint32_t, VkShaderProgramData> m_shaderPrograms;
 
     uint32_t                                   m_nextTextureId = 1;
@@ -555,6 +580,7 @@ private:
     std::vector<VkFramePass>   m_framePasses;
     std::vector<Vk3DVertex>    m_frameTriangleVertices3D;
     std::vector<Vk3DVertex>    m_frameLineVertices3D;
+    uint32_t                   m_frame3DShaderProgramId = 0;
 
     VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;
     Color           m_clearColor           = {0, 0, 0, 255};

@@ -86,9 +86,12 @@ void QuarkVkRenderer::DrawTexturePro(ITexture texture, Rectangle source, Rectang
     }
 
     const float u0 = source.x / texW;
-    const float v0 = source.y / texH;
+    float v0 = source.y / texH;
     const float u1 = (source.x + source.width) / texW;
-    const float v1 = (source.y + source.height) / texH;
+    float v1 = (source.y + source.height) / texH;
+    if (it->second.isRenderTarget) {
+        std::swap(v0, v1);
+    }
 
     std::array<Vec2, 4> corners = {
         Vec2{ -origin.x,             -origin.y },

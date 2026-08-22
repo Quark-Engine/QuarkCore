@@ -78,6 +78,7 @@ public:
     // Camera 3D
     virtual void BeginMode3D(const Camera3D& camera) = 0;
     virtual void EndMode3D()                         = 0;
+    virtual void Set3DLightEnabled(int index, bool enabled) { (void)index; (void)enabled; }
 
     // Matrix stack & Transformations
     virtual void PushMatrix() = 0;
