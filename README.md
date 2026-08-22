@@ -62,20 +62,68 @@ int main() {
 
 ---
 
-## API Overview
+## API Reference
 
-| Category | Functions |
-|---|---|
-| **Window** | `InitWindow`, `CloseWindow`, `WindowShouldClose`, `SetTargetFPS`, `SetWindowMinimumSize` |
-| **Drawing** | `BeginDrawing`, `EndDrawing`, `ClearBackground` |
-| **2D** | `BeginMode2D`, `EndMode2D`, `DrawRectangle`, `DrawCircle`, `DrawGrid`, `DrawTexture`, `DrawTexturePro` |
-| **3D** | `BeginMode3D`, `EndMode3D`, `DrawPlane`, `DrawCube` |
-| **Textures** | `LoadRenderTexture`, `UnloadRenderTexture`, `GenCheckerTexture`, `UnloadTexture` |
-| **Shaders** | `LoadShaderFromMemory`, `GetShaderLocation`, `SetShaderValue`, `BeginShaderMode`, `EndShaderMode`, `UnloadShader` |
-| **Text** | `DrawText`, `DrawTextEx`, `MeasureText`, `MeasureTextEx`, `GetDefaultFont`, `TextFormat` |
-| **Input** | `IsKeyPressed`, `IsKeyDown`, `PollEvent` |
-| **Logging** | `TraceLog`, `SetLogLevel` |
-| **Screen** | `GetScreenWidth`, `GetScreenHeight`, `GetFPS`, `GetDeltaTime`, `GetCurrentMonitorRefreshRate` |
+The following index covers the public functions declared by the QuarkCore headers.
+Overloads are grouped under the same function name.
+
+### Window and Backend
+
+`InitWindow`, `CloseWindow`, `WindowShouldClose`, `GetCurrentBackend`, `SetMSAASamples`, `SetTextureFilterMode`, `SetTargetFPS`, `SetVSync`, `IsWindowReady`, `SetWindowTitle`, `GetWindowTitle`, `SetWindowPosition`, `GetWindowPosition`, `SetWindowSize`, `GetWindowSize`, `GetWindowSizeInPixels`, `SetWindowMinimumSize`, `GetWindowMinimumSize`, `SetWindowMaximumSize`, `GetWindowMaximumSize`, `SetWindowResizable`, `SetWindowBordered`, `SetWindowFullscreen`, `ToggleFullscreen`, `ShowWindow`, `HideWindow`, `RaiseWindow`, `MaximizeWindow`, `MinimizeWindow`, `RestoreWindow`, `SyncWindow`, `IsWindowFullscreen`, `IsWindowHidden`, `IsWindowMinimized`, `IsWindowMaximized`, `IsWindowFocused`, `IsWindowMouseFocused`, `IsWindowResizable`, `IsWindowBorderless`, `GetWindowDisplayScale`, `GetWindowPixelDensity`, `SetWindowIcon`, `GetNativeWindow`, `GetNativeContext`, `GetNativeEvent`.
+
+### Vulkan
+
+`GetVulkanInstance`, `GetVulkanPhysicalDevice`, `GetVulkanDevice`, `GetVulkanGraphicsQueueFamily`, `GetVulkanGraphicsQueue`, `GetVulkanDescriptorPool`, `GetVulkanMainRenderPass`, `GetVulkanMinImageCount`, `GetVulkanImageCount`, `GetVulkanMSAASamples`, `GetVulkanTextureDescriptorSet`, `SetVulkanRenderCallback`, `GetVulkanRenderCallback`.
+
+### Events and Text Input
+
+`PollEvent`, `WaitEvent`, `WaitEventTimeout`, `SetNativeEventCallback`, `GetEventTypeName`, `StartTextInput`, `StopTextInput`, `IsTextInputActive`.
+
+### Timing, Logging, and Screen
+
+`SetLogLevel`, `TraceLog`, `TextFormat`, `GetFrameTime`, `GetDeltaTime`, `GetFPS`, `GetTime`, `GetScreenWidth`, `GetScreenHeight`, `GetCurrentMonitorRefreshRate`, `WaitTime`, `GetRandomValue`, `SetRandomSeed`.
+
+### Input
+
+`IsKeyDown`, `IsKeyPressed`, `IsKeyReleased`, `IsKeyUp`, `GetKeyPressed`, `GetCharPressed`, `SetExitKey`, `IsMouseButtonDown`, `IsMouseButtonPressed`, `IsMouseButtonReleased`, `IsMouseButtonUp`, `GetMousePosition`, `GetMouseX`, `GetMouseY`, `GetMouseWheelMoveV`, `GetMouseWheelMove`, `GetMouseDelta`, `SetMousePosition`, `DisableCursor`, `EnableCursor`, `IsCursorHidden`, `SetMouseCursor`, `IsGamepadAvailable`, `GetGamepadName`, `GetGamepadAxisMovement`, `IsGamepadButtonPressed`.
+
+### Drawing and Cameras
+
+`BeginDrawing`, `EndDrawing`, `ClearBackground`, `CreateCamera2D`, `CreateCamera3D`, `GetCameraMat4`, `BeginMode2D`, `EndMode2D`, `BeginMode3D`, `EndMode3D`, `BeginTextureMode`, `EndTextureMode`, `GetScreenToWorld2D`, `GetWorldToScreen2D`, `GetWorldToScreen`, `GetScreenToWorldRay`, `GetMatrixModelview`, `GetMatrixProjection`, `PushMatrix`, `PopMatrix`, `Translate`, `Rotate`, `Scale`, `MultMatrix`, `EnableBackfaceCulling`, `DisableBackfaceCulling`.
+
+### 2D Primitives and Colors
+
+`DrawRectangle`, `DrawRectangleV`, `DrawRectangleLines`, `DrawRectangleRounded`, `DrawCircle`, `DrawCircleLines`, `DrawEllipse`, `DrawLine`, `DrawLineV`, `DrawTriangle`, `DrawPoly`, `Fade`, `ColorAlpha`, `ColorTint`, `ColorBrightness`, `ColorContrast`, `GetColor`, `ColorFromNormalized`, `CheckCollisionRecs`, `CheckCollisionCircles`, `CheckCollisionPointRec`, `CheckCollisionPointCircle`.
+
+### Textures and Fonts
+
+`LoadTexture`, `IsTextureValid`, `IsTextureReady`, `UnloadTexture`, `LoadRenderTexture`, `IsRenderTextureValid`, `GetRenderTextureTexture`, `UnloadRenderTexture`, `GenCheckerTexture`, `UnloadVertexArray`, `UnloadVertexBuffer`, `GetDefaultFont`, `LoadFont`, `UnloadFont`, `DrawTexture`, `DrawTextureV`, `DrawTextureEx`, `DrawTextureRec`, `DrawTextureTiled`, `DrawTexturePro`, `DrawTextureNPatch`, `DrawText`, `DrawTextEx`, `MeasureText`, `MeasureTextEx`.
+
+### Shaders
+
+`LoadShader`, `LoadShaderFromMemory`, `IsShaderValid`, `IsShaderReady`, `GetShaderLocation`, `GetShaderAttributeLocation`, `SetShaderValue`, `SetShaderValueV`, `SetShaderValueMatrix`, `SetShaderValueSampler`, `SetShaderValueTexture`, `SetShaderValueTextureUnit`, `Set3DLightEnabled`, `BeginShaderMode`, `EndShaderMode`, `UnloadShader`.
+
+### 3D Meshes and Models
+
+`SetMaterialColor`, `UploadMesh`, `UpdateMeshBuffer`, `UnloadMesh`, `DrawMesh`, `DrawMeshInstanced`, `GetMeshBoundingBox`, `GetModelBoundingBox`, `GenMeshTangents`, `ExportMesh`, `ExportMeshAsCode`, `GenMeshPoly`, `GenMeshPlane`, `GenMeshCube`, `GenMeshSphere`, `GenMeshHemiSphere`, `GenMeshCylinder`, `GenMeshCone`, `GenMeshTorus`, `GenMeshKnot`, `GenMeshHeightmap`, `GenMeshCubicmap`, `LoadModel`, `LoadModelFromMesh`, `LoadMaterialDefault`, `UnloadModel`, `DrawModel`, `DrawModelEx`, `DrawModelWires`, `DrawModelWiresEx`, `DrawBoundingBox`, `GetRayCollisionTriangle`, `GetRayCollisionBox`.
+
+### 3D Primitives
+
+`Set3DView`, `DrawPlane`, `DrawCube`, `DrawCubeV`, `DrawCubeWires`, `DrawCubeWiresV`, `DrawSphere`, `DrawSphereEx`, `DrawSphereWires`, `DrawCylinder`, `DrawCylinderEx`, `DrawCylinderWires`, `DrawCylinderWiresEx`, `DrawLine3D`, `DrawGrid`, `DrawBillboard`, `DrawBillboardRec`, `DrawBillboardPro`.
+
+### Lights
+
+`CreateLight`, `UpdateLightValues`.
+
+### Math Helpers
+
+`Clamp`, `Lerp`, `SmoothStep`, `ToRadians`, `ToDegrees`, `Normalize`, `MoveTowards`, `Sign`, `Vec2Zero`, `Vec2One`, `Vec2Add`, `Vec2Subtract`, `Vec2Scale`, `Vec2Length`, `Vec2Normalize`, `Vec2Distance`, `Vec3Zero`, `Vec3One`, `Vec3Add`, `Vec3Subtract`, `Vec3Normalize`, `Vec3Transform`, `Vec3Distance`, `Mat4Identity`, `MatrixIdentity`, `Mat4Translate`, `MatrixTranslate`, `Mat4Scale`, `MatrixScale`, `Mat4RotateXYZ`, `MatrixRotateXYZ`, `Mat4Multiply`, `MatrixMultiply`, `Mat4Invert`, `MatrixInvert`, `Mat4Perspective`, `Mat4PerspectiveVulkan`, `MatrixPerspective`, `Mat4Transpose`, `MatrixTranspose`.
+
+`Vec3::dot`, `Vec3::cross`, `Vec3::length`, `Vec3::normalized`, `Vec4::dot`, `Vec4::length`, `Vec4::normalized`, `Mat4::identity`, `Mat4::translation`, `Mat4::scale`, `Mat4::rotationX`, `Mat4::rotationY`, `Mat4::rotationZ`, `Mat4::perspective`, `Mat4::perspectiveVulkan`, `Mat4::lookAt`, `Mat4::ortho`, `Mat4::inverted`.
+
+### Files and Directories
+
+`FileRename`, `FileRemove`, `FileCopy`, `FileMove`, `FileTextReplace`, `FileTextFindIndex`, `FileExists`, `DirectoryExists`, `IsFileExtension`, `GetFileLength`, `GetFileModTime`, `GetFileExtension`, `GetFileName`, `GetFileNameWithoutExt`, `GetDirectoryPath`, `GetPrevDirectoryPath`, `GetWorkingDirectory`, `GetApplicationDirectory`, `MakeDirectory`, `ChangeDirectory`, `IsPathFile`, `IsFileNameValid`, `LoadDirectoryFiles`, `LoadDirectoryFilesEx`, `UnloadDirectoryFiles`, `IsFileDropped`, `LoadDroppedFiles`, `UnloadDroppedFiles`, `GetDirectoryFileCount`, `GetDirectoryFileCountEx`.
 
 ---
 
