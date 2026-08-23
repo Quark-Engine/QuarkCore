@@ -163,6 +163,7 @@ if(WIN32)
 
 else()
     find_package(Vulkan REQUIRED)
+    set_target_properties(Vulkan::Vulkan PROPERTIES IMPORTED_GLOBAL TRUE)
 
     if(APPLE)
         set(SHADERC_NAMES shaderc_combined shaderc)
