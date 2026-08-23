@@ -98,7 +98,6 @@ jobs:
       - name: Prepare Artifacts
         run: |
           mkdir -p artifacts/include
-          cp build/libQuarkCore.so artifacts/
           find build -maxdepth 1 -type f -executable ! -name "*.so*" | xargs -I{} cp {} artifacts/
           find build -maxdepth 1 -name "*.so*" | xargs -I{} cp {} artifacts/
           cp -r include/. artifacts/include/
