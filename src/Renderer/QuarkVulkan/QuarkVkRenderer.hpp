@@ -366,6 +366,9 @@ private:
                                              VkShaderModule vertexModule = VK_NULL_HANDLE,
                                              VkShaderModule fragmentModule = VK_NULL_HANDLE);
     void CreatePipeline3D();
+    void CreateShadowResources();
+    void DestroyShadowResources();
+    void CreateShadowPipeline();
     void CreateFramebuffers();
     void CreateCommandPool();
     void CreateCommandBuffers();
@@ -537,6 +540,16 @@ private:
 
     VkRenderPass m_renderPass          = VK_NULL_HANDLE;
     VkRenderPass m_offscreenRenderPass = VK_NULL_HANDLE;
+    VkRenderPass m_shadowRenderPass    = VK_NULL_HANDLE;
+    VkFramebuffer m_shadowFramebuffer  = VK_NULL_HANDLE;
+    VkImage m_shadowImage              = VK_NULL_HANDLE;
+    VkDeviceMemory m_shadowMemory      = VK_NULL_HANDLE;
+    VkImageView m_shadowImageView      = VK_NULL_HANDLE;
+    VkSampler m_shadowSampler          = VK_NULL_HANDLE;
+    VkFormat m_shadowFormat            = VK_FORMAT_UNDEFINED;
+    VkPipelineLayout m_shadowPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline m_shadowPipeline        = VK_NULL_HANDLE;
+    Mat4 m_shadowViewProjection        = Mat4::identity();
 
     std::vector<VkFramebuffer> m_swapChainFramebuffers;
 

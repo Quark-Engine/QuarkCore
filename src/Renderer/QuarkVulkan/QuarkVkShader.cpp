@@ -233,6 +233,13 @@ Shader QuarkVkRenderer::LoadShaderFromMemory(const char* vs, const char* fs) {
                 imageInfo.imageView = whiteIt->second.view;
                 imageInfo.sampler = whiteIt->second.sampler;
                 std::array<VkDescriptorImageInfo, 4> shadowImages{ imageInfo, imageInfo, imageInfo, imageInfo };
+                if (m_shadowImageView != VK_NULL_HANDLE) {
+                    VkDescriptorImageInfo shadowImage{};
+                    shadowImage.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    shadowImage.imageView = m_shadowImageView;
+                    shadowImage.sampler = m_shadowSampler;
+                    shadowImages.fill(shadowImage);
+                }
                 VkDescriptorBufferInfo bufferInfo{};
                 bufferInfo.buffer = m_3DDummyBuffer;
                 bufferInfo.offset = 0;
@@ -577,6 +584,12 @@ void QuarkVkRenderer::Update3DDescriptorSet(VkShaderProgramData& program) {
         image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         image.imageView = white.view;
         image.sampler = white.sampler;
+    }
+    if (m_shadowImageView != VK_NULL_HANDLE) {
+        for (auto& image : shadowImages) {
+            image.imageView = m_shadowImageView;
+            image.sampler = m_shadowSampler;
+        }
     }
     VkDescriptorImageInfo albedo = shadowImages[0];
 

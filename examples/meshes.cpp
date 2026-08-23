@@ -1,5 +1,37 @@
 #include "QuarkCore/QuarkCore.hpp"
 
+namespace {
+
+constexpr const char* kUnlitVertexShader = R"glsl(
+#version 450
+layout(location = 0) in vec4 aPosition;
+layout(location = 1) in vec2 aTexCoord;
+layout(location = 2) in vec4 aColor;
+layout(location = 3) in vec4 aNormal;
+layout(location = 4) in vec4 aWorld;
+layout(location = 0) out vec4 vColor;
+layout(set = 0, binding = 0) uniform Matrices {
+    mat4 model;
+    mat4 view;
+    mat4 projection;
+} matrices;
+void main() {
+    gl_Position = matrices.projection * matrices.view * aWorld;
+    vColor = aColor;
+}
+)glsl";
+
+constexpr const char* kUnlitFragmentShader = R"glsl(
+#version 450
+layout(location = 0) in vec4 vColor;
+layout(location = 0) out vec4 outColor;
+void main() {
+    outColor = vColor;
+}
+)glsl";
+
+}
+
 int main() {
     qc::InitWindow(1280, 720, "QuarkCore Meshes Example", qc::RendererType::Vulkan);
     qc::SetWindowMinimumSize(800, 450);
@@ -27,6 +59,8 @@ int main() {
     cubeBounds.max = qc::Vec3{1.0f, 2.0f, 1.0f};
 
     qc::Material defaultMaterial{};
+    qc::Shader unlitShader = qc::LoadShaderFromMemory(kUnlitVertexShader, kUnlitFragmentShader);
+    defaultMaterial.shader = &unlitShader;
 
     const int instanceCount = 4;
     qc::Matrix instanceTransforms[instanceCount] = {
@@ -69,6 +103,7 @@ int main() {
     qc::UnloadMesh(cube);
     qc::UnloadMesh(sphere);
 
+    qc::UnloadShader(unlitShader);
     qc::CloseWindow();
     return 0;
 }
