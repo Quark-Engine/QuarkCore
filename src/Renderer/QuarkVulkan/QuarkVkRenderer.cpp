@@ -670,6 +670,7 @@ void QuarkVkRenderer::Shutdown() {
             vkFreeMemory(m_device, frame.vertexMemory, nullptr);
             frame.vertexMemory = VK_NULL_HANDLE;
         }
+        frame.vertexCapacity = 0;
         if (frame.indexMapped && frame.indexMemory != VK_NULL_HANDLE) {
             vkUnmapMemory(m_device, frame.indexMemory);
             frame.indexMapped = nullptr;
@@ -682,6 +683,7 @@ void QuarkVkRenderer::Shutdown() {
             vkFreeMemory(m_device, frame.indexMemory, nullptr);
             frame.indexMemory = VK_NULL_HANDLE;
         }
+        frame.indexCapacity = 0;
         if (frame.vertexMapped3D && frame.vertexMemory3D != VK_NULL_HANDLE) {
             vkUnmapMemory(m_device, frame.vertexMemory3D);
             frame.vertexMapped3D = nullptr;
@@ -694,6 +696,7 @@ void QuarkVkRenderer::Shutdown() {
             vkFreeMemory(m_device, frame.vertexMemory3D, nullptr);
             frame.vertexMemory3D = VK_NULL_HANDLE;
         }
+        frame.vertexCapacity3D = 0;
     }
 
     for (VkDescriptorPool pool : m_descriptorPools) {
@@ -950,8 +953,29 @@ const float* QuarkVkRenderer::GetMatrixProjection() {
     return m_projectionMatrix.m;
 }
 
-void QuarkVkRenderer::EnableBackfaceCulling()  {}
-void QuarkVkRenderer::DisableBackfaceCulling() {}
+void QuarkVkRenderer::EnableBackfaceCulling() {
+    if (m_backfaceCullingEnabled || m_device == VK_NULL_HANDLE) {
+        m_backfaceCullingEnabled = true;
+        return;
+    }
+
+    m_backfaceCullingEnabled = true;
+    vkDeviceWaitIdle(m_device);
+    CreatePipeline3D();
+    CreateShaderPipelines();
+}
+
+void QuarkVkRenderer::DisableBackfaceCulling() {
+    if (!m_backfaceCullingEnabled || m_device == VK_NULL_HANDLE) {
+        m_backfaceCullingEnabled = false;
+        return;
+    }
+
+    m_backfaceCullingEnabled = false;
+    vkDeviceWaitIdle(m_device);
+    CreatePipeline3D();
+    CreateShaderPipelines();
+}
 
 void QuarkVkRenderer::RefreshViewport() {
     m_framebufferResized = true;
@@ -1707,6 +1731,7 @@ void QuarkVkRenderer::CreateFrameVertexIndexBuffers() {
             throw std::runtime_error("Failed to create per-frame Vulkan vertex buffer.");
         }
         vkMapMemory(m_device, frame.vertexMemory, 0, vertexBufSize, 0, &frame.vertexMapped);
+        frame.vertexCapacity = vertexBufSize;
 
         if (!CreateBuffer(indexBufSize,
                           VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
@@ -1715,6 +1740,7 @@ void QuarkVkRenderer::CreateFrameVertexIndexBuffers() {
             throw std::runtime_error("Failed to create per-frame Vulkan index buffer.");
         }
         vkMapMemory(m_device, frame.indexMemory, 0, indexBufSize, 0, &frame.indexMapped);
+        frame.indexCapacity = indexBufSize;
 
         if (!CreateBuffer(vertexBufSize3D,
                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -1723,6 +1749,7 @@ void QuarkVkRenderer::CreateFrameVertexIndexBuffers() {
             throw std::runtime_error("Failed to create per-frame Vulkan 3D vertex buffer.");
         }
         vkMapMemory(m_device, frame.vertexMemory3D, 0, vertexBufSize3D, 0, &frame.vertexMapped3D);
+        frame.vertexCapacity3D = vertexBufSize3D;
     }
     TraceLog(LogLevel::Trace, "VULKAN", "Per-frame vertex/index buffers created.");
 }
@@ -2079,7 +2106,7 @@ VkPipeline QuarkVkRenderer::Create3DPipelineForRenderPass(VkRenderPass renderPas
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode             = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth               = 1.0f;
-    rasterizer.cullMode                = VK_CULL_MODE_NONE;
+    rasterizer.cullMode                = m_backfaceCullingEnabled ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     rasterizer.frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable         = VK_FALSE;
 
@@ -2468,6 +2495,53 @@ bool QuarkVkRenderer::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
         return false;
     }
     vkBindBufferMemory(m_device, outBuffer, outMemory, 0);
+    return true;
+}
+
+bool QuarkVkRenderer::EnsureMappedBufferCapacity(VkBuffer& buffer, VkDeviceMemory& memory, void*& mapped,
+                                                 VkDeviceSize& capacity, VkDeviceSize required,
+                                                 VkBufferUsageFlags usage) {
+    if (required <= capacity) {
+        return true;
+    }
+
+    VkDeviceSize newCapacity = capacity > 0 ? capacity : 4096;
+    while (newCapacity < required) {
+        newCapacity *= 2;
+    }
+
+    VkBuffer newBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory newMemory = VK_NULL_HANDLE;
+    if (!CreateBuffer(newCapacity,
+                      usage,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      newBuffer,
+                      newMemory)) {
+        return false;
+    }
+
+    void* newMapped = nullptr;
+    if (vkMapMemory(m_device, newMemory, 0, newCapacity, 0, &newMapped) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device, newBuffer, nullptr);
+        vkFreeMemory(m_device, newMemory, nullptr);
+        return false;
+    }
+
+    vkDeviceWaitIdle(m_device);
+    if (mapped != nullptr && memory != VK_NULL_HANDLE) {
+        vkUnmapMemory(m_device, memory);
+    }
+    if (buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(m_device, buffer, nullptr);
+    }
+    if (memory != VK_NULL_HANDLE) {
+        vkFreeMemory(m_device, memory, nullptr);
+    }
+
+    buffer = newBuffer;
+    memory = newMemory;
+    mapped = newMapped;
+    capacity = newCapacity;
     return true;
 }
 
@@ -3246,14 +3320,22 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
 }
 
 bool QuarkVkRenderer::UploadFrameGeometry(uint32_t frameIndex) {
-    if (m_frameVertices.size() > kVkMaxVerticesPerFrame ||
-        m_frameIndices.size()  > kVkMaxIndicesPerFrame ||
-        m_frameTriangleVertices3D.size() + m_frameLineVertices3D.size() > kVkMaxVerticesPerFrame) {
-        TraceLog(LogLevel::Error, "VULKAN", "Frame geometry overflow — increase kVkMaxVerticesPerFrame / kVkMaxIndicesPerFrame.");
+    VkFrameData& frame = m_frames[frameIndex];
+    const VkDeviceSize vertexBytes = m_frameVertices.size() * sizeof(VkBatchVertex);
+    const VkDeviceSize indexBytes = m_frameIndices.size() * sizeof(uint32_t);
+    const VkDeviceSize vertexBytes3D =
+        (m_frameTriangleVertices3D.size() + m_frameLineVertices3D.size()) * sizeof(Vk3DVertex);
+
+    if (!EnsureMappedBufferCapacity(frame.vertexBuffer, frame.vertexMemory, frame.vertexMapped,
+                                    frame.vertexCapacity, vertexBytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) ||
+        !EnsureMappedBufferCapacity(frame.indexBuffer, frame.indexMemory, frame.indexMapped,
+                                    frame.indexCapacity, indexBytes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT) ||
+        !EnsureMappedBufferCapacity(frame.vertexBuffer3D, frame.vertexMemory3D, frame.vertexMapped3D,
+                                    frame.vertexCapacity3D, vertexBytes3D, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+        TraceLog(LogLevel::Error, "VULKAN", "Failed to grow per-frame geometry buffer.");
         return false;
     }
 
-    VkFrameData& frame = m_frames[frameIndex];
     if (!m_frameVertices.empty() && frame.vertexMapped) {
         std::memcpy(frame.vertexMapped, m_frameVertices.data(),
                     m_frameVertices.size() * sizeof(VkBatchVertex));

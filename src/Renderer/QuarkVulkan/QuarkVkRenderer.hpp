@@ -114,14 +114,17 @@ struct VkFrameData {
     VkBuffer       vertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory vertexMemory = VK_NULL_HANDLE;
     void*          vertexMapped = nullptr;
+    VkDeviceSize   vertexCapacity = 0;
 
     VkBuffer       indexBuffer  = VK_NULL_HANDLE;
     VkDeviceMemory indexMemory  = VK_NULL_HANDLE;
     void*          indexMapped  = nullptr;
+    VkDeviceSize   indexCapacity = 0;
 
     VkBuffer       vertexBuffer3D = VK_NULL_HANDLE;
     VkDeviceMemory vertexMemory3D = VK_NULL_HANDLE;
     void*          vertexMapped3D = nullptr;
+    VkDeviceSize   vertexCapacity3D = 0;
 };
 
 struct VkTextureData {
@@ -384,6 +387,9 @@ private:
     bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                       VkMemoryPropertyFlags props,
                       VkBuffer& outBuffer, VkDeviceMemory& outMemory);
+    bool EnsureMappedBufferCapacity(VkBuffer& buffer, VkDeviceMemory& memory, void*& mapped,
+                                    VkDeviceSize& capacity, VkDeviceSize required,
+                                    VkBufferUsageFlags usage);
 
     bool TransitionImageLayout(VkImage image, VkFormat format,
                                VkImageLayout oldLayout, VkImageLayout newLayout);
@@ -538,6 +544,7 @@ private:
     VkPipeline       m_pipeline3DLines     = VK_NULL_HANDLE;
     VkPipeline       m_offscreenPipeline3DTri   = VK_NULL_HANDLE;
     VkPipeline       m_offscreenPipeline3DLines = VK_NULL_HANDLE;
+    bool             m_backfaceCullingEnabled   = false;
 
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
 
