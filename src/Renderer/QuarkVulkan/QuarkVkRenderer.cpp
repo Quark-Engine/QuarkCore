@@ -212,9 +212,41 @@ static std::vector<uint32_t> CompileRuntimeShader(const char* source,
                                                   shaderc_shader_kind kind,
                                                   const char* stageName) {
     static std::unordered_map<std::string, std::vector<uint32_t>> cache;
-    const auto cached = cache.find(stageName);
+    const std::string sourceText = source ? source : "";
+    const std::string cacheKey = std::string(stageName) + "\n" + sourceText;
+    const auto cached = cache.find(cacheKey);
     if (cached != cache.end()) {
         return cached->second;
+    }
+
+    const auto hashText = [](const std::string& text) {
+        uint64_t hash = 14695981039346656037ull;
+        for (unsigned char character : text) {
+            hash ^= character;
+            hash *= 1099511628211ull;
+        }
+        return hash;
+    };
+    const auto cacheFile = [&]() -> std::filesystem::path {
+        std::error_code error;
+        const std::filesystem::path directory =
+            std::filesystem::temp_directory_path(error) / "QuarkCore" / "shader-cache";
+        if (error) {
+            return {};
+        }
+        return directory / (std::to_string(hashText(cacheKey)) + ".spv");
+    };
+    const std::filesystem::path path = cacheFile();
+    if (!path.empty()) {
+        std::ifstream file(path, std::ios::binary);
+        uint32_t wordCount = 0;
+        if (file && file.read(reinterpret_cast<char*>(&wordCount), sizeof(wordCount)) && wordCount > 0) {
+            std::vector<uint32_t> spirv(wordCount);
+            if (file.read(reinterpret_cast<char*>(spirv.data()), static_cast<std::streamsize>(spirv.size() * sizeof(uint32_t)))) {
+                cache.emplace(cacheKey, spirv);
+                return spirv;
+            }
+        }
     }
 
     shaderc::Compiler compiler;
@@ -225,7 +257,17 @@ static std::vector<uint32_t> CompileRuntimeShader(const char* source,
         throw std::runtime_error(std::string("Failed to compile runtime Vulkan ") + stageName + ": " + result.GetErrorMessage());
     }
     std::vector<uint32_t> spirv(result.cbegin(), result.cend());
-    cache.emplace(stageName, spirv);
+    if (!path.empty()) {
+        std::error_code error;
+        std::filesystem::create_directories(path.parent_path(), error);
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        const uint32_t wordCount = static_cast<uint32_t>(spirv.size());
+        if (file && file.write(reinterpret_cast<const char*>(&wordCount), sizeof(wordCount))) {
+            file.write(reinterpret_cast<const char*>(spirv.data()),
+                       static_cast<std::streamsize>(spirv.size() * sizeof(uint32_t)));
+        }
+    }
+    cache.emplace(cacheKey, spirv);
     return spirv;
 }
 
@@ -781,21 +823,36 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     m_height   = height;
     m_framebufferResized = false;
 
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateInstance");
     CreateInstance();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateSurface");
     CreateSurface();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: PickPhysicalDevice");
     PickPhysicalDevice();
     m_msaaSamples = GetSampleCountForSamples(m_requestedMsaaSamples);
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateLogicalDevice");
     CreateLogicalDevice();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateSwapChain");
     CreateSwapChain();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateImageViews");
     CreateImageViews();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateRenderPass");
     CreateRenderPass();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateOffscreenRenderPass");
     CreateOffscreenRenderPass();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateDescriptorSetLayout");
     CreateDescriptorSetLayout();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateShadowResources");
     CreateShadowResources();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateShadowPipeline");
     CreateShadowPipeline();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreatePipeline2D");
     CreatePipeline2D();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateOffscreenPipeline2D");
     CreateOffscreenPipeline2D();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateShaderPipelines");
     CreateShaderPipelines();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreatePipeline3D");
     CreatePipeline3D();
     CreateFramebuffers();
     CreateCommandPool();
