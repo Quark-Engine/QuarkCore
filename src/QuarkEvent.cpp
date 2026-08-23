@@ -5,6 +5,27 @@
 
 namespace qc {
 
+static int ToQuarkGamepadButton(SDL_GamepadButton button) {
+    switch (button) {
+        case SDL_GAMEPAD_BUTTON_DPAD_UP: return GAMEPAD_BUTTON_LEFT_FACE_UP;
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return GAMEPAD_BUTTON_LEFT_FACE_RIGHT;
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return GAMEPAD_BUTTON_LEFT_FACE_DOWN;
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return GAMEPAD_BUTTON_LEFT_FACE_LEFT;
+        case SDL_GAMEPAD_BUTTON_NORTH: return GAMEPAD_BUTTON_RIGHT_FACE_UP;
+        case SDL_GAMEPAD_BUTTON_EAST: return GAMEPAD_BUTTON_RIGHT_FACE_RIGHT;
+        case SDL_GAMEPAD_BUTTON_SOUTH: return GAMEPAD_BUTTON_RIGHT_FACE_DOWN;
+        case SDL_GAMEPAD_BUTTON_WEST: return GAMEPAD_BUTTON_RIGHT_FACE_LEFT;
+        case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: return GAMEPAD_BUTTON_LEFT_TRIGGER_1;
+        case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return GAMEPAD_BUTTON_RIGHT_TRIGGER_1;
+        case SDL_GAMEPAD_BUTTON_BACK: return GAMEPAD_BUTTON_MIDDLE_LEFT;
+        case SDL_GAMEPAD_BUTTON_GUIDE: return GAMEPAD_BUTTON_MIDDLE;
+        case SDL_GAMEPAD_BUTTON_START: return GAMEPAD_BUTTON_MIDDLE_RIGHT;
+        case SDL_GAMEPAD_BUTTON_LEFT_STICK: return GAMEPAD_BUTTON_LEFT_THUMB;
+        case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return GAMEPAD_BUTTON_RIGHT_THUMB;
+        default: return GAMEPAD_BUTTON_UNKNOWN;
+    }
+}
+
 extern IRenderer* gRendererPtr;
 extern int gLastKeyPressed;
 extern int gLastCharPressed;
@@ -435,6 +456,9 @@ void PumpSystemEvents() {
     gWin.nextEventIndex = 0;
     gLastKeyPressed = 0;
     gLastCharPressed = 0;
+    for (auto& buttons : gWin.gamepadPressed) buttons.fill(false);
+    for (auto& buttons : gWin.gamepadReleased) buttons.fill(false);
+    gWin.lastGamepadButtonPressed = -1;
 
     SDL_Event sdlEvent;
     while (SDL_PollEvent(&sdlEvent)) {
@@ -474,6 +498,35 @@ void PumpSystemEvents() {
         if (sdlEvent.type == SDL_EVENT_TEXT_INPUT) {
             if (sdlEvent.text.text[0] != '\0') {
                 gLastCharPressed = static_cast<unsigned char>(sdlEvent.text.text[0]);
+            }
+        }
+
+        if (sdlEvent.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
+            sdlEvent.type == SDL_EVENT_GAMEPAD_BUTTON_UP) {
+            int gamepadCount = 0;
+            SDL_JoystickID* gamepadIds = SDL_GetGamepads(&gamepadCount);
+            int gamepadIndex = -1;
+            if (gamepadIds) {
+                for (int i = 0; i < gamepadCount; ++i) {
+                    if (gamepadIds[i] == sdlEvent.gbutton.which) {
+                        gamepadIndex = i;
+                        break;
+                    }
+                }
+                SDL_free(gamepadIds);
+            }
+            const int button = ToQuarkGamepadButton(
+                static_cast<SDL_GamepadButton>(sdlEvent.gbutton.button));
+            if (gamepadIndex >= 0 && gamepadIndex < static_cast<int>(gWin.gamepadPressed.size()) &&
+                button > GAMEPAD_BUTTON_UNKNOWN && button < GAMEPAD_BUTTON_COUNT) {
+                if (sdlEvent.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+                    gWin.gamepadPressed[static_cast<std::size_t>(gamepadIndex)]
+                        [static_cast<std::size_t>(button)] = true;
+                    gWin.lastGamepadButtonPressed = button;
+                } else {
+                    gWin.gamepadReleased[static_cast<std::size_t>(gamepadIndex)]
+                        [static_cast<std::size_t>(button)] = true;
+                }
             }
         }
 

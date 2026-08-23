@@ -1,7 +1,7 @@
 # ========================================================
 #
 #   QuarkCore CMake Configuration
-#   By QuarkEngine Development Team
+#   By Quark Engine Development Team
 #
 # ========================================================
 
@@ -337,18 +337,16 @@ add_library(glad STATIC "${GLAD_EXTERNAL_DIR}/src/glad.c")
 target_include_directories(glad PUBLIC "${GLAD_EXTERNAL_DIR}/include")
 set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-if(WIN32)
-    set(QC_CORE_LIBRARY_TYPE STATIC)
-else()
-    set(QC_CORE_LIBRARY_TYPE SHARED)
-endif()
-
-add_library(QuarkCore ${QC_CORE_LIBRARY_TYPE}
+add_library(QuarkCore STATIC
     src/QuarkEvent.cpp
     src/QuarkLights.cpp
     src/QuarkWindow.cpp
     src/QuarkImage.cpp
 )
+
+if(WIN32)
+    set_target_properties(QuarkCore PROPERTIES OUTPUT_NAME QuarkCoreCommon)
+endif()
 
 if(WIN32)
     target_compile_definitions(QuarkCore PRIVATE _WIN32)
@@ -411,6 +409,10 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
     target_link_libraries(${TARGET_NAME} PUBLIC QuarkCore)
     if(MSVC)
         target_link_options(${TARGET_NAME} PRIVATE "/WHOLEARCHIVE:$<TARGET_FILE:QuarkCore>")
+    elseif(UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_options(${TARGET_NAME} PRIVATE
+            "-Wl,--whole-archive" "$<TARGET_FILE:QuarkCore>" "-Wl,--no-whole-archive"
+        )
     endif()
 
     if(BACKEND_NAME STREQUAL "OPENGL")
@@ -466,6 +468,10 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
     )
     target_compile_definitions(${TARGET_NAME} PRIVATE QUARKCORE_BUILD_DLL NOMINMAX)
     set_target_properties(${TARGET_NAME} PROPERTIES UNITY_BUILD OFF)
+
+    if(WIN32 AND BACKEND_NAME STREQUAL "OPENGL")
+        set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME QuarkCore)
+    endif()
 
     if(MSVC)
         target_compile_options(${TARGET_NAME} PRIVATE /W4 /permissive- /MP)

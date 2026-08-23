@@ -48,6 +48,7 @@ RendererType gCurrentBackend = RendererType::Auto;
 bool gVulkanLibraryLoaded = false;
 int gRequestedMSAASamples = 1;
 TextureFilterMode gTextureFilterMode = TextureFilterMode::Linear;
+std::array<std::array<float, SDL_GAMEPAD_AXIS_COUNT>, 16> gGamepadDeadZones{};
 
 #define gRenderer (*gRendererPtr)
 
@@ -227,7 +228,7 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
                                                        std::to_string(SDL_VERSIONNUM_MINOR(version)) + "." +
                                                        std::to_string(SDL_VERSIONNUM_MICRO(version)));
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD))
         throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
 
     auto initVulkan = [&]() {
@@ -553,36 +554,176 @@ void SetMouseCursor(MouseCursor cursor) {
     if (c) { SDL_SetCursor(c); SDL_DestroyCursor(c); }
 }
 
+static SDL_Gamepad* OpenGamepadByIndex(int gamepad) {
+    int count = 0;
+    SDL_JoystickID* ids = SDL_GetGamepads(&count);
+    if (!ids || gamepad < 0 || gamepad >= count) {
+        SDL_free(ids);
+        return nullptr;
+    }
+
+    SDL_Gamepad* result = SDL_OpenGamepad(ids[gamepad]);
+    SDL_free(ids);
+    return result;
+}
+
+static SDL_GamepadButton ToSDLGamepadButton(int button) {
+    switch (button) {
+        case GAMEPAD_BUTTON_LEFT_FACE_UP: return SDL_GAMEPAD_BUTTON_DPAD_UP;
+        case GAMEPAD_BUTTON_LEFT_FACE_RIGHT: return SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
+        case GAMEPAD_BUTTON_LEFT_FACE_DOWN: return SDL_GAMEPAD_BUTTON_DPAD_DOWN;
+        case GAMEPAD_BUTTON_LEFT_FACE_LEFT: return SDL_GAMEPAD_BUTTON_DPAD_LEFT;
+        case GAMEPAD_BUTTON_RIGHT_FACE_UP: return SDL_GAMEPAD_BUTTON_NORTH;
+        case GAMEPAD_BUTTON_RIGHT_FACE_RIGHT: return SDL_GAMEPAD_BUTTON_EAST;
+        case GAMEPAD_BUTTON_RIGHT_FACE_DOWN: return SDL_GAMEPAD_BUTTON_SOUTH;
+        case GAMEPAD_BUTTON_RIGHT_FACE_LEFT: return SDL_GAMEPAD_BUTTON_WEST;
+        case GAMEPAD_BUTTON_LEFT_TRIGGER_1: return SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
+        case GAMEPAD_BUTTON_RIGHT_TRIGGER_1: return SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER;
+        case GAMEPAD_BUTTON_MIDDLE_LEFT: return SDL_GAMEPAD_BUTTON_BACK;
+        case GAMEPAD_BUTTON_MIDDLE: return SDL_GAMEPAD_BUTTON_GUIDE;
+        case GAMEPAD_BUTTON_MIDDLE_RIGHT: return SDL_GAMEPAD_BUTTON_START;
+        case GAMEPAD_BUTTON_LEFT_THUMB: return SDL_GAMEPAD_BUTTON_LEFT_STICK;
+        case GAMEPAD_BUTTON_RIGHT_THUMB: return SDL_GAMEPAD_BUTTON_RIGHT_STICK;
+        default: return SDL_GAMEPAD_BUTTON_INVALID;
+    }
+}
+
+int GetGamepadCount() {
+    int count = 0;
+    SDL_JoystickID* ids = SDL_GetGamepads(&count);
+    SDL_free(ids);
+    return count;
+}
+
 bool IsGamepadAvailable(int gamepad) {
-    SDL_Joystick* j = SDL_OpenJoystick(gamepad);
-    if (j) { SDL_CloseJoystick(j); return true; }
-    return false;
+    SDL_Gamepad* controller = OpenGamepadByIndex(gamepad);
+    if (!controller) return false;
+    SDL_CloseGamepad(controller);
+    return true;
 }
 
 const char* GetGamepadName(int gamepad) {
-    SDL_Joystick* j = SDL_OpenJoystick(gamepad);
-    if (!j) return "UNKNOWN";
-    const char* n = SDL_GetJoystickName(j);
-    SDL_CloseJoystick(j);
+    SDL_Gamepad* controller = OpenGamepadByIndex(gamepad);
+    if (!controller) return "UNKNOWN";
+    const char* n = SDL_GetGamepadName(controller);
+    SDL_CloseGamepad(controller);
     return n ? n : "UNKNOWN";
 }
 
 float GetGamepadAxisMovement(int gamepad, int axis) {
-    SDL_Joystick* j = SDL_OpenJoystick(gamepad);
-    if (!j) return 0.f;
-    float v = 0.f;
-    if (axis >= 0 && axis < SDL_GetNumJoystickAxes(j))
-        v = SDL_GetJoystickAxis(j, axis) / 32768.f;
-    SDL_CloseJoystick(j);
-    return v;
+    SDL_Gamepad* controller = OpenGamepadByIndex(gamepad);
+    if (!controller || axis < 0 || axis >= SDL_GAMEPAD_AXIS_COUNT) {
+        if (controller) SDL_CloseGamepad(controller);
+        return 0.0f;
+    }
+
+    float value = static_cast<float>(SDL_GetGamepadAxis(
+        controller, static_cast<SDL_GamepadAxis>(axis))) / 32767.0f;
+    SDL_CloseGamepad(controller);
+
+    const float deadZone = GetGamepadAxisDeadZone(gamepad, static_cast<GamepadAxis>(axis));
+    if (std::fabs(value) <= deadZone) return 0.0f;
+    const float sign = value < 0.0f ? -1.0f : 1.0f;
+    return sign * ((std::fabs(value) - deadZone) / (1.0f - deadZone));
 }
 
 bool IsGamepadButtonPressed(int gamepad, int button) {
-    SDL_Joystick* j = SDL_OpenJoystick(gamepad);
-    if (!j) return false;
-    bool p = SDL_GetJoystickButton(j, button) != 0;
-    SDL_CloseJoystick(j);
-    return p;
+    if (gamepad < 0 || gamepad >= static_cast<int>(gWin.gamepadPressed.size()) ||
+        button <= GAMEPAD_BUTTON_UNKNOWN || button >= GAMEPAD_BUTTON_COUNT) {
+        return false;
+    }
+    return gWin.gamepadPressed[static_cast<std::size_t>(gamepad)][static_cast<std::size_t>(button)];
+}
+
+bool IsGamepadButtonDown(int gamepad, int button) {
+    if (button <= GAMEPAD_BUTTON_UNKNOWN || button >= GAMEPAD_BUTTON_COUNT) return false;
+    const SDL_GamepadButton sdlButton = ToSDLGamepadButton(button);
+    if (sdlButton == SDL_GAMEPAD_BUTTON_INVALID) return false;
+    SDL_Gamepad* controller = OpenGamepadByIndex(gamepad);
+    if (!controller) return false;
+    const bool pressed = SDL_GetGamepadButton(controller, sdlButton);
+    SDL_CloseGamepad(controller);
+    return pressed;
+}
+
+bool IsGamepadButtonUp(int gamepad, int button) {
+    return !IsGamepadButtonDown(gamepad, button);
+}
+
+bool IsGamepadButtonReleased(int gamepad, int button) {
+    if (gamepad < 0 || gamepad >= static_cast<int>(gWin.gamepadReleased.size()) ||
+        button <= GAMEPAD_BUTTON_UNKNOWN || button >= GAMEPAD_BUTTON_COUNT) {
+        return false;
+    }
+    return gWin.gamepadReleased[static_cast<std::size_t>(gamepad)][static_cast<std::size_t>(button)];
+}
+
+int GetGamepadButtonPressed() {
+    const int result = gWin.lastGamepadButtonPressed;
+    gWin.lastGamepadButtonPressed = -1;
+    return result;
+}
+
+int GetGamepadAxisCount(int gamepad) {
+    SDL_Gamepad* controller = OpenGamepadByIndex(gamepad);
+    if (!controller) return 0;
+    SDL_CloseGamepad(controller);
+    return SDL_GAMEPAD_AXIS_COUNT;
+}
+
+bool SetGamepadAxisDeadZone(int gamepad, GamepadAxis axis, float deadZone) {
+    if (gamepad < 0 || gamepad >= static_cast<int>(gGamepadDeadZones.size()) ||
+        axis < 0 || axis >= SDL_GAMEPAD_AXIS_COUNT ||
+        !std::isfinite(deadZone) || deadZone < 0.0f || deadZone >= 1.0f) {
+        return false;
+    }
+    gGamepadDeadZones[static_cast<std::size_t>(gamepad)][static_cast<std::size_t>(axis)] = deadZone;
+    return true;
+}
+
+float GetGamepadAxisDeadZone(int gamepad, GamepadAxis axis) {
+    if (gamepad < 0 || gamepad >= static_cast<int>(gGamepadDeadZones.size()) ||
+        axis < 0 || axis >= SDL_GAMEPAD_AXIS_COUNT) {
+        return 0.0f;
+    }
+    return gGamepadDeadZones[static_cast<std::size_t>(gamepad)][static_cast<std::size_t>(axis)];
+}
+
+void SetGamepadVibration(int gamepad, float lowFrequency, float highFrequency, float durationSeconds) {
+    SDL_Gamepad* controller = OpenGamepadByIndex(gamepad);
+    if (!controller || !std::isfinite(lowFrequency) || !std::isfinite(highFrequency) ||
+        !std::isfinite(durationSeconds) || durationSeconds < 0.0f) {
+        if (controller) SDL_CloseGamepad(controller);
+        return;
+    }
+    const auto toRumble = [](float value) {
+        return static_cast<Uint16>(std::lround(Clamp(value, 0.0f, 1.0f) * 65535.0f));
+    };
+    const auto durationMs = static_cast<Uint32>(std::lround(durationSeconds * 1000.0f));
+    SDL_RumbleGamepad(controller, toRumble(lowFrequency), toRumble(highFrequency), durationMs);
+    SDL_CloseGamepad(controller);
+}
+
+int SetGamepadMappings(const char* mappings) {
+    return mappings ? SDL_AddGamepadMapping(mappings) : -1;
+}
+
+bool AddGamepadMapping(const char* mapping) {
+    return mapping && SDL_AddGamepadMapping(mapping) >= 0;
+}
+
+const char* GetGamepadMapping(int gamepad) {
+    SDL_Gamepad* controller = OpenGamepadByIndex(gamepad);
+    if (!controller) return "";
+
+    char* mapping = SDL_GetGamepadMapping(controller);
+    SDL_CloseGamepad(controller);
+    if (!mapping) return "";
+
+    thread_local std::string result;
+    result = mapping;
+    SDL_free(mapping);
+    return result.c_str();
 }
 
 static Mat4 BuildTransform(const Vec3& position, const Vec3& axis, float angle, const Vec3& scale) {

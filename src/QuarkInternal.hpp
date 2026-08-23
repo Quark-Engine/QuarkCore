@@ -27,6 +27,9 @@ struct WindowState {
     std::array<bool, SDL_SCANCODE_COUNT> previousKeys{};
     std::array<bool, 8> mouseButtons{};
     std::array<bool, 8> previousMouseButtons{};
+    std::array<std::array<bool, SDL_GAMEPAD_BUTTON_COUNT>, 16> gamepadPressed{};
+    std::array<std::array<bool, SDL_GAMEPAD_BUTTON_COUNT>, 16> gamepadReleased{};
+    int lastGamepadButtonPressed = -1;
     Vec2  mousePosition{};
     Vec2  mouseWheel{};
 

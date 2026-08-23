@@ -23,7 +23,7 @@ jobs:
       - name: Prepare Artifacts
         run: |
           mkdir artifacts
-          copy build\Release\QuarkCore.lib artifacts\
+          copy build\Release\QuarkCoreCommon.lib artifacts\
           copy build\Release\*.exe artifacts\
           copy build\Release\*.dll artifacts\
           xcopy /E /I include artifacts\include
@@ -98,6 +98,7 @@ jobs:
       - name: Prepare Artifacts
         run: |
           mkdir -p artifacts/include
+          cp build/libQuarkCore.a artifacts/
           find build -maxdepth 1 -type f -executable ! -name "*.so*" | xargs -I{} cp {} artifacts/
           find build -maxdepth 1 -name "*.so*" | xargs -I{} cp {} artifacts/
           cp -r include/. artifacts/include/
@@ -149,6 +150,10 @@ jobs:
 
           if [ -f build/libQuarkCore.dylib ]; then
             cp build/libQuarkCore.dylib artifacts/
+          fi
+
+          if [ -f build/libQuarkCore.a ]; then
+            cp build/libQuarkCore.a artifacts/
           fi
 
           find build -maxdepth 1 -type f -perm +111 ! -name "*.dylib" -exec cp {} artifacts/ \;

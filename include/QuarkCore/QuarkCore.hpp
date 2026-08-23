@@ -645,7 +645,15 @@ enum class TextureFilterMode {
     Linear
 };
 
+/**
+ * @brief Set the requested multisample anti-aliasing sample count.
+ * @param samples Requested sample count.
+ */
 QCAPI void SetMSAASamples(int samples);
+/**
+ * @brief Set the default texture filtering mode.
+ * @param mode Texture filtering mode.
+ */
 QCAPI void SetTextureFilterMode(TextureFilterMode mode);
 
 /**
@@ -664,20 +672,73 @@ QCAPI bool WindowShouldClose();
  */
 QCAPI void CloseWindow();
 
-QCAPI VkInstance            GetVulkanInstance();
-QCAPI VkPhysicalDevice       GetVulkanPhysicalDevice();
-QCAPI VkDevice              GetVulkanDevice();
-QCAPI uint32_t              GetVulkanGraphicsQueueFamily();
-QCAPI VkQueue               GetVulkanGraphicsQueue();
-QCAPI VkDescriptorPool      GetVulkanDescriptorPool();
-QCAPI VkRenderPass          GetVulkanMainRenderPass();
-QCAPI uint32_t              GetVulkanMinImageCount();
-QCAPI uint32_t              GetVulkanImageCount();
+/**
+ * @brief Get the active Vulkan instance.
+ * @return Vulkan instance, or VK_NULL_HANDLE if unavailable.
+ */
+QCAPI VkInstance GetVulkanInstance();
+/**
+ * @brief Get the active Vulkan physical device.
+ * @return Vulkan physical device, or VK_NULL_HANDLE if unavailable.
+ */
+QCAPI VkPhysicalDevice GetVulkanPhysicalDevice();
+/**
+ * @brief Get the active Vulkan logical device.
+ * @return Vulkan device, or VK_NULL_HANDLE if unavailable.
+ */
+QCAPI VkDevice GetVulkanDevice();
+/**
+ * @brief Get the Vulkan graphics queue family index.
+ * @return Queue family index, or UINT32_MAX if unavailable.
+ */
+QCAPI uint32_t GetVulkanGraphicsQueueFamily();
+/**
+ * @brief Get the Vulkan graphics queue.
+ * @return Vulkan queue, or VK_NULL_HANDLE if unavailable.
+ */
+QCAPI VkQueue GetVulkanGraphicsQueue();
+/**
+ * @brief Get the descriptor pool used by the Vulkan renderer.
+ * @return Vulkan descriptor pool, or VK_NULL_HANDLE if unavailable.
+ */
+QCAPI VkDescriptorPool GetVulkanDescriptorPool();
+/**
+ * @brief Get the main Vulkan render pass.
+ * @return Vulkan render pass, or VK_NULL_HANDLE if unavailable.
+ */
+QCAPI VkRenderPass GetVulkanMainRenderPass();
+/**
+ * @brief Get the minimum swapchain image count.
+ * @return Minimum image count.
+ */
+QCAPI uint32_t GetVulkanMinImageCount();
+/**
+ * @brief Get the current Vulkan swapchain image count.
+ * @return Current image count.
+ */
+QCAPI uint32_t GetVulkanImageCount();
+/**
+ * @brief Get the active Vulkan MSAA sample count.
+ * @return Vulkan sample count flags.
+ */
 QCAPI VkSampleCountFlagBits GetVulkanMSAASamples();
-QCAPI VkDescriptorSet       GetVulkanTextureDescriptorSet(uint32_t textureId);
+/**
+ * @brief Get a Vulkan texture descriptor set.
+ * @param textureId QuarkCore texture ID.
+ * @return Descriptor set, or VK_NULL_HANDLE if unavailable.
+ */
+QCAPI VkDescriptorSet GetVulkanTextureDescriptorSet(uint32_t textureId);
 
 using VulkanRenderCallback = void(*)(VkCommandBuffer commandBuffer);
+/**
+ * @brief Set a callback invoked while recording Vulkan rendering commands.
+ * @param callback Callback function, or nullptr to clear it.
+ */
 QCAPI void SetVulkanRenderCallback(VulkanRenderCallback callback);
+/**
+ * @brief Get the currently registered Vulkan render callback.
+ * @return Registered callback, or nullptr if none is set.
+ */
 QCAPI VulkanRenderCallback GetVulkanRenderCallback();
 
 /**
@@ -709,6 +770,10 @@ QCAPI bool WaitEventTimeout(Event& event, int timeoutMs);
 
 using NativeEventCallback = void(*)(const SDL_Event* event);
 
+/**
+ * @brief Set a callback that receives each native SDL event.
+ * @param callback Callback function, or nullptr to clear it.
+ */
 QCAPI void SetNativeEventCallback(NativeEventCallback callback);
 
 /**
@@ -1325,7 +1390,15 @@ QCAPI Texture2D GenCheckerTexture(int width, int height, int cellSize, Color col
  * @param texture Texture to unload.
  */
 QCAPI void UnloadTexture(Texture2D& texture);
+/**
+ * @brief Release a vertex array object.
+ * @param vaoId Renderer vertex array object ID.
+ */
 QCAPI void UnloadVertexArray(unsigned int vaoId);
+/**
+ * @brief Release a vertex buffer object.
+ * @param vboId Renderer vertex buffer object ID.
+ */
 QCAPI void UnloadVertexBuffer(unsigned int vboId);
 
 /**
@@ -1351,6 +1424,11 @@ QCAPI Shader LoadShader(const char* vsFileName, const char* fsFileName);
  */
 QCAPI Shader LoadShaderFromMemory(const char* vsSource, const char* fsSource);
 
+/**
+ * @brief Enable or disable one of the standard 3D light slots.
+ * @param index Light slot index.
+ * @param enabled Whether the light should be enabled.
+ */
 QCAPI void Set3DLightEnabled(int index, bool enabled);
 
 /**
@@ -1440,8 +1518,29 @@ QCAPI void SetShaderValue(const Shader& shader, int locIndex, const Color& value
  * @param mat 4x4 matrix (16 floats).
  */
 QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat);
+/**
+ * @brief Set a shader uniform using a raw value and uniform type.
+ * @param shader Shader to modify.
+ * @param locIndex Uniform location index.
+ * @param value Pointer to the uniform value.
+ * @param uniformType Uniform type constant.
+ */
 QCAPI void SetShaderValue(const Shader& shader, int locIndex, const void* value, int uniformType);
+/**
+ * @brief Set an array of shader uniform values.
+ * @param shader Shader to modify.
+ * @param locIndex Uniform location index.
+ * @param value Pointer to the first value.
+ * @param uniformType Uniform type constant.
+ * @param count Number of values.
+ */
 QCAPI void SetShaderValueV(const Shader& shader, int locIndex, const void* value, int uniformType, int count);
+/**
+ * @brief Set a shader matrix uniform from a Matrix object.
+ * @param shader Shader to modify.
+ * @param locIndex Uniform location index.
+ * @param mat Matrix value.
+ */
 QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const Matrix& mat);
 
 /**
@@ -1451,7 +1550,20 @@ QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const Matrix
  * @param textureUnit Texture unit index.
  */
 QCAPI void SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit);
+/**
+ * @brief Bind a texture to a shader sampler uniform.
+ * @param shader Shader to modify.
+ * @param locIndex Sampler location index.
+ * @param texture Texture to bind.
+ */
 QCAPI void SetShaderValueTexture(const Shader& shader, int locIndex, const Texture2D& texture);
+/**
+ * @brief Bind a texture to a shader sampler and explicit texture unit.
+ * @param shader Shader to modify.
+ * @param locIndex Sampler location index.
+ * @param texture Texture to bind.
+ * @param textureUnit Texture unit index.
+ */
 QCAPI void SetShaderValueTextureUnit(const Shader& shader, int locIndex, const Texture2D& texture, int textureUnit);
 
 /**
@@ -1481,6 +1593,9 @@ QCAPI Camera2D CreateCamera2D();
  * @brief Begin 2D mode with custom camera.
  */
 QCAPI void BeginMode2D(const Camera2D& camera);
+/**
+ * @brief End the active 2D camera mode.
+ */
 QCAPI void EndMode2D();
 
 /**
@@ -1503,20 +1618,66 @@ QCAPI Camera3D CreateCamera3D();
  * @brief Begin 3D mode with custom camera.
  */
 QCAPI void BeginMode3D(const Camera3D& camera);
+/**
+ * @brief End the active 3D camera mode.
+ */
 QCAPI void EndMode3D();
 
+/**
+ * @brief Save the current renderer transform state.
+ */
 QCAPI void PushMatrix();
+/**
+ * @brief Restore the previously saved renderer transform state.
+ */
 QCAPI void PopMatrix();
 
+/**
+ * @brief Apply a 3D translation to the current transform.
+ * @param translation Translation vector.
+ */
 QCAPI void Translate(const Vec3& translation);
+/**
+ * @brief Apply a 3D translation to the current transform.
+ * @param x Translation on the X axis.
+ * @param y Translation on the Y axis.
+ * @param z Translation on the Z axis.
+ */
 QCAPI void Translate(float x, float y, float z);
+/**
+ * @brief Apply an axis-angle rotation to the current transform.
+ * @param angle Rotation angle in radians.
+ * @param axis Rotation axis.
+ */
 QCAPI void Rotate(float angle, const Vec3& axis);
+/**
+ * @brief Apply a rotation around the current 2D rotation axis.
+ * @param angle Rotation angle in degrees.
+ */
 QCAPI void Rotate(float angle);
+/**
+ * @brief Apply a non-uniform scale to the current transform.
+ * @param scale Scale vector.
+ */
 QCAPI void Scale(const Vec3& scale);
+/**
+ * @brief Apply a uniform scale to the current transform.
+ * @param scale Uniform scale factor.
+ */
 QCAPI void Scale(float scale);
+/**
+ * @brief Multiply the current transform by a matrix.
+ * @param matrix Matrix to multiply by.
+ */
 QCAPI void MultMatrix(const Mat4& matrix);
 
+/**
+ * @brief Enable back-face culling for subsequent drawing.
+ */
 QCAPI void EnableBackfaceCulling();
+/**
+ * @brief Disable back-face culling for subsequent drawing.
+ */
 QCAPI void DisableBackfaceCulling();
 
 /**
@@ -1640,6 +1801,112 @@ QCAPI void SetMouseCursor(MouseCursor cursor);
  * @return false otherwise.
  */
 QCAPI bool IsGamepadAvailable(int gamepad);
+
+/**
+ * @brief Standard QuarkCore gamepad buttons.
+ */
+enum GamepadButton {
+    GAMEPAD_BUTTON_UNKNOWN = 0,
+    GAMEPAD_BUTTON_LEFT_FACE_UP,
+    GAMEPAD_BUTTON_LEFT_FACE_RIGHT,
+    GAMEPAD_BUTTON_LEFT_FACE_DOWN,
+    GAMEPAD_BUTTON_LEFT_FACE_LEFT,
+    GAMEPAD_BUTTON_RIGHT_FACE_UP,
+    GAMEPAD_BUTTON_RIGHT_FACE_RIGHT,
+    GAMEPAD_BUTTON_RIGHT_FACE_DOWN,
+    GAMEPAD_BUTTON_RIGHT_FACE_LEFT,
+    GAMEPAD_BUTTON_LEFT_TRIGGER_1,
+    GAMEPAD_BUTTON_LEFT_TRIGGER_2,
+    GAMEPAD_BUTTON_RIGHT_TRIGGER_1,
+    GAMEPAD_BUTTON_RIGHT_TRIGGER_2,
+    GAMEPAD_BUTTON_MIDDLE_LEFT,
+    GAMEPAD_BUTTON_MIDDLE,
+    GAMEPAD_BUTTON_MIDDLE_RIGHT,
+    GAMEPAD_BUTTON_LEFT_THUMB,
+    GAMEPAD_BUTTON_RIGHT_THUMB,
+    GAMEPAD_BUTTON_COUNT
+};
+
+using GamepadAxis = SDL_GamepadAxis;
+
+/**
+ * @brief Return the number of connected gamepads.
+ * @return Number of connected gamepads.
+ */
+QCAPI int GetGamepadCount();
+/**
+ * @brief Check whether a mapped gamepad button is currently held.
+ * @param gamepad Gamepad index.
+ * @param button Quark gamepad button.
+ * @return True while the button is held.
+ */
+QCAPI bool IsGamepadButtonDown(int gamepad, int button);
+/**
+ * @brief Check whether a mapped gamepad button is currently released.
+ * @param gamepad Gamepad index.
+ * @param button Quark gamepad button.
+ * @return True while the button is not held.
+ */
+QCAPI bool IsGamepadButtonUp(int gamepad, int button);
+/**
+ * @brief Check whether a mapped gamepad button was released this frame.
+ * @param gamepad Gamepad index.
+ * @param button Quark gamepad button.
+ * @return True if the button was released during the current input update.
+ */
+QCAPI bool IsGamepadButtonReleased(int gamepad, int button);
+/**
+ * @brief Return and consume the last gamepad button pressed this frame.
+ * @return Quark gamepad button, or GAMEPAD_BUTTON_UNKNOWN if none was pressed.
+ */
+QCAPI int GetGamepadButtonPressed();
+/**
+ * @brief Return the number of standard axes supported by a gamepad.
+ * @param gamepad Gamepad index.
+ * @return Number of standard axes, or zero if unavailable.
+ */
+QCAPI int GetGamepadAxisCount(int gamepad);
+/**
+ * @brief Set an axis dead zone in the range [0, 1).
+ * @param gamepad Gamepad index.
+ * @param axis Standard gamepad axis.
+ * @param deadZone Dead zone threshold.
+ * @return True when the value was accepted.
+ */
+QCAPI bool SetGamepadAxisDeadZone(int gamepad, GamepadAxis axis, float deadZone);
+/**
+ * @brief Return the configured dead zone for a gamepad axis.
+ * @param gamepad Gamepad index.
+ * @param axis Standard gamepad axis.
+ * @return Dead zone threshold.
+ */
+QCAPI float GetGamepadAxisDeadZone(int gamepad, GamepadAxis axis);
+/**
+ * @brief Start gamepad vibration.
+ * @param gamepad Gamepad index.
+ * @param lowFrequency Low-frequency motor strength from 0.0 to 1.0.
+ * @param highFrequency High-frequency motor strength from 0.0 to 1.0.
+ * @param durationSeconds Vibration duration in seconds.
+ */
+QCAPI void SetGamepadVibration(int gamepad, float lowFrequency, float highFrequency, float durationSeconds);
+/**
+ * @brief Add an SDL gamepad mapping string.
+ * @param mappings SDL gamepad mapping string.
+ * @return SDL mapping result code.
+ */
+QCAPI int SetGamepadMappings(const char* mappings);
+/**
+ * @brief Add an SDL gamepad mapping string and report success.
+ * @param mapping SDL gamepad mapping string.
+ * @return True when the mapping was accepted.
+ */
+QCAPI bool AddGamepadMapping(const char* mapping);
+/**
+ * @brief Return the mapping string for a gamepad.
+ * @param gamepad Gamepad index.
+ * @return Pointer to an internal mapping string, or an empty string.
+ */
+QCAPI const char* GetGamepadMapping(int gamepad);
 
 /**
  * @brief Get gamepad name.
@@ -1955,35 +2222,190 @@ struct FilePathList {
     char** paths = nullptr;           // Filepaths entries
 };
 
-QCAPI int FileRename(const char* fileName, const char* fileRename); // Rename file (if exists)
-QCAPI int FileRemove(const char* fileName);                         // Remove file (if exists)
-QCAPI int FileCopy(const char* srcPath, const char* dstPath);       // Copy file from one path to another, dstPath created if it doesn't exist
-QCAPI int FileMove(const char* srcPath, const char* dstPath);       // Move file from one directory to another, dstPath created if it doesn't exist
-QCAPI int FileTextReplace(const char* fileName, const char* search, const char* replacement); // Replace text in an existing file
-QCAPI int FileTextFindIndex(const char* fileName, const char* search); // Find text in existing file
-QCAPI bool FileExists(const char* fileName);                        // Check if file exists
-QCAPI bool DirectoryExists(const char* dirPath);                    // Check if a directory path exists
-QCAPI bool IsFileExtension(const char* fileName, const char* ext);  // Check file extension (recommended include point: .png, .wav)
-QCAPI int GetFileLength(const char* fileName);                      // Get file length in bytes (NOTE: GetFileSize() conflicts with windows.h)
-QCAPI long GetFileModTime(const char* fileName);                    // Get file modification time (last write time)
-QCAPI const char* GetFileExtension(const char* fileName);           // Get pointer to extension for a filename string (includes dot: '.png')
-QCAPI const char* GetFileName(const char* filePath);                // Get pointer to filename for a path string
-QCAPI const char* GetFileNameWithoutExt(const char* filePath);      // Get filename string without extension (uses static string)
-QCAPI const char* GetDirectoryPath(const char* filePath);           // Get full path for a given fileName with path (uses static string)
-QCAPI const char* GetPrevDirectoryPath(const char* dirPath);        // Get previous directory path for a given path (uses static string)
-QCAPI const char* GetWorkingDirectory(void);                        // Get current working directory (uses static string)
-QCAPI const char* GetApplicationDirectory(void);                    // Get the directory of the running application (uses static string)
-QCAPI int MakeDirectory(const char* dirPath);                       // Create directories (including full path requested), returns 0 on success
-QCAPI bool ChangeDirectory(const char* dirPath);                    // Change working directory, return true on success
-QCAPI bool IsPathFile(const char* path);                            // Check if a given path is a file or a directory
-QCAPI bool IsFileNameValid(const char* fileName);                   // Check if fileName is valid for the platform/OS
-QCAPI FilePathList LoadDirectoryFiles(const char* dirPath);         // Load directory filepaths, files and directories, no subdirs scan
-QCAPI FilePathList LoadDirectoryFilesEx(const char* basePath, const char* filter, bool scanSubdirs); // Load directory filepaths with extension filtering and subdir scan; some filters available: `*.*`,`FILES*`,`DIRS*`
-QCAPI void UnloadDirectoryFiles(FilePathList files);                // Unload filepaths
-QCAPI bool IsFileDropped(void);                                     // Check if a file has been dropped into window
-QCAPI FilePathList LoadDroppedFiles(void);                          // Load dropped filepaths
-QCAPI void UnloadDroppedFiles(FilePathList files);                  // Unload dropped filepaths
-QCAPI unsigned int GetDirectoryFileCount(const char* dirPath);      // Get the file count in a directory
+/**
+ * @brief Rename an existing file.
+ * @param fileName Source path.
+ * @param fileRename Destination path.
+ * @return Zero on success, non-zero on failure.
+ */
+QCAPI int FileRename(const char* fileName, const char* fileRename);
+/**
+ * @brief Remove an existing file.
+ * @param fileName File path.
+ * @return Zero on success, non-zero on failure.
+ */
+QCAPI int FileRemove(const char* fileName);
+/**
+ * @brief Copy a file.
+ * @param srcPath Source path.
+ * @param dstPath Destination path.
+ * @return Zero on success, non-zero on failure.
+ */
+QCAPI int FileCopy(const char* srcPath, const char* dstPath);
+/**
+ * @brief Move a file.
+ * @param srcPath Source path.
+ * @param dstPath Destination path.
+ * @return Zero on success, non-zero on failure.
+ */
+QCAPI int FileMove(const char* srcPath, const char* dstPath);
+/**
+ * @brief Replace text in an existing file.
+ * @param fileName File path.
+ * @param search Text to find.
+ * @param replacement Replacement text.
+ * @return Zero on success, non-zero on failure.
+ */
+QCAPI int FileTextReplace(const char* fileName, const char* search, const char* replacement);
+/**
+ * @brief Find text in a file.
+ * @param fileName File path.
+ * @param search Text to find.
+ * @return Matching byte index, or -1 when not found.
+ */
+QCAPI int FileTextFindIndex(const char* fileName, const char* search);
+/**
+ * @brief Check whether a file exists.
+ * @param fileName File path.
+ * @return True when the file exists.
+ */
+QCAPI bool FileExists(const char* fileName);
+/**
+ * @brief Check whether a directory exists.
+ * @param dirPath Directory path.
+ * @return True when the directory exists.
+ */
+QCAPI bool DirectoryExists(const char* dirPath);
+/**
+ * @brief Check a file extension.
+ * @param fileName File path.
+ * @param ext Extension, preferably including '.'.
+ * @return True when it matches.
+ */
+QCAPI bool IsFileExtension(const char* fileName, const char* ext);
+/**
+ * @brief Get a file size in bytes.
+ * @param fileName File path.
+ * @return File length, or -1 on failure.
+ */
+QCAPI int GetFileLength(const char* fileName);
+/**
+ * @brief Get the last modification time of a file.
+ * @param fileName File path.
+ * @return Platform file timestamp.
+ */
+QCAPI long GetFileModTime(const char* fileName);
+/**
+ * @brief Get the extension portion of a path.
+ * @param fileName File path.
+ * @return Pointer to a static result string.
+ */
+QCAPI const char* GetFileExtension(const char* fileName);
+/**
+ * @brief Get the filename portion of a path.
+ * @param filePath File path.
+ * @return Pointer to a static result string.
+ */
+QCAPI const char* GetFileName(const char* filePath);
+/**
+ * @brief Get a filename without its extension.
+ * @param filePath File path.
+ * @return Pointer to a static result string.
+ */
+QCAPI const char* GetFileNameWithoutExt(const char* filePath);
+/**
+ * @brief Get the directory portion of a path.
+ * @param filePath File path.
+ * @return Pointer to a static result string.
+ */
+QCAPI const char* GetDirectoryPath(const char* filePath);
+/**
+ * @brief Get the parent directory of a path.
+ * @param dirPath Directory path.
+ * @return Pointer to a static result string.
+ */
+QCAPI const char* GetPrevDirectoryPath(const char* dirPath);
+/**
+ * @brief Get the current working directory.
+ * @return Pointer to a static result string.
+ */
+QCAPI const char* GetWorkingDirectory(void);
+/**
+ * @brief Get the directory containing the application executable.
+ * @return Pointer to a static result string.
+ */
+QCAPI const char* GetApplicationDirectory(void);
+/**
+ * @brief Create a directory and its missing parents.
+ * @param dirPath Directory path.
+ * @return Zero on success, non-zero on failure.
+ */
+QCAPI int MakeDirectory(const char* dirPath);
+/**
+ * @brief Change the current working directory.
+ * @param dirPath Directory path.
+ * @return True on success.
+ */
+QCAPI bool ChangeDirectory(const char* dirPath);
+/**
+ * @brief Check whether a path identifies a file.
+ * @param path Path to inspect.
+ * @return True when it is a file.
+ */
+QCAPI bool IsPathFile(const char* path);
+/**
+ * @brief Validate a filename for the current platform.
+ * @param fileName Filename to validate.
+ * @return True when valid.
+ */
+QCAPI bool IsFileNameValid(const char* fileName);
+/**
+ * @brief Load files and directories from a directory without recursion.
+ * @param dirPath Directory path.
+ * @return Allocated path list.
+ */
+QCAPI FilePathList LoadDirectoryFiles(const char* dirPath);
+/**
+ * @brief Load directory entries with filtering and optional recursion.
+ * @param basePath Base directory path.
+ * @param filter Entry filter.
+ * @param scanSubdirs Whether to scan subdirectories.
+ * @return Allocated path list.
+ */
+QCAPI FilePathList LoadDirectoryFilesEx(const char* basePath, const char* filter, bool scanSubdirs);
+/**
+ * @brief Release a directory path list.
+ * @param files Path list to release.
+ */
+QCAPI void UnloadDirectoryFiles(FilePathList files);
+/**
+ * @brief Check whether a file was dropped onto the window.
+ * @return True when a drop is pending.
+ */
+QCAPI bool IsFileDropped(void);
+/**
+ * @brief Load paths from the latest file-drop operation.
+ * @return Allocated path list.
+ */
+QCAPI FilePathList LoadDroppedFiles(void);
+/**
+ * @brief Release a dropped-file path list.
+ * @param files Path list to release.
+ */
+QCAPI void UnloadDroppedFiles(FilePathList files);
+/**
+ * @brief Count entries in a directory without recursion.
+ * @param dirPath Directory path.
+ * @return Entry count.
+ */
+QCAPI unsigned int GetDirectoryFileCount(const char* dirPath);
+/**
+ * @brief Count filtered directory entries with optional recursion.
+ * @param basePath Base directory path.
+ * @param filter Entry filter.
+ * @param scanSubdirs Whether to scan subdirectories.
+ * @return Entry count.
+ */
 QCAPI unsigned int GetDirectoryFileCountEx(const char* basePath, const char* filter, bool scanSubdirs);
 
 }  // namespace qc
