@@ -459,6 +459,18 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
                 ${SPIRV_CROSS_CORE_LIB}
             )
         endif()
+    elseif(BACKEND_NAME STREQUAL "D3D11")
+        if(NOT WIN32)
+            message(FATAL_ERROR "The D3D11 backend is only available on Windows")
+        endif()
+        target_sources(${TARGET_NAME} PRIVATE src/Renderer/QuarkDX11/QuarkD3D11Renderer.cpp)
+        target_compile_definitions(${TARGET_NAME} PRIVATE QC_ENABLE_D3D11)
+        target_link_libraries(${TARGET_NAME} PUBLIC
+            SDL3::SDL3
+            d3d11
+            dxgi
+            d3dcompiler
+        )
     else()
         message(FATAL_ERROR "Unknown QuarkCore backend: ${BACKEND_NAME}")
     endif()
@@ -483,8 +495,14 @@ endfunction()
 
 qc_configure_backend_target(QuarkCore-OpenGL OPENGL)
 qc_configure_backend_target(QuarkCore-Vulkan VULKAN)
+if(WIN32)
+    qc_configure_backend_target(QuarkCore-D3D11 D3D11)
+endif()
 add_library(QuarkCore::OpenGL ALIAS QuarkCore-OpenGL)
 add_library(QuarkCore::Vulkan ALIAS QuarkCore-Vulkan)
+if(WIN32)
+    add_library(QuarkCore::D3D11 ALIAS QuarkCore-D3D11)
+endif()
 
 if(QC_BUILD_EXAMPLES)
     set(EXAMPLE_TARGETS
@@ -512,6 +530,11 @@ if(QC_BUILD_EXAMPLES)
         examples/file_operations.cpp
         examples/3d_light.cpp
     )
+
+    if(WIN32)
+        list(APPEND EXAMPLE_TARGETS quarkcore_d3d11)
+        list(APPEND EXAMPLE_SOURCES examples/d3d11.cpp)
+    endif()
 
     list(LENGTH EXAMPLE_TARGETS _count)
     math(EXPR _last "${_count} - 1")
@@ -548,10 +571,21 @@ if(QC_BUILD_EXAMPLES)
             set(_backend_target QuarkCore-OpenGL)
             if(_target MATCHES "^quarkcore_vulkan" OR _target STREQUAL "quarkcore_meshes")
                 set(_backend_target QuarkCore-Vulkan)
+            elseif(_target STREQUAL "quarkcore_d3d11")
+                set(_backend_target QuarkCore-D3D11)
             endif()
 
             add_executable(${_target} ${_source})
             target_link_libraries(${_target} PRIVATE ${_backend_target})
+
+            if(_target STREQUAL "quarkcore_d3d11" AND EXISTS "$ENV{WINDIR}/System32/d3dcompiler_47.dll")
+                add_custom_command(TARGET ${_target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "$ENV{WINDIR}/System32/d3dcompiler_47.dll"
+                        "$<TARGET_FILE_DIR:${_target}>/d3dcompiler_47.dll"
+                    COMMENT "Copying D3DCompiler runtime next to D3D11 example..."
+                )
+            endif()
 
             if(_target STREQUAL "quarkcore_3d_lights")
                 add_custom_command(TARGET ${_target} POST_BUILD

@@ -7,6 +7,9 @@
 #if defined(QC_ENABLE_VULKAN)
 #include "Renderer/QuarkVulkan/QuarkVkRenderer.hpp"
 #endif
+#if defined(QC_ENABLE_D3D11)
+#include "Renderer/QuarkDX11/QuarkD3D11Renderer.hpp"
+#endif
 #include "QuarkInternal.hpp"
 
 #include <SDL3/SDL.h>
@@ -42,6 +45,9 @@ QuarkGLRenderer gGLRenderer;
 #endif
 #if defined(QC_ENABLE_VULKAN)
 QuarkVkRenderer gVkRenderer;
+#endif
+#if defined(QC_ENABLE_D3D11)
+QuarkD3D11Renderer gD3D11Renderer;
 #endif
 IRenderer* gRendererPtr = nullptr;
 RendererType gCurrentBackend = RendererType::Auto;
@@ -80,10 +86,28 @@ std::string FormatTimeNow() {
 #else
     localtime_r(&t, &tm);
 #endif
+
     std::ostringstream ss;
     ss << std::put_time(&tm, "%H:%M:%S");
     return ss.str();
 }
+
+#if defined(QC_ENABLE_D3D11)
+static bool InitD3D11Backend(int width, int height, const char* title) {
+    TraceLog(LogLevel::Info, "RENDERER", "Backend selected: Direct3D 11");
+
+    gWin.window = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE);
+    if (!gWin.window)
+        throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
+
+    gRendererPtr = &gD3D11Renderer;
+    gRenderer.Init(gWin.window, width, height);
+    gRenderer.SetTargetFPS(gWin.targetFps);
+    if (gWin.vsyncSet) gRenderer.SetVSync(gWin.vsync);
+    gCurrentBackend = RendererType::D3D11;
+    return true;
+}
+#endif
 
 void WriteLog(LogLevel level, const char* type, const std::string& message) {
     if (level < gWin.minimumLogLevel || level == LogLevel::None) return;
@@ -247,6 +271,14 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
 #endif
     };
 
+        auto initD3D11 = [&]() {
+    #if defined(QC_ENABLE_D3D11)
+        InitD3D11Backend(width, height, title);
+    #else
+        throw std::runtime_error("QuarkCore was built without D3D11 support");
+    #endif
+        };
+
     try {
         if (rendererType == RendererType::Auto) {
             try {
@@ -259,6 +291,8 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
             initOpenGL();
         } else if (rendererType == RendererType::Vulkan) {
             initVulkan();
+        } else if (rendererType == RendererType::D3D11) {
+            initD3D11();
         }
     } catch (...) {
         CleanupBackendInitFailure();

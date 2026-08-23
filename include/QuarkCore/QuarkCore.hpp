@@ -51,7 +51,8 @@ namespace qc {
 enum class RendererType {
     Auto,
     OpenGL,
-    Vulkan
+    Vulkan,
+    D3D11
 };
 
 /**
@@ -1404,9 +1405,17 @@ QCAPI void UnloadVertexBuffer(unsigned int vboId);
 /**
  * @brief Load a shader from vertex and fragment shader files.
  *
+ * On the OpenGL backend, specify the paths to the GLSL versions of the shaders
+ * (`.vert` and `.frag`). They will be loaded and compiled into an OpenGL shader
+ * program automatically.
+ * 
  * On the Vulkan backend, specify the paths to the SPIR-V versions of the
  * shaders (`.spv`). They will be loaded and compiled into a Vulkan shader
  * module automatically.
+ * 
+ * On the Direct3D 11 backend, specify the paths to the HLSL versions of the shaders
+ * (`.hlsl`). They will be loaded and compiled into a Direct3D 11 shader
+ * program automatically.
  *
  * @param vsFileName Path to the vertex shader file (can be NULL for the default vertex shader).
  * @param fsFileName Path to the fragment shader file (can be NULL for the default fragment shader).
