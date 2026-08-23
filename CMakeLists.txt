@@ -337,8 +337,6 @@ add_library(glad STATIC "${GLAD_EXTERNAL_DIR}/src/glad.c")
 target_include_directories(glad PUBLIC "${GLAD_EXTERNAL_DIR}/include")
 set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-find_package(OpenGL REQUIRED)
-
 add_library(QuarkCore STATIC
     src/QuarkEvent.cpp
     src/QuarkLights.cpp
@@ -414,6 +412,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
     endif()
 
     if(BACKEND_NAME STREQUAL "OPENGL")
+        find_package(OpenGL REQUIRED)
         target_sources(${TARGET_NAME} PRIVATE src/Renderer/QuarkGLRenderer.cpp)
         target_compile_definitions(${TARGET_NAME} PRIVATE QC_ENABLE_OPENGL)
         target_link_libraries(${TARGET_NAME} PUBLIC
@@ -425,7 +424,6 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
         )
     elseif(BACKEND_NAME STREQUAL "VULKAN")
         target_sources(${TARGET_NAME} PRIVATE
-            src/Renderer/QuarkGLRenderer.cpp
             src/Renderer/QuarkVulkan/QuarkVkRenderer.cpp
             src/Renderer/QuarkVulkan/QuarkVkDraw2D.cpp
             src/Renderer/QuarkVulkan/QuarkVkDraw3D.cpp
@@ -435,14 +433,11 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
             src/Renderer/QuarkVulkan/QuarkVkFont.cpp
         )
         target_compile_definitions(${TARGET_NAME} PRIVATE
-            QC_ENABLE_OPENGL
             QC_ENABLE_VULKAN
         )
         if(WIN32)
             target_link_libraries(${TARGET_NAME} PUBLIC
                 SDL3::SDL3
-                glad
-                OpenGL::GL
                 assimp::assimp
                 freetype
                 Vulkan::Vulkan
@@ -550,19 +545,6 @@ if(QC_BUILD_EXAMPLES)
             add_executable(${_target} ${_source})
             target_link_libraries(${_target} PRIVATE ${_backend_target})
 
-            add_custom_command(TARGET ${_target} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    $<TARGET_FILE:${_backend_target}>
-                    ${_RUNTIME_DLLS}
-                    $<TARGET_FILE_DIR:${_target}>
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-optd.dll"
-                    "$<TARGET_FILE_DIR:${_target}>/SPIRV-Tools-opt.dll"
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Toolsd.dll"
-                    "$<TARGET_FILE_DIR:${_target}>/SPIRV-Tools.dll"
-            )
-
             if(_target STREQUAL "quarkcore_3d_lights")
                 add_custom_command(TARGET ${_target} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -614,13 +596,6 @@ if(QC_BUILD_EXAMPLES)
             set_target_properties(${_target} PROPERTIES
                 BUILD_RPATH "$ORIGIN"
                 INSTALL_RPATH "$ORIGIN"
-            )
-
-            add_custom_command(TARGET ${_target} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    $<TARGET_FILE:${_backend_target}>
-                    ${_RUNTIME_LIBS}
-                    $<TARGET_FILE_DIR:${_target}>
             )
         endforeach()
     endif()
