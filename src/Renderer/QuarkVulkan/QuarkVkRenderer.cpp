@@ -487,58 +487,6 @@ static const std::array<uint32_t, 167> kVk3DFragSpv = {
     0x00000013, 0x00000016, 0x0003003E, 0x00000009, 0x00000017, 0x000100FD, 0x00010038
 };
 
-std::filesystem::path FindGlslangValidator() {
-    const std::filesystem::path cwd = std::filesystem::current_path();
-    const std::array<std::filesystem::path, 4> candidates = {
-        cwd / "external" / "Vulkan" / "lib" / "glslangValidator.exe",
-        cwd / "external" / "Vulkan" / "lib" / "glslangValidator",
-        std::filesystem::path("external") / "Vulkan" / "lib" / "glslangValidator.exe",
-        std::filesystem::path("external") / "Vulkan" / "lib" / "glslangValidator"
-    };
-
-    for (const auto& candidate : candidates) {
-        std::error_code ec;
-        if (std::filesystem::exists(candidate, ec) && !ec) {
-            return candidate;
-        }
-    }
-    return {};
-}
-
-bool RunCompilerProcess(const std::filesystem::path& validator,
-                        const std::filesystem::path& sourcePath,
-                        const std::filesystem::path& outputPath,
-                        const std::string& stageName) {
-#if defined(_WIN32)
-    const std::wstring validatorW = validator.wstring();
-    const std::wstring sourceW = sourcePath.wstring();
-    const std::wstring outputW = outputPath.wstring();
-    const std::wstring stageW(stageName.begin(), stageName.end());
-    std::wstring commandLine = L"\"" + validatorW + L"\" -V -S " + stageW + L" \"" + sourceW + L"\" -o \"" + outputW + L"\"";
-
-    STARTUPINFOW si{};
-    PROCESS_INFORMATION pi{};
-    si.cb = sizeof(si);
-
-    if (!CreateProcessW(validatorW.c_str(), commandLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
-        TraceLog(LogLevel::Error, "VULKAN", TextFormat("Failed to launch glslangValidator: %lu", GetLastError()));
-        return false;
-    }
-
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD exitCode = 0;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
-    return exitCode == 0;
-#else
-    std::ostringstream command;
-    command << '"' << validator.string() << '"' << " -V -S " << stageName << " "
-            << '"' << sourcePath.string() << '"' << " -o " << '"' << outputPath.string() << '"';
-    return std::system(command.str().c_str()) == 0;
-#endif
-}
-
 bool HasStencilComponent(VkFormat format) {
     return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }

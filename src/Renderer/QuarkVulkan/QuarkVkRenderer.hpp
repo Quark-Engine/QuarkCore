@@ -191,8 +191,8 @@ public:
     QuarkVkRenderer() = default;
     ~QuarkVkRenderer() override;
 
-    void Init(SDL_Window* window, int width, int height);
-    void Shutdown();
+    void Init(SDL_Window* window, int width, int height) override;
+    void Shutdown() override;
 
     void BeginDrawing() override;
     void EndDrawing()   override;

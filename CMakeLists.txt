@@ -337,7 +337,13 @@ add_library(glad STATIC "${GLAD_EXTERNAL_DIR}/src/glad.c")
 target_include_directories(glad PUBLIC "${GLAD_EXTERNAL_DIR}/include")
 set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_library(QuarkCore STATIC
+if(WIN32)
+    set(QC_CORE_LIBRARY_TYPE STATIC)
+else()
+    set(QC_CORE_LIBRARY_TYPE SHARED)
+endif()
+
+add_library(QuarkCore ${QC_CORE_LIBRARY_TYPE}
     src/QuarkEvent.cpp
     src/QuarkLights.cpp
     src/QuarkWindow.cpp
@@ -405,10 +411,6 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
     target_link_libraries(${TARGET_NAME} PUBLIC QuarkCore)
     if(MSVC)
         target_link_options(${TARGET_NAME} PRIVATE "/WHOLEARCHIVE:$<TARGET_FILE:QuarkCore>")
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_link_options(${TARGET_NAME} PRIVATE
-            "-Wl,--whole-archive" "$<TARGET_FILE:QuarkCore>" "-Wl,--no-whole-archive"
-        )
     endif()
 
     if(BACKEND_NAME STREQUAL "OPENGL")
