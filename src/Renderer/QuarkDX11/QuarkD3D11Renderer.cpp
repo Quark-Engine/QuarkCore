@@ -4,6 +4,8 @@
 #include <SDL3/SDL_video.h>
 #include <d3dcompiler.h>
 #include <cstring>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -13,9 +15,40 @@ namespace {
 
 void ThrowIfFailed(HRESULT result, const char* operation) {
     if (FAILED(result)) {
-        throw std::runtime_error(std::string(operation) + " failed (HRESULT 0x" +
-                                 std::to_string(static_cast<unsigned long>(result)) + ")");
+        std::ostringstream message;
+        message << operation << " failed (HRESULT 0x" << std::uppercase << std::hex
+                << static_cast<unsigned long>(result) << ")";
+        TraceLog(LogLevel::Error, "D3D11", message.str().c_str());
+        throw std::runtime_error(message.str());
     }
+}
+
+const char* FeatureLevelName(D3D_FEATURE_LEVEL level) {
+    switch (level) {
+        case D3D_FEATURE_LEVEL_11_1: return "11.1";
+        case D3D_FEATURE_LEVEL_11_0: return "11.0";
+        default: return "unknown";
+    }
+}
+
+const char* VendorName(UINT vendorId) {
+    switch (vendorId) {
+        case 0x10DE: return "NVIDIA";
+        case 0x1002: return "AMD";
+        case 0x8086: return "Intel";
+        case 0x1414: return "Microsoft";
+        default: return "Unknown";
+    }
+}
+
+std::string AdapterName(const wchar_t* name) {
+    if (!name) return {};
+    const int size = WideCharToMultiByte(CP_UTF8, 0, name, -1, nullptr, 0, nullptr, nullptr);
+    if (size <= 1) return {};
+    std::string result(static_cast<size_t>(size), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, name, -1, result.data(), size, nullptr, nullptr);
+    result.resize(static_cast<size_t>(size - 1));
+    return result;
 }
 
 } // namespace
@@ -25,7 +58,11 @@ QuarkD3D11Renderer::~QuarkD3D11Renderer() {
 }
 
 void QuarkD3D11Renderer::Init(SDL_Window* window, int width, int height) {
-    if (!window) throw std::runtime_error("D3D11 requires a valid SDL window");
+    TraceLog(LogLevel::Info, "D3D11", TextFormat("Initializing renderer (Window: %dx%d)", width, height));
+    if (!window) {
+        TraceLog(LogLevel::Error, "D3D11", "Initialization failed: SDL window is null.");
+        throw std::runtime_error("D3D11 requires a valid SDL window");
+    }
 
     m_window = window;
     m_width = width;
@@ -35,7 +72,11 @@ void QuarkD3D11Renderer::Init(SDL_Window* window, int width, int height) {
     const SDL_PropertiesID properties = SDL_GetWindowProperties(window);
     HWND hwnd = static_cast<HWND>(SDL_GetPointerProperty(
         properties, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
-    if (!hwnd) throw std::runtime_error("SDL did not provide a Win32 window handle");
+    if (!hwnd) {
+        TraceLog(LogLevel::Error, "D3D11", "SDL did not provide a Win32 window handle.");
+        throw std::runtime_error("SDL did not provide a Win32 window handle");
+    }
+    TraceLog(LogLevel::Trace, "D3D11", TextFormat("Win32 window handle acquired: %p", hwnd));
 
     DXGI_SWAP_CHAIN_DESC swapChainDesc{};
     swapChainDesc.BufferDesc.Width = static_cast<UINT>(width);
@@ -59,7 +100,11 @@ void QuarkD3D11Renderer::Init(SDL_Window* window, int width, int height) {
         D3D_FEATURE_LEVEL_11_0
     };
     D3D_FEATURE_LEVEL selectedLevel{};
+    const char* selectedDriver = "Hardware";
+    bool debugLayerEnabled = creationFlags != 0;
     auto createDevice = [&](D3D_DRIVER_TYPE driverType, UINT flags) {
+        const char* driverName = driverType == D3D_DRIVER_TYPE_HARDWARE ? "Hardware" : "WARP";
+        TraceLog(LogLevel::Trace, "D3D11", TextFormat("Creating %s device (Flags: 0x%X)...", driverName, flags));
         return D3D11CreateDeviceAndSwapChain(
             nullptr, driverType, nullptr, flags,
             featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION,
@@ -68,14 +113,38 @@ void QuarkD3D11Renderer::Init(SDL_Window* window, int width, int height) {
 
     HRESULT result = createDevice(D3D_DRIVER_TYPE_HARDWARE, creationFlags);
     if (FAILED(result) && creationFlags != 0) {
+        TraceLog(LogLevel::Info, "D3D11", TextFormat("D3D11 Debug Layer unavailable (HRESULT: 0x%08X, DXGI_ERROR_SDK_COMPONENT_MISSING), retrying without it.", static_cast<unsigned long>(result)));
+        debugLayerEnabled = false;
         result = createDevice(D3D_DRIVER_TYPE_HARDWARE, 0);
     }
     if (FAILED(result)) {
+        TraceLog(LogLevel::Warn, "D3D11", TextFormat("Hardware device creation failed (HRESULT: 0x%08X), falling back to WARP.", static_cast<unsigned long>(result)));
+        selectedDriver = "WARP";
         result = createDevice(D3D_DRIVER_TYPE_WARP, 0);
     }
     ThrowIfFailed(result, "D3D11CreateDeviceAndSwapChain");
+    TraceLog(LogLevel::Info, "D3D11", TextFormat("Device created successfully (Driver: %s, Feature Level: %s, Debug: %s)",
+        selectedDriver, FeatureLevelName(selectedLevel),
+        debugLayerEnabled ? "enabled" : "disabled"));
+
+    Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+    Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+    DXGI_ADAPTER_DESC adapterDesc{};
+    if (SUCCEEDED(m_device.As(&dxgiDevice)) && SUCCEEDED(dxgiDevice->GetAdapter(&adapter)) &&
+        SUCCEEDED(adapter->GetDesc(&adapterDesc))) {
+        const std::string adapterName = AdapterName(adapterDesc.Description);
+        TraceLog(LogLevel::Info, "D3D11", TextFormat("GPU: %s (%s, Vendor ID: 0x%04X, Device ID: 0x%04X)",
+            adapterName.c_str(), VendorName(adapterDesc.VendorId), adapterDesc.VendorId, adapterDesc.DeviceId));
+        TraceLog(LogLevel::Info, "D3D11", TextFormat("Memory: Dedicated %.2f GB, Shared %.2f GB",
+            static_cast<double>(adapterDesc.DedicatedVideoMemory) / (1024.0 * 1024.0 * 1024.0),
+            static_cast<double>(adapterDesc.SharedSystemMemory) / (1024.0 * 1024.0 * 1024.0)));
+    } else {
+        TraceLog(LogLevel::Warn, "D3D11", "DXGI adapter information is unavailable.");
+    }
+    TraceLog(LogLevel::Info, "D3D11", "API: Direct3D 11 (D3D11 SDK version 7).");
 
     Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer;
+    TraceLog(LogLevel::Trace, "D3D11", "Creating back-buffer render target view...");
     ThrowIfFailed(m_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer)), "IDXGISwapChain::GetBuffer");
     ThrowIfFailed(m_device->CreateRenderTargetView(backBuffer.Get(), nullptr, &m_renderTarget),
                  "ID3D11Device::CreateRenderTargetView");
@@ -98,12 +167,17 @@ void QuarkD3D11Renderer::Init(SDL_Window* window, int width, int height) {
     Microsoft::WRL::ComPtr<ID3DBlob> vertexBytecode;
     Microsoft::WRL::ComPtr<ID3DBlob> pixelBytecode;
     Microsoft::WRL::ComPtr<ID3DBlob> errors;
+    TraceLog(LogLevel::Trace, "SHADER", "[D3D11] Compiling built-in vertex shader (vs_5_0)...");
     ThrowIfFailed(D3DCompile(vertexShaderSource, sizeof(vertexShaderSource) - 1,
                              nullptr, nullptr, nullptr, "main", "vs_5_0", 0, 0,
                              &vertexBytecode, &errors), "D3DCompile vertex shader");
+    TraceLog(LogLevel::Info, "SHADER", TextFormat("[D3D11] Built-in vertex shader compiled (%zu bytes).", vertexBytecode->GetBufferSize()));
+    TraceLog(LogLevel::Trace, "SHADER", "[D3D11] Compiling built-in pixel shader (ps_5_0)...");
     ThrowIfFailed(D3DCompile(pixelShaderSource, sizeof(pixelShaderSource) - 1,
                              nullptr, nullptr, nullptr, "main", "ps_5_0", 0, 0,
                              &pixelBytecode, &errors), "D3DCompile pixel shader");
+    TraceLog(LogLevel::Info, "SHADER", TextFormat("[D3D11] Built-in pixel shader compiled (%zu bytes).", pixelBytecode->GetBufferSize()));
+    TraceLog(LogLevel::Trace, "D3D11", "Creating built-in shader objects...");
     ThrowIfFailed(m_device->CreateVertexShader(vertexBytecode->GetBufferPointer(),
                                                vertexBytecode->GetBufferSize(), nullptr,
                                                &m_triangleVertexShader),
@@ -140,9 +214,11 @@ void QuarkD3D11Renderer::Init(SDL_Window* window, int width, int height) {
     ThrowIfFailed(m_device->CreateRasterizerState(&rasterizerDesc, &m_triangleRasterizerState),
                   "ID3D11Device::CreateRasterizerState");
     RefreshViewport();
+    TraceLog(LogLevel::Info, "D3D11", "Renderer initialized successfully.");
 }
 
 void QuarkD3D11Renderer::Shutdown() {
+    TraceLog(LogLevel::Info, "D3D11", "Shutting down renderer...");
     if (m_context) m_context->ClearState();
     m_renderTarget.Reset();
     m_triangleVertexBuffer.Reset();
@@ -155,6 +231,7 @@ void QuarkD3D11Renderer::Shutdown() {
     m_device.Reset();
     m_window = nullptr;
     m_drawing = false;
+    TraceLog(LogLevel::Info, "D3D11", "Renderer shut down.");
 }
 
 void QuarkD3D11Renderer::RefreshViewport() {
@@ -165,6 +242,7 @@ void QuarkD3D11Renderer::RefreshViewport() {
     viewport.MinDepth = 0.0f;
     viewport.MaxDepth = 1.0f;
     m_context->RSSetViewports(1, &viewport);
+    TraceLog(LogLevel::Trace, "D3D11", TextFormat("Viewport refreshed (%dx%d).", m_width, m_height));
 }
 
 void QuarkD3D11Renderer::BeginDrawing() {

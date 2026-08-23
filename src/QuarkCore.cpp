@@ -77,6 +77,16 @@ const char* ToString(LogLevel level) {
     }
 }
 
+const char* RendererTypeToString(RendererType rendererType) {
+    switch (rendererType) {
+        case RendererType::Auto:   return "Auto";
+        case RendererType::OpenGL: return "OpenGL";
+        case RendererType::Vulkan: return "Vulkan";
+        case RendererType::D3D11:  return "Direct3D 11";
+        default:                   return "Unknown";
+    }
+}
+
 std::string FormatTimeNow() {
     const auto now = std::chrono::system_clock::now();
     const std::time_t t = std::chrono::system_clock::to_time_t(now);
@@ -244,16 +254,31 @@ static bool InitVulkanBackend(int width, int height, const char* title) {
 #endif
 
 void InitWindow(int width, int height, const char* title, RendererType rendererType) {
-    TraceLog(LogLevel::Info, "WINDOW", TextFormat("Starting window creation: %s (%dx%d)", title ? title : "Quark", width, height));
+    TraceLog(LogLevel::Info, "CORE", "Initializing QuarkCore...");
+
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        TraceLog(LogLevel::Error, "SDL", TextFormat("SDL_Init failed: %s", SDL_GetError()));
+        return;
+    }
+    TraceLog(LogLevel::Info, "SDL", "SDL subsystems initialized");
 
     int version = SDL_GetVersion();
+    TraceLog(LogLevel::Info, "CORE",
+        TextFormat("SDL Version: %d.%d.%d",
+            SDL_VERSIONNUM_MAJOR(version),
+            SDL_VERSIONNUM_MINOR(version),
+            SDL_VERSIONNUM_MICRO(version)));
 
-    WriteLog(LogLevel::Info, "CORE", "SDL Version: " + std::to_string(SDL_VERSIONNUM_MAJOR(version)) + "." +
-                                                       std::to_string(SDL_VERSIONNUM_MINOR(version)) + "." +
-                                                       std::to_string(SDL_VERSIONNUM_MICRO(version)));
+    TraceLog(LogLevel::Info, "WINDOW", TextFormat("Starting window creation: %s (%dx%d)", title ? title : "Quark", width, height));
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD))
-        throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
+    SDL_Window* window = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE);
+    if (!window) {
+        TraceLog(LogLevel::Error, "WINDOW", TextFormat("SDL_CreateWindow failed: %s", SDL_GetError()));
+        return;
+    }
+    TraceLog(LogLevel::Info, "WINDOW", "Window created successfully");
+
+    TraceLog(LogLevel::Info, "RENDERER", TextFormat("Selected backend: %s", RendererTypeToString(rendererType)));
 
     auto initVulkan = [&]() {
 #if defined(QC_ENABLE_VULKAN)
@@ -283,7 +308,12 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
         if (rendererType == RendererType::Auto) {
             try {
                 initVulkan();
+            } catch (const std::exception& ex) {
+                TraceLog(LogLevel::Warn, "VULKAN", (std::string("Vulkan initialization failed: ") + ex.what() + "; trying OpenGL.").c_str());
+                CleanupBackendInitFailure();
+                initOpenGL();
             } catch (...) {
+                TraceLog(LogLevel::Warn, "VULKAN", "Vulkan initialization failed with an unknown exception; trying OpenGL.");
                 CleanupBackendInitFailure();
                 initOpenGL();
             }
@@ -294,14 +324,23 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
         } else if (rendererType == RendererType::D3D11) {
             initD3D11();
         }
-    } catch (...) {
+    } catch (const std::exception& ex) {
+        TraceLog(LogLevel::Error, "CORE", (std::string("Renderer initialization failed: ") + ex.what()).c_str());
         CleanupBackendInitFailure();
         SDL_Quit();
-        throw;
+        return;
+    } catch (...) {
+        TraceLog(LogLevel::Error, "CORE", "Renderer initialization failed with an unknown exception.");
+        CleanupBackendInitFailure();
+        SDL_Quit();
+        return;
     }
 
-    if (!gWin.window)
-        throw std::runtime_error(std::string("Window is null after init"));
+    if (!gWin.window) {
+        TraceLog(LogLevel::Error, "WINDOW", "Window is null after renderer initialization.");
+        SDL_Quit();
+        return;
+    }
 
     WriteLog(LogLevel::Info, "WINDOW", "Window created: " + std::string(title ? title : ""));
 }
