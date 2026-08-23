@@ -595,6 +595,14 @@ void QuarkVkRenderer::Update3DDescriptorSet(VkShaderProgramData& program) {
     };
 
     textureFromUniform("uTexture", albedo);
+    std::array<VkDescriptorImageInfo, 6> materialImages{};
+    materialImages.fill(albedo);
+    const std::array<const char*, 6> materialNames = {
+        "albedo", "metalness", "normal", "roughness", "occlusion", "emission"
+    };
+    for (size_t i = 0; i < materialNames.size(); ++i) {
+        textureFromUniform(materialNames[i], materialImages[i]);
+    }
     const auto shadowsIt = program.uniforms.find("shadowMaps");
     if (shadowsIt != program.uniforms.end()) {
         const auto valuesIt = program.uniformValues.find(shadowsIt->second);
@@ -612,11 +620,16 @@ void QuarkVkRenderer::Update3DDescriptorSet(VkShaderProgramData& program) {
         }
     }
 
-    std::array<VkWriteDescriptorSet, 2> writes{};
+    std::array<VkWriteDescriptorSet, 8> writes{};
     writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, program.descriptorSet3D,
                   1, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &albedo, nullptr, nullptr };
     writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, program.descriptorSet3D,
                   2, 0, 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowImages.data(), nullptr, nullptr };
+    for (uint32_t i = 0; i < 6; ++i) {
+        writes[2 + i] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, program.descriptorSet3D,
+                          5 + i, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                          &materialImages[i], nullptr, nullptr };
+    }
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 

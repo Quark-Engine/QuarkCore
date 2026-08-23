@@ -546,7 +546,7 @@ if(QC_BUILD_EXAMPLES)
             list(GET EXAMPLE_SOURCES ${i} _source)
 
             set(_backend_target QuarkCore-OpenGL)
-            if(_target MATCHES "^quarkcore_vulkan")
+            if(_target MATCHES "^quarkcore_vulkan" OR _target STREQUAL "quarkcore_meshes")
                 set(_backend_target QuarkCore-Vulkan)
             endif()
 

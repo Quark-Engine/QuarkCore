@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -89,18 +90,29 @@ static Material LoadAssimpMaterial(QuarkVkRenderer& renderer, const char* filePa
         };
     }
 
-    aiString texturePath;
-    if (AI_SUCCESS == source->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath)) {
+    const std::array<std::pair<int, aiTextureType>, 7> textureTypes = {{
+        { MATERIAL_MAP_ALBEDO, aiTextureType_BASE_COLOR },
+        { MATERIAL_MAP_ALBEDO, aiTextureType_DIFFUSE },
+        { MATERIAL_MAP_METALNESS, aiTextureType_METALNESS },
+        { MATERIAL_MAP_NORMAL, aiTextureType_NORMALS },
+        { MATERIAL_MAP_ROUGHNESS, aiTextureType_DIFFUSE_ROUGHNESS },
+        { MATERIAL_MAP_OCCLUSION, aiTextureType_AMBIENT_OCCLUSION },
+        { MATERIAL_MAP_EMISSION, aiTextureType_EMISSION_COLOR }
+    }};
+    for (const auto& [mapIndex, textureType] : textureTypes) {
+        if (material.maps[mapIndex].texture.valid) continue;
+        aiString texturePath;
+        if (AI_SUCCESS != source->GetTexture(textureType, 0, &texturePath)) continue;
+
         std::string resolvedPath = GetModelDirectory(filePath);
         resolvedPath += texturePath.C_Str();
-        TraceLog(LogLevel::Trace, "MODEL", TextFormat("[Vulkan] Model material loading diffuse texture: %s", resolvedPath.c_str()));
-
+        TraceLog(LogLevel::Trace, "MODEL", TextFormat("[Vulkan] Model material map %d: %s", mapIndex, resolvedPath.c_str()));
         ITexture loadedTex = renderer.LoadTexture(resolvedPath.c_str());
         if (loadedTex.valid) {
-            material.maps[MATERIAL_MAP_ALBEDO].texture.id     = loadedTex.id;
-            material.maps[MATERIAL_MAP_ALBEDO].texture.width  = loadedTex.width;
-            material.maps[MATERIAL_MAP_ALBEDO].texture.height = loadedTex.height;
-            material.maps[MATERIAL_MAP_ALBEDO].texture.valid  = loadedTex.valid;
+            material.maps[mapIndex].texture.id = loadedTex.id;
+            material.maps[mapIndex].texture.width = loadedTex.width;
+            material.maps[mapIndex].texture.height = loadedTex.height;
+            material.maps[mapIndex].texture.valid = loadedTex.valid;
         }
     }
 
@@ -254,14 +266,13 @@ void QuarkVkRenderer::UnloadModel(Model& model) {
         for (int i = 0; i < model.materialCount; ++i) {
             Material& material = model.materials[i];
             if (material.maps) {
-                if (material.maps[MATERIAL_MAP_ALBEDO].texture.valid) {
-                    ITexture texture{
-                        material.maps[MATERIAL_MAP_ALBEDO].texture.id,
-                        material.maps[MATERIAL_MAP_ALBEDO].texture.width,
-                        material.maps[MATERIAL_MAP_ALBEDO].texture.height,
-                        material.maps[MATERIAL_MAP_ALBEDO].texture.valid
-                    };
-                    UnloadTexture(texture);
+                std::set<uint32_t> unloadedTextures;
+                for (int mapIndex = 0; mapIndex <= MATERIAL_MAP_BRDF; ++mapIndex) {
+                    const Texture2D& mapTexture = material.maps[mapIndex].texture;
+                    if (mapTexture.valid && unloadedTextures.insert(mapTexture.id).second) {
+                        ITexture texture{ mapTexture.id, mapTexture.width, mapTexture.height, mapTexture.valid };
+                        UnloadTexture(texture);
+                    }
                 }
                 delete[] material.maps;
                 material.maps = nullptr;
@@ -412,6 +423,21 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
 
     const Mat4 finalTransform = m_currentMatrix * transform;
     auto& vertices = GetActive3DTriangleVertices();
+    auto* drawItems = &m_main3DBatch.drawItems;
+    if (m_activeRenderTargetId != 0) {
+        auto renderTargetIt = m_renderTargets.find(m_activeRenderTargetId);
+        if (renderTargetIt != m_renderTargets.end()) {
+            drawItems = &renderTargetIt->second.drawItems3D;
+        }
+    }
+    const uint32_t firstVertex = static_cast<uint32_t>(vertices.size());
+    const VkDescriptorSet materialDescriptorSet = CreateMaterialDescriptorSet(material);
+    const auto finishDraw = [&]() {
+        const uint32_t vertexCount = static_cast<uint32_t>(vertices.size()) - firstVertex;
+        if (vertexCount > 0) {
+            drawItems->push_back({ materialDescriptorSet, m_currentShaderProgramId, firstVertex, vertexCount });
+        }
+    };
 
     auto pushVertex = [&](int vertexIndex, Color color) {
         const Vec4 world = finalTransform * Vec4{
@@ -478,12 +504,15 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
             const int i2 = static_cast<int>(mesh.indices[tri * 3 + 2]);
             pushTriangle(i0, i1, i2);
         }
+        finishDraw();
         return;
     }
 
     for (int i = 0; i + 2 < mesh.vertexCount; i += 3) {
         pushTriangle(i, i + 1, i + 2);
     }
+
+    finishDraw();
 }
 
 void QuarkVkRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) {

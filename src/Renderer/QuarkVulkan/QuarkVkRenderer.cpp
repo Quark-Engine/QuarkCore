@@ -3,6 +3,7 @@
 
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_vulkan.h>
+#include <shaderc/shaderc.hpp>
 #include <cstddef>
 #include <algorithm>
 #include <array>
@@ -15,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #if defined(_WIN32)
@@ -29,6 +31,165 @@ static const std::vector<const char*> kDeviceExtensions = {
 
 static float NormalizeColorComponent(std::uint8_t value) {
     return static_cast<float>(value) / 255.0f;
+}
+
+static const char* kRuntime2DVertexShader = R"glsl(
+#version 450
+layout(push_constant) uniform ScreenData {
+    vec2 screenSize;
+} screen;
+layout(location = 0) in vec2 aPosition;
+layout(location = 1) in vec2 aTexCoord;
+layout(location = 2) in vec4 aColor;
+layout(location = 0) out vec2 vTexCoord;
+layout(location = 1) out vec4 vColor;
+void main() {
+    vec2 ndc = (aPosition / screen.screenSize) * 2.0 - 1.0;
+    gl_Position = vec4(ndc.x, ndc.y, 0.0, 1.0);
+    vTexCoord = aTexCoord;
+    vColor = aColor;
+}
+)glsl";
+
+static const char* kRuntime2DFragmentShader = R"glsl(
+#version 450
+layout(set = 0, binding = 0) uniform sampler2D texture0;
+layout(location = 0) in vec2 vTexCoord;
+layout(location = 1) in vec4 vColor;
+layout(location = 0) out vec4 outColor;
+void main() {
+    outColor = texture(texture0, vTexCoord) * vColor;
+}
+)glsl";
+
+static const char* kRuntime3DVertexShader = R"glsl(
+#version 450
+layout(location = 0) in vec4 aPosition;
+layout(location = 1) in vec2 aTexCoord;
+layout(location = 2) in vec4 aColor;
+layout(location = 3) in vec4 aNormal;
+layout(location = 4) in vec4 aWorldPosition;
+layout(location = 0) out vec2 vTexCoord;
+layout(location = 1) out vec4 vColor;
+layout(location = 2) out vec3 vNormal;
+layout(location = 3) out vec3 vWorldPosition;
+void main() {
+    gl_Position = aPosition;
+    vTexCoord = aTexCoord;
+    vColor = aColor;
+    vNormal = normalize(aNormal.xyz);
+    vWorldPosition = aWorldPosition.xyz;
+}
+)glsl";
+
+static const char* kRuntime3DFragmentShader = R"glsl(
+#version 450
+layout(set = 0, binding = 1) uniform sampler2D albedoMap;
+layout(set = 0, binding = 5) uniform sampler2D metalnessMap;
+layout(set = 0, binding = 6) uniform sampler2D normalMap;
+layout(set = 0, binding = 7) uniform sampler2D roughnessMap;
+layout(set = 0, binding = 8) uniform sampler2D occlusionMap;
+layout(set = 0, binding = 9) uniform sampler2D emissionMap;
+layout(location = 0) in vec2 vTexCoord;
+layout(location = 1) in vec4 vColor;
+layout(location = 2) in vec3 vNormal;
+layout(location = 3) in vec3 vWorldPosition;
+layout(location = 0) out vec4 outColor;
+
+const float PI = 3.14159265359;
+
+float DistributionGGX(vec3 normal, vec3 halfway, float roughness) {
+    float alpha = roughness * roughness;
+    float alpha2 = alpha * alpha;
+    float normalDotHalfway = max(dot(normal, halfway), 0.0);
+    float denominator = normalDotHalfway * normalDotHalfway * (alpha2 - 1.0) + 1.0;
+    return alpha2 / max(PI * denominator * denominator, 0.0001);
+}
+
+float GeometrySchlickGGX(float normalDotDirection, float roughness) {
+    float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
+    return normalDotDirection / max(normalDotDirection * (1.0 - k) + k, 0.0001);
+}
+
+float GeometrySmith(vec3 normal, vec3 viewDirection, vec3 lightDirection, float roughness) {
+    return GeometrySchlickGGX(max(dot(normal, viewDirection), 0.0), roughness) *
+           GeometrySchlickGGX(max(dot(normal, lightDirection), 0.0), roughness);
+}
+
+vec3 FresnelSchlick(float cosTheta, vec3 baseReflectivity) {
+    return baseReflectivity + (1.0 - baseReflectivity) * pow(1.0 - cosTheta, 5.0);
+}
+
+void main() {
+    vec4 albedoSample = texture(albedoMap, vTexCoord) * vColor;
+    vec3 albedo = pow(max(albedoSample.rgb, vec3(0.0)), vec3(2.2));
+    float metalness = clamp(texture(metalnessMap, vTexCoord).r, 0.0, 1.0);
+    float roughness = clamp(texture(roughnessMap, vTexCoord).r, 0.045, 1.0);
+    float occlusion = clamp(texture(occlusionMap, vTexCoord).r, 0.0, 1.0);
+    vec3 emission = pow(max(texture(emissionMap, vTexCoord).rgb, vec3(0.0)), vec3(2.2));
+
+    vec3 normal = normalize(vNormal);
+    vec3 tangent = normalize(dFdx(vWorldPosition) * dFdy(vTexCoord).y -
+                             dFdy(vWorldPosition) * dFdx(vTexCoord).y);
+    tangent = normalize(tangent - normal * dot(normal, tangent));
+    vec3 bitangent = normalize(cross(normal, tangent));
+    vec3 tangentNormal = texture(normalMap, vTexCoord).xyz * 2.0 - 1.0;
+    normal = normalize(mat3(tangent, bitangent, normal) * tangentNormal);
+
+    vec3 viewDirection = normalize(vec3(0.0, 5.0, 10.0) - vWorldPosition);
+    vec3 baseReflectivity = mix(vec3(0.04), albedo, metalness);
+    vec3 lighting = vec3(0.03) * albedo * occlusion;
+    const vec3 lightPositions[4] = vec3[4](
+        vec3(-3.0, 4.0, 3.0), vec3(3.0, 3.0, 3.0),
+        vec3(-3.0, 3.0, -3.0), vec3(3.0, 3.0, -3.0));
+    const vec3 lightColors[4] = vec3[4](
+        vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0),
+        vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0));
+
+    for (int i = 0; i < 4; ++i) {
+        vec3 toLight = lightPositions[i] - vWorldPosition;
+        float distanceToLight = length(toLight);
+        vec3 lightDirection = toLight / max(distanceToLight, 0.0001);
+        vec3 halfway = normalize(viewDirection + lightDirection);
+        float normalDotLight = max(dot(normal, lightDirection), 0.0);
+        float normalDotView = max(dot(normal, viewDirection), 0.0);
+        if (normalDotLight <= 0.0 || normalDotView <= 0.0) continue;
+        float distribution = DistributionGGX(normal, halfway, roughness);
+        float geometry = GeometrySmith(normal, viewDirection, lightDirection, roughness);
+        vec3 fresnel = FresnelSchlick(max(dot(halfway, viewDirection), 0.0), baseReflectivity);
+        vec3 specular = (distribution * geometry * fresnel) /
+                        max(4.0 * normalDotView * normalDotLight, 0.0001);
+        vec3 diffuse = (1.0 - fresnel) * (1.0 - metalness) * albedo / PI;
+        float attenuation = 1.0 / (1.0 + 0.08 * distanceToLight * distanceToLight);
+        lighting += (diffuse + specular) * lightColors[i] * normalDotLight * attenuation;
+    }
+
+    vec3 color = lighting + emission;
+    color = color / (color + vec3(1.0));
+    color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
+    outColor = vec4(color, albedoSample.a);
+}
+)glsl";
+
+static std::vector<uint32_t> CompileRuntimeShader(const char* source,
+                                                  shaderc_shader_kind kind,
+                                                  const char* stageName) {
+    static std::unordered_map<std::string, std::vector<uint32_t>> cache;
+    const auto cached = cache.find(stageName);
+    if (cached != cache.end()) {
+        return cached->second;
+    }
+
+    shaderc::Compiler compiler;
+    shaderc::CompileOptions options;
+    options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
+    const auto result = compiler.CompileGlslToSpv(source, kind, stageName, options);
+    if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
+        throw std::runtime_error(std::string("Failed to compile runtime Vulkan ") + stageName + ": " + result.GetErrorMessage());
+    }
+    std::vector<uint32_t> spirv(result.cbegin(), result.cend());
+    cache.emplace(stageName, spirv);
+    return spirv;
 }
 
 static const std::array<uint32_t, 367> kQuadVertSpv = {
@@ -772,6 +933,7 @@ void QuarkVkRenderer::Shutdown() {
     m_main3DBatch.lineVertices.clear();
     m_frameTriangleVertices3D.clear();
     m_frameLineVertices3D.clear();
+    m_frame3DDrawItems.clear();
     TraceLog(LogLevel::Info, "VULKAN", "Vulkan renderer shut down successfully.");
 }
 
@@ -824,9 +986,11 @@ void QuarkVkRenderer::EndDrawing() {
         rt.drawItems.clear();
         rt.triangleVertices3D.clear();
         rt.lineVertices3D.clear();
+        rt.drawItems3D.clear();
     }
     m_main3DBatch.triangleVertices.clear();
     m_main3DBatch.lineVertices.clear();
+    m_main3DBatch.drawItems.clear();
 
     if (!UploadFrameGeometry(m_currentFrame)) {
         m_drawing = false;
@@ -1472,21 +1636,31 @@ void QuarkVkRenderer::CreateDescriptorSetLayout() {
     samplerBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT;
     samplerBinding.pImmutableSamplers = nullptr;
 
+    std::array<VkDescriptorSetLayoutBinding, 7> material2DBindings{};
+    material2DBindings[0] = samplerBinding;
+    for (uint32_t binding = 5; binding <= 10; ++binding) {
+        material2DBindings[binding - 4] = { binding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                            VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+    }
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings    = &samplerBinding;
+    layoutInfo.bindingCount = static_cast<uint32_t>(material2DBindings.size());
+    layoutInfo.pBindings    = material2DBindings.data();
 
     if (vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create Vulkan descriptor set layout.");
     }
 
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings3D{};
+    std::array<VkDescriptorSetLayoutBinding, 11> bindings3D{};
     bindings3D[0] = { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr };
     bindings3D[1] = { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
     bindings3D[2] = { 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
     bindings3D[3] = { 3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
     bindings3D[4] = { 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+    for (uint32_t binding = 5; binding <= 10; ++binding) {
+        bindings3D[binding] = { binding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+    }
     VkDescriptorSetLayoutCreateInfo layoutInfo3D{};
     layoutInfo3D.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo3D.bindingCount = static_cast<uint32_t>(bindings3D.size());
@@ -1546,7 +1720,7 @@ void QuarkVkRenderer::CreateDescriptorSetLayout() {
 
 bool QuarkVkRenderer::CreateDescriptorPoolSlab(uint32_t maxSets, VkDescriptorPool& outPool) {
     std::array<VkDescriptorPoolSize, 2> poolSizes = {{
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, maxSets * 5 },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, maxSets * 11 },
         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, maxSets * 3 }
     }};
 
@@ -1576,6 +1750,78 @@ bool QuarkVkRenderer::Allocate3DDescriptorSet(VkDescriptorSet& outSet) {
     m_descriptorPools.push_back(newSlab);
     allocInfo.descriptorPool = newSlab;
     return vkAllocateDescriptorSets(m_device, &allocInfo, &outSet) == VK_SUCCESS;
+}
+
+VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& material) {
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    if (!Allocate3DDescriptorSet(descriptorSet)) return VK_NULL_HANDLE;
+
+    const auto whiteIt = m_textures.find(m_whiteTextureId);
+    if (whiteIt == m_textures.end()) {
+        return VK_NULL_HANDLE;
+    }
+
+    VkDescriptorImageInfo whiteImage{};
+    whiteImage.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    whiteImage.imageView = whiteIt->second.view;
+    whiteImage.sampler = whiteIt->second.sampler;
+
+    std::array<VkDescriptorImageInfo, 7> images{};
+    images.fill(whiteImage);
+    const auto setFallbackImage = [&](size_t index, uint32_t textureId) {
+        const auto textureIt = m_textures.find(textureId);
+        if (textureIt != m_textures.end()) {
+            images[index].imageView = textureIt->second.view;
+            images[index].sampler = textureIt->second.sampler;
+        }
+    };
+    setFallbackImage(1, m_blackTextureId);
+    setFallbackImage(2, m_flatNormalTextureId);
+    setFallbackImage(5, m_blackTextureId);
+    const std::array<int, 6> mapIndices = {
+        MATERIAL_MAP_ALBEDO, MATERIAL_MAP_METALNESS, MATERIAL_MAP_NORMAL,
+        MATERIAL_MAP_ROUGHNESS, MATERIAL_MAP_OCCLUSION, MATERIAL_MAP_EMISSION
+    };
+    for (size_t i = 0; i < mapIndices.size(); ++i) {
+        if (!material.maps) continue;
+        const MaterialMap& map = material.maps[mapIndices[i]];
+        const auto textureIt = m_textures.find(map.texture.id);
+        if (map.texture.valid && textureIt != m_textures.end()) {
+            images[i].imageView = textureIt->second.view;
+            images[i].sampler = textureIt->second.sampler;
+        }
+    }
+
+    VkDescriptorBufferInfo matrices{};
+    matrices.buffer = m_3DDummyBuffer;
+    matrices.offset = 0;
+    matrices.range = 192;
+    VkDescriptorBufferInfo shadowBuffer = matrices;
+    shadowBuffer.offset = 512;
+    shadowBuffer.range = 512;
+    VkDescriptorBufferInfo lightBuffer = matrices;
+    lightBuffer.offset = 1024;
+    lightBuffer.range = 320;
+    std::array<VkDescriptorImageInfo, 4> shadowImages{};
+    shadowImages.fill(whiteImage);
+
+    std::array<VkWriteDescriptorSet, 11> writes{};
+    writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 0, 0, 1,
+                  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &matrices, nullptr };
+    writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 1, 0, 1,
+                  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &images[0], nullptr, nullptr };
+    writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 2, 0, 4,
+                  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowImages.data(), nullptr, nullptr };
+    writes[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 3, 0, 1,
+                  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &shadowBuffer, nullptr };
+    writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 4, 0, 1,
+                  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &lightBuffer, nullptr };
+    for (uint32_t i = 0; i < 6; ++i) {
+        writes[5 + i] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 5 + i, 0, 1,
+                          VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &images[i + 1], nullptr, nullptr };
+    }
+    vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    return descriptorSet;
 }
 
 bool QuarkVkRenderer::AllocateTextureDescriptorSet(VkDescriptorSet& outSet) {
@@ -1777,6 +2023,19 @@ void QuarkVkRenderer::CreateWhiteTexture() {
     if (!CreateTextureFromRGBA(white, 1, 1, m_whiteTextureId)) {
         throw std::runtime_error("Failed to create Vulkan white fallback texture.");
     }
+    const unsigned char black[4] = {0, 0, 0, 255};
+    if (!CreateTextureFromRGBA(black, 1, 1, m_blackTextureId)) {
+        throw std::runtime_error("Failed to create Vulkan black fallback texture.");
+    }
+    const unsigned char flatNormal[4] = {128, 128, 255, 255};
+    if (!CreateTextureFromRGBA(flatNormal, 1, 1, m_flatNormalTextureId)) {
+        throw std::runtime_error("Failed to create Vulkan normal fallback texture.");
+    }
+    Material whiteMaterial{};
+    m_white3DDescriptorSet = CreateMaterialDescriptorSet(whiteMaterial);
+    if (m_white3DDescriptorSet == VK_NULL_HANDLE) {
+        throw std::runtime_error("Failed to create Vulkan white 3D descriptor set.");
+    }
     TraceLog(LogLevel::Trace, "VULKAN", "White fallback texture created.");
 }
 
@@ -1808,11 +2067,13 @@ VkPipeline QuarkVkRenderer::CreatePipelineForRenderPass(VkRenderPass renderPass,
     bool ownsVertexModule = vertexModule == VK_NULL_HANDLE;
     bool ownsFragmentModule = fragmentModule == VK_NULL_HANDLE;
     if (ownsVertexModule) {
-        const std::vector<uint32_t> vertCode(kQuadVertSpv.begin(), kQuadVertSpv.end());
+        const std::vector<uint32_t> vertCode = CompileRuntimeShader(
+            kRuntime2DVertexShader, shaderc_vertex_shader, "built-in 2D vertex shader");
         vertexModule = CreateShaderModule(vertCode);
     }
     if (ownsFragmentModule) {
-        const std::vector<uint32_t> fragCode(kQuadFragSpv.begin(), kQuadFragSpv.end());
+        const std::vector<uint32_t> fragCode = CompileRuntimeShader(
+            kRuntime2DFragmentShader, shaderc_fragment_shader, "built-in 2D fragment shader");
         fragmentModule = CreateShaderModule(fragCode);
     }
 
@@ -1994,8 +2255,7 @@ VkPipeline QuarkVkRenderer::Create3DPipelineForRenderPass(VkRenderPass renderPas
         return VK_NULL_HANDLE;
     }
 
-    const bool custom3D = vertexModule != VK_NULL_HANDLE || fragmentModule != VK_NULL_HANDLE;
-    if (custom3D && m_pipelineLayout3D == VK_NULL_HANDLE) {
+    if (m_pipelineLayout3D == VK_NULL_HANDLE) {
         VkPushConstantRange pushConstantRange{};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset     = 0;
@@ -2013,30 +2273,16 @@ VkPipeline QuarkVkRenderer::Create3DPipelineForRenderPass(VkRenderPass renderPas
         }
     }
 
-    if (!custom3D && m_pipelineLayout == VK_NULL_HANDLE) {
-        VkPushConstantRange pushConstantRange{};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        pushConstantRange.offset = 0;
-        pushConstantRange.size = sizeof(VkPushConstants2D);
-        VkPipelineLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        layoutInfo.setLayoutCount = 1;
-        layoutInfo.pSetLayouts = &m_descriptorSetLayout;
-        layoutInfo.pushConstantRangeCount = 1;
-        layoutInfo.pPushConstantRanges = &pushConstantRange;
-        if (vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan pipeline layout.");
-        }
-    }
-
     const bool ownsVertexModule = vertexModule == VK_NULL_HANDLE;
     const bool ownsFragmentModule = fragmentModule == VK_NULL_HANDLE;
     if (ownsVertexModule) {
-        const std::vector<uint32_t> vertCode(kVk3DVertSpv.begin(), kVk3DVertSpv.end());
+        const std::vector<uint32_t> vertCode = CompileRuntimeShader(
+            kRuntime3DVertexShader, shaderc_vertex_shader, "built-in 3D vertex shader");
         vertexModule = CreateShaderModule(vertCode);
     }
     if (ownsFragmentModule) {
-        const std::vector<uint32_t> fragCode(kVk3DFragSpv.begin(), kVk3DFragSpv.end());
+        const std::vector<uint32_t> fragCode = CompileRuntimeShader(
+            kRuntime3DFragmentShader, shaderc_fragment_shader, "built-in 3D fragment shader");
         fragmentModule = CreateShaderModule(fragCode);
     }
 
@@ -2166,7 +2412,7 @@ VkPipeline QuarkVkRenderer::Create3DPipelineForRenderPass(VkRenderPass renderPas
     pipelineInfo.pDepthStencilState   = &depthStencil;
     pipelineInfo.pColorBlendState     = &colorBlending;
     pipelineInfo.pDynamicState        = &dynamicState;
-    pipelineInfo.layout               = custom3D ? m_pipelineLayout3D : m_pipelineLayout;
+    pipelineInfo.layout               = m_pipelineLayout3D;
     pipelineInfo.renderPass           = renderPass;
     pipelineInfo.subpass              = 0;
 
@@ -3253,6 +3499,7 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
         const uint32_t firstDraw  = static_cast<uint32_t>(m_frameDrawItems.size());
         const uint32_t triFirst   = static_cast<uint32_t>(m_frameTriangleVertices3D.size());
         const uint32_t lineFirst  = static_cast<uint32_t>(m_frameLineVertices3D.size());
+        const uint32_t first3DDrawItem = static_cast<uint32_t>(m_frame3DDrawItems.size());
 
         m_frameVertices.insert(m_frameVertices.end(), rt.vertices.begin(), rt.vertices.end());
         for (uint32_t idx : rt.indices) {
@@ -3267,6 +3514,10 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
                                          rt.triangleVertices3D.begin(), rt.triangleVertices3D.end());
         m_frameLineVertices3D.insert(m_frameLineVertices3D.end(),
                                      rt.lineVertices3D.begin(), rt.lineVertices3D.end());
+        for (Vk3DDrawItem item : rt.drawItems3D) {
+            item.firstVertex += triFirst;
+            m_frame3DDrawItems.push_back(item);
+        }
 
         m_framePasses.push_back(VkFramePass{
             id,
@@ -3277,7 +3528,9 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
             triFirst,
             static_cast<uint32_t>(rt.triangleVertices3D.size()),
             lineFirst,
-            static_cast<uint32_t>(rt.lineVertices3D.size())
+            static_cast<uint32_t>(rt.lineVertices3D.size()),
+            first3DDrawItem,
+            static_cast<uint32_t>(m_frame3DDrawItems.size() - first3DDrawItem)
         });
     }
 
@@ -3287,6 +3540,7 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
         const uint32_t firstDraw  = static_cast<uint32_t>(m_frameDrawItems.size());
         const uint32_t triFirst   = static_cast<uint32_t>(m_frameTriangleVertices3D.size());
         const uint32_t lineFirst  = static_cast<uint32_t>(m_frameLineVertices3D.size());
+        const uint32_t first3DDrawItem = static_cast<uint32_t>(m_frame3DDrawItems.size());
 
         m_frameVertices.insert(m_frameVertices.end(), m_batchVertices.begin(), m_batchVertices.end());
         for (uint32_t idx : m_batchIndices) {
@@ -3303,6 +3557,10 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
         m_frameLineVertices3D.insert(m_frameLineVertices3D.end(),
                                      m_main3DBatch.lineVertices.begin(),
                                      m_main3DBatch.lineVertices.end());
+        for (Vk3DDrawItem item : m_main3DBatch.drawItems) {
+            item.firstVertex += triFirst;
+            m_frame3DDrawItems.push_back(item);
+        }
         m_frame3DShaderProgramId = m_main3DBatch.shaderProgramId;
 
         m_framePasses.push_back(VkFramePass{
@@ -3314,7 +3572,9 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
             triFirst,
             static_cast<uint32_t>(m_main3DBatch.triangleVertices.size()),
             lineFirst,
-            static_cast<uint32_t>(m_main3DBatch.lineVertices.size())
+            static_cast<uint32_t>(m_main3DBatch.lineVertices.size()),
+            first3DDrawItem,
+            static_cast<uint32_t>(m_frame3DDrawItems.size() - first3DDrawItem)
         });
     }
 }
@@ -3431,10 +3691,11 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
 
     const VkFrameData& frame = m_frames[m_currentFrame];
     VkDeviceSize offsets[] = { 0 };
-    VkDescriptorSet whiteDescriptorSet = VK_NULL_HANDLE;
+    VkDescriptorSet whiteDescriptorSet = m_white3DDescriptorSet;
+    VkDescriptorSet white2DDescriptorSet = VK_NULL_HANDLE;
     const auto whiteTexIt = m_textures.find(m_whiteTextureId);
     if (whiteTexIt != m_textures.end()) {
-        whiteDescriptorSet = whiteTexIt->second.descriptorSet;
+        white2DDescriptorSet = whiteTexIt->second.descriptorSet;
     }
     
     for (const VkFramePass& pass : m_framePasses) {
@@ -3485,9 +3746,35 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
             whiteDescriptorSet != VK_NULL_HANDLE) {
             vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_pipelineLayout, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                    m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
 
-            if (pass.triVertexCount > 0 && m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
+            if (pass.drawItemCount3D > 0) {
+                uint32_t cursor = pass.triFirstVertex;
+                for (uint32_t i = 0; i < pass.drawItemCount3D; ++i) {
+                    const Vk3DDrawItem& item = m_frame3DDrawItems[pass.first3DDrawItem + i];
+                    if (item.firstVertex > cursor && m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
+                        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DTri);
+                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                        vkCmdDraw(cmd, item.firstVertex - cursor, 1, cursor, 0);
+                    }
+                    const VkDescriptorSet descriptorSet = item.descriptorSet != VK_NULL_HANDLE
+                        ? item.descriptorSet : whiteDescriptorSet;
+                    if (m_offscreenPipeline3DTri == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE) continue;
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DTri);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            m_pipelineLayout3D, 0, 1, &descriptorSet, 0, nullptr);
+                    vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
+                    cursor = std::max(cursor, item.firstVertex + item.vertexCount);
+                }
+                const uint32_t triEnd = pass.triFirstVertex + pass.triVertexCount;
+                if (cursor < triEnd && m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DTri);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                    vkCmdDraw(cmd, triEnd - cursor, 1, cursor, 0);
+                }
+            } else if (pass.triVertexCount > 0 && m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DTri);
                 vkCmdDraw(cmd, pass.triVertexCount, 1, pass.triFirstVertex, 0);
             }
@@ -3565,7 +3852,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         whiteDescriptorSet != VK_NULL_HANDLE) {
         vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
         VkPipeline custom3DPipeline = m_pipeline3DTri;
-        VkPipelineLayout custom3DLayout = m_pipelineLayout;
+        VkPipelineLayout custom3DLayout = m_pipelineLayout3D;
         VkDescriptorSet custom3DSet = whiteDescriptorSet;
         bool usingCustom3D = false;
         if (m_frame3DShaderProgramId != 0) {
@@ -3640,22 +3927,59 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                                0, sizeof(lighting), &lighting);
         }
 
-        if (mainPass->triVertexCount > 0 && custom3DPipeline != VK_NULL_HANDLE) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, custom3DPipeline);
-            vkCmdDraw(cmd, mainPass->triVertexCount, 1, mainPass->triFirstVertex, 0);
-        }
-        if (mainPass->lineVertexCount > 0 && m_pipeline3DLines != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_pipelineLayout, 0, 1, &whiteDescriptorSet, 0, nullptr);
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DLines);
-            vkCmdDraw(cmd, mainPass->lineVertexCount, 1,
-                      static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + mainPass->lineFirstVertex, 0);
+        if (mainPass->drawItemCount3D > 0) {
+            uint32_t cursor = mainPass->triFirstVertex;
+            for (uint32_t i = 0; i < mainPass->drawItemCount3D; ++i) {
+                const Vk3DDrawItem& item = m_frame3DDrawItems[mainPass->first3DDrawItem + i];
+                if (item.firstVertex > cursor && m_pipeline3DTri != VK_NULL_HANDLE) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DTri);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                    vkCmdDraw(cmd, item.firstVertex - cursor, 1, cursor, 0);
+                }
+                VkPipeline pipeline = m_pipeline3DTri;
+                VkPipelineLayout layout = m_pipelineLayout3D;
+                VkDescriptorSet descriptorSet = whiteDescriptorSet;
+                const auto shaderIt = m_shaderPrograms.find(item.shaderProgramId);
+                if (shaderIt != m_shaderPrograms.end() && shaderIt->second.pipeline3D != VK_NULL_HANDLE) {
+                    pipeline = shaderIt->second.pipeline3D;
+                    layout = m_pipelineLayout3D;
+                    descriptorSet = item.descriptorSet;
+                } else if (item.descriptorSet != VK_NULL_HANDLE) {
+                    descriptorSet = item.descriptorSet;
+                }
+                if (pipeline == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE) continue;
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        layout, 0, 1, &descriptorSet, 0, nullptr);
+                vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
+                cursor = std::max(cursor, item.firstVertex + item.vertexCount);
+            }
+            const uint32_t triEnd = mainPass->triFirstVertex + mainPass->triVertexCount;
+            if (cursor < triEnd && m_pipeline3DTri != VK_NULL_HANDLE) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DTri);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                vkCmdDraw(cmd, triEnd - cursor, 1, cursor, 0);
+            }
+        } else {
+            if (mainPass->triVertexCount > 0 && custom3DPipeline != VK_NULL_HANDLE) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, custom3DPipeline);
+                vkCmdDraw(cmd, mainPass->triVertexCount, 1, mainPass->triFirstVertex, 0);
+            }
+            if (mainPass->lineVertexCount > 0 && m_pipeline3DLines != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DLines);
+                vkCmdDraw(cmd, mainPass->lineVertexCount, 1,
+                          static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + mainPass->lineFirstVertex, 0);
+            }
         }
     }
 
-    if (whiteDescriptorSet != VK_NULL_HANDLE) {
+    if (white2DDescriptorSet != VK_NULL_HANDLE) {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_pipelineLayout, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                m_pipelineLayout, 0, 1, &white2DDescriptorSet, 0, nullptr);
     }
 
     VkPipeline pipeline2D = m_pipeline2D;

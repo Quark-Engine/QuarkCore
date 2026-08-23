@@ -147,6 +147,13 @@ struct VkDrawItem {
     uint32_t indexCount  = 0;
 };
 
+struct Vk3DDrawItem {
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    uint32_t shaderProgramId = 0;
+    uint32_t firstVertex = 0;
+    uint32_t vertexCount = 0;
+};
+
 struct VkFramePass {
     uint32_t renderTargetId = 0;
     uint32_t firstDrawItem  = 0;
@@ -157,6 +164,8 @@ struct VkFramePass {
     uint32_t triVertexCount  = 0;
     uint32_t lineFirstVertex = 0;
     uint32_t lineVertexCount = 0;
+    uint32_t first3DDrawItem = 0;
+    uint32_t drawItemCount3D = 0;
 };
 struct VkRenderTargetData {
     uint32_t      textureId   = 0;
@@ -174,6 +183,7 @@ struct VkRenderTargetData {
     std::vector<VkDrawItem>    drawItems;
     std::vector<Vk3DVertex>    triangleVertices3D;
     std::vector<Vk3DVertex>    lineVertices3D;
+    std::vector<Vk3DDrawItem>  drawItems3D;
 };
 
 struct VkShaderProgramData {
@@ -366,6 +376,7 @@ private:
     bool CreateDescriptorPoolSlab(uint32_t maxSets, VkDescriptorPool& outPool);
     bool AllocateTextureDescriptorSet(VkDescriptorSet& outSet);
     bool Allocate3DDescriptorSet(VkDescriptorSet& outSet);
+        VkDescriptorSet CreateMaterialDescriptorSet(const Material& material);
     void Update3DDescriptorSet(VkShaderProgramData& program);
 
     void RecreateSwapChain();
@@ -452,6 +463,7 @@ private:
     struct Vk3DGeometryBatch {
         std::vector<Vk3DVertex> triangleVertices;
         std::vector<Vk3DVertex> lineVertices;
+        std::vector<Vk3DDrawItem> drawItems;
         uint32_t shaderProgramId = 0;
     };
 
@@ -560,6 +572,9 @@ private:
     VkSampleCountFlagBits m_msaaSamples          = VK_SAMPLE_COUNT_1_BIT;
 
     uint32_t m_whiteTextureId = 0;
+    uint32_t m_blackTextureId = 0;
+    uint32_t m_flatNormalTextureId = 0;
+    VkDescriptorSet m_white3DDescriptorSet = VK_NULL_HANDLE;
 
     uint32_t m_nextShaderProgramId = 1;
     uint32_t m_currentShaderProgramId = 0;
@@ -587,6 +602,7 @@ private:
     std::vector<VkFramePass>   m_framePasses;
     std::vector<Vk3DVertex>    m_frameTriangleVertices3D;
     std::vector<Vk3DVertex>    m_frameLineVertices3D;
+        std::vector<Vk3DDrawItem>  m_frame3DDrawItems;
     uint32_t                   m_frame3DShaderProgramId = 0;
 
     VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;
