@@ -271,13 +271,6 @@ void InitWindow(int width, int height, const char* title, RendererType rendererT
 
     TraceLog(LogLevel::Info, "WINDOW", TextFormat("Starting window creation: %s (%dx%d)", title ? title : "Quark", width, height));
 
-    SDL_Window* window = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE);
-    if (!window) {
-        TraceLog(LogLevel::Error, "WINDOW", TextFormat("SDL_CreateWindow failed: %s", SDL_GetError()));
-        return;
-    }
-    TraceLog(LogLevel::Info, "WINDOW", "Window created successfully");
-
     TraceLog(LogLevel::Info, "RENDERER", TextFormat("Selected backend: %s", RendererTypeToString(rendererType)));
 
     auto initVulkan = [&]() {

@@ -464,7 +464,15 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
         if(NOT WIN32)
             message(FATAL_ERROR "The D3D11 backend is only available on Windows")
         endif()
-        target_sources(${TARGET_NAME} PRIVATE src/Renderer/QuarkDX11/QuarkD3D11Renderer.cpp)
+        target_sources(${TARGET_NAME} PRIVATE
+            src/Renderer/QuarkDX11/QuarkD3D11Renderer.cpp
+            src/Renderer/QuarkDX11/QuarkD3D11Device.cpp
+            src/Renderer/QuarkDX11/QuarkD3D11SwapChain.cpp
+            src/Renderer/QuarkDX11/QuarkD3D11Resources.cpp
+            src/Renderer/QuarkDX11/QuarkD3D11Pipeline.cpp
+            src/Renderer/QuarkDX11/QuarkD3D11CommandContext.cpp
+            src/Renderer/QuarkDX11/QuarkD3D11ShaderCompiler.cpp
+        )
         target_compile_definitions(${TARGET_NAME} PRIVATE QC_ENABLE_D3D11)
         target_link_libraries(${TARGET_NAME} PUBLIC
             SDL3::SDL3
