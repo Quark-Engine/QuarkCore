@@ -1,7 +1,7 @@
 #include "QuarkCore/QuarkCore.hpp"
 
 int main() {
-    qc::InitWindow(1280, 720, "QuarkCore Sandbox", qc::RendererType::OpenGL);
+    qc::InitWindow(1280, 720, "QuarkCore GL Sandbox", qc::RendererType::OpenGL);
     qc::SetWindowMinimumSize(800, 450);
     qc::StartTextInput();
     qc::SetLogLevel(qc::LogLevel::Trace);
@@ -20,6 +20,7 @@ int main() {
         qc::Color{245, 245, 245, 255},
         qc::Color{40, 120, 210, 255}
     );
+    qc::Texture2D opengl = qc::LoadTexture("resources/opengl.png");
 
     qc::Camera2D camera2d;
     camera2d.target = { 220.0f, 340.0f };
@@ -72,7 +73,19 @@ int main() {
             qc::DrawModel(model, { 3, 0, 0 }, 1.0f, qc::GREEN);
         qc::EndMode3D();
 
-        
+        constexpr float openglScale = 0.25f;
+        constexpr float openglTopMargin = 20.0f;
+        qc::DrawTextureEx(
+            opengl,
+            qc::Vec2{
+                static_cast<float>(qc::GetScreenWidth()) - opengl.width * openglScale,
+                openglTopMargin
+            },
+            0.0f,
+            openglScale,
+            qc::WHITE
+        );
+
         qc::DrawTexturePro(
             target.texture,
             qc::Rectangle{ 0, (float)target.texture.height, (float)target.texture.width, -(float)target.texture.height },
@@ -96,6 +109,7 @@ int main() {
 
     qc::StopTextInput();
     qc::UnloadTexture(checker);
+    qc::UnloadTexture(opengl);
     qc::UnloadRenderTexture(target);
     qc::CloseWindow();
     return 0;

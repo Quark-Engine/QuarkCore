@@ -515,7 +515,7 @@ endif()
 
 if(QC_BUILD_EXAMPLES)
     set(EXAMPLE_TARGETS
-        quarkcore_sandbox
+        quarkcore_opengl
         quarkcore_textures_and_shaders
         quarkcore_3d_primitives
         quarkcore_meshes
@@ -528,7 +528,7 @@ if(QC_BUILD_EXAMPLES)
     )
 
     set(EXAMPLE_SOURCES
-        examples/sandbox.cpp
+        examples/opengl.cpp
         examples/textures_and_shaders.cpp
         examples/primitives_3d.cpp
         examples/meshes.cpp
