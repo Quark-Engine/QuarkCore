@@ -1,17 +1,24 @@
 #include "QuarkD3D11CommandContext.hpp"
 
 #include <cstring>
+#include <cmath>
 
 #if defined(_WIN32)
 namespace qc {
 
 void D3D11CommandContext::Initialize(const D3D11Device &device, D3D11SwapChain &swapChain,
-                                     D3D11Pipeline &pipeline, D3D11Resources &resources, int, int)
+                                     D3D11Pipeline &pipeline, D3D11Resources &resources,
+                                     int width, int height)
 {
     m_context = device.Context();
     m_swapChain = &swapChain;
     m_pipeline = &pipeline;
     m_resources = &resources;
+    m_activeRenderTarget = swapChain.RenderTarget();
+    m_defaultWidth = width;
+    m_defaultHeight = height;
+    m_activeWidth = width;
+    m_activeHeight = height;
 
     TraceLog(LogLevel::Trace, "D3D11", "Immediate command context initialized.");
 }
@@ -27,9 +34,12 @@ void D3D11CommandContext::RefreshViewport(int width, int height)
                             0.0f, 1.0f};
 
     m_context->RSSetViewports(1, &viewport);
+}
 
-    TraceLog(LogLevel::Trace, "D3D11",
-             TextFormat("Viewport refreshed (%dx%d).", width, height));
+void D3D11CommandContext::SetDefaultViewportSize(int width, int height)
+{
+    m_defaultWidth = width;
+    m_defaultHeight = height;
 }
 
 void D3D11CommandContext::BeginDrawing()
@@ -40,6 +50,9 @@ void D3D11CommandContext::BeginDrawing()
     }
 
     ID3D11RenderTargetView *renderTarget = m_swapChain->RenderTarget();
+    m_activeRenderTarget = renderTarget;
+    m_activeWidth = m_defaultWidth;
+    m_activeHeight = m_defaultHeight;
     m_context->OMSetRenderTargets(1, &renderTarget, nullptr);
 
 }
@@ -63,27 +76,30 @@ void D3D11CommandContext::Clear(Color color)
     const float clearColor[] = {color.r / 255.0f, color.g / 255.0f, color.b / 255.0f,
                                 color.a / 255.0f};
 
-    m_context->ClearRenderTargetView(m_swapChain->RenderTarget(), clearColor);
+    m_context->ClearRenderTargetView(m_activeRenderTarget, clearColor);
 
 }
 
-void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, int width,
-                                       int height)
+void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, int, int)
 {
-    if (!m_context || !m_pipeline || !m_resources || width <= 0 || height <= 0)
+    if (!m_context || !m_pipeline || !m_resources || m_activeWidth <= 0 || m_activeHeight <= 0)
     {
         return;
     }
 
     const float colorValues[] = {color.r / 255.0f, color.g / 255.0f, color.b / 255.0f,
                                  color.a / 255.0f};
-    const Vec2 points[] = {v1, v2, v3};
+    const Vec2 points[] = {
+        m_camera2DActive ? GetWorldToScreen2D(v1, m_camera2D) : v1,
+        m_camera2DActive ? GetWorldToScreen2D(v2, m_camera2D) : v2,
+        m_camera2DActive ? GetWorldToScreen2D(v3, m_camera2D) : v3
+    };
     float vertices[18]{};
 
     for (int index = 0; index < 3; ++index)
     {
-        vertices[index * 6] = points[index].x / width * 2.0f - 1.0f;
-        vertices[index * 6 + 1] = 1.0f - points[index].y / height * 2.0f;
+        vertices[index * 6] = points[index].x / m_activeWidth * 2.0f - 1.0f;
+        vertices[index * 6 + 1] = 1.0f - points[index].y / m_activeHeight * 2.0f;
         std::memcpy(vertices + index * 6 + 2, colorValues, sizeof(colorValues));
     }
 
@@ -95,6 +111,114 @@ void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, i
 
 }
 
+void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
+                                          Rectangle source,
+                                          Rectangle destination,
+                                          Vec2 origin,
+                                          float rotation,
+                                          Color tint,
+                                          int,
+                                          int)
+{
+    if (!m_context || !m_pipeline || !m_resources || !texture.IsValid() ||
+        texture.width <= 0 || texture.height <= 0 || m_activeWidth <= 0 || m_activeHeight <= 0) {
+        return;
+    }
+
+    ID3D11ShaderResourceView* shaderResource = m_resources->ShaderResource(texture.id);
+    if (!shaderResource) {
+        return;
+    }
+
+    const float radians = rotation * 3.14159265359f / 180.0f;
+    const float cosine = std::cos(radians);
+    const float sine = std::sin(radians);
+    if (m_resources->IsRenderTexture(texture.id) && source.height < 0.0f) {
+        source.y += source.height;
+        source.height = -source.height;
+    }
+
+    const float u0 = source.x / texture.width;
+    const float v0 = source.y / texture.height;
+    const float u1 = (source.x + source.width) / texture.width;
+    const float v1 = (source.y + source.height) / texture.height;
+    const Vec2 local[] = {
+        {-origin.x, -origin.y},
+        {destination.width - origin.x, -origin.y},
+        {destination.width - origin.x, destination.height - origin.y},
+        {-origin.x, destination.height - origin.y}
+    };
+    const Vec2 uv[] = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
+    const int indices[] = {0, 1, 2, 0, 2, 3};
+    const float color[] = {
+        tint.r / 255.0f,
+        tint.g / 255.0f,
+        tint.b / 255.0f,
+        tint.a / 255.0f
+    };
+    float vertices[6 * 8]{};
+
+    for (int index = 0; index < 6; ++index) {
+        const int vertexIndex = indices[index];
+        const float rotatedX = local[vertexIndex].x * cosine - local[vertexIndex].y * sine;
+        const float rotatedY = local[vertexIndex].x * sine + local[vertexIndex].y * cosine;
+        Vec2 position{destination.x + rotatedX, destination.y + rotatedY};
+        if (m_camera2DActive) {
+            position = GetWorldToScreen2D(position, m_camera2D);
+        }
+
+        float* vertex = vertices + index * 8;
+        vertex[0] = position.x / m_activeWidth * 2.0f - 1.0f;
+        vertex[1] = 1.0f - position.y / m_activeHeight * 2.0f;
+        vertex[2] = uv[vertexIndex].x;
+        vertex[3] = uv[vertexIndex].y;
+        std::memcpy(vertex + 4, color, sizeof(color));
+    }
+
+    m_resources->UpdateDynamicBuffer(
+        m_context,
+        m_pipeline->VertexBuffer(),
+        vertices,
+        sizeof(vertices));
+    m_pipeline->BindTexture(m_context, shaderResource);
+    m_context->Draw(6, 0);
+}
+
+void D3D11CommandContext::BeginTextureMode(const IRenderTexture& target)
+{
+    if (!m_context || !m_resources || target.id == 0) {
+        return;
+    }
+
+    ID3D11RenderTargetView* renderTarget = m_resources->RenderTarget(target.id);
+    if (!renderTarget) {
+        return;
+    }
+
+    m_context->OMSetRenderTargets(1, &renderTarget, nullptr);
+    m_activeRenderTarget = renderTarget;
+    m_activeWidth = target.texture.width;
+    m_activeHeight = target.texture.height;
+    RefreshViewport(target.texture.width, target.texture.height);
+}
+
+void D3D11CommandContext::EndTextureMode(int width, int height)
+{
+    BeginDrawing();
+    RefreshViewport(width, height);
+}
+
+void D3D11CommandContext::BeginMode2D(const Camera2D& camera)
+{
+    m_camera2D = camera;
+    m_camera2DActive = true;
+}
+
+void D3D11CommandContext::EndMode2D()
+{
+    m_camera2DActive = false;
+}
+
 void D3D11CommandContext::Shutdown()
 {
     TraceLog(LogLevel::Trace, "D3D11", "Immediate command context shut down.");
@@ -103,6 +227,13 @@ void D3D11CommandContext::Shutdown()
     m_swapChain = nullptr;
     m_pipeline = nullptr;
     m_resources = nullptr;
+    m_activeRenderTarget = nullptr;
+    m_defaultWidth = 0;
+    m_defaultHeight = 0;
+    m_activeWidth = 0;
+    m_activeHeight = 0;
+    m_camera2D = {};
+    m_camera2DActive = false;
 }
 
 } // namespace qc

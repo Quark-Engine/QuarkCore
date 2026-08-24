@@ -67,18 +67,21 @@ public:
     void ClearBackground(Color color) override;
     void RefreshViewport() override;
 
-    void DrawRectangle(float, float, float, float, Color) override {}
-    void DrawRectangle(const Rectangle &, Color) override {}
-    void DrawRectangleV(Vec2, Vec2, Color) override {}
-    void DrawRectangleLines(Rectangle, float, Color) override {}
-    void DrawRectangleRounded(Rectangle, float, int, Color) override {}
-    void DrawCircle(float, float, float, Color) override {}
-    void DrawCircleLines(float, float, float, Color) override {}
-    void DrawEllipse(float, float, float, float, Color) override {}
-    void DrawLine(float, float, float, float, Color) override {}
-    void DrawLineV(Vec2, Vec2, Color) override {}
+    void DrawRectangle(float x, float y, float width, float height, Color color) override;
+    void DrawRectangle(const Rectangle &rectangle, Color color) override;
+    void DrawRectangleV(Vec2 position, Vec2 size, Color color) override;
+    void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color) override;
+    void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments,
+                              Color color) override;
+    void DrawCircle(float centerX, float centerY, float radius, Color color) override;
+    void DrawCircleLines(float centerX, float centerY, float radius, Color color) override;
+    void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV,
+                     Color color) override;
+
+    void DrawLine(float x1, float y1, float x2, float y2, Color color) override;
+    void DrawLineV(Vec2 start, Vec2 end, Color color) override;
     void DrawTriangle(Vec2, Vec2, Vec2, Color) override;
-    void DrawPoly(Vec2, int, float, float, Color) override {}
+    void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color) override;
 
     void Set3DView(const Mat4 &, const Mat4 &) override {}
     void DrawLine3D(Vec3, Vec3, Color) override {}
@@ -96,29 +99,30 @@ public:
     void DrawCylinderWiresEx(Vec3, Vec3, float, float, int, Color) override {}
     void DrawGrid(int, float) override {}
 
-    void DrawText(const char *, int, int, int, Color) override {}
-    void DrawTextEx(IFont, const char *, Vec2, float, float, Color) override {}
-    Vec2 MeasureTextEx(IFont, const char *, float, float) override { return {}; }
-    int MeasureText(const char *, int) override { return 0; }
+    void DrawTexture(const ITexture &, float, float, Color) override;
+    void DrawTextureV(const ITexture &, Vec2, Color) override;
+    void DrawTextureEx(const ITexture &, Vec2, float, float, Color) override;
+    void DrawTextureRec(const ITexture &, Rectangle, Vec2, Color) override;
+    void DrawTexturePro(ITexture, Rectangle, Rectangle, Vec2, float, Color) override;
+    void DrawTextureTiled(ITexture, float, Vec2, Color) override;
+    void DrawTextureNPatch(ITexture, Rectangle, Rectangle, Vec2, float, Color) override;
+    ITexture LoadTexture(const char *) override;
+    ITexture GetRenderTextureTexture(IRenderTexture) override;
+    void UnloadTexture(ITexture &) override;
+    IRenderTexture LoadRenderTexture(int, int) override;
+    void UnloadRenderTexture(IRenderTexture) override;
+    ITexture GenCheckerTexture(int, int, int, Color, Color) override;
+    bool isTextureValid(ITexture &) override;
+    bool isRenderTextureValid(IRenderTexture &) override;
 
-    void DrawTexture(const ITexture &, float, float, Color) override {}
-    void DrawTextureV(const ITexture &, Vec2, Color) override {}
-    void DrawTextureEx(const ITexture &, Vec2, float, float, Color) override {}
-    void DrawTextureRec(const ITexture &, Rectangle, Vec2, Color) override {}
-    void DrawTexturePro(ITexture, Rectangle, Rectangle, Vec2, float, Color) override {}
-    void DrawTextureTiled(ITexture, float, Vec2, Color) override {}
-    void DrawTextureNPatch(ITexture, Rectangle, Rectangle, Vec2, float, Color) override {}
-    ITexture LoadTexture(const char *) override { return {}; }
-    ITexture GetRenderTextureTexture(IRenderTexture) override { return {}; }
-    void UnloadTexture(ITexture &) override {}
-    IRenderTexture LoadRenderTexture(int, int) override { return {}; }
-    void UnloadRenderTexture(IRenderTexture) override {}
-    ITexture GenCheckerTexture(int, int, int, Color, Color) override { return {}; }
-    bool isTextureValid(ITexture &) override { return false; }
-    bool isRenderTextureValid(IRenderTexture &) override { return false; }
+    void DrawText(const char *text, int x, int y, int fontSize, Color color) override;
+    void DrawTextEx(IFont font, const char *text, Vec2 position, float fontSize,
+                    float spacing, Color tint) override;
+    Vec2 MeasureTextEx(IFont font, const char *text, float fontSize, float spacing) override;
+    int MeasureText(const char *text, int fontSize) override;
 
-    IFont LoadFont(const char *, int) override { return {}; }
-    void UnloadFont(IFont &) override {}
+    IFont LoadFont(const char *filePath, int fontSize) override;
+    void UnloadFont(IFont &font) override;
 
     void BeginShaderMode(const Shader &) override {}
     void EndShaderMode() override {}
@@ -143,9 +147,9 @@ public:
     void SetShaderValueTexture(const Shader &, int, const ITexture &) override {}
     void SetShaderValueTextureUnit(const Shader &, int, const ITexture &, int) override {}
 
-    void BeginMode2D(const Camera2D &) override {}
-    void EndMode2D() override {}
-    Camera2D GetCamera2D() const override { return {}; }
+    void BeginMode2D(const Camera2D &camera) override;
+    void EndMode2D() override;
+    Camera2D GetCamera2D() const override { return m_commands.GetCamera2D(); }
     void BeginMode3D(const Camera3D &) override {}
     void EndMode3D() override {}
     void PushMatrix() override {}
@@ -170,8 +174,8 @@ public:
     void DrawMesh(const Mesh &, const Material &, const Mat4 &) override {}
     void DrawMeshInstanced(const Mesh &, const Material &, const Mat4 *, int) override {}
 
-    void BeginTextureMode(IRenderTexture) override {}
-    void EndTextureMode() override {}
+    void BeginTextureMode(IRenderTexture target) override;
+    void EndTextureMode() override;
     RendererType GetType() const override { return RendererType::D3D11; }
     bool ShouldClose() const override { return m_shouldClose; }
     void SetTargetFPS(int fps) override { m_targetFps = fps; }
@@ -184,6 +188,32 @@ public:
     int GetScreenHeight() const override { return m_height; }
 
 private:
+    struct GlyphData {
+        Rectangle uv{};
+        float advanceX = 0.0f;
+        float offsetX = 0.0f;
+        float offsetY = 0.0f;
+        int width = 0;
+        int height = 0;
+    };
+
+    struct FontData {
+        ITexture atlasTexture{};
+        int baseSize = 0;
+        int ascent = 0;
+        int descent = 0;
+        int lineHeight = 0;
+        std::array<GlyphData, 95> glyphs{};
+    };
+
+    bool LoadFontData(const char *filePath, int fontSize, FontData &fontData);
+    const FontData *GetFontData(IFont font) const;
+    void DrawTextWithFontData(const FontData &fontData, const char *text,
+                              Vec2 position, float fontSize, float spacing, Color tint);
+    Vec2 MeasureTextWithFontData(const FontData &fontData, const char *text,
+                                 float fontSize, float spacing) const;
+    uint32_t EnsureDefaultFont();
+
     SDL_Window *m_window = nullptr;
     D3D11Device m_device;
     D3D11SwapChain m_swapChain;
@@ -191,7 +221,6 @@ private:
     D3D11ShaderCompiler m_shaderCompiler;
     D3D11Pipeline m_pipeline;
     D3D11CommandContext m_commands;
-
     int m_width = 0;
     int m_height = 0;
     int m_targetFps = 60;
@@ -200,7 +229,9 @@ private:
     float m_frameTime = 0.0f;
     bool m_drawing = false;
     std::chrono::steady_clock::time_point m_lastFrame{};
-    
+    std::unordered_map<uint32_t, FontData> m_fonts;
+    uint32_t m_nextFontId = 1;
+    uint32_t m_defaultFontId = 0;
     std::array<float, 16> m_identity{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
                                      0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 };
