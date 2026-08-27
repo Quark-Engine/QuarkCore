@@ -106,6 +106,12 @@ layout(set = 0, binding = 6) uniform sampler2D normalMap;
 layout(set = 0, binding = 7) uniform sampler2D roughnessMap;
 layout(set = 0, binding = 8) uniform sampler2D occlusionMap;
 layout(set = 0, binding = 9) uniform sampler2D emissionMap;
+layout(push_constant) uniform Lighting {
+    vec4 lightPositions[4];
+    vec4 lightColors[4];
+    vec4 timeData;
+    vec4 lightEnabled;
+} lighting;
 layout(location = 0) in vec2 vTexCoord;
 layout(location = 1) in vec4 vColor;
 layout(location = 2) in vec3 vNormal;
@@ -156,6 +162,13 @@ vec3 FresnelSchlick(float cosTheta, vec3 baseReflectivity) {
     return baseReflectivity + (1.0 - baseReflectivity) * pow(1.0 - cosTheta, 5.0);
 }
 
+float LightEnabled(int index) {
+    if (index == 0) return lighting.lightEnabled.x;
+    if (index == 1) return lighting.lightEnabled.y;
+    if (index == 2) return lighting.lightEnabled.z;
+    return lighting.lightEnabled.w;
+}
+
 void main() {
     vec4 albedoSample = texture(albedoMap, vTexCoord) * vColor;
     vec3 albedo = pow(max(albedoSample.rgb, vec3(0.0)), vec3(2.2));
@@ -183,6 +196,7 @@ void main() {
         vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0));
 
     for (int i = 0; i < 4; ++i) {
+        if (LightEnabled(i) <= 0.0) continue;
         vec3 toLight = lightPositions[i] - vWorldPosition;
         float distanceToLight = length(toLight);
         vec3 lightDirection = toLight / max(distanceToLight, 0.0001);
@@ -4217,21 +4231,19 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         VkPipeline custom3DPipeline = m_pipeline3DTri;
         VkPipelineLayout custom3DLayout = m_pipelineLayout3D;
         VkDescriptorSet custom3DSet = whiteDescriptorSet;
-        bool usingCustom3D = false;
         if (m_frame3DShaderProgramId != 0) {
             const auto shaderIt = m_shaderPrograms.find(m_frame3DShaderProgramId);
             if (shaderIt != m_shaderPrograms.end() && shaderIt->second.pipeline3D != VK_NULL_HANDLE) {
                 custom3DPipeline = shaderIt->second.pipeline3D;
                 custom3DLayout = m_pipelineLayout3D;
                 custom3DSet = shaderIt->second.descriptorSet3D;
-                usingCustom3D = true;
             }
         }
 
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 custom3DLayout, 0, 1, &custom3DSet, 0, nullptr);
 
-        if (usingCustom3D) {
+        {
             if (m_3DDummyMapped != nullptr) {
                 std::memcpy(static_cast<char*>(m_3DDummyMapped) + 0,
                             m_currentMatrix.m, sizeof(m_currentMatrix.m));

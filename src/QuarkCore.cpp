@@ -256,7 +256,7 @@ static bool InitVulkanBackend(int width, int height, const char* title) {
 void InitWindow(int width, int height, const char* title, RendererType rendererType) {
     TraceLog(LogLevel::Info, "CORE", "Initializing QuarkCore...");
 
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
         TraceLog(LogLevel::Error, "SDL", TextFormat("SDL_Init failed: %s", SDL_GetError()));
         return;
     }
