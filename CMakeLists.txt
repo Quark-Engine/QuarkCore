@@ -493,6 +493,8 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
 
     if(WIN32 AND BACKEND_NAME STREQUAL "OPENGL")
         set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME QuarkCore)
+    elseif(WIN32 AND BACKEND_NAME STREQUAL "D3D11")
+        set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME QuarkCore-Direct3D11)
     endif()
 
     if(MSVC)
