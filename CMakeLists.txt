@@ -479,6 +479,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
             d3d11
             dxgi
             d3dcompiler
+            dxguid
         )
     else()
         message(FATAL_ERROR "Unknown QuarkCore backend: ${BACKEND_NAME}")
@@ -541,8 +542,8 @@ if(QC_BUILD_EXAMPLES)
     )
 
     if(WIN32)
-        list(APPEND EXAMPLE_TARGETS quarkcore_d3d11)
-        list(APPEND EXAMPLE_SOURCES examples/d3d11.cpp)
+        list(APPEND EXAMPLE_TARGETS quarkcore_d3d11 quarkcore_d3d11_shaders)
+        list(APPEND EXAMPLE_SOURCES examples/d3d11.cpp examples/d3d11_shaders.cpp)
     endif()
 
     list(LENGTH EXAMPLE_TARGETS _count)
@@ -580,14 +581,14 @@ if(QC_BUILD_EXAMPLES)
             set(_backend_target QuarkCore-OpenGL)
             if(_target MATCHES "^quarkcore_vulkan" OR _target STREQUAL "quarkcore_meshes")
                 set(_backend_target QuarkCore-Vulkan)
-            elseif(_target STREQUAL "quarkcore_d3d11")
+            elseif(_target STREQUAL "quarkcore_d3d11" OR _target STREQUAL "quarkcore_d3d11_shaders")
                 set(_backend_target QuarkCore-D3D11)
             endif()
 
             add_executable(${_target} ${_source})
             target_link_libraries(${_target} PRIVATE ${_backend_target})
 
-            if(_target STREQUAL "quarkcore_d3d11" AND EXISTS "$ENV{WINDIR}/System32/d3dcompiler_47.dll")
+            if((_target STREQUAL "quarkcore_d3d11" OR _target STREQUAL "quarkcore_d3d11_shaders") AND EXISTS "$ENV{WINDIR}/System32/d3dcompiler_47.dll")
                 add_custom_command(TARGET ${_target} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
                         "$ENV{WINDIR}/System32/d3dcompiler_47.dll"

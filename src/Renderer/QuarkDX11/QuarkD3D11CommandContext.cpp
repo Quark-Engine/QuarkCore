@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <cmath>
+#include <vector>
 
 #if defined(_WIN32)
 namespace qc {
@@ -94,6 +95,40 @@ void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, i
         m_camera2DActive ? GetWorldToScreen2D(v2, m_camera2D) : v2,
         m_camera2DActive ? GetWorldToScreen2D(v3, m_camera2D) : v3
     };
+
+    if (m_shaderOverride.Active())
+    {
+        const UINT floatsPerVertex = m_shaderOverride.strideBytes / sizeof(float);
+        std::vector<float> vertices(static_cast<size_t>(floatsPerVertex) * 3, 0.0f);
+
+        for (int index = 0; index < 3; ++index)
+        {
+            float *vertex = vertices.data() + static_cast<size_t>(index) * floatsPerVertex;
+            vertex[m_shaderOverride.positionOffset / sizeof(float)] =
+                points[index].x / m_activeWidth * 2.0f - 1.0f;
+            vertex[m_shaderOverride.positionOffset / sizeof(float) + 1] =
+                1.0f - points[index].y / m_activeHeight * 2.0f;
+            if (m_shaderOverride.colorOffset != 0xFFFFFFFFu)
+            {
+                std::memcpy(vertex + m_shaderOverride.colorOffset / sizeof(float), colorValues,
+                            sizeof(colorValues));
+            }
+            if (m_shaderOverride.texCoordOffset != 0xFFFFFFFFu)
+            {
+                vertex[m_shaderOverride.texCoordOffset / sizeof(float)] =
+                    points[index].x / m_activeWidth;
+                vertex[m_shaderOverride.texCoordOffset / sizeof(float) + 1] =
+                    points[index].y / m_activeHeight;
+            }
+        }
+
+        m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer(), vertices.data(),
+                                         static_cast<UINT>(vertices.size() * sizeof(float)));
+        BindOverride(nullptr);
+        m_context->Draw(3, 0);
+        return;
+    }
+
     float vertices[18]{};
 
     for (int index = 0; index < 3; ++index)
@@ -156,6 +191,49 @@ void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
         tint.b / 255.0f,
         tint.a / 255.0f
     };
+
+    if (m_shaderOverride.Active())
+    {
+        const UINT floatsPerVertex = m_shaderOverride.strideBytes / sizeof(float);
+        std::vector<float> vertices(static_cast<size_t>(floatsPerVertex) * 6, 0.0f);
+
+        for (int index = 0; index < 6; ++index)
+        {
+            const int vertexIndex = indices[index];
+            const float rotatedX = local[vertexIndex].x * cosine - local[vertexIndex].y * sine;
+            const float rotatedY = local[vertexIndex].x * sine + local[vertexIndex].y * cosine;
+            Vec2 position{destination.x + rotatedX, destination.y + rotatedY};
+            if (m_camera2DActive) {
+                position = GetWorldToScreen2D(position, m_camera2D);
+            }
+
+            float *vertex = vertices.data() + static_cast<size_t>(index) * floatsPerVertex;
+            vertex[m_shaderOverride.positionOffset / sizeof(float)] =
+                position.x / m_activeWidth * 2.0f - 1.0f;
+            vertex[m_shaderOverride.positionOffset / sizeof(float) + 1] =
+                1.0f - position.y / m_activeHeight * 2.0f;
+            if (m_shaderOverride.texCoordOffset != 0xFFFFFFFFu)
+            {
+                vertex[m_shaderOverride.texCoordOffset / sizeof(float)] = uv[vertexIndex].x;
+                vertex[m_shaderOverride.texCoordOffset / sizeof(float) + 1] = uv[vertexIndex].y;
+            }
+            if (m_shaderOverride.colorOffset != 0xFFFFFFFFu)
+            {
+                std::memcpy(vertex + m_shaderOverride.colorOffset / sizeof(float), color,
+                            sizeof(color));
+            }
+        }
+
+        m_resources->UpdateDynamicBuffer(
+            m_context,
+            m_pipeline->VertexBuffer(),
+            vertices.data(),
+            static_cast<UINT>(vertices.size() * sizeof(float)));
+        BindOverride(shaderResource);
+        m_context->Draw(6, 0);
+        return;
+    }
+
     float vertices[6 * 8]{};
 
     for (int index = 0; index < 6; ++index) {
@@ -182,6 +260,50 @@ void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
         sizeof(vertices));
     m_pipeline->BindTexture(m_context, shaderResource);
     m_context->Draw(6, 0);
+}
+
+void D3D11CommandContext::BindOverride(ID3D11ShaderResourceView *drawnResource)
+{
+    if (!m_context || !m_pipeline)
+    {
+        return;
+    }
+
+    const ShaderOverride &shaderOverride = m_shaderOverride;
+    const UINT stride = shaderOverride.strideBytes;
+    const UINT offset = 0;
+    ID3D11Buffer *vertexBuffer = m_pipeline->VertexBuffer();
+
+    m_context->IASetInputLayout(shaderOverride.inputLayout);
+    m_context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+    m_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    m_context->RSSetState(m_pipeline->Rasterizer());
+    m_context->VSSetShader(shaderOverride.vertexShader, nullptr, 0);
+    m_context->PSSetShader(shaderOverride.pixelShader, nullptr, 0);
+
+    if (shaderOverride.constantBuffer)
+    {
+        ID3D11Buffer *constantBuffer = shaderOverride.constantBuffer;
+        m_context->VSSetConstantBuffers(0, 1, &constantBuffer);
+        m_context->PSSetConstantBuffers(0, 1, &constantBuffer);
+    }
+
+    ID3D11ShaderResourceView *resources[8] = {};
+    for (size_t index = 0; index < 8; ++index)
+    {
+        resources[index] = shaderOverride.shaderResources[index];
+    }
+    if (drawnResource)
+    {
+        resources[0] = drawnResource;
+    }
+    m_context->PSSetShaderResources(0, 8, resources);
+
+    ID3D11SamplerState *sampler = m_pipeline->Sampler();
+    m_context->PSSetSamplers(0, 1, &sampler);
+
+    const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    m_context->OMSetBlendState(m_pipeline->Blend(), blendFactor, 0xFFFFFFFF);
 }
 
 void D3D11CommandContext::BeginTextureMode(const IRenderTexture& target)
@@ -234,6 +356,7 @@ void D3D11CommandContext::Shutdown()
     m_activeHeight = 0;
     m_camera2D = {};
     m_camera2DActive = false;
+    m_shaderOverride = {};
 }
 
 } // namespace qc

@@ -52,6 +52,9 @@
 #include <array>
 #include <chrono>
 #include <vector>
+#include <unordered_map>
+#include <string>
+#include <fstream>
 
 namespace qc {
 
@@ -124,28 +127,31 @@ public:
     IFont LoadFont(const char *filePath, int fontSize) override;
     void UnloadFont(IFont &font) override;
 
-    void BeginShaderMode(const Shader &) override {}
-    void EndShaderMode() override {}
-    Shader LoadShader(const char *, const char *) override { return {}; }
-    Shader LoadShaderFromMemory(const char *, const char *) override { return {}; }
-    void UnloadShader(Shader &) override {}
-    bool isShaderValid(Shader &) override { return false; }
-    int GetShaderLocation(const Shader &, const char *) override { return -1; }
-    int GetShaderLocation(const Shader &, ShaderLocationIndex) override { return -1; }
-    int GetShaderAttributeLocation(const Shader &, const char *) override { return -1; }
-    void SetShaderValue(const Shader &, int, float) override {}
-    void SetShaderValue(const Shader &, int, int) override {}
-    void SetShaderValue(const Shader &, int, const Color &) override {}
-    void SetShaderValue(const Shader &, int, const Vec2 &) override {}
-    void SetShaderValue(const Shader &, int, const Vec3 &) override {}
-    void SetShaderValue(const Shader &, int, const Vec4 &) override {}
-    void SetShaderValueMatrix(const Shader &, int, const float *) override {}
-    void SetShaderValueSampler(const Shader &, int, int) override {}
-    void SetShaderValue(const Shader &, int, const void *, int) override {}
-    void SetShaderValueV(const Shader &, int, const void *, int, int) override {}
-    void SetShaderValueMatrix(const Shader &, int, const Matrix &) override {}
-    void SetShaderValueTexture(const Shader &, int, const ITexture &) override {}
-    void SetShaderValueTextureUnit(const Shader &, int, const ITexture &, int) override {}
+    void BeginShaderMode(const Shader &shader) override;
+    void EndShaderMode() override;
+    Shader LoadShader(const char *vsFileName, const char *fsFileName) override;
+    Shader LoadShaderFromMemory(const char *vsSource, const char *fsSource) override;
+    void UnloadShader(Shader &shader) override;
+    bool isShaderValid(Shader &shader) override;
+    int GetShaderLocation(const Shader &shader, const char *uniformName) override;
+    int GetShaderLocation(const Shader &shader, ShaderLocationIndex locIndex) override;
+    int GetShaderAttributeLocation(const Shader &shader, const char *attribName) override;
+    void SetShaderValue(const Shader &shader, int locIndex, float value) override;
+    void SetShaderValue(const Shader &shader, int locIndex, int value) override;
+    void SetShaderValue(const Shader &shader, int locIndex, const Color &value) override;
+    void SetShaderValue(const Shader &shader, int locIndex, const Vec2 &value) override;
+    void SetShaderValue(const Shader &shader, int locIndex, const Vec3 &value) override;
+    void SetShaderValue(const Shader &shader, int locIndex, const Vec4 &value) override;
+    void SetShaderValueMatrix(const Shader &shader, int locIndex, const float *mat) override;
+    void SetShaderValueSampler(const Shader &shader, int locIndex, int textureUnit) override;
+    void SetShaderValue(const Shader &shader, int locIndex, const void *value,
+                        int uniformType) override;
+    void SetShaderValueV(const Shader &shader, int locIndex, const void *value, int uniformType,
+                         int count) override;
+    void SetShaderValueMatrix(const Shader &shader, int locIndex, const Matrix &mat) override;
+    void SetShaderValueTexture(const Shader &shader, int locIndex, const ITexture &texture) override;
+    void SetShaderValueTextureUnit(const Shader &shader, int locIndex, const ITexture &texture,
+                                   int textureUnit) override;
 
     void BeginMode2D(const Camera2D &camera) override;
     void EndMode2D() override;
@@ -206,6 +212,44 @@ private:
         std::array<GlyphData, 95> glyphs{};
     };
 
+    struct ShaderUniformInfo {
+        std::string name;
+        uint32_t offset = 0;
+        uint32_t size = 0;
+    };
+
+    struct ShaderProgramData {
+        Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader;
+        Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader;
+        Microsoft::WRL::ComPtr<ID3D11InputLayout> inputLayout;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> constantBuffer;
+        std::vector<ShaderUniformInfo> uniformInfos;
+        std::unordered_map<std::string, int> uniforms;
+        std::unordered_map<std::string, int> attributes;
+        std::unordered_map<int, std::vector<uint8_t>> uniformValues;
+        std::unordered_map<int, int> uniformTypes;
+        std::unordered_map<int, uint32_t> textureIds;
+        std::unordered_map<int, UINT> textureSlots;
+        UINT nextTextureSlot = 1;
+        UINT strideBytes = 0;
+        UINT positionOffset = 0;
+        UINT texCoordOffset = 0xFFFFFFFFu;
+        UINT colorOffset = 0xFFFFFFFFu;
+        bool hasPosition = false;
+        std::vector<uint8_t> constantStaging;
+        UINT constantBufferSize = 0;
+        bool dirty = false;
+    };
+
+    D3D11CommandContext::ShaderOverride BuildShaderOverride(uint32_t shaderId);
+    void BuildShaderProgram(ShaderProgramData &program, const char *vsSource, const char *fsSource);
+    void RegisterShaderTexture(ShaderProgramData &program, int locIndex, uint32_t textureId);
+    void UploadConstantBuffer(ShaderProgramData &program);
+    void EnsureConstantCapacity(ShaderProgramData &program, size_t byteCount);
+    void StoreUniformValue(ShaderProgramData &program, int locIndex, int uniformType,
+                           const void *value, size_t elementBytes, int count);
+    ShaderProgramData *GetShaderProgram(uint32_t shaderId);
+
     bool LoadFontData(const char *filePath, int fontSize, FontData &fontData);
     const FontData *GetFontData(IFont font) const;
     void DrawTextWithFontData(const FontData &fontData, const char *text,
@@ -232,6 +276,10 @@ private:
     std::unordered_map<uint32_t, FontData> m_fonts;
     uint32_t m_nextFontId = 1;
     uint32_t m_defaultFontId = 0;
+    std::unordered_map<uint32_t, ShaderProgramData> m_shaderPrograms;
+    uint32_t m_nextShaderId = 1;
+    uint32_t m_currentShaderId = 0;
+    ITexture m_whiteShaderTexture{};
     std::array<float, 16> m_identity{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
                                      0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 };

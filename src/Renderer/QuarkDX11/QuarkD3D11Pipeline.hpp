@@ -15,6 +15,9 @@ public:
     void Bind(ID3D11DeviceContext *context) const;
     void BindTexture(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource) const;
     ID3D11Buffer *VertexBuffer() const { return m_vertexBuffer; }
+    ID3D11RasterizerState *Rasterizer() const { return m_rasterizerState.Get(); }
+    ID3D11BlendState *Blend() const { return m_blendState.Get(); }
+    ID3D11SamplerState *Sampler() const { return m_textureSampler.Get(); }
 
 private:
     ID3D11Buffer *m_vertexBuffer = nullptr;

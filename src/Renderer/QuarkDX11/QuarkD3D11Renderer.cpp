@@ -4,15 +4,145 @@
 #if defined(_WIN32)
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include <d3dcompiler.h>
+#include <d3d11shader.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <string>
+#include <utility>
 
 namespace qc
 {
 
 namespace {
+
+const char* ShaderLocationNames[SHADER_LOC_COUNT] = {
+    "POSITION",
+    "TEXCOORD0",
+    "TEXCOORD1",
+    "NORMAL",
+    "TANGENT",
+    "COLOR",
+    "mvp",
+    "view",
+    "projection",
+    "model",
+    "normalMatrix",
+    "viewPos",
+    "colDiffuse",
+    "colSpecular",
+    "colAmbient",
+    "albedo",
+    "metalness",
+    "normal",
+    "roughness",
+    "occlusion",
+    "emission",
+    "height",
+    "cubemap",
+    "irradiance",
+    "prefilter",
+    "brdf",
+    "boneIds",
+    "boneWeights",
+    "boneTransforms",
+    "instanceTransform"
+};
+
+constexpr char kDefaultHlslVertexSource[] = R"(
+    struct VSInput {
+        float2 position : POSITION;
+        float2 texCoord : TEXCOORD0;
+        float4 color : COLOR;
+    };
+
+    struct VSOutput {
+        float4 position : SV_POSITION;
+        float2 texCoord : TEXCOORD0;
+        float4 color : COLOR;
+    };
+
+    VSOutput main(VSInput input) {
+        VSOutput output;
+        output.position = float4(input.position, 0.0, 1.0);
+        output.texCoord = input.texCoord;
+        output.color = input.color;
+        return output;
+    }
+)";
+
+constexpr char kDefaultHlslPixelSource[] = R"(
+    Texture2D textureMap : register(t0);
+    SamplerState textureSampler : register(s0);
+
+    struct PSInput {
+        float4 position : SV_POSITION;
+        float2 texCoord : TEXCOORD0;
+        float4 color : COLOR;
+    };
+
+    float4 main(PSInput input) : SV_TARGET {
+        return textureMap.Sample(textureSampler, input.texCoord) * input.color;
+    }
+)";
+
+bool ReadTextFile(const char* path, std::string& out)
+{
+    if (!path) {
+        return false;
+    }
+
+    std::ifstream file(path, std::ios::in | std::ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    out.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    return true;
+}
+
+UINT AlignTo16(UINT value)
+{
+    return (value + 15u) & ~15u;
+}
+
+UINT CountMaskComponents(BYTE mask)
+{
+    UINT count = 0;
+    for (BYTE bit = 1; bit != 0; bit <<= 1) {
+        if (mask & bit) {
+            ++count;
+        }
+    }
+    return count > 0 ? count : 1;
+}
+
+DXGI_FORMAT SignatureFormat(D3D_REGISTER_COMPONENT_TYPE componentType, UINT components)
+{
+    switch (componentType) {
+        case D3D_REGISTER_COMPONENT_SINT32:
+            return components >= 4 ? DXGI_FORMAT_R32G32B32A32_SINT :
+                   components == 3 ? DXGI_FORMAT_R32G32B32_SINT :
+                   components == 2 ? DXGI_FORMAT_R32G32_SINT : DXGI_FORMAT_R32_SINT;
+        case D3D_REGISTER_COMPONENT_UINT32:
+            return components >= 4 ? DXGI_FORMAT_R32G32B32A32_UINT :
+                   components == 3 ? DXGI_FORMAT_R32G32B32_UINT :
+                   components == 2 ? DXGI_FORMAT_R32G32_UINT : DXGI_FORMAT_R32_UINT;
+        case D3D_REGISTER_COMPONENT_FLOAT32:
+        default:
+            return components >= 4 ? DXGI_FORMAT_R32G32B32A32_FLOAT :
+                   components == 3 ? DXGI_FORMAT_R32G32B32_FLOAT :
+                   components == 2 ? DXGI_FORMAT_R32G32_FLOAT : DXGI_FORMAT_R32_FLOAT;
+    }
+}
+
+bool SemanticEquals(const char* semantic, const char* name)
+{
+    return semantic != nullptr && _stricmp(semantic, name) == 0;
+}
 
 const char* DefaultFontPath()
 {
@@ -88,6 +218,10 @@ void QuarkD3D11Renderer::Init(SDL_Window *window, int width, int height)
     m_swapChain.Initialize(m_device, window, m_width, m_height);
     m_pipeline.Initialize(m_device.Get(), m_shaderCompiler, m_resources);
     m_commands.Initialize(m_device, m_swapChain, m_pipeline, m_resources, m_width, m_height);
+    {
+        const uint8_t white[4] = {255, 255, 255, 255};
+        m_whiteShaderTexture = m_resources.CreateTexture(m_device.Get(), white, 1, 1);
+    }
     RefreshViewport();
     TraceLog(LogLevel::Info, "D3D11", "Renderer initialized successfully.");
 }
@@ -96,6 +230,12 @@ void QuarkD3D11Renderer::Shutdown()
 {
     TraceLog(LogLevel::Info, "D3D11", "Shutting down D3D11 renderer...");
 
+    m_currentShaderId = 0;
+    m_shaderPrograms.clear();
+    if (m_whiteShaderTexture.IsValid()) {
+        m_resources.DestroyTexture(m_whiteShaderTexture.id);
+        m_whiteShaderTexture = {};
+    }
     m_commands.Shutdown();
     m_pipeline.Shutdown();
     m_resources.Shutdown();
@@ -899,6 +1039,754 @@ void QuarkD3D11Renderer::BeginTextureMode(IRenderTexture target)
 void QuarkD3D11Renderer::EndTextureMode()
 {
     m_commands.EndTextureMode(m_width, m_height);
+}
+
+QuarkD3D11Renderer::ShaderProgramData *QuarkD3D11Renderer::GetShaderProgram(uint32_t shaderId)
+{
+    if (shaderId == 0) {
+        return nullptr;
+    }
+
+    const auto iterator = m_shaderPrograms.find(shaderId);
+    return iterator == m_shaderPrograms.end() ? nullptr : &iterator->second;
+}
+
+void QuarkD3D11Renderer::BuildShaderProgram(ShaderProgramData &program,
+                                            const char *vsSource,
+                                            const char *fsSource)
+{
+    ID3D11Device *device = m_device.Get();
+
+    const auto vertexBytecode = m_shaderCompiler.Compile(vsSource, "main", "vs_5_0");
+    const auto pixelBytecode = m_shaderCompiler.Compile(fsSource, "main", "ps_5_0");
+
+    d3d11::ThrowIfFailed(device->CreateVertexShader(vertexBytecode->GetBufferPointer(),
+                                                    vertexBytecode->GetBufferSize(), nullptr,
+                                                    &program.vertexShader),
+                         "ID3D11Device::CreateVertexShader");
+    d3d11::ThrowIfFailed(device->CreatePixelShader(pixelBytecode->GetBufferPointer(),
+                                                   pixelBytecode->GetBufferSize(), nullptr,
+                                                   &program.pixelShader),
+                         "ID3D11Device::CreatePixelShader");
+
+    Microsoft::WRL::ComPtr<ID3D11ShaderReflection> vertexReflector = nullptr;
+    Microsoft::WRL::ComPtr<ID3D11ShaderReflection> pixelReflector = nullptr;
+
+    d3d11::ThrowIfFailed(D3DReflect(vertexBytecode->GetBufferPointer(),
+                                    vertexBytecode->GetBufferSize(),
+                                    IID_ID3D11ShaderReflection,
+                                    reinterpret_cast<void **>(vertexReflector.GetAddressOf())),
+                         "D3DReflect");
+    d3d11::ThrowIfFailed(D3DReflect(pixelBytecode->GetBufferPointer(),
+                                    pixelBytecode->GetBufferSize(),
+                                    IID_ID3D11ShaderReflection,
+                                    reinterpret_cast<void **>(pixelReflector.GetAddressOf())),
+                         "D3DReflect");
+
+    D3D11_SHADER_DESC vertexDescription{};
+    vertexReflector->GetDesc(&vertexDescription);
+
+    std::vector<D3D11_INPUT_ELEMENT_DESC> inputElements;
+    inputElements.reserve(vertexDescription.InputParameters);
+
+    UINT byteOffset = 0;
+    for (UINT index = 0; index < vertexDescription.InputParameters; ++index) {
+        D3D11_SIGNATURE_PARAMETER_DESC signature{};
+        vertexReflector->GetInputParameterDesc(index, &signature);
+
+        const UINT components = CountMaskComponents(signature.Mask);
+        D3D11_INPUT_ELEMENT_DESC element{};
+        element.SemanticName = signature.SemanticName;
+        element.SemanticIndex = signature.SemanticIndex;
+        element.Format = SignatureFormat(signature.ComponentType, components);
+        element.InputSlot = 0;
+        element.AlignedByteOffset = byteOffset;
+        element.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
+        element.InstanceDataStepRate = 0;
+        inputElements.push_back(element);
+
+        program.attributes[signature.SemanticName] = static_cast<int>(index);
+
+        if (SemanticEquals(signature.SemanticName, "POSITION")) {
+            program.positionOffset = byteOffset;
+            program.hasPosition = true;
+        } else if (SemanticEquals(signature.SemanticName, "TEXCOORD") &&
+                   program.texCoordOffset == 0xFFFFFFFFu) {
+            program.texCoordOffset = byteOffset;
+        } else if (SemanticEquals(signature.SemanticName, "COLOR")) {
+            program.colorOffset = byteOffset;
+        }
+
+        byteOffset += components * sizeof(float);
+    }
+
+    program.strideBytes = byteOffset;
+
+    d3d11::ThrowIfFailed(
+        device->CreateInputLayout(inputElements.data(),
+                                  static_cast<UINT>(inputElements.size()),
+                                  vertexBytecode->GetBufferPointer(),
+                                  vertexBytecode->GetBufferSize(),
+                                  &program.inputLayout),
+        "ID3D11Device::CreateInputLayout shader");
+
+    std::unordered_map<std::string, UINT> constantBufferBases;
+    UINT totalConstantSize = 0;
+
+    const auto reflectStage =
+        [&](ID3D11ShaderReflection *reflector) {
+            if (!reflector) {
+                return;
+            }
+
+            D3D11_SHADER_DESC stageDescription{};
+            reflector->GetDesc(&stageDescription);
+
+            for (UINT bufferIndex = 0; bufferIndex < stageDescription.ConstantBuffers;
+                 ++bufferIndex) {
+                auto *constantBuffer = reflector->GetConstantBufferByIndex(bufferIndex);
+                D3D11_SHADER_BUFFER_DESC bufferDescription{};
+                if (FAILED(constantBuffer->GetDesc(&bufferDescription)) ||
+                    bufferDescription.Type != D3D11_CT_CBUFFER) {
+                    continue;
+                }
+
+                const std::string bufferName =
+                    bufferDescription.Name ? bufferDescription.Name : "";
+                UINT baseOffset = 0;
+                const auto baseIterator = constantBufferBases.find(bufferName);
+                if (baseIterator != constantBufferBases.end()) {
+                    baseOffset = baseIterator->second;
+                } else {
+                    baseOffset = AlignTo16(totalConstantSize);
+                    totalConstantSize = baseOffset + AlignTo16(bufferDescription.Size);
+                    constantBufferBases.emplace(bufferName, baseOffset);
+                }
+
+                for (UINT variableIndex = 0; variableIndex < bufferDescription.Variables;
+                     ++variableIndex) {
+                    auto *variable = constantBuffer->GetVariableByIndex(variableIndex);
+                    D3D11_SHADER_VARIABLE_DESC variableDescription{};
+                    if (FAILED(variable->GetDesc(&variableDescription))) {
+                        continue;
+                    }
+
+                    const std::string uniformName =
+                        variableDescription.Name ? variableDescription.Name : "";
+                    if (uniformName.empty() || program.uniforms.count(uniformName)) {
+                        continue;
+                    }
+
+                    ShaderUniformInfo info{};
+                    info.name = uniformName;
+                    info.offset = baseOffset + variableDescription.StartOffset;
+                    info.size = variableDescription.Size;
+                    program.uniformInfos.push_back(std::move(info));
+                    program.uniforms.emplace(uniformName,
+                                             static_cast<int>(program.uniformInfos.size()) - 1);
+                }
+            }
+        };
+
+    reflectStage(vertexReflector.Get());
+    reflectStage(pixelReflector.Get());
+
+    if (totalConstantSize > 0) {
+        EnsureConstantCapacity(program, AlignTo16(totalConstantSize));
+        TraceLog(LogLevel::Trace, "SHADER",
+                 TextFormat("[D3D11] Reflected shader constants (%u bytes, %zu uniforms)",
+                            program.constantBufferSize,
+                            program.uniformInfos.size()));
+    }
+}
+
+void QuarkD3D11Renderer::EnsureConstantCapacity(ShaderProgramData &program, size_t byteCount)
+{
+    const size_t aligned = static_cast<size_t>(AlignTo16(static_cast<UINT>(
+        byteCount > 0xFFFFFFFFull ? 0xFFFFFFFFu : static_cast<UINT>(byteCount))));
+
+    if (aligned > program.constantStaging.size()) {
+        const size_t grown = std::max(aligned, program.constantStaging.size() * 2);
+        program.constantStaging.resize(grown, 0);
+    }
+
+    if (program.constantStaging.size() > program.constantBufferSize &&
+        m_device.Get() != nullptr) {
+        D3D11_BUFFER_DESC description{};
+        description.ByteWidth = static_cast<UINT>(program.constantStaging.size());
+        description.Usage = D3D11_USAGE_DYNAMIC;
+        description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        description.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+        d3d11::ThrowIfFailed(m_device.Get()->CreateBuffer(&description, nullptr,
+                                                          &program.constantBuffer),
+                             "ID3D11Device::CreateBuffer shader constants");
+        program.constantBufferSize = description.ByteWidth;
+        program.dirty = true;
+    }
+}
+
+void QuarkD3D11Renderer::UploadConstantBuffer(ShaderProgramData &program)
+{
+    ID3D11DeviceContext *context = m_device.Context();
+    if (!context || !program.constantBuffer || !program.dirty || program.constantStaging.empty()) {
+        return;
+    }
+
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(context->Map(program.constantBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0,
+                            &mapped))) {
+        TraceLog(LogLevel::Warn, "SHADER", "[D3D11] Failed to map shader constant buffer.");
+        return;
+    }
+
+    const size_t bytes = std::min<size_t>(program.constantStaging.size(),
+                                          program.constantBufferSize);
+    std::memcpy(mapped.pData, program.constantStaging.data(), bytes);
+    context->Unmap(program.constantBuffer.Get(), 0);
+    program.dirty = false;
+}
+
+void QuarkD3D11Renderer::StoreUniformValue(ShaderProgramData &program, int locIndex,
+                                           int uniformType, const void *value,
+                                           size_t elementBytes, int count)
+{
+    if (locIndex < 0 || value == nullptr || count <= 0 || elementBytes == 0) {
+        return;
+    }
+
+    if (locIndex >= static_cast<int>(program.uniformInfos.size())) {
+        TraceLog(LogLevel::Warn, "SHADER",
+                 TextFormat("[D3D11] Ignoring uniform write to unknown location %d.", locIndex));
+        return;
+    }
+
+    const ShaderUniformInfo &info = program.uniformInfos[static_cast<size_t>(locIndex)];
+    const size_t totalBytes = static_cast<size_t>(count) * elementBytes;
+
+    EnsureConstantCapacity(program, static_cast<size_t>(info.offset) + totalBytes);
+    std::memcpy(program.constantStaging.data() + info.offset, value, totalBytes);
+
+    auto &storage = program.uniformValues[locIndex];
+    storage.assign(static_cast<const uint8_t *>(value),
+                   static_cast<const uint8_t *>(value) + totalBytes);
+    program.uniformTypes[locIndex] = uniformType;
+    program.dirty = true;
+}
+
+void QuarkD3D11Renderer::RegisterShaderTexture(ShaderProgramData &program, int locIndex,
+                                               uint32_t textureId)
+{
+    if (locIndex < 0) {
+        return;
+    }
+
+    if (textureId != 0 && program.textureSlots.find(locIndex) == program.textureSlots.end()) {
+        constexpr UINT maxShaderSlots = 7;
+        if (program.nextTextureSlot > maxShaderSlots) {
+            TraceLog(LogLevel::Warn, "SHADER",
+                     "[D3D11] Shader texture slot limit reached (slots 1..7 available).");
+            program.textureSlots[locIndex] = maxShaderSlots;
+        } else {
+            program.textureSlots[locIndex] = program.nextTextureSlot++;
+        }
+    }
+
+    program.textureIds[locIndex] = textureId;
+    program.dirty = true;
+}
+
+D3D11CommandContext::ShaderOverride QuarkD3D11Renderer::BuildShaderOverride(uint32_t shaderId)
+{
+    D3D11CommandContext::ShaderOverride shaderOverride{};
+
+    ShaderProgramData *program = GetShaderProgram(shaderId);
+    if (!program || !program->vertexShader || !program->pixelShader ||
+        !program->inputLayout || !program->hasPosition) {
+        return shaderOverride;
+    }
+
+    UploadConstantBuffer(*program);
+
+    shaderOverride.vertexShader = program->vertexShader.Get();
+    shaderOverride.pixelShader = program->pixelShader.Get();
+    shaderOverride.inputLayout = program->inputLayout.Get();
+    shaderOverride.constantBuffer =
+        program->constantBuffer ? program->constantBuffer.Get() : nullptr;
+    shaderOverride.strideBytes = program->strideBytes;
+    shaderOverride.positionOffset = program->positionOffset;
+    shaderOverride.texCoordOffset = program->texCoordOffset;
+    shaderOverride.colorOffset = program->colorOffset;
+
+    for (const auto &[location, textureId] : program->textureIds) {
+        if (textureId == 0) {
+            continue;
+        }
+
+        UINT slot = 0;
+        const auto slotIterator = program->textureSlots.find(location);
+        if (slotIterator != program->textureSlots.end()) {
+            slot = slotIterator->second;
+        } else if (shaderOverride.shaderResources[0] == nullptr) {
+            slot = 0;
+        } else {
+            continue;
+        }
+
+        if (slot < 8) {
+            shaderOverride.shaderResources[slot] = m_resources.ShaderResource(textureId);
+        }
+    }
+
+    if (!shaderOverride.shaderResources[0] && m_whiteShaderTexture.IsValid()) {
+        shaderOverride.shaderResources[0] = m_resources.ShaderResource(m_whiteShaderTexture.id);
+    }
+
+    return shaderOverride;
+}
+
+void QuarkD3D11Renderer::BeginShaderMode(const Shader &shader)
+{
+    if (shader.id == 0) {
+        EndShaderMode();
+        return;
+    }
+
+    if (m_shaderPrograms.find(shader.id) == m_shaderPrograms.end()) {
+        TraceLog(LogLevel::Warn, "SHADER",
+                 TextFormat("[D3D11] BeginShaderMode ignored unknown shader (ID: %u)", shader.id));
+        return;
+    }
+
+    m_currentShaderId = shader.id;
+    const D3D11CommandContext::ShaderOverride shaderOverride = BuildShaderOverride(shader.id);
+    if (!shaderOverride.Active()) {
+        m_currentShaderId = 0;
+        m_commands.SetShaderOverride({});
+        TraceLog(LogLevel::Warn, "SHADER",
+                 TextFormat("[D3D11] BeginShaderMode ignored incomplete shader (ID: %u)",
+                            shader.id));
+        return;
+    }
+
+    m_commands.SetShaderOverride(shaderOverride);
+}
+
+void QuarkD3D11Renderer::EndShaderMode()
+{
+    if (m_currentShaderId == 0) {
+        return;
+    }
+
+    m_currentShaderId = 0;
+    m_commands.SetShaderOverride({});
+}
+
+Shader QuarkD3D11Renderer::LoadShader(const char *vsFileName, const char *fsFileName)
+{
+    TraceLog(LogLevel::Trace, "SHADER",
+             TextFormat("[D3D11] Loading shader files: VS='%s', FS='%s'",
+                        vsFileName ? vsFileName : "<default>",
+                        fsFileName ? fsFileName : "<default>"));
+
+    std::string vsSource;
+    std::string fsSource;
+
+    if (vsFileName && !ReadTextFile(vsFileName, vsSource)) {
+        TraceLog(LogLevel::Error, "SHADER",
+                 TextFormat("[D3D11] Failed to open vertex shader file: %s", vsFileName));
+        return Shader{};
+    }
+
+    if (fsFileName && !ReadTextFile(fsFileName, fsSource)) {
+        TraceLog(LogLevel::Error, "SHADER",
+                 TextFormat("[D3D11] Failed to open fragment shader file: %s", fsFileName));
+        return Shader{};
+    }
+
+    if (!vsFileName && !fsFileName) {
+        return Shader{};
+    }
+
+    return LoadShaderFromMemory(vsFileName ? vsSource.c_str() : kDefaultHlslVertexSource,
+                                fsFileName ? fsSource.c_str() : kDefaultHlslPixelSource);
+}
+
+Shader QuarkD3D11Renderer::LoadShaderFromMemory(const char *vsSource, const char *fsSource)
+{
+    if (!vsSource && !fsSource) {
+        return Shader{};
+    }
+
+    const uint32_t shaderId = m_nextShaderId++;
+    ShaderProgramData &program = m_shaderPrograms[shaderId];
+
+    try {
+        BuildShaderProgram(program,
+                           vsSource ? vsSource : kDefaultHlslVertexSource,
+                           fsSource ? fsSource : kDefaultHlslPixelSource);
+    } catch (const std::exception &exception) {
+        TraceLog(LogLevel::Error, "SHADER",
+                 TextFormat("[D3D11] Shader creation failed (ID: %u): %s",
+                            shaderId,
+                            exception.what()));
+        m_shaderPrograms.erase(shaderId);
+        return Shader{};
+    }
+
+    TraceLog(LogLevel::Info, "SHADER",
+             TextFormat("[D3D11] Shader created successfully (ID: %u, Attributes: %zu, "
+                        "Uniforms: %zu)",
+                        shaderId,
+                        program.attributes.size(),
+                        program.uniforms.size()));
+
+    return Shader{shaderId};
+}
+
+void QuarkD3D11Renderer::UnloadShader(Shader &shader)
+{
+    if (shader.id == 0) {
+        return;
+    }
+
+    if (m_shaderPrograms.erase(shader.id) > 0) {
+        TraceLog(LogLevel::Info, "SHADER",
+                 TextFormat("[D3D11] Shader unloaded (ID: %u)", shader.id));
+    }
+
+    if (m_currentShaderId == shader.id) {
+        m_currentShaderId = 0;
+        m_commands.SetShaderOverride({});
+    }
+
+    shader = Shader{};
+}
+
+bool QuarkD3D11Renderer::isShaderValid(Shader &shader)
+{
+    return shader.id != 0 && m_shaderPrograms.find(shader.id) != m_shaderPrograms.end();
+}
+
+int QuarkD3D11Renderer::GetShaderLocation(const Shader &shader, const char *uniformName)
+{
+    if (!uniformName || shader.id == 0) {
+        return -1;
+    }
+
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return -1;
+    }
+
+    const auto locationIterator = program->uniforms.find(uniformName);
+    if (locationIterator != program->uniforms.end()) {
+        return locationIterator->second;
+    }
+
+    ShaderUniformInfo info{};
+    info.name = uniformName;
+    info.offset = AlignTo16(static_cast<UINT>(program->constantStaging.size()));
+    info.size = sizeof(float) * 4;
+    program->uniformInfos.push_back(std::move(info));
+
+    const int location = static_cast<int>(program->uniformInfos.size()) - 1;
+    program->uniforms.emplace(uniformName, location);
+
+    TraceLog(LogLevel::Trace, "SHADER",
+             TextFormat("[D3D11] Allocated virtual uniform '%s' (Location: %d)",
+                        uniformName,
+                        location));
+
+    return location;
+}
+
+int QuarkD3D11Renderer::GetShaderLocation(const Shader &shader, ShaderLocationIndex locIndex)
+{
+    if (locIndex < SHADER_LOC_VERTEX_POSITION || locIndex >= SHADER_LOC_COUNT) {
+        return -1;
+    }
+
+    return GetShaderLocation(shader, ShaderLocationNames[locIndex]);
+}
+
+int QuarkD3D11Renderer::GetShaderAttributeLocation(const Shader &shader, const char *attribName)
+{
+    if (!attribName || shader.id == 0) {
+        return -1;
+    }
+
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return -1;
+    }
+
+    const auto attributeIterator = program->attributes.find(attribName);
+    if (attributeIterator != program->attributes.end()) {
+        return attributeIterator->second;
+    }
+
+    const int newLocation = static_cast<int>(program->attributes.size());
+    program->attributes.emplace(attribName, newLocation);
+    return newLocation;
+}
+
+void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, float value)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return;
+    }
+
+    StoreUniformValue(*program, locIndex, SHADER_UNIFORM_FLOAT, &value, sizeof(value), 1);
+    UploadConstantBuffer(*program);
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+}
+
+void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, int value)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return;
+    }
+
+    StoreUniformValue(*program, locIndex, SHADER_UNIFORM_INT, &value, sizeof(value), 1);
+    UploadConstantBuffer(*program);
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+}
+
+void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, const Color &value)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return;
+    }
+
+    const float rgba[4] = {value.r / 255.0f, value.g / 255.0f, value.b / 255.0f,
+                           value.a / 255.0f};
+    StoreUniformValue(*program, locIndex, SHADER_UNIFORM_VEC4, rgba, sizeof(float), 4);
+    UploadConstantBuffer(*program);
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+}
+
+void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, const Vec2 &value)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return;
+    }
+
+    const float vec[2] = {value.x, value.y};
+    StoreUniformValue(*program, locIndex, SHADER_UNIFORM_VEC2, vec, sizeof(float), 2);
+    UploadConstantBuffer(*program);
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+}
+
+void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, const Vec3 &value)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return;
+    }
+
+    const float vec[3] = {value.x, value.y, value.z};
+    StoreUniformValue(*program, locIndex, SHADER_UNIFORM_VEC3, vec, sizeof(float), 3);
+    UploadConstantBuffer(*program);
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+}
+
+void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, const Vec4 &value)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return;
+    }
+
+    const float vec[4] = {value.x, value.y, value.z, value.w};
+    StoreUniformValue(*program, locIndex, SHADER_UNIFORM_VEC4, vec, sizeof(float), 4);
+    UploadConstantBuffer(*program);
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+}
+
+void QuarkD3D11Renderer::SetShaderValueMatrix(const Shader &shader, int locIndex,
+                                               const float *mat)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program || mat == nullptr) {
+        return;
+    }
+
+    StoreUniformValue(*program, locIndex, SHADER_UNIFORM_FLOAT, mat, sizeof(float), 16);
+    UploadConstantBuffer(*program);
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+}
+
+void QuarkD3D11Renderer::SetShaderValueMatrix(const Shader &shader, int locIndex,
+                                              const Matrix &mat)
+{
+    SetShaderValueMatrix(shader, locIndex, mat.m);
+}
+
+void QuarkD3D11Renderer::SetShaderValueSampler(const Shader &shader, int locIndex,
+                                               int textureUnit)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return;
+    }
+
+    StoreUniformValue(*program, locIndex, SHADER_UNIFORM_SAMPLER2D, &textureUnit,
+                      sizeof(int), 1);
+    RegisterShaderTexture(*program, locIndex, static_cast<uint32_t>(textureUnit));
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+    UploadConstantBuffer(*program);
+}
+
+void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, const void *value,
+                                        int uniformType)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program || value == nullptr) {
+        return;
+    }
+
+    switch (uniformType) {
+        case SHADER_UNIFORM_FLOAT:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(float), 1);
+            break;
+        case SHADER_UNIFORM_VEC2:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(float), 2);
+            break;
+        case SHADER_UNIFORM_VEC3:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(float), 3);
+            break;
+        case SHADER_UNIFORM_VEC4:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(float), 4);
+            break;
+        case SHADER_UNIFORM_INT:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(int), 1);
+            break;
+        case SHADER_UNIFORM_SAMPLER2D: {
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(int), 1);
+            int textureId = 0;
+            std::memcpy(&textureId, value, sizeof(textureId));
+            RegisterShaderTexture(*program, locIndex, static_cast<uint32_t>(textureId));
+            break;
+        }
+        case SHADER_UNIFORM_IVEC2:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(int), 2);
+            break;
+        case SHADER_UNIFORM_IVEC3:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(int), 3);
+            break;
+        case SHADER_UNIFORM_IVEC4:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(int), 4);
+            break;
+        default:
+            break;
+    }
+
+    UploadConstantBuffer(*program);
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+}
+
+void QuarkD3D11Renderer::SetShaderValueV(const Shader &shader, int locIndex, const void *value,
+                                         int uniformType, int count)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program || value == nullptr || count <= 0) {
+        return;
+    }
+
+    switch (uniformType) {
+        case SHADER_UNIFORM_FLOAT:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(float), count);
+            break;
+        case SHADER_UNIFORM_VEC2:
+            StoreUniformValue(*program, locIndex, uniformType, value,
+                              sizeof(float) * 2, count);
+            break;
+        case SHADER_UNIFORM_VEC3:
+            StoreUniformValue(*program, locIndex, uniformType, value,
+                              sizeof(float) * 3, count);
+            break;
+        case SHADER_UNIFORM_VEC4:
+            StoreUniformValue(*program, locIndex, uniformType, value,
+                              sizeof(float) * 4, count);
+            break;
+        case SHADER_UNIFORM_INT:
+        case SHADER_UNIFORM_SAMPLER2D:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(int), count);
+            break;
+        case SHADER_UNIFORM_IVEC2:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(int) * 2, count);
+            break;
+        case SHADER_UNIFORM_IVEC3:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(int) * 3, count);
+            break;
+        case SHADER_UNIFORM_IVEC4:
+            StoreUniformValue(*program, locIndex, uniformType, value, sizeof(int) * 4, count);
+            break;
+        default:
+            break;
+    }
+
+    UploadConstantBuffer(*program);
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+}
+
+void QuarkD3D11Renderer::SetShaderValueTexture(const Shader &shader, int locIndex,
+                                               const ITexture &texture)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return;
+    }
+
+    const int textureUnit = static_cast<int>(texture.id);
+    StoreUniformValue(*program, locIndex, SHADER_UNIFORM_SAMPLER2D, &textureUnit,
+                      sizeof(int), 1);
+    RegisterShaderTexture(*program, locIndex, texture.id);
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
+}
+
+void QuarkD3D11Renderer::SetShaderValueTextureUnit(const Shader &shader, int locIndex,
+                                                   const ITexture &texture, int textureUnit)
+{
+    ShaderProgramData *program = GetShaderProgram(shader.id);
+    if (!program) {
+        return;
+    }
+
+    const int textureId = texture.valid ? static_cast<int>(texture.id) : textureUnit;
+    StoreUniformValue(*program, locIndex, SHADER_UNIFORM_SAMPLER2D, &textureId,
+                      sizeof(int), 1);
+    RegisterShaderTexture(*program, locIndex, static_cast<uint32_t>(textureId));
+    if (m_currentShaderId == shader.id) {
+        m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
+    }
 }
 
 } // namespace qc

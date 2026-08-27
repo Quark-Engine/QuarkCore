@@ -8,6 +8,21 @@ namespace qc {
 
 class D3D11CommandContext {
 public:
+    struct ShaderOverride {
+        ID3D11VertexShader *vertexShader = nullptr;
+        ID3D11PixelShader *pixelShader = nullptr;
+        ID3D11InputLayout *inputLayout = nullptr;
+        ID3D11Buffer *constantBuffer = nullptr;
+        ID3D11ShaderResourceView *shaderResources[8] = {};
+        UINT strideBytes = 0;
+        UINT positionOffset = 0;
+        UINT texCoordOffset = 0xFFFFFFFFu;
+        UINT colorOffset = 0xFFFFFFFFu;
+
+        bool Active() const { return vertexShader != nullptr && pixelShader != nullptr &&
+                                     inputLayout != nullptr && strideBytes > 0; }
+    };
+
     void Initialize(const D3D11Device &device, D3D11SwapChain &swapChain, D3D11Pipeline &pipeline,
                     D3D11Resources &resources, int width, int height);
     void Shutdown();
@@ -30,8 +45,12 @@ public:
     void BeginMode2D(const Camera2D& camera);
     void EndMode2D();
     Camera2D GetCamera2D() const { return m_camera2D; }
+    void SetShaderOverride(const ShaderOverride &shaderOverride) { m_shaderOverride = shaderOverride; }
+    const ShaderOverride &GetShaderOverride() const { return m_shaderOverride; }
 
 private:
+    void BindOverride(ID3D11ShaderResourceView *drawnResource);
+
     ID3D11DeviceContext *m_context = nullptr;
     D3D11SwapChain *m_swapChain = nullptr;
     D3D11Pipeline *m_pipeline = nullptr;
@@ -43,6 +62,7 @@ private:
     int m_activeHeight = 0;
     Camera2D m_camera2D{};
     bool m_camera2DActive = false;
+    ShaderOverride m_shaderOverride{};
 };
 
 } // namespace qc
