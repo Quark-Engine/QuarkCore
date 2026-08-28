@@ -154,6 +154,15 @@ struct Vk3DDrawItem {
     uint32_t vertexCount = 0;
 };
 
+struct VkLight3D {
+    Vec3  position{0.0f, 0.0f, 0.0f};
+    Vec3  target{0.0f, 0.0f, 0.0f};
+    Vec3  color{1.0f, 1.0f, 1.0f};
+    float attenuation = 0.08f;
+    int   type   = 1;
+    bool  enabled = true;
+};
+
 struct VkFramePass {
     uint32_t renderTargetId = 0;
     uint32_t firstDrawItem  = 0;
@@ -191,12 +200,14 @@ struct VkShaderProgramData {
     VkShaderModule fragmentModule = VK_NULL_HANDLE;
     VkPipeline     pipeline       = VK_NULL_HANDLE;
     VkPipeline     pipeline3D     = VK_NULL_HANDLE;
+    VkPipeline     pipeline3DOffscreen = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet3D = VK_NULL_HANDLE;
     bool            supports3D    = false;
     std::unordered_map<std::string, int> uniforms;
     std::unordered_map<std::string, int> attributes;
     std::unordered_map<int, std::vector<uint8_t>> uniformValues;
     std::unordered_map<int, int> uniformTypes;
+    std::unordered_map<int, std::string> uniformNames;
 };
 
 class QuarkVkRenderer final : public IRenderer {
@@ -366,9 +377,6 @@ private:
                                              VkShaderModule vertexModule = VK_NULL_HANDLE,
                                              VkShaderModule fragmentModule = VK_NULL_HANDLE);
     void CreatePipeline3D();
-    void CreateShadowResources();
-    void DestroyShadowResources();
-    void CreateShadowPipeline();
     void CreateFramebuffers();
     void CreateCommandPool();
     void CreateCommandBuffers();
@@ -381,6 +389,9 @@ private:
     bool Allocate3DDescriptorSet(VkDescriptorSet& outSet);
         VkDescriptorSet CreateMaterialDescriptorSet(const Material& material);
     void Update3DDescriptorSet(VkShaderProgramData& program);
+    void Write3DShaderUniform(uint32_t shaderId, int locIndex, float value);
+    void Write3DShaderUniform(uint32_t shaderId, int locIndex, int value);
+    void Write3DShaderUniform(uint32_t shaderId, int locIndex, const void* data, size_t bytes);
 
     void RecreateSwapChain();
     void CleanupSwapChain();
@@ -540,17 +551,6 @@ private:
 
     VkRenderPass m_renderPass          = VK_NULL_HANDLE;
     VkRenderPass m_offscreenRenderPass = VK_NULL_HANDLE;
-    VkRenderPass m_shadowRenderPass    = VK_NULL_HANDLE;
-    VkFramebuffer m_shadowFramebuffer  = VK_NULL_HANDLE;
-    VkImage m_shadowImage              = VK_NULL_HANDLE;
-    VkDeviceMemory m_shadowMemory      = VK_NULL_HANDLE;
-    VkImageView m_shadowImageView      = VK_NULL_HANDLE;
-    VkSampler m_shadowSampler          = VK_NULL_HANDLE;
-    VkFormat m_shadowFormat            = VK_FORMAT_UNDEFINED;
-    VkPipelineLayout m_shadowPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline m_shadowPipeline        = VK_NULL_HANDLE;
-    Mat4 m_shadowViewProjection        = Mat4::identity();
-
     std::vector<VkFramebuffer> m_swapChainFramebuffers;
 
     VkDescriptorSetLayout         m_descriptorSetLayout = VK_NULL_HANDLE;
@@ -592,6 +592,12 @@ private:
     uint32_t m_nextShaderProgramId = 1;
     uint32_t m_currentShaderProgramId = 0;
     std::array<bool, 4> m_3DLightEnabled{ true, true, true, true };
+    std::array<VkLight3D, 4> m_lights{{
+        { {-3.0f, 4.0f,  3.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, 0.08f, 1, true },
+        { { 3.0f, 3.0f,  3.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, 0.08f, 1, true },
+        { {-3.0f, 3.0f, -3.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 0.08f, 1, true },
+        { { 3.0f, 3.0f, -3.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, 0.08f, 1, true }
+    }};
     std::unordered_map<uint32_t, VkShaderProgramData> m_shaderPrograms;
 
     uint32_t                                   m_nextTextureId = 1;
@@ -625,6 +631,7 @@ private:
     std::vector<Mat4> m_matrixStack;
     Mat4              m_viewMatrix       = Mat4::identity();
     Mat4              m_projectionMatrix = Mat4::identity();
+    Vec3              m_viewPos{2.0f, 4.0f, 6.0f};
 
     Camera2D m_camera2D{};
     bool     m_camera2DActive = false;

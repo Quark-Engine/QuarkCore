@@ -1809,6 +1809,10 @@ Mat4 QuarkGLRenderer::ApplyCurrentMatrix(const Mat4& t) const {
 void QuarkGLRenderer::FlushLines3D() {
     if (m_3d.lineVertices.empty()) return;
 
+    glUseProgram(m_3d.shader3D);
+    if (m_3d.viewLoc >= 0) glUniformMatrix4fv(m_3d.viewLoc, 1, GL_FALSE, m_3d.viewMatrix.m);
+    if (m_3d.projLoc >= 0) glUniformMatrix4fv(m_3d.projLoc, 1, GL_FALSE, m_3d.projectionMatrix.m);
+
     Mat4 id = Mat4::identity();
     if (m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, id.m);
     if (m_3d.colorLoc >= 0) {
@@ -1837,6 +1841,10 @@ void QuarkGLRenderer::FlushLines3D() {
 
 void QuarkGLRenderer::FlushTriangles3D() {
     if (m_3d.triVertices.empty()) return;
+
+    glUseProgram(m_3d.shader3D);
+    if (m_3d.viewLoc >= 0) glUniformMatrix4fv(m_3d.viewLoc, 1, GL_FALSE, m_3d.viewMatrix.m);
+    if (m_3d.projLoc >= 0) glUniformMatrix4fv(m_3d.projLoc, 1, GL_FALSE, m_3d.projectionMatrix.m);
 
     Mat4 id = Mat4::identity();
     if (m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, id.m);

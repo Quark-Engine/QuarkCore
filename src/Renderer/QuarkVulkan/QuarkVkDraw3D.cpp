@@ -100,11 +100,19 @@ void QuarkVkRenderer::AppendLine3D(std::vector<Vk3DVertex>& vertices,
 
 void QuarkVkRenderer::BeginMode3D(const Camera3D& camera) {
     m_viewMatrix = Mat4::lookAt(camera.position, camera.target, camera.up);
+    m_viewPos = camera.position;
 
     if (camera.projection == CAMERA_PERSPECTIVE) {
+        float aspect = static_cast<float>(m_width) / static_cast<float>(m_height);
+        if (m_activeRenderTargetId != 0) {
+            const auto rtIt = m_renderTargets.find(m_activeRenderTargetId);
+            if (rtIt != m_renderTargets.end() && rtIt->second.width > 0 && rtIt->second.height > 0) {
+                aspect = static_cast<float>(rtIt->second.width) / static_cast<float>(rtIt->second.height);
+            }
+        }
         m_projectionMatrix = Mat4::perspectiveVulkan(
             camera.fovy * PI / 180.0f,
-            static_cast<float>(m_width) / static_cast<float>(m_height),
+            aspect,
             0.1f, 1000.0f);
     } else {
         m_projectionMatrix = Mat4::identity();
@@ -116,6 +124,7 @@ void QuarkVkRenderer::EndMode3D() {}
 void QuarkVkRenderer::Set3DLightEnabled(int index, bool enabled) {
     if (index >= 0 && index < static_cast<int>(m_3DLightEnabled.size())) {
         m_3DLightEnabled[static_cast<size_t>(index)] = enabled;
+        m_lights[static_cast<size_t>(index)].enabled = enabled;
     }
 }
 

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <set>
@@ -55,6 +56,18 @@ bool ReadTextFile(const char* path, std::string& out) {
     if (!file.is_open()) return false;
     out.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     return true;
+}
+
+int NormalizeIntValue(const void* data) {
+    int intValue = 0;
+    std::memcpy(&intValue, data, sizeof(int));
+    float floatValue = 0.0f;
+    std::memcpy(&floatValue, data, sizeof(float));
+    if (floatValue >= -16384.0f && floatValue <= 16384.0f &&
+        floatValue == static_cast<float>(static_cast<int>(floatValue))) {
+        return static_cast<int>(floatValue);
+    }
+    return intValue;
 }
 
 bool CompileGlslToSpirv(const std::string& source,
@@ -225,6 +238,12 @@ Shader QuarkVkRenderer::LoadShaderFromMemory(const char* vs, const char* fs) {
                                                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                programData.vertexModule,
                                                                programData.fragmentModule);
+        if (m_offscreenRenderPass != VK_NULL_HANDLE) {
+            programData.pipeline3DOffscreen = Create3DPipelineForRenderPass(m_offscreenRenderPass,
+                                                                            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                                                            programData.vertexModule,
+                                                                            programData.fragmentModule);
+        }
         if (Allocate3DDescriptorSet(programData.descriptorSet3D)) {
             const auto whiteIt = m_textures.find(m_whiteTextureId);
             if (whiteIt != m_textures.end()) {
@@ -233,13 +252,6 @@ Shader QuarkVkRenderer::LoadShaderFromMemory(const char* vs, const char* fs) {
                 imageInfo.imageView = whiteIt->second.view;
                 imageInfo.sampler = whiteIt->second.sampler;
                 std::array<VkDescriptorImageInfo, 4> shadowImages{ imageInfo, imageInfo, imageInfo, imageInfo };
-                if (m_shadowImageView != VK_NULL_HANDLE) {
-                    VkDescriptorImageInfo shadowImage{};
-                    shadowImage.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    shadowImage.imageView = m_shadowImageView;
-                    shadowImage.sampler = m_shadowSampler;
-                    shadowImages.fill(shadowImage);
-                }
                 VkDescriptorBufferInfo bufferInfo{};
                 bufferInfo.buffer = m_3DDummyBuffer;
                 bufferInfo.offset = 0;
@@ -289,6 +301,9 @@ void QuarkVkRenderer::UnloadShader(Shader& shader) {
         if (it->second.pipeline3D != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
             vkDestroyPipeline(m_device, it->second.pipeline3D, nullptr);
         }
+        if (it->second.pipeline3DOffscreen != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, it->second.pipeline3DOffscreen, nullptr);
+        }
         if (it->second.vertexModule != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
             vkDestroyShaderModule(m_device, it->second.vertexModule, nullptr);
         }
@@ -321,11 +336,13 @@ int QuarkVkRenderer::GetShaderLocation(const Shader& shader, const char* uniform
     auto& locationMap = it->second.uniforms;
     const auto locIt = locationMap.find(uniformName);
     if (locIt != locationMap.end()) {
+        it->second.uniformNames[locIt->second] = uniformName;
         return locIt->second;
     }
 
     const int newLocation = static_cast<int>(locationMap.size());
     locationMap.emplace(uniformName, newLocation);
+    it->second.uniformNames[newLocation] = uniformName;
     return newLocation;
 }
 
@@ -366,6 +383,7 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, float v
         return;
     }
     StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_FLOAT, &value, sizeof(float), 1);
+    Write3DShaderUniform(shader.id, locIndex, &value, sizeof(float));
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, int value) {
@@ -377,6 +395,7 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, int val
         return;
     }
     StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_INT, &value, sizeof(int), 1);
+    Write3DShaderUniform(shader.id, locIndex, value);
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const Color& value) {
@@ -394,6 +413,7 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const C
         value.a / 255.0f
     };
     StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_VEC4, rgba, sizeof(float), 4);
+    Write3DShaderUniform(shader.id, locIndex, rgba, sizeof(rgba));
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const qc::Vec2& value) {
@@ -406,6 +426,7 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const q
     }
     const float vec[2] = { value.x, value.y };
     StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_VEC2, vec, sizeof(float), 2);
+    Write3DShaderUniform(shader.id, locIndex, vec, sizeof(vec));
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value) {
@@ -418,6 +439,7 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const q
     }
     const float vec[3] = { value.x, value.y, value.z };
     StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_VEC3, vec, sizeof(float), 3);
+    Write3DShaderUniform(shader.id, locIndex, vec, sizeof(vec));
 }
 
 void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const qc::Vec4& value) {
@@ -430,6 +452,7 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const q
     }
     const float vec[4] = { value.x, value.y, value.z, value.w };
     StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_VEC4, vec, sizeof(float), 4);
+    Write3DShaderUniform(shader.id, locIndex, vec, sizeof(vec));
 }
 
 void QuarkVkRenderer::SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat) {
@@ -441,6 +464,7 @@ void QuarkVkRenderer::SetShaderValueMatrix(const Shader& shader, int locIndex, c
         return;
     }
     StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_FLOAT, mat, sizeof(float), 16);
+    Write3DShaderUniform(shader.id, locIndex, mat, sizeof(float) * 16);
 }
 
 void QuarkVkRenderer::SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit) {
@@ -464,34 +488,46 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const v
         return;
     }
 
+    size_t writtenBytes = 0;
     switch (uniformType) {
         case SHADER_UNIFORM_FLOAT:
             StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float), 1);
+            writtenBytes = sizeof(float);
             break;
         case SHADER_UNIFORM_VEC2:
             StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float), 2);
+            writtenBytes = sizeof(float) * 2;
             break;
         case SHADER_UNIFORM_VEC3:
             StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float), 3);
+            writtenBytes = sizeof(float) * 3;
             break;
         case SHADER_UNIFORM_VEC4:
             StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(float), 4);
+            writtenBytes = sizeof(float) * 4;
             break;
         case SHADER_UNIFORM_INT:
         case SHADER_UNIFORM_SAMPLER2D:
             StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int), 1);
+            writtenBytes = sizeof(float);
             break;
         case SHADER_UNIFORM_IVEC2:
             StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int), 2);
+            writtenBytes = sizeof(float) * 2;
             break;
         case SHADER_UNIFORM_IVEC3:
             StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int), 3);
+            writtenBytes = sizeof(float) * 3;
             break;
         case SHADER_UNIFORM_IVEC4:
             StoreUniformValue(it->second, locIndex, uniformType, value, sizeof(int), 4);
+            writtenBytes = sizeof(float) * 4;
             break;
         default:
             break;
+    }
+    if (writtenBytes > 0) {
+        Write3DShaderUniform(shader.id, locIndex, value, writtenBytes);
     }
 }
 
@@ -545,6 +581,7 @@ void QuarkVkRenderer::SetShaderValueMatrix(const Shader& shader, int locIndex, c
     }
     const float* data = mat.m;
     StoreUniformValue(it->second, locIndex, SHADER_UNIFORM_FLOAT, data, sizeof(float), 16);
+    Write3DShaderUniform(shader.id, locIndex, data, sizeof(float) * 16);
 }
 
 void QuarkVkRenderer::SetShaderValueTexture(const Shader& shader, int locIndex, const ITexture& texture) {
@@ -584,12 +621,6 @@ void QuarkVkRenderer::Update3DDescriptorSet(VkShaderProgramData& program) {
         image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         image.imageView = white.view;
         image.sampler = white.sampler;
-    }
-    if (m_shadowImageView != VK_NULL_HANDLE) {
-        for (auto& image : shadowImages) {
-            image.imageView = m_shadowImageView;
-            image.sampler = m_shadowSampler;
-        }
     }
     VkDescriptorImageInfo albedo = shadowImages[0];
 
@@ -644,6 +675,93 @@ void QuarkVkRenderer::Update3DDescriptorSet(VkShaderProgramData& program) {
                           &materialImages[i], nullptr, nullptr };
     }
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+}
+
+void QuarkVkRenderer::Write3DShaderUniform(uint32_t shaderId, int locIndex, float value) {
+    Write3DShaderUniform(shaderId, locIndex, &value, sizeof(float));
+}
+
+void QuarkVkRenderer::Write3DShaderUniform(uint32_t shaderId, int locIndex, int value) {
+    Write3DShaderUniform(shaderId, locIndex, &value, sizeof(int));
+}
+
+void QuarkVkRenderer::Write3DShaderUniform(uint32_t shaderId, int locIndex, const void* data, size_t bytes) {
+    if (shaderId == 0 || locIndex < 0 || data == nullptr || bytes == 0 || m_3DDummyMapped == nullptr) {
+        return;
+    }
+    const auto it = m_shaderPrograms.find(shaderId);
+    if (it == m_shaderPrograms.end()) return;
+    const auto nameIt = it->second.uniformNames.find(locIndex);
+    if (nameIt == it->second.uniformNames.end()) return;
+    const std::string& name = nameIt->second;
+
+    const auto indexOf = [&name](const char* prefix, int& outIndex) -> bool {
+        const std::string p(prefix);
+        if (name.rfind(p, 0) != 0) return false;
+        const size_t br = name.find('[');
+        if (br == std::string::npos) return false;
+        const size_t close = name.find(']', br);
+        if (close == std::string::npos) return false;
+        outIndex = std::atoi(name.c_str() + br + 1);
+        return true;
+    };
+
+    int index = -1;
+    if (indexOf("lightViews", index) && index >= 0 && index < 4 && bytes >= sizeof(float) * 16) {
+        std::memcpy(static_cast<char*>(m_3DDummyMapped) + 512 + static_cast<size_t>(index) * 64,
+                    data, sizeof(float) * 16);
+        return;
+    }
+    if (indexOf("lightProjections", index) && index >= 0 && index < 4 && bytes >= sizeof(float) * 16) {
+        std::memcpy(static_cast<char*>(m_3DDummyMapped) + 512 + static_cast<size_t>(index + 4) * 64,
+                    data, sizeof(float) * 16);
+        return;
+    }
+
+    if (name == "viewPos" && bytes >= sizeof(float) * 3) {
+        const float* f = static_cast<const float*>(data);
+        float* lightData = static_cast<float*>(static_cast<void*>(static_cast<char*>(m_3DDummyMapped) + 1024));
+        lightData[8] = f[0];
+        lightData[9] = f[1];
+        lightData[10] = f[2];
+        m_viewPos = Vec3{ f[0], f[1], f[2] };
+        return;
+    }
+
+    if (name.rfind("lights[", 0) == 0 && indexOf("lights[", index) && index >= 0 && index < 4) {
+        const size_t close = name.find(']');
+        if (close == std::string::npos) return;
+        const std::string field = name.substr(close + 2);
+        float* lightData = static_cast<float*>(static_cast<void*>(static_cast<char*>(m_3DDummyMapped) + 1024));
+        float* slot = lightData + 12 + static_cast<size_t>(index) * 16;
+
+        if (field == "position") {
+            const float* f = static_cast<const float*>(data);
+            slot[0] = f[0]; slot[1] = f[1]; slot[2] = f[2];
+            m_lights[static_cast<size_t>(index)].position = Vec3{ f[0], f[1], f[2] };
+        } else if (field == "target") {
+            const float* f = static_cast<const float*>(data);
+            slot[4] = f[0]; slot[5] = f[1]; slot[6] = f[2];
+            m_lights[static_cast<size_t>(index)].target = Vec3{ f[0], f[1], f[2] };
+        } else if (field == "color") {
+            const float* f = static_cast<const float*>(data);
+            slot[8] = f[0]; slot[9] = f[1]; slot[10] = f[2];
+            m_lights[static_cast<size_t>(index)].color = Vec3{ f[0], f[1], f[2] };
+        } else if (field == "attenuation") {
+            slot[12] = *static_cast<const float*>(data);
+            m_lights[static_cast<size_t>(index)].attenuation = slot[12];
+        } else if (field == "enabled") {
+            const int enabledValue = NormalizeIntValue(data);
+            std::memcpy(slot + 13, &enabledValue, sizeof(int));
+            m_lights[static_cast<size_t>(index)].enabled = enabledValue != 0;
+            m_3DLightEnabled[static_cast<size_t>(index)] = enabledValue != 0;
+        } else if (field == "type") {
+            const int typeValue = NormalizeIntValue(data);
+            std::memcpy(slot + 14, &typeValue, sizeof(int));
+            m_lights[static_cast<size_t>(index)].type = typeValue;
+        }
+        return;
+    }
 }
 
 } // namespace qc

@@ -33,20 +33,6 @@ static float NormalizeColorComponent(std::uint8_t value) {
     return static_cast<float>(value) / 255.0f;
 }
 
-static Mat4 MultiplyColumnMajor(const Mat4& left, const Mat4& right) {
-    Mat4 result{};
-    for (int column = 0; column < 4; ++column) {
-        for (int row = 0; row < 4; ++row) {
-            result.m[column * 4 + row] = 0.0f;
-            for (int index = 0; index < 4; ++index) {
-                result.m[column * 4 + row] +=
-                    left.m[index * 4 + row] * right.m[column * 4 + index];
-            }
-        }
-    }
-    return result;
-}
-
 static const char* kRuntime2DVertexShader = R"glsl(
 #version 450
 layout(push_constant) uniform ScreenData {
@@ -99,126 +85,14 @@ void main() {
 static const char* kRuntime3DFragmentShader = R"glsl(
 #version 450
 layout(set = 0, binding = 1) uniform sampler2D albedoMap;
-layout(set = 0, binding = 2) uniform sampler2D shadowMaps[4];
-layout(set = 0, binding = 3) uniform ShadowData { mat4 lightViewProjection; } shadowData;
-layout(set = 0, binding = 5) uniform sampler2D metalnessMap;
-layout(set = 0, binding = 6) uniform sampler2D normalMap;
-layout(set = 0, binding = 7) uniform sampler2D roughnessMap;
-layout(set = 0, binding = 8) uniform sampler2D occlusionMap;
-layout(set = 0, binding = 9) uniform sampler2D emissionMap;
-layout(push_constant) uniform Lighting {
-    vec4 lightPositions[4];
-    vec4 lightColors[4];
-    vec4 timeData;
-    vec4 lightEnabled;
-} lighting;
 layout(location = 0) in vec2 vTexCoord;
 layout(location = 1) in vec4 vColor;
 layout(location = 2) in vec3 vNormal;
 layout(location = 3) in vec3 vWorldPosition;
 layout(location = 0) out vec4 outColor;
 
-const float PI = 3.14159265359;
-
-float ShadowFactor(vec3 worldPosition, vec3 normal, vec3 lightDirection) {
-    vec4 shadowPosition = shadowData.lightViewProjection * vec4(worldPosition, 1.0);
-    shadowPosition.xyz /= max(shadowPosition.w, 0.0001);
-    vec2 shadowUv = shadowPosition.xy * 0.5 + 0.5;
-    if (shadowPosition.z <= 0.0 || shadowPosition.z >= 1.0 ||
-        any(lessThan(shadowUv, vec2(0.0))) || any(greaterThan(shadowUv, vec2(1.0)))) {
-        return 1.0;
-    }
-    float bias = max(0.0015 * (1.0 - dot(normal, lightDirection)), 0.0005);
-    vec2 texelSize = 1.0 / vec2(textureSize(shadowMaps[0], 0));
-    float lit = 0.0;
-    for (int y = -1; y <= 1; ++y) {
-        for (int x = -1; x <= 1; ++x) {
-            float depth = texture(shadowMaps[0], shadowUv + vec2(x, y) * texelSize).r;
-            lit += shadowPosition.z - bias <= depth ? 1.0 : 0.0;
-        }
-    }
-    return lit / 9.0;
-}
-
-float DistributionGGX(vec3 normal, vec3 halfway, float roughness) {
-    float alpha = roughness * roughness;
-    float alpha2 = alpha * alpha;
-    float normalDotHalfway = max(dot(normal, halfway), 0.0);
-    float denominator = normalDotHalfway * normalDotHalfway * (alpha2 - 1.0) + 1.0;
-    return alpha2 / max(PI * denominator * denominator, 0.0001);
-}
-
-float GeometrySchlickGGX(float normalDotDirection, float roughness) {
-    float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
-    return normalDotDirection / max(normalDotDirection * (1.0 - k) + k, 0.0001);
-}
-
-float GeometrySmith(vec3 normal, vec3 viewDirection, vec3 lightDirection, float roughness) {
-    return GeometrySchlickGGX(max(dot(normal, viewDirection), 0.0), roughness) *
-           GeometrySchlickGGX(max(dot(normal, lightDirection), 0.0), roughness);
-}
-
-vec3 FresnelSchlick(float cosTheta, vec3 baseReflectivity) {
-    return baseReflectivity + (1.0 - baseReflectivity) * pow(1.0 - cosTheta, 5.0);
-}
-
-float LightEnabled(int index) {
-    if (index == 0) return lighting.lightEnabled.x;
-    if (index == 1) return lighting.lightEnabled.y;
-    if (index == 2) return lighting.lightEnabled.z;
-    return lighting.lightEnabled.w;
-}
-
 void main() {
-    vec4 albedoSample = texture(albedoMap, vTexCoord) * vColor;
-    vec3 albedo = pow(max(albedoSample.rgb, vec3(0.0)), vec3(2.2));
-    float metalness = clamp(texture(metalnessMap, vTexCoord).r, 0.0, 1.0);
-    float roughness = clamp(texture(roughnessMap, vTexCoord).r, 0.045, 1.0);
-    float occlusion = clamp(texture(occlusionMap, vTexCoord).r, 0.0, 1.0);
-    vec3 emission = pow(max(texture(emissionMap, vTexCoord).rgb, vec3(0.0)), vec3(2.2));
-
-    vec3 normal = normalize(vNormal);
-    vec3 tangent = normalize(dFdx(vWorldPosition) * dFdy(vTexCoord).y -
-                             dFdy(vWorldPosition) * dFdx(vTexCoord).y);
-    tangent = normalize(tangent - normal * dot(normal, tangent));
-    vec3 bitangent = normalize(cross(normal, tangent));
-    vec3 tangentNormal = texture(normalMap, vTexCoord).xyz * 2.0 - 1.0;
-    normal = normalize(mat3(tangent, bitangent, normal) * tangentNormal);
-
-    vec3 viewDirection = normalize(vec3(0.0, 5.0, 10.0) - vWorldPosition);
-    vec3 baseReflectivity = mix(vec3(0.04), albedo, metalness);
-    vec3 lighting = vec3(0.03) * albedo * occlusion;
-    const vec3 lightPositions[4] = vec3[4](
-        vec3(-3.0, 4.0, 3.0), vec3(3.0, 3.0, 3.0),
-        vec3(-3.0, 3.0, -3.0), vec3(3.0, 3.0, -3.0));
-    const vec3 lightColors[4] = vec3[4](
-        vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0),
-        vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0));
-
-    for (int i = 0; i < 4; ++i) {
-        if (LightEnabled(i) <= 0.0) continue;
-        vec3 toLight = lightPositions[i] - vWorldPosition;
-        float distanceToLight = length(toLight);
-        vec3 lightDirection = toLight / max(distanceToLight, 0.0001);
-        vec3 halfway = normalize(viewDirection + lightDirection);
-        float normalDotLight = max(dot(normal, lightDirection), 0.0);
-        float normalDotView = max(dot(normal, viewDirection), 0.0);
-        if (normalDotLight <= 0.0 || normalDotView <= 0.0) continue;
-        float distribution = DistributionGGX(normal, halfway, roughness);
-        float geometry = GeometrySmith(normal, viewDirection, lightDirection, roughness);
-        vec3 fresnel = FresnelSchlick(max(dot(halfway, viewDirection), 0.0), baseReflectivity);
-        vec3 specular = (distribution * geometry * fresnel) /
-                        max(4.0 * normalDotView * normalDotLight, 0.0001);
-        vec3 diffuse = (1.0 - fresnel) * (1.0 - metalness) * albedo / PI;
-        float attenuation = 1.0 / (1.0 + 0.08 * distanceToLight * distanceToLight);
-        float shadow = i == 0 ? ShadowFactor(vWorldPosition, normal, lightDirection) : 1.0;
-        lighting += (diffuse + specular) * lightColors[i] * normalDotLight * attenuation * shadow;
-    }
-
-    vec3 color = lighting + emission;
-    color = color / (color + vec3(1.0));
-    color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
-    outColor = vec4(color, albedoSample.a);
+    outColor = texture(albedoMap, vTexCoord) * vColor;
 }
 )glsl";
 
@@ -284,462 +158,6 @@ static std::vector<uint32_t> CompileRuntimeShader(const char* source,
     cache.emplace(cacheKey, spirv);
     return spirv;
 }
-
-static const std::array<uint32_t, 367> kQuadVertSpv = {
-    0x07230203,
-    0x00010500,
-    0x0008000B,
-    0x00000031,
-    0x00000000,
-    0x00020011,
-    0x00000001,
-    0x0006000B,
-    0x00000001,
-    0x4C534C47,
-    0x6474732E,
-    0x3035342E,
-    0x00000000,
-    0x0003000E,
-    0x00000000,
-    0x00000001,
-    0x000C000F,
-    0x00000000,
-    0x00000004,
-    0x6E69616D,
-    0x00000000,
-    0x0000000B,
-    0x0000000F,
-    0x00000021,
-    0x0000002A,
-    0x0000002B,
-    0x0000002D,
-    0x0000002F,
-    0x00030003,
-    0x00000002,
-    0x000001C2,
-    0x00040005,
-    0x00000004,
-    0x6E69616D,
-    0x00000000,
-    0x00030005,
-    0x00000009,
-    0x0063646E,
-    0x00040005,
-    0x0000000B,
-    0x736F5061,
-    0x00000000,
-    0x00060005,
-    0x0000000D,
-    0x68737550,
-    0x736E6F43,
-    0x746E6174,
-    0x00000073,
-    0x00060006,
-    0x0000000D,
-    0x00000000,
-    0x65726373,
-    0x69536E65,
-    0x0000657A,
-    0x00030005,
-    0x0000000F,
-    0x00006370,
-    0x00060005,
-    0x0000001F,
-    0x505F6C67,
-    0x65567265,
-    0x78657472,
-    0x00000000,
-    0x00060006,
-    0x0000001F,
-    0x00000000,
-    0x505F6C67,
-    0x7469736F,
-    0x006E6F69,
-    0x00070006,
-    0x0000001F,
-    0x00000001,
-    0x505F6C67,
-    0x746E696F,
-    0x657A6953,
-    0x00000000,
-    0x00070006,
-    0x0000001F,
-    0x00000002,
-    0x435F6C67,
-    0x4470696C,
-    0x61747369,
-    0x0065636E,
-    0x00070006,
-    0x0000001F,
-    0x00000003,
-    0x435F6C67,
-    0x446C6C75,
-    0x61747369,
-    0x0065636E,
-    0x00030005,
-    0x00000021,
-    0x00000000,
-    0x00030005,
-    0x0000002A,
-    0x00565576,
-    0x00030005,
-    0x0000002B,
-    0x00565561,
-    0x00040005,
-    0x0000002D,
-    0x6C6F4376,
-    0x0000726F,
-    0x00040005,
-    0x0000002F,
-    0x6C6F4361,
-    0x0000726F,
-    0x00040047,
-    0x0000000B,
-    0x0000001E,
-    0x00000000,
-    0x00030047,
-    0x0000000D,
-    0x00000002,
-    0x00050048,
-    0x0000000D,
-    0x00000000,
-    0x00000023,
-    0x00000000,
-    0x00030047,
-    0x0000001F,
-    0x00000002,
-    0x00050048,
-    0x0000001F,
-    0x00000000,
-    0x0000000B,
-    0x00000000,
-    0x00050048,
-    0x0000001F,
-    0x00000001,
-    0x0000000B,
-    0x00000001,
-    0x00050048,
-    0x0000001F,
-    0x00000002,
-    0x0000000B,
-    0x00000003,
-    0x00050048,
-    0x0000001F,
-    0x00000003,
-    0x0000000B,
-    0x00000004,
-    0x00040047,
-    0x0000002A,
-    0x0000001E,
-    0x00000000,
-    0x00040047,
-    0x0000002B,
-    0x0000001E,
-    0x00000001,
-    0x00040047,
-    0x0000002D,
-    0x0000001E,
-    0x00000001,
-    0x00040047,
-    0x0000002F,
-    0x0000001E,
-    0x00000002,
-    0x00020013,
-    0x00000002,
-    0x00030021,
-    0x00000003,
-    0x00000002,
-    0x00030016,
-    0x00000006,
-    0x00000020,
-    0x00040017,
-    0x00000007,
-    0x00000006,
-    0x00000002,
-    0x00040020,
-    0x00000008,
-    0x00000007,
-    0x00000007,
-    0x00040020,
-    0x0000000A,
-    0x00000001,
-    0x00000007,
-    0x0004003B,
-    0x0000000A,
-    0x0000000B,
-    0x00000001,
-    0x0003001E,
-    0x0000000D,
-    0x00000007,
-    0x00040020,
-    0x0000000E,
-    0x00000009,
-    0x0000000D,
-    0x0004003B,
-    0x0000000E,
-    0x0000000F,
-    0x00000009,
-    0x00040015,
-    0x00000010,
-    0x00000020,
-    0x00000001,
-    0x0004002B,
-    0x00000010,
-    0x00000011,
-    0x00000000,
-    0x00040020,
-    0x00000012,
-    0x00000009,
-    0x00000007,
-    0x0004002B,
-    0x00000006,
-    0x00000016,
-    0x40000000,
-    0x0004002B,
-    0x00000006,
-    0x00000018,
-    0x3F800000,
-    0x00040017,
-    0x0000001B,
-    0x00000006,
-    0x00000004,
-    0x00040015,
-    0x0000001C,
-    0x00000020,
-    0x00000000,
-    0x0004002B,
-    0x0000001C,
-    0x0000001D,
-    0x00000001,
-    0x0004001C,
-    0x0000001E,
-    0x00000006,
-    0x0000001D,
-    0x0006001E,
-    0x0000001F,
-    0x0000001B,
-    0x00000006,
-    0x0000001E,
-    0x0000001E,
-    0x00040020,
-    0x00000020,
-    0x00000003,
-    0x0000001F,
-    0x0004003B,
-    0x00000020,
-    0x00000021,
-    0x00000003,
-    0x0004002B,
-    0x00000006,
-    0x00000023,
-    0x00000000,
-    0x00040020,
-    0x00000027,
-    0x00000003,
-    0x0000001B,
-    0x00040020,
-    0x00000029,
-    0x00000003,
-    0x00000007,
-    0x0004003B,
-    0x00000029,
-    0x0000002A,
-    0x00000003,
-    0x0004003B,
-    0x0000000A,
-    0x0000002B,
-    0x00000001,
-    0x0004003B,
-    0x00000027,
-    0x0000002D,
-    0x00000003,
-    0x00040020,
-    0x0000002E,
-    0x00000001,
-    0x0000001B,
-    0x0004003B,
-    0x0000002E,
-    0x0000002F,
-    0x00000001,
-    0x00050036,
-    0x00000002,
-    0x00000004,
-    0x00000000,
-    0x00000003,
-    0x000200F8,
-    0x00000005,
-    0x0004003B,
-    0x00000008,
-    0x00000009,
-    0x00000007,
-    0x0004003D,
-    0x00000007,
-    0x0000000C,
-    0x0000000B,
-    0x00050041,
-    0x00000012,
-    0x00000013,
-    0x0000000F,
-    0x00000011,
-    0x0004003D,
-    0x00000007,
-    0x00000014,
-    0x00000013,
-    0x00050088,
-    0x00000007,
-    0x00000015,
-    0x0000000C,
-    0x00000014,
-    0x0005008E,
-    0x00000007,
-    0x00000017,
-    0x00000015,
-    0x00000016,
-    0x00050050,
-    0x00000007,
-    0x00000019,
-    0x00000018,
-    0x00000018,
-    0x00050083,
-    0x00000007,
-    0x0000001A,
-    0x00000017,
-    0x00000019,
-    0x0003003E,
-    0x00000009,
-    0x0000001A,
-    0x0004003D,
-    0x00000007,
-    0x00000022,
-    0x00000009,
-    0x00050051,
-    0x00000006,
-    0x00000024,
-    0x00000022,
-    0x00000000,
-    0x00050051,
-    0x00000006,
-    0x00000025,
-    0x00000022,
-    0x00000001,
-    0x00070050,
-    0x0000001B,
-    0x00000026,
-    0x00000024,
-    0x00000025,
-    0x00000023,
-    0x00000018,
-    0x00050041,
-    0x00000027,
-    0x00000028,
-    0x00000021,
-    0x00000011,
-    0x0003003E,
-    0x00000028,
-    0x00000026,
-    0x0004003D,
-    0x00000007,
-    0x0000002C,
-    0x0000002B,
-    0x0003003E,
-    0x0000002A,
-    0x0000002C,
-    0x0004003D,
-    0x0000001B,
-    0x00000030,
-    0x0000002F,
-    0x0003003E,
-    0x0000002D,
-    0x00000030,
-    0x000100FD,
-    0x00010038
-};
-
-static const std::array<uint32_t, 166> kQuadFragSpv = {
-    0x07230203, 0x00010500, 0x0008000B, 0x00000018, 0x00000000, 0x00020011, 0x00000001, 0x0006000B,
-    0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 0x00000000, 0x0003000E, 0x00000000, 0x00000001,
-    0x0009000F, 0x00000004, 0x00000004, 0x6E69616D, 0x00000000, 0x00000009, 0x0000000D, 0x00000011,
-    0x00000015, 0x00030010, 0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001C2, 0x00040005,
-    0x00000004, 0x6E69616D, 0x00000000, 0x00050005, 0x00000009, 0x4374756F, 0x726F6C6F, 0x00000000,
-    0x00050005, 0x0000000D, 0x78655475, 0x65727574, 0x00000000, 0x00030005, 0x00000011, 0x00565576,
-    0x00040005, 0x00000015, 0x6C6F4376, 0x0000726F, 0x00040047, 0x00000009, 0x0000001E, 0x00000000,
-    0x00040047, 0x0000000D, 0x00000021, 0x00000000, 0x00040047, 0x0000000D, 0x00000022, 0x00000000,
-    0x00040047, 0x00000011, 0x0000001E, 0x00000000, 0x00040047, 0x00000015, 0x0000001E, 0x00000001,
-    0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020,
-    0x00040017, 0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008, 0x00000003, 0x00000007,
-    0x0004003B, 0x00000008, 0x00000009, 0x00000003, 0x00090019, 0x0000000A, 0x00000006, 0x00000001,
-    0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x0003001B, 0x0000000B, 0x0000000A,
-    0x00040020, 0x0000000C, 0x00000000, 0x0000000B, 0x0004003B, 0x0000000C, 0x0000000D, 0x00000000,
-    0x00040017, 0x0000000F, 0x00000006, 0x00000002, 0x00040020, 0x00000010, 0x00000001, 0x0000000F,
-    0x0004003B, 0x00000010, 0x00000011, 0x00000001, 0x00040020, 0x00000014, 0x00000001, 0x00000007,
-    0x0004003B, 0x00000014, 0x00000015, 0x00000001, 0x00050036, 0x00000002, 0x00000004, 0x00000000,
-    0x00000003, 0x000200F8, 0x00000005, 0x0004003D, 0x0000000B, 0x0000000E, 0x0000000D, 0x0004003D,
-    0x0000000F, 0x00000012, 0x00000011, 0x00050057, 0x00000007, 0x00000013, 0x0000000E, 0x00000012,
-    0x0004003D, 0x00000007, 0x00000016, 0x00000015, 0x00050085, 0x00000007, 0x00000017, 0x00000013,
-    0x00000016, 0x0003003E, 0x00000009, 0x00000017, 0x000100FD, 0x00010038
-};
-
-namespace {
-
-static const std::array<uint32_t, 257> kVk3DVertSpv = {
-    0x07230203, 0x00010000, 0x0008000B, 0x0000001E, 0x00000000, 0x00020011, 0x00000001, 0x0006000B,
-    0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 0x00000000, 0x0003000E, 0x00000000, 0x00000001,
-    0x000B000F, 0x00000000, 0x00000004, 0x6E69616D, 0x00000000, 0x0000000D, 0x00000011, 0x00000017,
-    0x00000019, 0x0000001B, 0x0000001C, 0x00030003, 0x00000002, 0x000001C2, 0x00040005, 0x00000004,
-    0x6E69616D, 0x00000000, 0x00060005, 0x0000000B, 0x505F6C67, 0x65567265, 0x78657472, 0x00000000,
-    0x00060006, 0x0000000B, 0x00000000, 0x505F6C67, 0x7469736F, 0x006E6F69, 0x00070006, 0x0000000B,
-    0x00000001, 0x505F6C67, 0x746E696F, 0x657A6953, 0x00000000, 0x00070006, 0x0000000B, 0x00000002,
-    0x435F6C67, 0x4470696C, 0x61747369, 0x0065636E, 0x00070006, 0x0000000B, 0x00000003, 0x435F6C67,
-    0x446C6C75, 0x61747369, 0x0065636E, 0x00030005, 0x0000000D, 0x00000000, 0x00050005, 0x00000011,
-    0x736F5061, 0x6F697469, 0x0000006E, 0x00050005, 0x00000017, 0x78655476, 0x726F6F43, 0x00000064,
-    0x00050005, 0x00000019, 0x78655461, 0x726F6F43, 0x00000064, 0x00040005, 0x0000001B, 0x6C6F4376,
-    0x0000726F, 0x00040005, 0x0000001C, 0x6C6F4361, 0x0000726F, 0x00030047, 0x0000000B, 0x00000002,
-    0x00050048, 0x0000000B, 0x00000000, 0x0000000B, 0x00000000, 0x00050048, 0x0000000B, 0x00000001,
-    0x0000000B, 0x00000001, 0x00050048, 0x0000000B, 0x00000002, 0x0000000B, 0x00000003, 0x00050048,
-    0x0000000B, 0x00000003, 0x0000000B, 0x00000004, 0x00040047, 0x00000011, 0x0000001E, 0x00000000,
-    0x00040047, 0x00000017, 0x0000001E, 0x00000000, 0x00040047, 0x00000019, 0x0000001E, 0x00000001,
-    0x00040047, 0x0000001B, 0x0000001E, 0x00000001, 0x00040047, 0x0000001C, 0x0000001E, 0x00000002,
-    0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020,
-    0x00040017, 0x00000007, 0x00000006, 0x00000004, 0x00040015, 0x00000008, 0x00000020, 0x00000000,
-    0x0004002B, 0x00000008, 0x00000009, 0x00000001, 0x0004001C, 0x0000000A, 0x00000006, 0x00000009,
-    0x0006001E, 0x0000000B, 0x00000007, 0x00000006, 0x0000000A, 0x0000000A, 0x00040020, 0x0000000C,
-    0x00000003, 0x0000000B, 0x0004003B, 0x0000000C, 0x0000000D, 0x00000003, 0x00040015, 0x0000000E,
-    0x00000020, 0x00000001, 0x0004002B, 0x0000000E, 0x0000000F, 0x00000000, 0x00040020, 0x00000010,
-    0x00000001, 0x00000007, 0x0004003B, 0x00000010, 0x00000011, 0x00000001, 0x00040020, 0x00000013,
-    0x00000003, 0x00000007, 0x00040017, 0x00000015, 0x00000006, 0x00000002, 0x00040020, 0x00000016,
-    0x00000003, 0x00000015, 0x0004003B, 0x00000016, 0x00000017, 0x00000003, 0x00040020, 0x00000018,
-    0x00000001, 0x00000015, 0x0004003B, 0x00000018, 0x00000019, 0x00000001, 0x0004003B, 0x00000013,
-    0x0000001B, 0x00000003, 0x0004003B, 0x00000010, 0x0000001C, 0x00000001, 0x00050036, 0x00000002,
-    0x00000004, 0x00000000, 0x00000003, 0x000200F8, 0x00000005, 0x0004003D, 0x00000007, 0x00000012,
-    0x00000011, 0x00050041, 0x00000013, 0x00000014, 0x0000000D, 0x0000000F, 0x0003003E, 0x00000014,
-    0x00000012, 0x0004003D, 0x00000015, 0x0000001A, 0x00000019, 0x0003003E, 0x00000017, 0x0000001A,
-    0x0004003D, 0x00000007, 0x0000001D, 0x0000001C, 0x0003003E, 0x0000001B, 0x0000001D, 0x000100FD,
-    0x00010038
-};
-
-static const std::array<uint32_t, 167> kVk3DFragSpv = {
-    0x07230203, 0x00010000, 0x0008000B, 0x00000018, 0x00000000, 0x00020011, 0x00000001, 0x0006000B,
-    0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 0x00000000, 0x0003000E, 0x00000000, 0x00000001,
-    0x0008000F, 0x00000004, 0x00000004, 0x6E69616D, 0x00000000, 0x00000009, 0x00000011, 0x00000015,
-    0x00030010, 0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001C2, 0x00040005, 0x00000004,
-    0x6E69616D, 0x00000000, 0x00050005, 0x00000009, 0x67617246, 0x6F6C6F43, 0x00000072, 0x00050005,
-    0x0000000D, 0x78655475, 0x65727574, 0x00000000, 0x00050005, 0x00000011, 0x78655476, 0x726F6F43,
-    0x00000064, 0x00040005, 0x00000015, 0x6C6F4376, 0x0000726F, 0x00040047, 0x00000009, 0x0000001E,
-    0x00000000, 0x00040047, 0x0000000D, 0x00000021, 0x00000000, 0x00040047, 0x0000000D, 0x00000022,
-    0x00000000, 0x00040047, 0x00000011, 0x0000001E, 0x00000000, 0x00040047, 0x00000015, 0x0000001E,
-    0x00000001, 0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006,
-    0x00000020, 0x00040017, 0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008, 0x00000003,
-    0x00000007, 0x0004003B, 0x00000008, 0x00000009, 0x00000003, 0x00090019, 0x0000000A, 0x00000006,
-    0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x0003001B, 0x0000000B,
-    0x0000000A, 0x00040020, 0x0000000C, 0x00000000, 0x0000000B, 0x0004003B, 0x0000000C, 0x0000000D,
-    0x00000000, 0x00040017, 0x0000000F, 0x00000006, 0x00000002, 0x00040020, 0x00000010, 0x00000001,
-    0x0000000F, 0x0004003B, 0x00000010, 0x00000011, 0x00000001, 0x00040020, 0x00000014, 0x00000001,
-    0x00000007, 0x0004003B, 0x00000014, 0x00000015, 0x00000001, 0x00050036, 0x00000002, 0x00000004,
-    0x00000000, 0x00000003, 0x000200F8, 0x00000005, 0x0004003D, 0x0000000B, 0x0000000E, 0x0000000D,
-    0x0004003D, 0x0000000F, 0x00000012, 0x00000011, 0x00050057, 0x00000007, 0x00000013, 0x0000000E,
-    0x00000012, 0x0004003D, 0x00000007, 0x00000016, 0x00000015, 0x00050085, 0x00000007, 0x00000017,
-    0x00000013, 0x00000016, 0x0003003E, 0x00000009, 0x00000017, 0x000100FD, 0x00010038
-};
 
 bool HasStencilComponent(VkFormat format) {
     return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
@@ -812,8 +230,6 @@ const char* GetVkFormatString(VkFormat format) {
     }
 }
 
-} // namespace
-
 QuarkVkRenderer::~QuarkVkRenderer() {
     Shutdown();
 }
@@ -856,10 +272,6 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     CreateOffscreenRenderPass();
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateDescriptorSetLayout");
     CreateDescriptorSetLayout();
-    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateShadowResources");
-    CreateShadowResources();
-    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateShadowPipeline");
-    CreateShadowPipeline();
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreatePipeline2D");
     CreatePipeline2D();
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateOffscreenPipeline2D");
@@ -898,8 +310,6 @@ void QuarkVkRenderer::Shutdown() {
     if (m_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_device);
     }
-
-    DestroyShadowResources();
 
     {
         std::vector<uint32_t> ids;
@@ -1222,7 +632,7 @@ void QuarkVkRenderer::MultMatrix(const Mat4& matrix) {
 }
 
 const float* QuarkVkRenderer::GetMatrixModelview()  {
-    return m_currentMatrix.m;
+    return m_viewMatrix.m;
 }
 
 const float* QuarkVkRenderer::GetMatrixProjection() {
@@ -1916,12 +1326,15 @@ VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& mat
     lightBuffer.range = 320;
     std::array<VkDescriptorImageInfo, 4> shadowImages{};
     shadowImages.fill(whiteImage);
-    if (m_shadowImageView != VK_NULL_HANDLE) {
-        VkDescriptorImageInfo shadowImage{};
-        shadowImage.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        shadowImage.imageView = m_shadowImageView;
-        shadowImage.sampler = m_shadowSampler;
-        shadowImages.fill(shadowImage);
+    if (material.maps) {
+        for (uint32_t i = 0; i < 4; ++i) {
+            const MaterialMap& map = material.maps[MATERIAL_MAP_HEIGHT + i];
+            const auto textureIt = m_textures.find(map.texture.id);
+            if (map.texture.valid && textureIt != m_textures.end()) {
+                shadowImages[i].imageView = textureIt->second.view;
+                shadowImages[i].sampler = textureIt->second.sampler;
+            }
+        }
     }
 
     std::array<VkWriteDescriptorSet, 11> writes{};
@@ -2342,12 +1755,23 @@ void QuarkVkRenderer::CreateShaderPipelines() {
         }
         if (program.pipeline3D != VK_NULL_HANDLE) {
             vkDestroyPipeline(m_device, program.pipeline3D, nullptr);
+            program.pipeline3D = VK_NULL_HANDLE;
+        }
+        if (program.pipeline3DOffscreen != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, program.pipeline3DOffscreen, nullptr);
+            program.pipeline3DOffscreen = VK_NULL_HANDLE;
         }
         if (program.supports3D) {
             program.pipeline3D = Create3DPipelineForRenderPass(m_renderPass,
                                                                 VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                 program.vertexModule,
                                                                 program.fragmentModule);
+            if (m_offscreenRenderPass != VK_NULL_HANDLE) {
+                program.pipeline3DOffscreen = Create3DPipelineForRenderPass(m_offscreenRenderPass,
+                                                                            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                                                            program.vertexModule,
+                                                                            program.fragmentModule);
+            }
         }
     }
 }
@@ -2569,223 +1993,6 @@ void QuarkVkRenderer::CreatePipeline3D() {
     m_pipeline3DLines = Create3DPipelineForRenderPass(m_renderPass, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
     m_offscreenPipeline3DTri = Create3DPipelineForRenderPass(m_offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     m_offscreenPipeline3DLines = Create3DPipelineForRenderPass(m_offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
-}
-
-void QuarkVkRenderer::CreateShadowResources() {
-    constexpr uint32_t shadowSize = 2048;
-    m_shadowFormat = FindSupportedFormat(
-        { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM },
-        VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
-
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent = { shadowSize, shadowSize, 1 };
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.format = m_shadowFormat;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (vkCreateImage(m_device, &imageInfo, nullptr, &m_shadowImage) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan shadow image.");
-    }
-
-    VkMemoryRequirements requirements{};
-    vkGetImageMemoryRequirements(m_device, m_shadowImage, &requirements);
-    VkMemoryAllocateInfo allocation{};
-    allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocation.allocationSize = requirements.size;
-    allocation.memoryTypeIndex = FindMemoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (vkAllocateMemory(m_device, &allocation, nullptr, &m_shadowMemory) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to allocate Vulkan shadow image memory.");
-    }
-    vkBindImageMemory(m_device, m_shadowImage, m_shadowMemory, 0);
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = m_shadowImage;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = m_shadowFormat;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.layerCount = 1;
-    if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_shadowImageView) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan shadow image view.");
-    }
-
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_NEAREST;
-    samplerInfo.minFilter = VK_FILTER_NEAREST;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-    samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    if (vkCreateSampler(m_device, &samplerInfo, nullptr, &m_shadowSampler) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan shadow sampler.");
-    }
-
-    VkAttachmentDescription attachment{};
-    attachment.format = m_shadowFormat;
-    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkAttachmentReference depthReference{ 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.pDepthStencilAttachment = &depthReference;
-    std::array<VkSubpassDependency, 2> dependencies{};
-    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[0].dstSubpass = 0;
-    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    dependencies[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencies[1].srcSubpass = 0;
-    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dependencies[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &attachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
-    renderPassInfo.pDependencies = dependencies.data();
-    if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_shadowRenderPass) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan shadow render pass.");
-    }
-
-    VkFramebufferCreateInfo framebufferInfo{};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = m_shadowRenderPass;
-    framebufferInfo.attachmentCount = 1;
-    framebufferInfo.pAttachments = &m_shadowImageView;
-    framebufferInfo.width = shadowSize;
-    framebufferInfo.height = shadowSize;
-    framebufferInfo.layers = 1;
-    if (vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_shadowFramebuffer) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan shadow framebuffer.");
-    }
-}
-
-void QuarkVkRenderer::CreateShadowPipeline() {
-    static const char* shadowVertexShader = R"glsl(
-#version 450
-layout(push_constant) uniform ShadowData { mat4 lightViewProjection; } shadowData;
-layout(location = 0) in vec4 aWorldPosition;
-void main() { gl_Position = shadowData.lightViewProjection * aWorldPosition; }
-)glsl";
-    const std::vector<uint32_t> code = CompileRuntimeShader(
-        shadowVertexShader, shaderc_vertex_shader, "built-in shadow vertex shader");
-    VkShaderModule module = CreateShaderModule(code);
-
-    VkPushConstantRange pushConstant{};
-    pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushConstant.size = sizeof(Mat4);
-    VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.pushConstantRangeCount = 1;
-    layoutInfo.pPushConstantRanges = &pushConstant;
-    if (vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_shadowPipelineLayout) != VK_SUCCESS) {
-        vkDestroyShaderModule(m_device, module, nullptr);
-        throw std::runtime_error("Failed to create Vulkan shadow pipeline layout.");
-    }
-
-    VkPipelineShaderStageCreateInfo stage{};
-    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    stage.module = module;
-    stage.pName = "main";
-    VkVertexInputBindingDescription binding{ 0, sizeof(Vk3DVertex), VK_VERTEX_INPUT_RATE_VERTEX };
-    VkVertexInputAttributeDescription attribute{ 0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vk3DVertex, wx) };
-    VkPipelineVertexInputStateCreateInfo vertexInput{};
-    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInput.vertexBindingDescriptionCount = 1;
-    vertexInput.pVertexBindingDescriptions = &binding;
-    vertexInput.vertexAttributeDescriptionCount = 1;
-    vertexInput.pVertexAttributeDescriptions = &attribute;
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.scissorCount = 1;
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.depthBiasEnable = VK_TRUE;
-    rasterizer.depthBiasConstantFactor = 1.25f;
-    rasterizer.depthBiasSlopeFactor = 1.75f;
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    VkPipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-    VkPipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = 2;
-    dynamicState.pDynamicStates = dynamicStates;
-    VkGraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 1;
-    pipelineInfo.pStages = &stage;
-    pipelineInfo.pVertexInputState = &vertexInput;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.pDynamicState = &dynamicState;
-    pipelineInfo.layout = m_shadowPipelineLayout;
-    pipelineInfo.renderPass = m_shadowRenderPass;
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_shadowPipeline) != VK_SUCCESS) {
-        vkDestroyShaderModule(m_device, module, nullptr);
-        throw std::runtime_error("Failed to create Vulkan shadow pipeline.");
-    }
-    vkDestroyShaderModule(m_device, module, nullptr);
-}
-
-void QuarkVkRenderer::DestroyShadowResources() {
-    if (m_shadowPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_shadowPipeline, nullptr);
-    if (m_shadowPipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(m_device, m_shadowPipelineLayout, nullptr);
-    if (m_shadowFramebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(m_device, m_shadowFramebuffer, nullptr);
-    if (m_shadowRenderPass != VK_NULL_HANDLE) vkDestroyRenderPass(m_device, m_shadowRenderPass, nullptr);
-    if (m_shadowSampler != VK_NULL_HANDLE) vkDestroySampler(m_device, m_shadowSampler, nullptr);
-    if (m_shadowImageView != VK_NULL_HANDLE) vkDestroyImageView(m_device, m_shadowImageView, nullptr);
-    if (m_shadowImage != VK_NULL_HANDLE) vkDestroyImage(m_device, m_shadowImage, nullptr);
-    if (m_shadowMemory != VK_NULL_HANDLE) vkFreeMemory(m_device, m_shadowMemory, nullptr);
-    m_shadowPipeline = VK_NULL_HANDLE;
-    m_shadowPipelineLayout = VK_NULL_HANDLE;
-    m_shadowFramebuffer = VK_NULL_HANDLE;
-    m_shadowRenderPass = VK_NULL_HANDLE;
-    m_shadowSampler = VK_NULL_HANDLE;
-    m_shadowImageView = VK_NULL_HANDLE;
-    m_shadowImage = VK_NULL_HANDLE;
-    m_shadowMemory = VK_NULL_HANDLE;
 }
 
 void QuarkVkRenderer::RecreateSwapChain() {
@@ -4096,8 +3303,15 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                     }
                     const VkDescriptorSet descriptorSet = item.descriptorSet != VK_NULL_HANDLE
                         ? item.descriptorSet : whiteDescriptorSet;
-                    if (m_offscreenPipeline3DTri == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE) continue;
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DTri);
+                    VkPipeline itemPipeline = m_offscreenPipeline3DTri;
+                    if (item.shaderProgramId != 0) {
+                        const auto shaderIt = m_shaderPrograms.find(item.shaderProgramId);
+                        if (shaderIt != m_shaderPrograms.end() && shaderIt->second.pipeline3DOffscreen != VK_NULL_HANDLE) {
+                            itemPipeline = shaderIt->second.pipeline3DOffscreen;
+                        }
+                    }
+                    if (itemPipeline == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE) continue;
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, itemPipeline);
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                             m_pipelineLayout3D, 0, 1, &descriptorSet, 0, nullptr);
                     vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
@@ -4151,47 +3365,6 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
             mainPass = &pass;
             break;
         }
-    }
-
-    if (mainPass && mainPass->triVertexCount > 0 &&
-        m_shadowRenderPass != VK_NULL_HANDLE && m_shadowPipeline != VK_NULL_HANDLE) {
-        const Mat4 lightView = Mat4::lookAt(
-            Vec3{ -20.0f, 30.0f, 20.0f }, Vec3{ 0.0f, 0.0f, 0.0f }, Vec3{ 0.0f, 1.0f, 0.0f });
-        Mat4 shadowProjection = Mat4::identity();
-        shadowProjection.m[0] = 2.0f / 60.0f;
-        shadowProjection.m[5] = 2.0f / 60.0f;
-        shadowProjection.m[10] = -1.0f / 99.0f;
-        shadowProjection.m[12] = 0.0f;
-        shadowProjection.m[13] = 0.0f;
-        shadowProjection.m[14] = -1.0f / 99.0f;
-        m_shadowViewProjection = MultiplyColumnMajor(shadowProjection, lightView);
-        if (m_3DDummyMapped != nullptr) {
-            std::memcpy(static_cast<char*>(m_3DDummyMapped) + 512,
-                        m_shadowViewProjection.m, sizeof(m_shadowViewProjection.m));
-        }
-
-        VkClearValue shadowClear{};
-        shadowClear.depthStencil = { 1.0f, 0 };
-        VkRenderPassBeginInfo shadowPassInfo{};
-        shadowPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        shadowPassInfo.renderPass = m_shadowRenderPass;
-        shadowPassInfo.framebuffer = m_shadowFramebuffer;
-        shadowPassInfo.renderArea.extent = { 2048, 2048 };
-        shadowPassInfo.clearValueCount = 1;
-        shadowPassInfo.pClearValues = &shadowClear;
-        vkCmdBeginRenderPass(cmd, &shadowPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        VkViewport shadowViewport{ 0.0f, 0.0f, 2048.0f, 2048.0f, 0.0f, 1.0f };
-        VkRect2D shadowScissor{};
-        shadowScissor.extent = { 2048, 2048 };
-        vkCmdSetViewport(cmd, 0, 1, &shadowViewport);
-        vkCmdSetScissor(cmd, 0, 1, &shadowScissor);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipeline);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-        vkCmdPushConstants(cmd, m_shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
-                           0, sizeof(m_shadowViewProjection), &m_shadowViewProjection);
-        vkCmdDraw(cmd, mainPass->triVertexCount, 1, mainPass->triFirstVertex, 0);
-        vkCmdEndRenderPass(cmd);
     }
 
     std::array<VkClearValue, 2> clearValues{};
@@ -4253,20 +3426,17 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                             m_projectionMatrix.m, sizeof(m_projectionMatrix.m));
             }
             Vk3DPushConstants lighting{};
-            const float positions[4][3] = {
-                { -3.0f, 4.0f,  3.0f }, {  3.0f, 3.0f,  3.0f },
-                { -3.0f, 3.0f, -3.0f }, {  3.0f, 3.0f, -3.0f }
-            };
-            const float colors[4][3] = {
-                { 1.0f, 1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f },
-                { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }
-            };
             for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
-                std::copy(std::begin(positions[lightIndex]), std::end(positions[lightIndex]), lighting.lightPositions[lightIndex]);
+                const VkLight3D& light = m_lights[static_cast<size_t>(lightIndex)];
+                lighting.lightPositions[lightIndex][0] = light.position.x;
+                lighting.lightPositions[lightIndex][1] = light.position.y;
+                lighting.lightPositions[lightIndex][2] = light.position.z;
                 lighting.lightPositions[lightIndex][3] = 1.0f;
-                std::copy(std::begin(colors[lightIndex]), std::end(colors[lightIndex]), lighting.lightColors[lightIndex]);
+                lighting.lightColors[lightIndex][0] = light.color.x;
+                lighting.lightColors[lightIndex][1] = light.color.y;
+                lighting.lightColors[lightIndex][2] = light.color.z;
                 lighting.lightColors[lightIndex][3] = 1.0f;
-                lighting.lightEnabled[lightIndex] = m_3DLightEnabled[static_cast<size_t>(lightIndex)] ? 1.0f : 0.0f;
+                lighting.lightEnabled[lightIndex] = light.enabled ? 1.0f : 0.0f;
             }
             lighting.timeData[0] = static_cast<float>(SDL_GetTicks()) / 1000.0f;
             if (m_3DDummyMapped != nullptr) {
@@ -4278,23 +3448,29 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                 lightData[4] = 1.0f;
                 lightData[5] = 1.0f;
                 lightData[6] = 1.0f;
-                lightData[8] = 2.0f;
-                lightData[9] = 4.0f;
-                lightData[10] = 7.0f;
+                lightData[8] = m_viewPos.x;
+                lightData[9] = m_viewPos.y;
+                lightData[10] = m_viewPos.z;
                 for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
+                    const VkLight3D& light = m_lights[static_cast<size_t>(lightIndex)];
                     const size_t base = 12 + static_cast<size_t>(lightIndex) * 16;
-                    lightData[base + 0] = positions[lightIndex][0];
-                    lightData[base + 1] = positions[lightIndex][1];
-                    lightData[base + 2] = positions[lightIndex][2];
+                    lightData[base + 0] = light.position.x;
+                    lightData[base + 1] = light.position.y;
+                    lightData[base + 2] = light.position.z;
                     lightData[base + 3] = 1.0f;
+                    lightData[base + 4] = light.target.x;
+                    lightData[base + 5] = light.target.y;
+                    lightData[base + 6] = light.target.z;
                     lightData[base + 7] = 1.0f;
-                    lightData[base + 8] = colors[lightIndex][0];
-                    lightData[base + 9] = colors[lightIndex][1];
-                    lightData[base + 10] = colors[lightIndex][2];
+                    lightData[base + 8] = light.color.x;
+                    lightData[base + 9] = light.color.y;
+                    lightData[base + 10] = light.color.z;
                     lightData[base + 11] = 1.0f;
-                    lightData[base + 12] = 0.08f;
-                    lightData[base + 13] = m_3DLightEnabled[static_cast<size_t>(lightIndex)] ? 1.0f : 0.0f;
-                    lightData[base + 14] = 1.0f;
+                    lightData[base + 12] = light.attenuation;
+                    const int enabledValue = light.enabled ? 1 : 0;
+                    std::memcpy(lightData + base + 13, &enabledValue, sizeof(int));
+                    const int typeValue = light.type;
+                    std::memcpy(lightData + base + 14, &typeValue, sizeof(int));
                 }
             }
             vkCmdPushConstants(cmd, custom3DLayout,
@@ -4342,13 +3518,14 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, custom3DPipeline);
                 vkCmdDraw(cmd, mainPass->triVertexCount, 1, mainPass->triFirstVertex, 0);
             }
-            if (mainPass->lineVertexCount > 0 && m_pipeline3DLines != VK_NULL_HANDLE) {
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DLines);
-                vkCmdDraw(cmd, mainPass->lineVertexCount, 1,
-                          static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + mainPass->lineFirstVertex, 0);
-            }
+        }
+
+        if (mainPass->lineVertexCount > 0 && m_pipeline3DLines != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DLines);
+            vkCmdDraw(cmd, mainPass->lineVertexCount, 1,
+                      static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + mainPass->lineFirstVertex, 0);
         }
     }
 

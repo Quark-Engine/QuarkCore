@@ -524,7 +524,7 @@ if(QC_BUILD_EXAMPLES)
         quarkcore_meshes
         quarkcore_vulkan
         quarkcore_vulkan_shaders
-        quarkcore_vulkan_3d_shadows
+        quarkcore_vulkan_3d_lights
         quarkcore_lights
         quarkcore_files
         quarkcore_3d_lights
@@ -537,7 +537,7 @@ if(QC_BUILD_EXAMPLES)
         examples/meshes.cpp
         examples/vulkan.cpp
         examples/vulkan_shaders.cpp
-        examples/vulkan_3d_shadows.cpp
+        examples/vulkan_3d_lights.cpp
         examples/light.cpp
         examples/file_operations.cpp
         examples/3d_light.cpp
@@ -608,6 +608,19 @@ if(QC_BUILD_EXAMPLES)
                         ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/lighting.fs
                         ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/shadow_depth.vs
                         ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/shadow_depth.fs
+                        $<TARGET_FILE_DIR:${_target}>/resources
+                )
+            endif()
+
+            if(_target STREQUAL "quarkcore_vulkan_3d_lights")
+                add_custom_command(TARGET ${_target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E make_directory
+                        $<TARGET_FILE_DIR:${_target}>/resources
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/vulkan_lighting.vs
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/vulkan_lighting.fs
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/vulkan_shadow_depth.vs
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/vulkan_shadow_depth.fs
                         $<TARGET_FILE_DIR:${_target}>/resources
                 )
             endif()
