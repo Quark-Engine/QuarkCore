@@ -11,6 +11,19 @@ void D3D11Resources::Initialize(ID3D11Device *device)
     TraceLog(LogLevel::Trace, "D3D11", "Creating dynamic triangle vertex buffer...");
     CreateDynamicVertexBuffer(device, sizeof(float) * 8 * 6);
     TraceLog(LogLevel::Info, "D3D11", "Dynamic 2D vertex buffer created (192 bytes).");
+
+    TraceLog(LogLevel::Trace, "D3D11", "Creating dynamic 3D vertex buffer...");
+    {
+        D3D11_BUFFER_DESC description{};
+        description.ByteWidth = 1024 * 1024;
+        description.Usage = D3D11_USAGE_DYNAMIC;
+        description.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        description.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+        d3d11::ThrowIfFailed(device->CreateBuffer(&description, nullptr, &m_vertexBuffer3D),
+                             "ID3D11Device::CreateBuffer 3D");
+    }
+    TraceLog(LogLevel::Info, "D3D11", "Dynamic 3D vertex buffer created (1 MB).");
 }
 
 ID3D11Buffer *D3D11Resources::CreateDynamicVertexBuffer(ID3D11Device *device, UINT byteWidth)
@@ -47,6 +60,7 @@ void D3D11Resources::Shutdown()
 {
     TraceLog(LogLevel::Trace, "D3D11", "Releasing D3D11 resources...");
     m_triangleVertexBuffer.Reset();
+    m_vertexBuffer3D.Reset();
     m_textures.clear();
     m_renderTextures.clear();
     TraceLog(LogLevel::Trace, "D3D11", "D3D11 resources released.");

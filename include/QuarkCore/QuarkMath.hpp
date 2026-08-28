@@ -482,11 +482,12 @@ struct QCAPI Mat4 {
 
     Mat4 operator*(const Mat4& other) const {
         Mat4 result;
-        for (int i = 0; i < 4; ++i) {
-            for (int j = 0; j < 4; ++j) {
-                result.m[i * 4 + j] = 0.0f;
-                for (int k = 0; k < 4; ++k) {
-                    result.m[i * 4 + j] += m[i * 4 + k] * other.m[k * 4 + j];
+        for (int column = 0; column < 4; ++column) {
+            for (int row = 0; row < 4; ++row) {
+                result.m[column * 4 + row] = 0.0f;
+                for (int index = 0; index < 4; ++index) {
+                    result.m[column * 4 + row] +=
+                        m[index * 4 + row] * other.m[column * 4 + index];
                 }
             }
         }

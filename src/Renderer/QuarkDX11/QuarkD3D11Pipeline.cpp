@@ -75,10 +75,42 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         }
     )";
 
+    static constexpr char vertexSource3D[] = R"(
+        struct VSInput {
+            float4 position : POSITION;
+            float4 color : COLOR;
+        };
+
+        struct VSOutput {
+            float4 position : SV_POSITION;
+            float4 color : COLOR;
+        };
+
+        VSOutput main(VSInput input) {
+            VSOutput output;
+            output.position = input.position;
+            output.color = input.color;
+            return output;
+        }
+    )";
+
+    static constexpr char pixelSource3D[] = R"(
+        struct PSInput {
+            float4 position : SV_POSITION;
+            float4 color : COLOR;
+        };
+
+        float4 main(PSInput input) : SV_TARGET {
+            return input.color;
+        }
+    )";
+
     const auto vertexShader = compiler.Compile(vertexSource, "main", "vs_5_0");
     const auto pixelShader = compiler.Compile(pixelSource, "main", "ps_5_0");
     const auto texturedVertexShader = compiler.Compile(texturedVertexSource, "main", "vs_5_0");
     const auto texturedPixelShader = compiler.Compile(texturedPixelSource, "main", "ps_5_0");
+    const auto vertexShader3D = compiler.Compile(vertexSource3D, "main", "vs_5_0");
+    const auto pixelShader3D = compiler.Compile(pixelSource3D, "main", "ps_5_0");
 
     d3d11::ThrowIfFailed(device->CreateVertexShader(vertexShader->GetBufferPointer(),
                                                     vertexShader->GetBufferSize(), nullptr,
@@ -100,6 +132,17 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
                                   texturedPixelShader->GetBufferSize(), nullptr,
                                   &m_texturedPixelShader),
         "ID3D11Device::CreatePixelShader textured");
+
+    d3d11::ThrowIfFailed(
+        device->CreateVertexShader(vertexShader3D->GetBufferPointer(),
+                                   vertexShader3D->GetBufferSize(), nullptr,
+                                   &m_vertexShader3D),
+        "ID3D11Device::CreateVertexShader 3D");
+    d3d11::ThrowIfFailed(
+        device->CreatePixelShader(pixelShader3D->GetBufferPointer(),
+                                  pixelShader3D->GetBufferSize(), nullptr,
+                                  &m_pixelShader3D),
+        "ID3D11Device::CreatePixelShader 3D");
 
     const D3D11_INPUT_ELEMENT_DESC inputElements[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
@@ -127,6 +170,21 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
                                   &m_texturedInputLayout),
         "ID3D11Device::CreateInputLayout textured");
 
+    const D3D11_INPUT_ELEMENT_DESC inputElements3D[] = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16,
+         D3D11_INPUT_PER_VERTEX_DATA, 0}
+    };
+
+    d3d11::ThrowIfFailed(
+        device->CreateInputLayout(inputElements3D,
+                                  ARRAYSIZE(inputElements3D),
+                                  vertexShader3D->GetBufferPointer(),
+                                  vertexShader3D->GetBufferSize(),
+                                  &m_inputLayout3D),
+        "ID3D11Device::CreateInputLayout 3D");
+
     D3D11_RASTERIZER_DESC rasterizerDescription{};
     rasterizerDescription.FillMode = D3D11_FILL_SOLID;
     rasterizerDescription.CullMode = D3D11_CULL_NONE;
@@ -134,6 +192,34 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
 
     d3d11::ThrowIfFailed(device->CreateRasterizerState(&rasterizerDescription, &m_rasterizerState),
                          "ID3D11Device::CreateRasterizerState");
+
+    D3D11_DEPTH_STENCIL_DESC depthStencilDescription{};
+    depthStencilDescription.DepthEnable = TRUE;
+    depthStencilDescription.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+    depthStencilDescription.DepthFunc = D3D11_COMPARISON_LESS;
+    depthStencilDescription.StencilEnable = FALSE;
+
+    d3d11::ThrowIfFailed(
+        device->CreateDepthStencilState(&depthStencilDescription, &m_depthStencilState),
+        "ID3D11Device::CreateDepthStencilState");
+
+    D3D11_DEPTH_STENCIL_DESC depthStencilDisabledDescription{};
+    depthStencilDisabledDescription.DepthEnable = FALSE;
+    depthStencilDisabledDescription.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+    depthStencilDisabledDescription.StencilEnable = FALSE;
+
+    d3d11::ThrowIfFailed(
+        device->CreateDepthStencilState(&depthStencilDisabledDescription,
+                                        &m_depthStencilDisabledState),
+        "ID3D11Device::CreateDepthStencilState disabled");
+
+    D3D11_RASTERIZER_DESC cullRasterizerDescription = rasterizerDescription;
+    cullRasterizerDescription.CullMode = D3D11_CULL_BACK;
+    cullRasterizerDescription.FrontCounterClockwise = TRUE;
+
+    d3d11::ThrowIfFailed(
+        device->CreateRasterizerState(&cullRasterizerDescription, &m_rasterizerStateCull),
+        "ID3D11Device::CreateRasterizerState cull");
 
     D3D11_SAMPLER_DESC samplerDescription{};
     samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -163,6 +249,7 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         "ID3D11Device::CreateBlendState");
 
     m_vertexBuffer = resources.VertexBuffer();
+    m_vertexBuffer3D = resources.VertexBuffer3D();
 
     TraceLog(LogLevel::Info, "D3D11",
              "Built-in pipeline created (Input Layout, Rasterizer, VS, PS).");
@@ -183,7 +270,17 @@ void D3D11Pipeline::BindTexture(ID3D11DeviceContext *context,
     context->PSSetShaderResources(0, 1, &shaderResource);
     context->PSSetSamplers(0, 1, m_textureSampler.GetAddressOf());
     const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    context->OMSetDepthStencilState(m_depthStencilDisabledState.Get(), 0);
     context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
+}
+
+void D3D11Pipeline::BindDepthDisabled(ID3D11DeviceContext *context) const
+{
+    if (!context)
+    {
+        return;
+    }
+    context->OMSetDepthStencilState(m_depthStencilDisabledState.Get(), 0);
 }
 
 void D3D11Pipeline::Bind(ID3D11DeviceContext *context) const
@@ -197,6 +294,22 @@ void D3D11Pipeline::Bind(ID3D11DeviceContext *context) const
     context->VSSetShader(m_vertexShader.Get(), nullptr, 0);
     context->PSSetShader(m_pixelShader.Get(), nullptr, 0);
     const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    context->OMSetDepthStencilState(m_depthStencilDisabledState.Get(), 0);
+    context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
+}
+
+void D3D11Pipeline::Bind3D(ID3D11DeviceContext *context) const
+{
+    const UINT stride = sizeof(float) * 8;
+    const UINT offset = 0;
+    context->IASetInputLayout(m_inputLayout3D.Get());
+    context->IASetVertexBuffers(0, 1, &m_vertexBuffer3D, &stride, &offset);
+    context->RSSetState(m_backfaceCullingEnabled ? m_rasterizerStateCull.Get()
+                                                 : m_rasterizerState.Get());
+    context->VSSetShader(m_vertexShader3D.Get(), nullptr, 0);
+    context->PSSetShader(m_pixelShader3D.Get(), nullptr, 0);
+    context->OMSetDepthStencilState(m_depthStencilState.Get(), 0);
+    const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
     context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
 }
 
@@ -205,6 +318,7 @@ void D3D11Pipeline::Shutdown()
     TraceLog(LogLevel::Trace, "D3D11", "Releasing built-in pipeline state...");
 
     m_vertexBuffer = nullptr;
+    m_vertexBuffer3D = nullptr;
     m_rasterizerState.Reset();
     m_inputLayout.Reset();
     m_pixelShader.Reset();
@@ -214,6 +328,13 @@ void D3D11Pipeline::Shutdown()
     m_texturedPixelShader.Reset();
     m_texturedVertexShader.Reset();
     m_blendState.Reset();
+    m_inputLayout3D.Reset();
+    m_pixelShader3D.Reset();
+    m_vertexShader3D.Reset();
+    m_depthStencilState.Reset();
+    m_depthStencilDisabledState.Reset();
+    m_rasterizerStateCull.Reset();
+    m_backfaceCullingEnabled = false;
 
     TraceLog(LogLevel::Trace, "D3D11", "Built-in pipeline state released.");
 }

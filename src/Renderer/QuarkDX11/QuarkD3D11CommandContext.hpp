@@ -40,6 +40,8 @@ public:
                          Color tint,
                          int width,
                          int height);
+    void Draw3D(const float *vertices, UINT vertexCount, D3D_PRIMITIVE_TOPOLOGY topology);
+    void ClearDepthStencil();
     void BeginTextureMode(const IRenderTexture& target);
     void EndTextureMode(int width, int height);
     void BeginMode2D(const Camera2D& camera);

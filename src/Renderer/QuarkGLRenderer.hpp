@@ -90,7 +90,7 @@ public:
     void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color) override;
     void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) override;
     void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) override;
-    void DrawGrid(int slices, float spacing) override;
+    void DrawGrid(int slices, float spacing, Color color) override;
 
     void DrawText(const char* text, int x, int y, int fontSize, Color color) override;
     void DrawTextEx(IFont font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) override;

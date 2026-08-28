@@ -389,7 +389,7 @@ QCAPI void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color);
  * @param slices Number of slices.
  * @param spacing Spacing between slices.
  */
-QCAPI void DrawGrid(int slices, float spacing);
+QCAPI void DrawGrid(int slices, float spacing, Color color = GRAY);
 
 inline RayCollision GetRayCollisionTriangle(Ray ray, Vec3 a, Vec3 b, Vec3 c) {
     RayCollision result{};

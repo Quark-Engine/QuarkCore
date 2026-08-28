@@ -1811,6 +1811,13 @@ void QuarkGLRenderer::FlushLines3D() {
 
     Mat4 id = Mat4::identity();
     if (m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, id.m);
+    if (m_3d.colorLoc >= 0) {
+        glUniform4f(m_3d.colorLoc,
+                    m_3d.currentLineColor.r / 255.f,
+                    m_3d.currentLineColor.g / 255.f,
+                    m_3d.currentLineColor.b / 255.f,
+                    m_3d.currentLineColor.a / 255.f);
+    }
 
     glBindTexture(GL_TEXTURE_2D, m_3d.whiteTexture);
     glBindVertexArray(m_3d.lineVAO);
@@ -1833,6 +1840,13 @@ void QuarkGLRenderer::FlushTriangles3D() {
 
     Mat4 id = Mat4::identity();
     if (m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, id.m);
+    if (m_3d.colorLoc >= 0) {
+        glUniform4f(m_3d.colorLoc,
+                    m_3d.currentTriColor.r / 255.f,
+                    m_3d.currentTriColor.g / 255.f,
+                    m_3d.currentTriColor.b / 255.f,
+                    m_3d.currentTriColor.a / 255.f);
+    }
 
     glBindTexture(GL_TEXTURE_2D, m_3d.whiteTexture);
     glBindVertexArray(m_3d.triVAO);
@@ -1923,6 +1937,9 @@ void QuarkGLRenderer::DrawLine3D(Vec3 s,Vec3 e,Color color){
 }
 
 void QuarkGLRenderer::DrawPlane(Vec3 c,Vec2 size,Color color){
+    FlushLines3D();
+    FlushTriangles3D();
+
     Mat4 t = ApplyCurrentMatrix(
         Mat4::translation(
             c.x,
@@ -1961,6 +1978,9 @@ void QuarkGLRenderer::DrawPlane(Vec3 c,Vec2 size,Color color){
 }
 
 void QuarkGLRenderer::DrawCube(Vec3 pos,float w,float h,float l,Color color){
+    FlushLines3D();
+    FlushTriangles3D();
+
     Mat4 t = ApplyCurrentMatrix(
         Mat4::translation(
             pos.x,
@@ -2040,6 +2060,9 @@ void QuarkGLRenderer::DrawCubeWiresV(Vec3 p, Vec3 s, Color c) {
 }
 
 void QuarkGLRenderer::DrawSphere(Vec3 pos, float r, Color color) {
+    FlushLines3D();
+    FlushTriangles3D();
+
     Mat4 t = ApplyCurrentMatrix(
         Mat4::translation(
             pos.x,
@@ -2206,13 +2229,13 @@ void QuarkGLRenderer::DrawCylinderWiresEx(Vec3 s, Vec3 e, float rs, float re, in
     }
 }
 
-void QuarkGLRenderer::DrawGrid(int slices,float spacing) {
+void QuarkGLRenderer::DrawGrid(int slices,float spacing,Color color) {
     float half = (float)slices * spacing / 2;
     for(int i = 0; i <= slices; ++i){
         float f =- half + (float)i * spacing;
 
-        DrawLine3D({f, 0, -half}, {f, 0, half}, DARKGRAY);
-        DrawLine3D({-half, 0, f}, {half, 0, f}, DARKGRAY);
+        DrawLine3D({f, 0, -half}, {f, 0, half}, color);
+        DrawLine3D({-half, 0, f}, {half, 0, f}, color);
     }
 }
 

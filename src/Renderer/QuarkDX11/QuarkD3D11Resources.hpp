@@ -16,6 +16,7 @@ public:
     void UpdateDynamicBuffer(ID3D11DeviceContext *context, ID3D11Buffer *buffer, const void *data,
                              size_t size) const;
     ID3D11Buffer *VertexBuffer() const { return m_triangleVertexBuffer.Get(); }
+    ID3D11Buffer *VertexBuffer3D() const { return m_vertexBuffer3D.Get(); }
     ITexture CreateTexture(ID3D11Device *device, const uint8_t *pixels, int width, int height);
     IRenderTexture CreateRenderTexture(ID3D11Device *device, int width, int height);
     ID3D11ShaderResourceView *ShaderResource(uint32_t id) const;
@@ -26,6 +27,7 @@ public:
 
 private:
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_triangleVertexBuffer;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> m_vertexBuffer3D;
 
     struct TextureResource {
         Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;

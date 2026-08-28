@@ -48,6 +48,7 @@ void D3D11SwapChain::Initialize(const D3D11Device &device, SDL_Window *window, i
 
     TraceLog(LogLevel::Trace, "D3D11", "Swap chain created successfully.");
     CreateRenderTarget(device);
+    CreateDepthStencil(device);
 }
 
 void D3D11SwapChain::CreateRenderTarget(const D3D11Device &device)
@@ -63,12 +64,47 @@ void D3D11SwapChain::CreateRenderTarget(const D3D11Device &device)
     TraceLog(LogLevel::Info, "D3D11", "Back-buffer render target view created.");
 }
 
+void D3D11SwapChain::CreateDepthStencil(const D3D11Device &device)
+{
+    DXGI_SWAP_CHAIN_DESC chainDescription{};
+    m_swapChain->GetDesc(&chainDescription);
+
+    D3D11_TEXTURE2D_DESC textureDescription{};
+    textureDescription.Width = chainDescription.BufferDesc.Width;
+    textureDescription.Height = chainDescription.BufferDesc.Height;
+    textureDescription.MipLevels = 1;
+    textureDescription.ArraySize = 1;
+    textureDescription.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    textureDescription.SampleDesc.Count = 1;
+    textureDescription.Usage = D3D11_USAGE_DEFAULT;
+    textureDescription.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+
+    d3d11::ThrowIfFailed(
+        device.Get()->CreateTexture2D(&textureDescription, nullptr, &m_depthStencilTexture),
+        "ID3D11Device::CreateTexture2D depth stencil");
+    d3d11::ThrowIfFailed(
+        device.Get()->CreateDepthStencilView(m_depthStencilTexture.Get(), nullptr,
+                                             &m_depthStencilView),
+        "ID3D11Device::CreateDepthStencilView");
+
+    TraceLog(LogLevel::Info, "D3D11",
+             TextFormat("Depth-stencil buffer created (%ux%u).",
+                        textureDescription.Width, textureDescription.Height));
+}
+
+void D3D11SwapChain::ReleaseDepthStencil()
+{
+    m_depthStencilView.Reset();
+    m_depthStencilTexture.Reset();
+}
+
 void D3D11SwapChain::Resize(const D3D11Device &device, int width, int height)
 {
     TraceLog(LogLevel::Info, "D3D11",
              TextFormat("Resizing swap chain to %dx%d...", width, height));
 
     m_renderTarget.Reset();
+    ReleaseDepthStencil();
 
     d3d11::ThrowIfFailed(m_swapChain->ResizeBuffers(0, static_cast<UINT>(width),
                                                     static_cast<UINT>(height), DXGI_FORMAT_UNKNOWN,
@@ -76,6 +112,7 @@ void D3D11SwapChain::Resize(const D3D11Device &device, int width, int height)
                          "IDXGISwapChain::ResizeBuffers");
 
     CreateRenderTarget(device);
+    CreateDepthStencil(device);
 
     TraceLog(LogLevel::Info, "D3D11",
              TextFormat("Swap chain resized successfully (%dx%d).", width, height));
@@ -96,6 +133,7 @@ void D3D11SwapChain::Shutdown()
     TraceLog(LogLevel::Info, "D3D11", "Releasing swap chain resources...");
 
     m_renderTarget.Reset();
+    ReleaseDepthStencil();
     m_swapChain.Reset();
 
     TraceLog(LogLevel::Info, "D3D11", "Swap chain shut down successfully.");

@@ -467,6 +467,568 @@ void QuarkD3D11Renderer::DrawPoly(Vec2 center,
     }
 }
 
+void QuarkD3D11Renderer::BeginMode3D(const Camera3D &camera)
+{
+    m_viewMatrix = Mat4::lookAt(camera.position, camera.target, camera.up);
+
+    if (camera.projection == CAMERA_PERSPECTIVE)
+    {
+        const float aspect = m_height > 0 ? static_cast<float>(m_width) / static_cast<float>(m_height)
+                                          : 1.0f;
+        if (camera.fovy > 0.0f && camera.fovy < 180.0f)
+        {
+            m_projectionMatrix = Mat4::perspective(camera.fovy * PI / 180.0f, aspect, 0.1f, 1000.0f);
+        }
+        else
+        {
+            m_projectionMatrix = Mat4::perspective(45.0f * PI / 180.0f, aspect, 0.1f, 1000.0f);
+        }
+    }
+    else
+    {
+        m_projectionMatrix = Mat4::ortho(static_cast<float>(-m_width) * 0.5f,
+                                         static_cast<float>(m_width) * 0.5f,
+                                         static_cast<float>(-m_height) * 0.5f,
+                                         static_cast<float>(m_height) * 0.5f,
+                                         0.1f, 1000.0f);
+    }
+}
+
+void QuarkD3D11Renderer::EndMode3D()
+{
+    m_matrixStack.clear();
+    m_currentMatrix = Mat4::identity();
+}
+
+void QuarkD3D11Renderer::PushMatrix()
+{
+    m_matrixStack.push_back(m_currentMatrix);
+}
+
+void QuarkD3D11Renderer::PopMatrix()
+{
+    if (!m_matrixStack.empty())
+    {
+        m_currentMatrix = m_matrixStack.back();
+        m_matrixStack.pop_back();
+    }
+    else
+    {
+        m_currentMatrix = Mat4::identity();
+    }
+}
+
+void QuarkD3D11Renderer::Translate(const Vec3 &translation)
+{
+    m_currentMatrix = m_currentMatrix * Mat4::translation(translation.x, translation.y, translation.z);
+}
+
+void QuarkD3D11Renderer::Rotate(float angle, const Vec3 &axis)
+{
+    Vec3 normalized = axis;
+    const float length = normalized.length();
+    if (length <= 0.0f)
+    {
+        return;
+    }
+    normalized = normalized * (1.0f / length);
+
+    const float c = std::cos(angle);
+    const float s = std::sin(angle);
+    const float t = 1.0f - c;
+
+    Mat4 rotation = Mat4::identity();
+    rotation.m[0] = c + normalized.x * normalized.x * t;
+    rotation.m[1] = normalized.x * normalized.y * t + normalized.z * s;
+    rotation.m[2] = normalized.x * normalized.z * t - normalized.y * s;
+    rotation.m[4] = normalized.y * normalized.x * t - normalized.z * s;
+    rotation.m[5] = c + normalized.y * normalized.y * t;
+    rotation.m[6] = normalized.y * normalized.z * t + normalized.x * s;
+    rotation.m[8] = normalized.z * normalized.x * t + normalized.y * s;
+    rotation.m[9] = normalized.z * normalized.y * t - normalized.x * s;
+    rotation.m[10] = c + normalized.z * normalized.z * t;
+
+    m_currentMatrix = m_currentMatrix * rotation;
+}
+
+void QuarkD3D11Renderer::Scale(const Vec3 &scale)
+{
+    m_currentMatrix = m_currentMatrix * Mat4::scale(scale.x, scale.y, scale.z);
+}
+
+void QuarkD3D11Renderer::MultMatrix(const Mat4 &matrix)
+{
+    m_currentMatrix = m_currentMatrix * matrix;
+}
+
+const float *QuarkD3D11Renderer::GetMatrixModelview()
+{
+    m_modelviewCapture = m_viewMatrix * m_currentMatrix;
+    return m_modelviewCapture.m;
+}
+
+const float *QuarkD3D11Renderer::GetMatrixProjection()
+{
+    return m_projectionMatrix.m;
+}
+
+void QuarkD3D11Renderer::EnableBackfaceCulling()
+{
+    m_pipeline.SetBackfaceCulling(true);
+}
+
+void QuarkD3D11Renderer::DisableBackfaceCulling()
+{
+    m_pipeline.SetBackfaceCulling(false);
+}
+
+Mat4 QuarkD3D11Renderer::CurrentMVP() const
+{
+    return m_projectionMatrix * m_viewMatrix * m_currentMatrix;
+}
+
+void QuarkD3D11Renderer::DrawTris3D(const Vec3 *positions, size_t vertexCount,
+                                    const Mat4 &mvp, Color color)
+{
+    if (!positions || vertexCount == 0 || vertexCount % 3 != 0)
+    {
+        return;
+    }
+
+    std::vector<float> vertices(vertexCount * 8);
+    const float r = color.r / 255.0f;
+    const float g = color.g / 255.0f;
+    const float b = color.b / 255.0f;
+    const float a = color.a / 255.0f;
+
+    for (size_t index = 0; index < vertexCount; ++index)
+    {
+        const Vec4 clip = mvp * Vec4{positions[index].x, positions[index].y,
+                                     positions[index].z, 1.0f};
+        float *vertex = vertices.data() + index * 8;
+        vertex[0] = clip.x;
+        vertex[1] = clip.y;
+        vertex[2] = clip.z;
+        vertex[3] = clip.w;
+        vertex[4] = r;
+        vertex[5] = g;
+        vertex[6] = b;
+        vertex[7] = a;
+    }
+
+    m_commands.Draw3D(vertices.data(), static_cast<UINT>(vertexCount),
+                      D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+}
+
+void QuarkD3D11Renderer::DrawLines3D(const Vec3 *positions, size_t vertexCount,
+                                     const Mat4 &mvp, Color color)
+{
+    if (!positions || vertexCount == 0 || vertexCount % 2 != 0)
+    {
+        return;
+    }
+
+    std::vector<float> vertices(vertexCount * 8);
+    const float r = color.r / 255.0f;
+    const float g = color.g / 255.0f;
+    const float b = color.b / 255.0f;
+    const float a = color.a / 255.0f;
+
+    for (size_t index = 0; index < vertexCount; ++index)
+    {
+        const Vec4 clip = mvp * Vec4{positions[index].x, positions[index].y,
+                                     positions[index].z, 1.0f};
+        float *vertex = vertices.data() + index * 8;
+        vertex[0] = clip.x;
+        vertex[1] = clip.y;
+        vertex[2] = clip.z;
+        vertex[3] = clip.w;
+        vertex[4] = r;
+        vertex[5] = g;
+        vertex[6] = b;
+        vertex[7] = a;
+    }
+
+    m_commands.Draw3D(vertices.data(), static_cast<UINT>(vertexCount),
+                      D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+}
+
+void QuarkD3D11Renderer::Set3DView(const Mat4 &view, const Mat4 &projection)
+{
+    m_viewMatrix = view;
+    m_projectionMatrix = projection;
+}
+
+void QuarkD3D11Renderer::DrawLine3D(Vec3 startPos, Vec3 endPos, Color color)
+{
+    const Vec3 positions[2] = {startPos, endPos};
+    DrawLines3D(positions, 2, CurrentMVP(), color);
+}
+
+void QuarkD3D11Renderer::DrawPlane(Vec3 center, Vec2 size, Color color)
+{
+    const Vec3 positions[6] = {
+        center + Vec3{-size.x * 0.5f, 0.0f, -size.y * 0.5f},
+        center + Vec3{ size.x * 0.5f, 0.0f, -size.y * 0.5f},
+        center + Vec3{ size.x * 0.5f, 0.0f,  size.y * 0.5f},
+        center + Vec3{-size.x * 0.5f, 0.0f, -size.y * 0.5f},
+        center + Vec3{ size.x * 0.5f, 0.0f,  size.y * 0.5f},
+        center + Vec3{-size.x * 0.5f, 0.0f,  size.y * 0.5f}
+    };
+
+    DrawTris3D(positions, 6, CurrentMVP(), color);
+}
+
+void QuarkD3D11Renderer::DrawCube(Vec3 position, float width, float height, float length,
+                                  Color color)
+{
+    const float hw = width * 0.5f;
+    const float hh = height * 0.5f;
+    const float hl = length * 0.5f;
+
+    const Vec3 v[8] = {
+        position + Vec3{-hw, -hh, -hl},
+        position + Vec3{ hw, -hh, -hl},
+        position + Vec3{ hw,  hh, -hl},
+        position + Vec3{-hw,  hh, -hl},
+        position + Vec3{-hw, -hh,  hl},
+        position + Vec3{ hw, -hh,  hl},
+        position + Vec3{ hw,  hh,  hl},
+        position + Vec3{-hw,  hh,  hl}
+    };
+
+    const Vec3 positions[36] = {
+        v[0], v[1], v[2],
+        v[0], v[2], v[3],
+
+        v[4], v[6], v[5],
+        v[4], v[7], v[6],
+
+        v[4], v[5], v[1],
+        v[4], v[1], v[0],
+
+        v[3], v[2], v[6],
+        v[3], v[6], v[7],
+
+        v[1], v[5], v[6],
+        v[1], v[6], v[2],
+
+        v[4], v[0], v[3],
+        v[4], v[3], v[7]
+    };
+
+    DrawTris3D(positions, 36, CurrentMVP(), color);
+}
+
+void QuarkD3D11Renderer::DrawCubeV(Vec3 position, Vec3 size, Color color)
+{
+    DrawCube(position, size.x, size.y, size.z, color);
+}
+
+void QuarkD3D11Renderer::DrawCubeWires(Vec3 position, float width, float height, float length,
+                                       Color color)
+{
+    const float hw = width * 0.5f;
+    const float hh = height * 0.5f;
+    const float hl = length * 0.5f;
+
+    const Vec3 v[8] = {
+        position + Vec3{-hw, -hh, -hl},
+        position + Vec3{ hw, -hh, -hl},
+        position + Vec3{ hw,  hh, -hl},
+        position + Vec3{-hw,  hh, -hl},
+        position + Vec3{-hw, -hh,  hl},
+        position + Vec3{ hw, -hh,  hl},
+        position + Vec3{ hw,  hh,  hl},
+        position + Vec3{-hw,  hh,  hl}
+    };
+
+    const Vec3 positions[24] = {
+        v[0], v[1],
+        v[1], v[2],
+        v[2], v[3],
+        v[3], v[0],
+
+        v[4], v[5],
+        v[5], v[6],
+        v[6], v[7],
+        v[7], v[4],
+
+        v[0], v[4],
+        v[1], v[5],
+        v[2], v[6],
+        v[3], v[7]
+    };
+
+    DrawLines3D(positions, 24, CurrentMVP(), color);
+}
+
+void QuarkD3D11Renderer::DrawCubeWiresV(Vec3 position, Vec3 size, Color color)
+{
+    DrawCubeWires(position, size.x, size.y, size.z, color);
+}
+
+void QuarkD3D11Renderer::DrawSphere(Vec3 centerPos, float radius, Color color)
+{
+    DrawSphereEx(centerPos, radius, 16, 16, color);
+}
+
+void QuarkD3D11Renderer::DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices,
+                                      Color color)
+{
+    if (rings < 2 || slices < 3)
+    {
+        return;
+    }
+
+    std::vector<Vec3> positions;
+    positions.reserve(static_cast<size_t>(rings) * slices * 6);
+
+    for (int ri = 0; ri < rings; ++ri)
+    {
+        for (int si = 0; si < slices; ++si)
+        {
+            const float phi1 = PI * static_cast<float>(ri) / static_cast<float>(rings);
+            const float phi2 = PI * static_cast<float>(ri + 1) / static_cast<float>(rings);
+            const float theta1 = 2.0f * PI * static_cast<float>(si) / static_cast<float>(slices);
+            const float theta2 = 2.0f * PI * static_cast<float>(si + 1) / static_cast<float>(slices);
+
+            const Vec3 a{
+                radius * std::sin(phi1) * std::cos(theta1),
+                radius * std::cos(phi1),
+                radius * std::sin(phi1) * std::sin(theta1)
+            };
+            const Vec3 b{
+                radius * std::sin(phi1) * std::cos(theta2),
+                radius * std::cos(phi1),
+                radius * std::sin(phi1) * std::sin(theta2)
+            };
+            const Vec3 d{
+                radius * std::sin(phi2) * std::cos(theta1),
+                radius * std::cos(phi2),
+                radius * std::sin(phi2) * std::sin(theta1)
+            };
+            const Vec3 e{
+                radius * std::sin(phi2) * std::cos(theta2),
+                radius * std::cos(phi2),
+                radius * std::sin(phi2) * std::sin(theta2)
+            };
+
+            positions.push_back(centerPos + a);
+            positions.push_back(centerPos + b);
+            positions.push_back(centerPos + e);
+            positions.push_back(centerPos + a);
+            positions.push_back(centerPos + e);
+            positions.push_back(centerPos + d);
+        }
+    }
+
+    DrawTris3D(positions.data(), positions.size(), CurrentMVP(), color);
+}
+
+void QuarkD3D11Renderer::DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices,
+                                         Color color)
+{
+    if (rings < 2 || slices < 3)
+    {
+        return;
+    }
+
+    std::vector<Vec3> positions;
+    positions.reserve(static_cast<size_t>(rings + 1 + slices) * slices * 2);
+
+    for (int ri = 0; ri <= rings; ++ri)
+    {
+        const float phi = PI * static_cast<float>(ri) / static_cast<float>(rings);
+        for (int si = 0; si < slices; ++si)
+        {
+            const float t1 = 2.0f * PI * static_cast<float>(si) / static_cast<float>(slices);
+            const float t2 = 2.0f * PI * static_cast<float>(si + 1) / static_cast<float>(slices);
+            positions.push_back(centerPos +
+                                Vec3{radius * std::sin(phi) * std::cos(t1),
+                                     radius * std::cos(phi),
+                                     radius * std::sin(phi) * std::sin(t1)});
+            positions.push_back(centerPos +
+                                Vec3{radius * std::sin(phi) * std::cos(t2),
+                                     radius * std::cos(phi),
+                                     radius * std::sin(phi) * std::sin(t2)});
+        }
+    }
+
+    for (int si = 0; si < slices; ++si)
+    {
+        const float th = 2.0f * PI * static_cast<float>(si) / static_cast<float>(slices);
+        for (int ri = 0; ri < rings; ++ri)
+        {
+            const float p1 = PI * static_cast<float>(ri) / static_cast<float>(rings);
+            const float p2 = PI * static_cast<float>(ri + 1) / static_cast<float>(rings);
+            positions.push_back(centerPos +
+                                Vec3{radius * std::sin(p1) * std::cos(th),
+                                     radius * std::cos(p1),
+                                     radius * std::sin(p1) * std::sin(th)});
+            positions.push_back(centerPos +
+                                Vec3{radius * std::sin(p2) * std::cos(th),
+                                     radius * std::cos(p2),
+                                     radius * std::sin(p2) * std::sin(th)});
+        }
+    }
+
+    DrawLines3D(positions.data(), positions.size(), CurrentMVP(), color);
+}
+
+void QuarkD3D11Renderer::DrawCylinder(Vec3 position, float radiusTop, float radiusBottom,
+                                      float height, int slices, Color color)
+{
+    DrawCylinderEx(position + Vec3{0, -height * 0.5f, 0},
+                   position + Vec3{0, height * 0.5f, 0},
+                   radiusBottom, radiusTop, slices, color);
+}
+
+void QuarkD3D11Renderer::DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius,
+                                        float endRadius, int sides, Color color)
+{
+    if (sides < 3)
+    {
+        return;
+    }
+
+    const Vec3 delta = endPos - startPos;
+    const float length = delta.length();
+    if (length <= 0.0f)
+    {
+        return;
+    }
+    const Vec3 dir = delta * (1.0f / length);
+
+    Vec3 up{0, 1, 0};
+    if (std::fabs(dir.dot(up)) > 0.99f)
+    {
+        up = {1, 0, 0};
+    }
+
+    const Vec3 xDir = dir.cross(up).normalized();
+    const Vec3 yDir = dir.cross(xDir).normalized();
+
+    std::vector<Vec3> positions;
+    positions.reserve(static_cast<size_t>(sides) * 6);
+
+    for (int i = 0; i < sides; ++i)
+    {
+        const float a1 = 2.0f * PI * static_cast<float>(i) / static_cast<float>(sides);
+        const float a2 = 2.0f * PI * static_cast<float>(i + 1) / static_cast<float>(sides);
+
+        const Vec3 p1 = startPos + xDir * std::cos(a1) * startRadius +
+                        yDir * std::sin(a1) * startRadius;
+        const Vec3 p2 = startPos + xDir * std::cos(a2) * startRadius +
+                        yDir * std::sin(a2) * startRadius;
+        const Vec3 p3 = endPos + xDir * std::cos(a2) * endRadius +
+                        yDir * std::sin(a2) * endRadius;
+        const Vec3 p4 = endPos + xDir * std::cos(a1) * endRadius +
+                        yDir * std::sin(a1) * endRadius;
+
+        positions.push_back(p1);
+        positions.push_back(p2);
+        positions.push_back(p3);
+        positions.push_back(p1);
+        positions.push_back(p3);
+        positions.push_back(p4);
+
+        positions.push_back(startPos);
+        positions.push_back(p2);
+        positions.push_back(p1);
+        positions.push_back(endPos);
+        positions.push_back(p3);
+        positions.push_back(p4);
+    }
+
+    DrawTris3D(positions.data(), positions.size(), CurrentMVP(), color);
+}
+
+void QuarkD3D11Renderer::DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom,
+                                           float height, int slices, Color color)
+{
+    DrawCylinderWiresEx(position + Vec3{0, -height * 0.5f, 0},
+                        position + Vec3{0, height * 0.5f, 0},
+                        radiusBottom, radiusTop, slices, color);
+}
+
+void QuarkD3D11Renderer::DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius,
+                                             float endRadius, int slices, Color color)
+{
+    if (slices < 3)
+    {
+        return;
+    }
+
+    const Vec3 delta = endPos - startPos;
+    const float length = delta.length();
+    if (length <= 0.0f)
+    {
+        return;
+    }
+    const Vec3 dir = delta * (1.0f / length);
+
+    Vec3 up{0, 1, 0};
+    if (std::fabs(dir.dot(up)) > 0.99f)
+    {
+        up = {1, 0, 0};
+    }
+
+    const Vec3 xDir = dir.cross(up).normalized();
+    const Vec3 yDir = dir.cross(xDir).normalized();
+
+    std::vector<Vec3> positions;
+    positions.reserve(static_cast<size_t>(slices) * 6);
+
+    for (int i = 0; i < slices; ++i)
+    {
+        const float a1 = 2.0f * PI * static_cast<float>(i) / static_cast<float>(slices);
+        const float a2 = 2.0f * PI * static_cast<float>(i + 1) / static_cast<float>(slices);
+
+        const Vec3 p1 = startPos + xDir * std::cos(a1) * startRadius +
+                        yDir * std::sin(a1) * startRadius;
+        const Vec3 p2 = startPos + xDir * std::cos(a2) * startRadius +
+                        yDir * std::sin(a2) * startRadius;
+        const Vec3 p3 = endPos + xDir * std::cos(a1) * endRadius +
+                        yDir * std::sin(a1) * endRadius;
+        const Vec3 p4 = endPos + xDir * std::cos(a2) * endRadius +
+                        yDir * std::sin(a2) * endRadius;
+
+        positions.push_back(p1);
+        positions.push_back(p2);
+        positions.push_back(p3);
+        positions.push_back(p4);
+        positions.push_back(p1);
+        positions.push_back(p3);
+    }
+
+    DrawLines3D(positions.data(), positions.size(), CurrentMVP(), color);
+}
+
+void QuarkD3D11Renderer::DrawGrid(int slices, float spacing, Color color)
+{
+    if (slices < 1 || spacing <= 0.0f)
+    {
+        return;
+    }
+
+    const float half = static_cast<float>(slices) * spacing * 0.5f;
+
+    std::vector<Vec3> positions;
+    positions.reserve(static_cast<size_t>(slices + 1) * 4);
+
+    for (int i = 0; i <= slices; ++i)
+    {
+        const float f = -half + static_cast<float>(i) * spacing;
+        positions.push_back({f, 0.01f, -half});
+        positions.push_back({f, 0.01f, half});
+        positions.push_back({-half, 0.01f, f});
+        positions.push_back({half, 0.01f, f});
+    }
+
+    DrawLines3D(positions.data(), positions.size(), CurrentMVP(), color);
+}
+
 bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
                                       int fontSize,
                                       FontData& fontData)

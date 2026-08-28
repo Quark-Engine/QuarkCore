@@ -86,21 +86,25 @@ public:
     void DrawTriangle(Vec2, Vec2, Vec2, Color) override;
     void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color) override;
 
-    void Set3DView(const Mat4 &, const Mat4 &) override {}
-    void DrawLine3D(Vec3, Vec3, Color) override {}
-    void DrawPlane(Vec3, Vec2, Color) override {}
-    void DrawCube(Vec3, float, float, float, Color) override {}
-    void DrawCubeV(Vec3, Vec3, Color) override {}
-    void DrawCubeWires(Vec3, float, float, float, Color) override {}
-    void DrawCubeWiresV(Vec3, Vec3, Color) override {}
-    void DrawSphere(Vec3, float, Color) override {}
-    void DrawSphereEx(Vec3, float, int, int, Color) override {}
-    void DrawSphereWires(Vec3, float, int, int, Color) override {}
-    void DrawCylinder(Vec3, float, float, float, int, Color) override {}
-    void DrawCylinderEx(Vec3, Vec3, float, float, int, Color) override {}
-    void DrawCylinderWires(Vec3, float, float, float, int, Color) override {}
-    void DrawCylinderWiresEx(Vec3, Vec3, float, float, int, Color) override {}
-    void DrawGrid(int, float) override {}
+    void Set3DView(const Mat4 &view, const Mat4 &projection) override;
+    void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color) override;
+    void DrawPlane(Vec3 center, Vec2 size, Color color) override;
+    void DrawCube(Vec3 position, float width, float height, float length, Color color) override;
+    void DrawCubeV(Vec3 position, Vec3 size, Color color) override;
+    void DrawCubeWires(Vec3 position, float width, float height, float length, Color color) override;
+    void DrawCubeWiresV(Vec3 position, Vec3 size, Color color) override;
+    void DrawSphere(Vec3 centerPos, float radius, Color color) override;
+    void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color color) override;
+    void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color color) override;
+    void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height,
+                      int slices, Color color) override;
+    void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius,
+                        int sides, Color color) override;
+    void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height,
+                           int slices, Color color) override;
+    void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius,
+                             int slices, Color color) override;
+    void DrawGrid(int slices, float spacing, Color color) override;
 
     void DrawTexture(const ITexture &, float, float, Color) override;
     void DrawTextureV(const ITexture &, Vec2, Color) override;
@@ -156,18 +160,18 @@ public:
     void BeginMode2D(const Camera2D &camera) override;
     void EndMode2D() override;
     Camera2D GetCamera2D() const override { return m_commands.GetCamera2D(); }
-    void BeginMode3D(const Camera3D &) override {}
-    void EndMode3D() override {}
-    void PushMatrix() override {}
-    void PopMatrix() override {}
-    void Translate(const Vec3 &) override {}
-    void Rotate(float, const Vec3 &) override {}
-    void Scale(const Vec3 &) override {}
-    void MultMatrix(const Mat4 &) override {}
-    const float *GetMatrixModelview() override { return m_identity.data(); }
-    const float *GetMatrixProjection() override { return m_identity.data(); }
-    void EnableBackfaceCulling() override {}
-    void DisableBackfaceCulling() override {}
+    void BeginMode3D(const Camera3D &camera) override;
+    void EndMode3D() override;
+    void PushMatrix() override;
+    void PopMatrix() override;
+    void Translate(const Vec3 &translation) override;
+    void Rotate(float angle, const Vec3 &axis) override;
+    void Scale(const Vec3 &scale) override;
+    void MultMatrix(const Mat4 &matrix) override;
+    const float *GetMatrixModelview() override;
+    const float *GetMatrixProjection() override;
+    void EnableBackfaceCulling() override;
+    void DisableBackfaceCulling() override;
 
     Model LoadModel(const char *) override { return {}; }
     void UnloadModel(Model &) override {}
@@ -257,6 +261,9 @@ private:
     Vec2 MeasureTextWithFontData(const FontData &fontData, const char *text,
                                  float fontSize, float spacing) const;
     uint32_t EnsureDefaultFont();
+    void DrawTris3D(const Vec3 *positions, size_t vertexCount, const Mat4 &mvp, Color color);
+    void DrawLines3D(const Vec3 *positions, size_t vertexCount, const Mat4 &mvp, Color color);
+    Mat4 CurrentMVP() const;
 
     SDL_Window *m_window = nullptr;
     D3D11Device m_device;
@@ -280,8 +287,11 @@ private:
     uint32_t m_nextShaderId = 1;
     uint32_t m_currentShaderId = 0;
     ITexture m_whiteShaderTexture{};
-    std::array<float, 16> m_identity{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-                                     0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+    Mat4 m_viewMatrix{};
+    Mat4 m_projectionMatrix{};
+    Mat4 m_currentMatrix{};
+    Mat4 m_modelviewCapture{};
+    std::vector<Mat4> m_matrixStack;
 };
 
 } // namespace qc

@@ -387,12 +387,12 @@ void QuarkVkRenderer::DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float star
     }
 }
 
-void QuarkVkRenderer::DrawGrid(int slices, float spacing) {
+void QuarkVkRenderer::DrawGrid(int slices, float spacing, Color color) {
     const float half = static_cast<float>(slices) * spacing * 0.5f;
     for (int i = 0; i <= slices; ++i) {
         const float f = -half + static_cast<float>(i) * spacing;
-        DrawLine3D({f, 0.0f, -half}, {f, 0.0f, half}, DARKGRAY);
-        DrawLine3D({-half, 0.0f, f}, {half, 0.0f, f}, DARKGRAY);
+        DrawLine3D({f, 0.0f, -half}, {f, 0.0f, half}, color);
+        DrawLine3D({-half, 0.0f, f}, {half, 0.0f, f}, color);
     }
 }
 

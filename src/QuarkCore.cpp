@@ -1665,7 +1665,7 @@ const float* GetMatrixProjection()       { return gRenderer.GetMatrixProjection(
 void Set3DView(const Mat4& view, const Mat4& proj) { gRenderer.Set3DView(view, proj); }
 
 void DrawLine3D(Vec3 start, Vec3 end, Color c)           { gRenderer.DrawLine3D(start, end, c); }
-void DrawGrid(int slices, float spacing)                  { gRenderer.DrawGrid(slices, spacing); }
+void DrawGrid(int slices, float spacing, Color color)     { gRenderer.DrawGrid(slices, spacing, color); }
 void DrawPlane(Vec3 center, Vec2 size, Color c)           { gRenderer.DrawPlane(center, size, c); }
 
 void DrawCube(Vec3 pos, float w, float h, float l, Color c)       { gRenderer.DrawCube(pos, w, h, l, c); }

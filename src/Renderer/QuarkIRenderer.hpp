@@ -55,7 +55,7 @@ public:
     virtual void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color)       = 0;
     virtual void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color)  = 0;
     virtual void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) = 0;
-    virtual void DrawGrid(int slices, float spacing)                                                                          = 0;
+    virtual void DrawGrid(int slices, float spacing, Color color)                                                             = 0;
 
     virtual void DrawText(const char* text, int x, int y, int fontSize, Color color)                                = 0;
     virtual void DrawTextEx(IFont font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) = 0;

@@ -54,7 +54,7 @@ void D3D11CommandContext::BeginDrawing()
     m_activeRenderTarget = renderTarget;
     m_activeWidth = m_defaultWidth;
     m_activeHeight = m_defaultHeight;
-    m_context->OMSetRenderTargets(1, &renderTarget, nullptr);
+    m_context->OMSetRenderTargets(1, &renderTarget, m_swapChain->DepthStencilView());
 
 }
 
@@ -78,7 +78,52 @@ void D3D11CommandContext::Clear(Color color)
                                 color.a / 255.0f};
 
     m_context->ClearRenderTargetView(m_activeRenderTarget, clearColor);
+    ClearDepthStencil();
 
+}
+
+void D3D11CommandContext::ClearDepthStencil()
+{
+    if (!m_context || !m_swapChain)
+    {
+        return;
+    }
+
+    ID3D11DepthStencilView *depthStencil = m_swapChain->DepthStencilView();
+    if (depthStencil)
+    {
+        m_context->ClearDepthStencilView(depthStencil, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL,
+                                         1.0f, 0);
+    }
+}
+
+void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
+                                 D3D_PRIMITIVE_TOPOLOGY topology)
+{
+    if (!m_context || !m_pipeline || !m_resources || !m_swapChain ||
+        vertices == nullptr || vertexCount == 0)
+    {
+        return;
+    }
+
+    ID3D11DepthStencilView *depthStencil = m_swapChain->DepthStencilView();
+    if (!depthStencil)
+    {
+        return;
+    }
+
+    constexpr UINT kMaxVertices = 32768;
+    if (vertexCount > kMaxVertices)
+    {
+        return;
+    }
+
+    m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), vertices,
+                                     static_cast<size_t>(vertexCount) * sizeof(float) * 8);
+
+    m_pipeline->Bind3D(m_context);
+    m_context->IASetPrimitiveTopology(topology);
+    m_context->Draw(vertexCount, 0);
 }
 
 void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, int, int)
@@ -303,6 +348,7 @@ void D3D11CommandContext::BindOverride(ID3D11ShaderResourceView *drawnResource)
     m_context->PSSetSamplers(0, 1, &sampler);
 
     const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    m_context->OMSetDepthStencilState(m_pipeline->DepthStencilDisabledState(), 0);
     m_context->OMSetBlendState(m_pipeline->Blend(), blendFactor, 0xFFFFFFFF);
 }
 
