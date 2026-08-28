@@ -36,7 +36,8 @@
     ========================================================
 */
 
-#pragma once
+#ifndef __QUARK_VK_RENDERER__
+#define __QUARK_VK_RENDERER__
 
 #include "../QuarkIRenderer.hpp"
 #include "../QuarkFont.hpp"
@@ -645,3 +646,5 @@ private:
 };
 
 } // namespace qc
+
+#endif // __QUARK_VK_RENDERER__

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __QUARK_FONT__
+#define __QUARK_FONT__
 #include <cstdint>
 
 namespace qc {
@@ -19,3 +20,5 @@ struct FontMetrics {
 };
 
 }
+
+#endif // __QUARK_FONT__

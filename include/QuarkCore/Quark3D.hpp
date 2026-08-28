@@ -14,7 +14,8 @@
     ========================================================
 */
 
-#pragma once
+#ifndef __QUARK_3D__
+#define __QUARK_3D__
 
 #include "QuarkMath.hpp"
 
@@ -539,3 +540,5 @@ QCAPI void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom,
 QCAPI void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color);
 
 }  // namespace qc
+
+#endif // __QUARK_3D__

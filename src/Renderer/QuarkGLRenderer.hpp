@@ -36,7 +36,8 @@
     ========================================================
 */
 
-#pragma once
+#ifndef __QUARK_GL_RENDERER__
+#define __QUARK_GL_RENDERER__
 
 #include "QuarkIRenderer.hpp"
 #include "QuarkCore/QuarkCore.hpp"
@@ -313,3 +314,5 @@ private:
 };
 
 } // namespace qc
+
+#endif // __QUARK_GL_RENDERER__

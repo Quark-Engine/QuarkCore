@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __QUARK_D3D11_PIPELINE__
+#define __QUARK_D3D11_PIPELINE__
 
 #if defined(_WIN32)
 #include "QuarkD3D11Common.hpp"
@@ -53,3 +54,5 @@ using D3D11PipelineState = D3D11Pipeline;
 
 } // namespace qc
 #endif
+
+#endif // __QUARK_D3D11_PIPELINE__

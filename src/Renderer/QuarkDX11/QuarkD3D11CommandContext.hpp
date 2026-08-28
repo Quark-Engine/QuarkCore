@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __QUARK_D3D11_COMMAND_CONTEXT__
+#define __QUARK_D3D11_COMMAND_CONTEXT__
 
 #if defined(_WIN32)
 #include "QuarkD3D11Pipeline.hpp"
@@ -69,3 +70,5 @@ private:
 
 } // namespace qc
 #endif
+
+#endif // __QUARK_D3D11_COMMAND_CONTEXT__

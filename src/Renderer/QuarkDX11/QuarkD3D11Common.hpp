@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __QUARK_D3D11_COMMON__
+#define __QUARK_D3D11_COMMON__
 
 #if defined(_WIN32)
 #include "QuarkCore/QuarkCore.hpp"
@@ -21,3 +22,5 @@ inline void ThrowIfFailed(HRESULT result, const char *operation) {
 
 } // namespace qc::d3d11
 #endif
+
+#endif // __QUARK_D3D11_COMMON__

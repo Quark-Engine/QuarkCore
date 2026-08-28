@@ -37,7 +37,8 @@
     ========================================================
 */
 
-#pragma once
+#ifndef __QUARK_D3D11_RENDERER__
+#define __QUARK_D3D11_RENDERER__
 
 #include "../QuarkIRenderer.hpp"
 
@@ -296,3 +297,5 @@ private:
 
 } // namespace qc
 #endif
+
+#endif // __QUARK_D3D11_RENDERER__

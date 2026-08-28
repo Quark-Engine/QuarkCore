@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __QUARK_I_RENDERER__
+#define __QUARK_I_RENDERER__
 
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkFont.hpp"
@@ -156,3 +157,5 @@ public:
 };
 
 }
+
+#endif // __QUARK_I_RENDERER__

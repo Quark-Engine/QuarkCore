@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __QUARK_INTERNAL__
+#define __QUARK_INTERNAL__
 #include "QuarkCore/QuarkCore.hpp"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.h>
@@ -62,3 +63,5 @@ void CopyText(char* dst, size_t size, const char* src);
 void WriteLog(LogLevel level, const char* type, const std::string& message);
 
 } // namespace qc
+
+#endif // __QUARK_INTERNAL__

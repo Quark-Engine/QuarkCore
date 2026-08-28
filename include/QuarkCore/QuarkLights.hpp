@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __QUARK_LIGHTS__
+#define __QUARK_LIGHTS__
 
 #include "QuarkCore.hpp"
 
@@ -32,3 +33,5 @@ QCAPI Light CreateLight(int type, Vec3 position, Vec3 target, Color color, Shade
 QCAPI void UpdateLightValues(Shader shader, const Light& light);
 
 } // namespace qc
+
+#endif // __QUARK_LIGHTS__

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __QUARK_D3D11_RESOURCES__
+#define __QUARK_D3D11_RESOURCES__
 
 #if defined(_WIN32)
 #include "QuarkD3D11Common.hpp"
@@ -42,3 +43,5 @@ private:
 
 } // namespace qc
 #endif
+
+#endif // __QUARK_D3D11_RESOURCES__

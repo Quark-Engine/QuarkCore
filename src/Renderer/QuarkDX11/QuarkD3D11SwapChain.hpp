@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __QUARK_D3D11_SWAP_CHAIN__
+#define __QUARK_D3D11_SWAP_CHAIN__
 
 #if defined(_WIN32)
 #include "QuarkD3D11Common.hpp"
@@ -31,3 +32,5 @@ private:
 
 } // namespace qc
 #endif
+
+#endif // __QUARK_D3D11_SWAP_CHAIN__

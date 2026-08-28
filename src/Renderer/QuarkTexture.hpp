@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __QUARK_TEXTURE__
+#define __QUARK_TEXTURE__
 #include <cstdint>
 
 namespace qc {
@@ -21,3 +22,5 @@ struct IRenderTexture {
 };
 
 }
+
+#endif // __QUARK_TEXTURE__

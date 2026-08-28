@@ -27,7 +27,8 @@
     ========================================================
 */
 
-#pragma once
+#ifndef __QUARK_CORE__
+#define __QUARK_CORE__
 
 #if defined(_WIN32)
     #if defined(QUARKCORE_BUILD_DLL)
@@ -2418,3 +2419,5 @@ QCAPI unsigned int GetDirectoryFileCount(const char* dirPath);
 QCAPI unsigned int GetDirectoryFileCountEx(const char* basePath, const char* filter, bool scanSubdirs);
 
 }  // namespace qc
+
+#endif // __QUARK_CORE__

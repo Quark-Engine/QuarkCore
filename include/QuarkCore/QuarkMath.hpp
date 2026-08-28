@@ -13,7 +13,8 @@
     ========================================================
 */
 
-#pragma once
+#ifndef __QUARK_MATH__
+#define __QUARK_MATH__
 
 #include <algorithm>
 #include <cstdint>
@@ -658,3 +659,5 @@ inline float Vec3Distance(const Vec3& left, const Vec3& right) {
 }
 
 }; // namespace qc
+
+#endif // __QUARK_MATH__
