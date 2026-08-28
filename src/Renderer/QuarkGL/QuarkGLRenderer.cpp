@@ -1,5 +1,5 @@
 #include "QuarkGLRenderer.hpp"
-#include "../QuarkInternal.hpp"
+#include "../../QuarkInternal.hpp"
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>

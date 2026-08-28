@@ -418,7 +418,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
 
     if(BACKEND_NAME STREQUAL "OPENGL")
         find_package(OpenGL REQUIRED)
-        target_sources(${TARGET_NAME} PRIVATE src/Renderer/QuarkGLRenderer.cpp)
+        target_sources(${TARGET_NAME} PRIVATE src/Renderer/QuarkGL/QuarkGLRenderer.cpp)
         target_compile_definitions(${TARGET_NAME} PRIVATE QC_ENABLE_OPENGL)
         target_link_libraries(${TARGET_NAME} PUBLIC
             SDL3::SDL3

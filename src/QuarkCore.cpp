@@ -2,7 +2,7 @@
 #include "QuarkCore/Quark3D.hpp"
 #include "Renderer/QuarkIRenderer.hpp"
 #if defined(QC_ENABLE_OPENGL)
-#include "Renderer/QuarkGLRenderer.hpp"
+#include "Renderer/QuarkGL/QuarkGLRenderer.hpp"
 #endif
 #if defined(QC_ENABLE_VULKAN)
 #include "Renderer/QuarkVulkan/QuarkVkRenderer.hpp"

@@ -39,10 +39,10 @@
 #ifndef __QUARK_GL_RENDERER__
 #define __QUARK_GL_RENDERER__
 
-#include "QuarkIRenderer.hpp"
+#include "../QuarkIRenderer.hpp"
+#include "../QuarkFont.hpp"
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkCore/Quark3D.hpp"
-#include "QuarkFont.hpp"
 
 #include <glad/glad.h>
 #include <array>
