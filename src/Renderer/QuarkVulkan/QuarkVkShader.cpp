@@ -8,10 +8,12 @@
 #include <array>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace qc {
@@ -75,6 +77,40 @@ bool CompileGlslToSpirv(const std::string& source,
                         const char* stageName,
                         std::vector<uint32_t>& outSpirv) {
     TraceLog(LogLevel::Trace, "SHADER", TextFormat("[Vulkan] Compiling %s GLSL to SPIR-V (%zu bytes source)...", stageName, source.size()));
+
+    static std::unordered_map<std::string, std::vector<uint32_t>> cache;
+    const std::string cacheKey = std::string(stageName) + "\n" + source;
+    const auto cached = cache.find(cacheKey);
+    if (cached != cache.end()) {
+        outSpirv = cached->second;
+        return true;
+    }
+
+    uint64_t hash = 14695981039346656037ull;
+    for (unsigned char character : cacheKey) {
+        hash ^= character;
+        hash *= 1099511628211ull;
+    }
+
+    std::error_code error;
+    const std::filesystem::path cachePath =
+        std::filesystem::temp_directory_path(error) / "QuarkCore" / "shader-cache" /
+        ("user-" + std::to_string(hash) + ".spv");
+    if (!error) {
+        std::ifstream file(cachePath, std::ios::binary);
+        uint32_t wordCount = 0;
+        if (file && file.read(reinterpret_cast<char*>(&wordCount), sizeof(wordCount)) && wordCount > 0) {
+            outSpirv.resize(wordCount);
+            if (file.read(reinterpret_cast<char*>(outSpirv.data()),
+                          static_cast<std::streamsize>(outSpirv.size() * sizeof(uint32_t)))) {
+                cache.emplace(cacheKey, outSpirv);
+                TraceLog(LogLevel::Trace, "SHADER", TextFormat("[Vulkan] Loaded user %s shader from cache", stageName));
+                return true;
+            }
+            outSpirv.clear();
+        }
+    }
+
     shaderc::Compiler compiler;
     shaderc::CompileOptions options;
     options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
@@ -89,6 +125,17 @@ bool CompileGlslToSpirv(const std::string& source,
     }
 
     outSpirv.assign(result.cbegin(), result.cend());
+    if (!error) {
+        std::error_code directoryError;
+        std::filesystem::create_directories(cachePath.parent_path(), directoryError);
+        std::ofstream file(cachePath, std::ios::binary | std::ios::trunc);
+        const uint32_t wordCount = static_cast<uint32_t>(outSpirv.size());
+        if (file && file.write(reinterpret_cast<const char*>(&wordCount), sizeof(wordCount))) {
+            file.write(reinterpret_cast<const char*>(outSpirv.data()),
+                       static_cast<std::streamsize>(outSpirv.size() * sizeof(uint32_t)));
+        }
+    }
+    cache.emplace(cacheKey, outSpirv);
     TraceLog(LogLevel::Trace, "SHADER", TextFormat("[Vulkan] Compiled %s shader to %zu SPIR-V words (%zu bytes)",
         stageName, outSpirv.size(), outSpirv.size() * sizeof(uint32_t)));
     return !outSpirv.empty();
