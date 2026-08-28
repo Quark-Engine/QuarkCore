@@ -215,6 +215,11 @@ private:
         GlyphData glyphs[95]{};
     };
 
+    struct CachedTexture {
+        ITexture texture{};
+        int      references = 0;
+    };
+
     struct Model3DState {
         bool   initialized    = false;
         GLuint shader3D       = 0;
@@ -302,6 +307,9 @@ private:
     std::unordered_map<uint32_t, FontData> m_fonts;
     uint32_t m_nextFontId    = 1;
     uint32_t m_defaultFontId = 0;
+
+    std::unordered_map<std::string, CachedTexture> m_textureCache;
+    std::unordered_map<GLuint, std::string> m_textureCacheKeys;
 };
 
 } // namespace qc

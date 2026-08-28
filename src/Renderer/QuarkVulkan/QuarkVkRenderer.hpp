@@ -139,6 +139,11 @@ struct VkTextureData {
     bool      isRenderTarget = false;
 };
 
+struct VkCachedTexture {
+    ITexture texture{};
+    int      references = 0;
+};
+
 struct VkDrawItem {
     uint32_t textureDescSet;
     uint32_t shaderProgramId = 0;
@@ -602,6 +607,8 @@ private:
 
     uint32_t                                   m_nextTextureId = 1;
     std::unordered_map<uint32_t, VkTextureData> m_textures;
+    std::unordered_map<std::string, VkCachedTexture> m_textureCache;
+    std::unordered_map<uint32_t, std::string> m_textureCacheKeys;
     std::unordered_map<uint32_t, FontData>      m_fonts;
     uint32_t                                   m_nextFontId = 1;
     uint32_t                                   m_defaultFontId = 0;

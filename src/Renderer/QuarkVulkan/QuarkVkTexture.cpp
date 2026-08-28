@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <set>
 #include <stdexcept>
@@ -180,6 +181,24 @@ void QuarkVkRenderer::DrawTextureNPatch(ITexture texture, Rectangle source, Rect
 
 ITexture QuarkVkRenderer::LoadTexture(const char* filePath) {
     TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Loading texture from: %s", filePath ? filePath : "<null>"));
+    if (!filePath) {
+        return ITexture{};
+    }
+
+    std::error_code pathError;
+    std::string cacheKey = std::filesystem::weakly_canonical(filePath, pathError).string();
+    if (pathError || cacheKey.empty()) {
+        cacheKey = std::filesystem::path(filePath).lexically_normal().string();
+    }
+
+    const auto cached = m_textureCache.find(cacheKey);
+    if (cached != m_textureCache.end()) {
+        cached->second.references++;
+        TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Reusing cached texture: %s (ID: %u, References: %d)",
+            filePath, cached->second.texture.id, cached->second.references));
+        return cached->second.texture;
+    }
+
     ImageFileData img;
     if (!LoadImageFile(filePath, img, 4)) {
         TraceLog(LogLevel::Error, "TEXTURE", TextFormat("[Vulkan] Failed to load texture image: %s", filePath ? filePath : "<null>"));
@@ -195,15 +214,14 @@ ITexture QuarkVkRenderer::LoadTexture(const char* filePath) {
         return ITexture{};
     }
 
+    const ITexture texture{textureId, img.width, img.height, true};
+    m_textureCache.emplace(cacheKey, VkCachedTexture{texture, 1});
+    m_textureCacheKeys.emplace(textureId, cacheKey);
+
     TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[Vulkan] Texture loaded successfully: %s (%dx%d, %zu bytes, ID: %u)",
         filePath ? filePath : "<null>", img.width, img.height, img.pixels.size(), textureId));
 
-    return ITexture{
-        textureId,
-        img.width,
-        img.height,
-        true
-    };
+    return texture;
 }
 
 ITexture QuarkVkRenderer::GetRenderTextureTexture(IRenderTexture target) {
@@ -228,6 +246,22 @@ ITexture QuarkVkRenderer::GetRenderTextureTexture(IRenderTexture target) {
 void QuarkVkRenderer::UnloadTexture(ITexture& texture) {
     if (texture.id == 0 || texture.id == m_whiteTextureId) {
         return;
+    }
+
+    const auto cacheKey = m_textureCacheKeys.find(texture.id);
+    if (cacheKey != m_textureCacheKeys.end()) {
+        auto cached = m_textureCache.find(cacheKey->second);
+        if (cached != m_textureCache.end()) {
+            cached->second.references--;
+            if (cached->second.references > 0) {
+                TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Released cached texture (ID: %u, References: %d)",
+                    texture.id, cached->second.references));
+                texture = ITexture{};
+                return;
+            }
+            m_textureCache.erase(cached);
+        }
+        m_textureCacheKeys.erase(cacheKey);
     }
 
     TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[Vulkan] Texture unloaded (ID: %u, %dx%d)", texture.id, texture.width, texture.height));

@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <filesystem>
 #include <set>
@@ -324,6 +325,8 @@ void QuarkVkRenderer::Shutdown() {
         for (const auto& [id, _] : m_textures) { ids.push_back(id); }
         for (uint32_t id : ids) { DestroyTexture(id); }
     }
+    m_textureCache.clear();
+    m_textureCacheKeys.clear();
 
     CleanupSwapChain();
 

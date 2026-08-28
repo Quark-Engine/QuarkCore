@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstring>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -332,6 +333,14 @@ void QuarkGLRenderer::Shutdown() {
         glDeleteTextures(1, &m_3d.whiteTexture);
         m_3d.whiteTexture = 0;
     }
+
+    for (const auto& [_, cachedTexture] : m_textureCache) {
+        if (cachedTexture.texture.id) {
+            glDeleteTextures(1, &cachedTexture.texture.id);
+        }
+    }
+    m_textureCache.clear();
+    m_textureCacheKeys.clear();
 
     auto del=[](GLuint& va,GLuint& vb,GLuint& eb) {
         if(va) {
@@ -823,6 +832,22 @@ void QuarkGLRenderer::DrawTextureNPatch(ITexture t, Rectangle src, Rectangle dst
 ITexture QuarkGLRenderer::LoadTexture(const char* path) {
     TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Loading texture from: %s", path ? path : "<null>"));
 
+    if (!path) return {};
+
+    std::error_code pathError;
+    std::string cacheKey = std::filesystem::weakly_canonical(path, pathError).string();
+    if (pathError || cacheKey.empty()) {
+        cacheKey = std::filesystem::path(path).lexically_normal().string();
+    }
+
+    const auto cached = m_textureCache.find(cacheKey);
+    if (cached != m_textureCache.end()) {
+        cached->second.references++;
+        TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Reusing cached texture: %s (ID: %u, References: %d)",
+            path, cached->second.texture.id, cached->second.references));
+        return cached->second.texture;
+    }
+
     ImageFileData img;
     ITexture t{};
     const bool loaded = LoadImageFile(path, img, 4);
@@ -832,6 +857,9 @@ ITexture QuarkGLRenderer::LoadTexture(const char* path) {
         t.width = img.width;
         t.height = img.height;
         t.valid = true;
+
+        m_textureCache.emplace(cacheKey, CachedTexture{t, 1});
+        m_textureCacheKeys.emplace(t.id, cacheKey);
 
         TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[OpenGL] Texture loaded successfully: %s (%dx%d, %zu bytes, ID: %u)",
             path ? path : "<null>", t.width, t.height, img.pixels.size(), t.id));
@@ -845,6 +873,25 @@ ITexture QuarkGLRenderer::LoadTexture(const char* path) {
 
 void QuarkGLRenderer::UnloadTexture(ITexture& t) {
     if(t.id) {
+        const auto cacheKey = m_textureCacheKeys.find(t.id);
+        if (cacheKey != m_textureCacheKeys.end()) {
+            auto cached = m_textureCache.find(cacheKey->second);
+            if (cached != m_textureCache.end()) {
+                cached->second.references--;
+                if (cached->second.references > 0) {
+                    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Released cached texture (ID: %u, References: %d)",
+                        t.id, cached->second.references));
+                    t = {};
+                    return;
+                }
+                glDeleteTextures(1, &t.id);
+                m_textureCache.erase(cached);
+            }
+            m_textureCacheKeys.erase(cacheKey);
+            t = {};
+            return;
+        }
+
         TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[OpenGL] Texture unloaded (ID: %u, %dx%d)", t.id, t.width, t.height));
         glDeleteTextures(1, &t.id);
     }
