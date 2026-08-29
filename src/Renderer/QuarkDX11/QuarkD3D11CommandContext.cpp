@@ -52,10 +52,10 @@ void D3D11CommandContext::BeginDrawing()
 
     ID3D11RenderTargetView *renderTarget = m_swapChain->RenderTarget();
     m_activeRenderTarget = renderTarget;
-    m_activeWidth = m_defaultWidth;
-    m_activeHeight = m_defaultHeight;
+    m_activeWidth = m_defaultWidth > 0 ? m_defaultWidth : m_activeWidth;
+    m_activeHeight = m_defaultHeight > 0 ? m_defaultHeight : m_activeHeight;
     m_context->OMSetRenderTargets(1, &renderTarget, m_swapChain->DepthStencilView());
-
+    RefreshViewport(m_activeWidth, m_activeHeight);
 }
 
 void D3D11CommandContext::EndDrawing(bool vsync)
@@ -123,6 +123,26 @@ void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
 
     m_pipeline->Bind3D(m_context);
     m_context->IASetPrimitiveTopology(topology);
+    m_context->Draw(vertexCount, 0);
+}
+
+void D3D11CommandContext::Draw3DTextured(const float *vertices, UINT vertexCount,
+                                         ID3D11ShaderResourceView *shaderResource)
+{
+    if (!m_context || !m_pipeline || !m_resources || !vertices || vertexCount == 0)
+    {
+        return;
+    }
+
+    constexpr UINT kMaxVertices = 32768;
+    if (vertexCount > kMaxVertices)
+    {
+        return;
+    }
+
+    m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), vertices,
+                                     static_cast<size_t>(vertexCount) * sizeof(float) * 10);
+    m_pipeline->BindTexture3D(m_context, shaderResource);
     m_context->Draw(vertexCount, 0);
 }
 
@@ -373,7 +393,11 @@ void D3D11CommandContext::BeginTextureMode(const IRenderTexture& target)
 void D3D11CommandContext::EndTextureMode(int width, int height)
 {
     BeginDrawing();
-    RefreshViewport(width, height);
+    const int restoreWidth = width > 0 ? width : m_defaultWidth;
+    const int restoreHeight = height > 0 ? height : m_defaultHeight;
+    m_activeWidth = restoreWidth;
+    m_activeHeight = restoreHeight;
+    RefreshViewport(restoreWidth, restoreHeight);
 }
 
 void D3D11CommandContext::BeginMode2D(const Camera2D& camera)

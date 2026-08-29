@@ -75,6 +75,43 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         }
     )";
 
+    static constexpr char texturedVertexSource3D[] = R"(
+        struct VSInput {
+            float4 position : POSITION;
+            float2 texCoord : TEXCOORD0;
+            float4 color : COLOR;
+        };
+
+        struct VSOutput {
+            float4 position : SV_POSITION;
+            float2 texCoord : TEXCOORD0;
+            float4 color : COLOR;
+        };
+
+        VSOutput main(VSInput input) {
+            VSOutput output;
+            output.position = input.position;
+            output.texCoord = input.texCoord;
+            output.color = input.color;
+            return output;
+        }
+    )";
+
+    static constexpr char texturedPixelSource3D[] = R"(
+        Texture2D textureMap : register(t0);
+        SamplerState textureSampler : register(s0);
+
+        struct PSInput {
+            float4 position : SV_POSITION;
+            float2 texCoord : TEXCOORD0;
+            float4 color : COLOR;
+        };
+
+        float4 main(PSInput input) : SV_TARGET {
+            return textureMap.Sample(textureSampler, input.texCoord) * input.color;
+        }
+    )";
+
     static constexpr char vertexSource3D[] = R"(
         struct VSInput {
             float4 position : POSITION;
@@ -109,6 +146,8 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
     const auto pixelShader = compiler.Compile(pixelSource, "main", "ps_5_0");
     const auto texturedVertexShader = compiler.Compile(texturedVertexSource, "main", "vs_5_0");
     const auto texturedPixelShader = compiler.Compile(texturedPixelSource, "main", "ps_5_0");
+    const auto texturedVertexShader3D = compiler.Compile(texturedVertexSource3D, "main", "vs_5_0");
+    const auto texturedPixelShader3D = compiler.Compile(texturedPixelSource3D, "main", "ps_5_0");
     const auto vertexShader3D = compiler.Compile(vertexSource3D, "main", "vs_5_0");
     const auto pixelShader3D = compiler.Compile(pixelSource3D, "main", "ps_5_0");
 
@@ -132,6 +171,17 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
                                   texturedPixelShader->GetBufferSize(), nullptr,
                                   &m_texturedPixelShader),
         "ID3D11Device::CreatePixelShader textured");
+
+    d3d11::ThrowIfFailed(
+        device->CreateVertexShader(texturedVertexShader3D->GetBufferPointer(),
+                                   texturedVertexShader3D->GetBufferSize(), nullptr,
+                                   &m_texturedVertexShader3D),
+        "ID3D11Device::CreateVertexShader textured 3D");
+    d3d11::ThrowIfFailed(
+        device->CreatePixelShader(texturedPixelShader3D->GetBufferPointer(),
+                                  texturedPixelShader3D->GetBufferSize(), nullptr,
+                                  &m_texturedPixelShader3D),
+        "ID3D11Device::CreatePixelShader textured 3D");
 
     d3d11::ThrowIfFailed(
         device->CreateVertexShader(vertexShader3D->GetBufferPointer(),
@@ -169,6 +219,23 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
                                   texturedVertexShader->GetBufferSize(),
                                   &m_texturedInputLayout),
         "ID3D11Device::CreateInputLayout textured");
+
+    const D3D11_INPUT_ELEMENT_DESC texturedInputElements3D[] = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 16,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24,
+         D3D11_INPUT_PER_VERTEX_DATA, 0}
+    };
+
+    d3d11::ThrowIfFailed(
+        device->CreateInputLayout(texturedInputElements3D,
+                                  ARRAYSIZE(texturedInputElements3D),
+                                  texturedVertexShader3D->GetBufferPointer(),
+                                  texturedVertexShader3D->GetBufferSize(),
+                                  &m_texturedInputLayout3D),
+        "ID3D11Device::CreateInputLayout textured 3D");
 
     const D3D11_INPUT_ELEMENT_DESC inputElements3D[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0,
@@ -274,6 +341,27 @@ void D3D11Pipeline::BindTexture(ID3D11DeviceContext *context,
     context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
 }
 
+void D3D11Pipeline::BindTexture3D(ID3D11DeviceContext *context,
+                                 ID3D11ShaderResourceView *shaderResource) const
+{
+    const UINT stride = sizeof(float) * 10;
+    const UINT offset = 0;
+    ID3D11Buffer *vertexBuffer = m_vertexBuffer3D;
+
+    context->IASetInputLayout(m_texturedInputLayout3D.Get());
+    context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+    context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    context->RSSetState(m_backfaceCullingEnabled ? m_rasterizerStateCull.Get()
+                                                 : m_rasterizerState.Get());
+    context->VSSetShader(m_texturedVertexShader3D.Get(), nullptr, 0);
+    context->PSSetShader(m_texturedPixelShader3D.Get(), nullptr, 0);
+    context->PSSetShaderResources(0, 1, &shaderResource);
+    context->PSSetSamplers(0, 1, m_textureSampler.GetAddressOf());
+    const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    context->OMSetDepthStencilState(m_depthStencilState.Get(), 0);
+    context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
+}
+
 void D3D11Pipeline::BindDepthDisabled(ID3D11DeviceContext *context) const
 {
     if (!context)
@@ -287,12 +375,15 @@ void D3D11Pipeline::Bind(ID3D11DeviceContext *context) const
 {
     const UINT stride = sizeof(float) * 6;
     const UINT offset = 0;
+    ID3D11ShaderResourceView *nullResource = nullptr;
     context->IASetInputLayout(m_inputLayout.Get());
     context->IASetVertexBuffers(0, 1, &m_vertexBuffer, &stride, &offset);
     context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     context->RSSetState(m_rasterizerState.Get());
     context->VSSetShader(m_vertexShader.Get(), nullptr, 0);
     context->PSSetShader(m_pixelShader.Get(), nullptr, 0);
+    context->PSSetShaderResources(0, 1, &nullResource);
+    context->PSSetSamplers(0, 1, m_textureSampler.GetAddressOf());
     const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
     context->OMSetDepthStencilState(m_depthStencilDisabledState.Get(), 0);
     context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
@@ -302,12 +393,15 @@ void D3D11Pipeline::Bind3D(ID3D11DeviceContext *context) const
 {
     const UINT stride = sizeof(float) * 8;
     const UINT offset = 0;
+    ID3D11ShaderResourceView *nullResource = nullptr;
     context->IASetInputLayout(m_inputLayout3D.Get());
     context->IASetVertexBuffers(0, 1, &m_vertexBuffer3D, &stride, &offset);
     context->RSSetState(m_backfaceCullingEnabled ? m_rasterizerStateCull.Get()
                                                  : m_rasterizerState.Get());
     context->VSSetShader(m_vertexShader3D.Get(), nullptr, 0);
     context->PSSetShader(m_pixelShader3D.Get(), nullptr, 0);
+    context->PSSetShaderResources(0, 1, &nullResource);
+    context->PSSetSamplers(0, 1, m_textureSampler.GetAddressOf());
     context->OMSetDepthStencilState(m_depthStencilState.Get(), 0);
     const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
     context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
@@ -327,6 +421,9 @@ void D3D11Pipeline::Shutdown()
     m_texturedInputLayout.Reset();
     m_texturedPixelShader.Reset();
     m_texturedVertexShader.Reset();
+    m_texturedInputLayout3D.Reset();
+    m_texturedPixelShader3D.Reset();
+    m_texturedVertexShader3D.Reset();
     m_blendState.Reset();
     m_inputLayout3D.Reset();
     m_pixelShader3D.Reset();

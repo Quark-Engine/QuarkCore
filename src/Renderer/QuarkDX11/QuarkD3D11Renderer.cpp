@@ -6,6 +6,9 @@
 #include FT_FREETYPE_H
 #include <d3dcompiler.h>
 #include <d3d11shader.h>
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -18,6 +21,16 @@ namespace qc
 {
 
 namespace {
+
+static Color MultiplyColor(Color lhs, Color rhs)
+{
+    return Color{
+        static_cast<unsigned char>((static_cast<unsigned int>(lhs.r) * rhs.r) / 255u),
+        static_cast<unsigned char>((static_cast<unsigned int>(lhs.g) * rhs.g) / 255u),
+        static_cast<unsigned char>((static_cast<unsigned int>(lhs.b) * rhs.b) / 255u),
+        static_cast<unsigned char>((static_cast<unsigned int>(lhs.a) * rhs.a) / 255u)
+    };
+}
 
 const char* ShaderLocationNames[SHADER_LOC_COUNT] = {
     "POSITION",
@@ -1027,6 +1040,544 @@ void QuarkD3D11Renderer::DrawGrid(int slices, float spacing, Color color)
     }
 
     DrawLines3D(positions.data(), positions.size(), CurrentMVP(), color);
+}
+
+namespace {
+
+Color ReadMeshVertexColor(const Mesh& mesh, int index, Color fallback)
+{
+    if (!mesh.colors || index < 0 || index * 4 + 3 >= mesh.vertexCount * 4)
+    {
+        return fallback;
+    }
+
+    return Color{
+        mesh.colors[index * 4 + 0],
+        mesh.colors[index * 4 + 1],
+        mesh.colors[index * 4 + 2],
+        mesh.colors[index * 4 + 3]
+    };
+}
+
+std::string GetModelDirectory(const char* filePath)
+{
+    if (!filePath)
+    {
+        return {};
+    }
+
+    const std::string path(filePath);
+    const std::size_t slash = path.find_last_of("/\\");
+    if (slash == std::string::npos)
+    {
+        return {};
+    }
+
+    return path.substr(0, slash + 1);
+}
+
+} // namespace
+
+Model QuarkD3D11Renderer::LoadModel(const char* filePath)
+{
+    TraceLog(LogLevel::Info, "MODEL",
+             TextFormat("[D3D11] Loading 3D model: %s", filePath ? filePath : "<null>"));
+
+    if (!filePath)
+    {
+        return {};
+    }
+
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(
+        filePath,
+        aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs);
+
+    if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || !scene->mRootNode)
+    {
+        TraceLog(LogLevel::Error, "MODEL",
+                 TextFormat("[D3D11] Failed to load model %s: %s",
+                            filePath, importer.GetErrorString()));
+        return {};
+    }
+
+    Model model{};
+    model.directory = GetModelDirectory(filePath);
+    model.meshCount = static_cast<int>(scene->mNumMeshes);
+    model.materialCount = static_cast<int>(scene->mNumMaterials);
+    model.meshes = (model.meshCount > 0) ? new Mesh[model.meshCount]{} : nullptr;
+    model.materials = (model.materialCount > 0) ? new Material[model.materialCount]{} : nullptr;
+    model.meshMaterial = (model.meshCount > 0) ? new int[model.meshCount]{} : nullptr;
+
+    for (int materialIndex = 0; materialIndex < model.materialCount; ++materialIndex)
+    {
+        Material& material = model.materials[materialIndex];
+        material.maps = new MaterialMap[MATERIAL_MAP_BRDF + 1]{};
+        material.maps[MATERIAL_MAP_ALBEDO].color = WHITE;
+
+        aiMaterial* sourceMaterial = scene->mMaterials[materialIndex];
+        aiColor4D diffuseColor{};
+        if (AI_SUCCESS == aiGetMaterialColor(sourceMaterial, AI_MATKEY_COLOR_DIFFUSE, &diffuseColor))
+        {
+            material.maps[MATERIAL_MAP_ALBEDO].color = Color{
+                static_cast<unsigned char>(std::clamp(diffuseColor.r * 255.0f, 0.0f, 255.0f)),
+                static_cast<unsigned char>(std::clamp(diffuseColor.g * 255.0f, 0.0f, 255.0f)),
+                static_cast<unsigned char>(std::clamp(diffuseColor.b * 255.0f, 0.0f, 255.0f)),
+                static_cast<unsigned char>(std::clamp(diffuseColor.a * 255.0f, 0.0f, 255.0f))
+            };
+        }
+
+        aiString texturePath{};
+        if (AI_SUCCESS == sourceMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath))
+        {
+            const std::string fullTexturePath = model.directory + texturePath.C_Str();
+            const ITexture loadedTexture = LoadTexture(fullTexturePath.c_str());
+            material.maps[MATERIAL_MAP_ALBEDO].texture = Texture2D{
+                loadedTexture.id,
+                loadedTexture.width,
+                loadedTexture.height,
+                loadedTexture.valid
+            };
+            material.maps[MATERIAL_MAP_DIFFUSE].texture = material.maps[MATERIAL_MAP_ALBEDO].texture;
+        }
+    }
+
+    for (int meshIndex = 0; meshIndex < model.meshCount; ++meshIndex)
+    {
+        aiMesh* sourceMesh = scene->mMeshes[meshIndex];
+        if (!sourceMesh)
+        {
+            continue;
+        }
+
+        Mesh& destinationMesh = model.meshes[meshIndex];
+        destinationMesh.vertexCount = static_cast<int>(sourceMesh->mNumVertices);
+        destinationMesh.triangleCount = static_cast<int>(sourceMesh->mNumFaces);
+
+        if (destinationMesh.vertexCount > 0)
+        {
+            destinationMesh.vertices = new float[destinationMesh.vertexCount * 3]{};
+            destinationMesh.normals = new float[destinationMesh.vertexCount * 3]{};
+            destinationMesh.texcoords = new float[destinationMesh.vertexCount * 2]{};
+        }
+
+        if (destinationMesh.triangleCount > 0)
+        {
+            destinationMesh.indices = new unsigned short[destinationMesh.triangleCount * 3]{};
+        }
+
+        if (sourceMesh->HasVertexColors(0))
+        {
+            destinationMesh.colors = new unsigned char[destinationMesh.vertexCount * 4]{};
+        }
+
+        for (int vertexIndex = 0; vertexIndex < destinationMesh.vertexCount; ++vertexIndex)
+        {
+            const aiVector3D& position = sourceMesh->mVertices[vertexIndex];
+            destinationMesh.vertices[vertexIndex * 3 + 0] = position.x;
+            destinationMesh.vertices[vertexIndex * 3 + 1] = position.y;
+            destinationMesh.vertices[vertexIndex * 3 + 2] = position.z;
+
+            if (sourceMesh->HasNormals())
+            {
+                const aiVector3D& normal = sourceMesh->mNormals[vertexIndex];
+                destinationMesh.normals[vertexIndex * 3 + 0] = normal.x;
+                destinationMesh.normals[vertexIndex * 3 + 1] = normal.y;
+                destinationMesh.normals[vertexIndex * 3 + 2] = normal.z;
+            }
+            else
+            {
+                destinationMesh.normals[vertexIndex * 3 + 0] = 0.0f;
+                destinationMesh.normals[vertexIndex * 3 + 1] = 1.0f;
+                destinationMesh.normals[vertexIndex * 3 + 2] = 0.0f;
+            }
+
+            if (sourceMesh->HasTextureCoords(0))
+            {
+                const aiVector3D& uv = sourceMesh->mTextureCoords[0][vertexIndex];
+                destinationMesh.texcoords[vertexIndex * 2 + 0] = uv.x;
+                destinationMesh.texcoords[vertexIndex * 2 + 1] = uv.y;
+            }
+            else
+            {
+                destinationMesh.texcoords[vertexIndex * 2 + 0] = 0.0f;
+                destinationMesh.texcoords[vertexIndex * 2 + 1] = 0.0f;
+            }
+
+            if (sourceMesh->HasVertexColors(0))
+            {
+                const aiColor4D& color = sourceMesh->mColors[0][vertexIndex];
+                destinationMesh.colors[vertexIndex * 4 + 0] = static_cast<unsigned char>(std::clamp(color.r * 255.0f, 0.0f, 255.0f));
+                destinationMesh.colors[vertexIndex * 4 + 1] = static_cast<unsigned char>(std::clamp(color.g * 255.0f, 0.0f, 255.0f));
+                destinationMesh.colors[vertexIndex * 4 + 2] = static_cast<unsigned char>(std::clamp(color.b * 255.0f, 0.0f, 255.0f));
+                destinationMesh.colors[vertexIndex * 4 + 3] = static_cast<unsigned char>(std::clamp(color.a * 255.0f, 0.0f, 255.0f));
+            }
+        }
+
+        for (int faceIndex = 0; faceIndex < destinationMesh.triangleCount; ++faceIndex)
+        {
+            const aiFace& face = sourceMesh->mFaces[faceIndex];
+            if (face.mNumIndices < 3)
+            {
+                continue;
+            }
+
+            destinationMesh.indices[faceIndex * 3 + 0] = static_cast<unsigned short>(face.mIndices[0]);
+            destinationMesh.indices[faceIndex * 3 + 1] = static_cast<unsigned short>(face.mIndices[1]);
+            destinationMesh.indices[faceIndex * 3 + 2] = static_cast<unsigned short>(face.mIndices[2]);
+        }
+
+        model.meshMaterial[meshIndex] = static_cast<int>(sourceMesh->mMaterialIndex);
+    }
+
+    TraceLog(LogLevel::Info, "MODEL",
+             TextFormat("[D3D11] Model loaded successfully: %s (%d meshes, %d materials)",
+                        filePath, model.meshCount, model.materialCount));
+    return model;
+}
+
+void QuarkD3D11Renderer::UnloadModel(Model& model)
+{
+    if (model.meshes)
+    {
+        for (int i = 0; i < model.meshCount; ++i)
+        {
+            UnloadMesh(model.meshes[i]);
+        }
+        delete[] model.meshes;
+        model.meshes = nullptr;
+    }
+
+    if (model.materials)
+    {
+        for (int i = 0; i < model.materialCount; ++i)
+        {
+            Material& material = model.materials[i];
+            if (material.maps)
+            {
+                for (int mapIndex = 0; mapIndex <= MATERIAL_MAP_BRDF; ++mapIndex)
+                {
+                    if (material.maps[mapIndex].texture.valid)
+                    {
+                        ITexture texture{
+                            material.maps[mapIndex].texture.id,
+                            material.maps[mapIndex].texture.width,
+                            material.maps[mapIndex].texture.height,
+                            material.maps[mapIndex].texture.valid
+                        };
+                        UnloadTexture(texture);
+                    }
+                }
+                delete[] material.maps;
+                material.maps = nullptr;
+            }
+        }
+        delete[] model.materials;
+        model.materials = nullptr;
+    }
+
+    delete[] model.meshMaterial;
+    model.meshMaterial = nullptr;
+    model.meshCount = 0;
+    model.materialCount = 0;
+    model.directory.clear();
+    model.id = 0;
+    model.transform = Mat4::identity();
+}
+
+void QuarkD3D11Renderer::DrawModel(const Model& model,
+                                   const Vec3& position,
+                                   float scale,
+                                   float rotationX,
+                                   float rotationY,
+                                   float rotationZ)
+{
+    Mat4 transform = Mat4::translation(position.x, position.y, position.z)
+                   * Mat4::rotationY(rotationY)
+                   * Mat4::rotationX(rotationX)
+                   * Mat4::rotationZ(rotationZ)
+                   * Mat4::scale(scale, scale, scale);
+    DrawModelEx(model, transform);
+}
+
+void QuarkD3D11Renderer::DrawModelEx(const Model& model, const Mat4& transform)
+{
+    const Mat4 modelTransform = transform * model.transform;
+
+    for (int i = 0; i < model.meshCount; ++i)
+    {
+        const Mesh& mesh = model.meshes[i];
+        const Material* material = nullptr;
+        if (model.meshMaterial && i >= 0 && i < model.meshCount &&
+            model.meshMaterial[i] >= 0 && model.meshMaterial[i] < model.materialCount)
+        {
+            material = &model.materials[model.meshMaterial[i]];
+        }
+
+        DrawMesh(mesh, material ? *material : Material{}, modelTransform);
+    }
+}
+
+void QuarkD3D11Renderer::DrawModelEx(const Model& model, const Mat4& transform, Color tint)
+{
+    const Mat4 modelTransform = transform * model.transform;
+    std::vector<MaterialMap> adjustedMaps(MATERIAL_MAP_BRDF + 1, MaterialMap{});
+
+    for (int i = 0; i < model.meshCount; ++i)
+    {
+        const Mesh& mesh = model.meshes[i];
+        Material adjustedMaterial{};
+        const Material* sourceMaterial = nullptr;
+
+        if (model.meshMaterial && i >= 0 && i < model.meshCount &&
+            model.meshMaterial[i] >= 0 && model.meshMaterial[i] < model.materialCount)
+        {
+            sourceMaterial = &model.materials[model.meshMaterial[i]];
+        }
+
+        if (sourceMaterial && sourceMaterial->maps)
+        {
+            std::copy(sourceMaterial->maps,
+                      sourceMaterial->maps + static_cast<int>(adjustedMaps.size()),
+                      adjustedMaps.begin());
+            adjustedMaterial = *sourceMaterial;
+            adjustedMaterial.maps = adjustedMaps.data();
+            adjustedMaterial.maps[MATERIAL_MAP_ALBEDO].color =
+                MultiplyColor(adjustedMaterial.maps[MATERIAL_MAP_ALBEDO].color, tint);
+        }
+        else
+        {
+            adjustedMaterial.maps = adjustedMaps.data();
+            adjustedMaterial.maps[MATERIAL_MAP_ALBEDO].color = tint;
+        }
+
+        DrawMesh(mesh, adjustedMaterial, modelTransform);
+    }
+}
+
+void QuarkD3D11Renderer::UploadMesh(Mesh& mesh, bool dynamic)
+{
+    (void)dynamic;
+    mesh.vaoId = 0;
+    mesh.vboId = 0;
+    mesh.eboId = 0;
+}
+
+void QuarkD3D11Renderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data,
+                                          int dataSize, int offset)
+{
+    if (!data || dataSize <= 0 || offset < 0)
+    {
+        return;
+    }
+
+    auto copyBytes = [&](void* destination, std::size_t destinationBytes)
+    {
+        if (!destination || static_cast<std::size_t>(offset) >= destinationBytes)
+        {
+            return;
+        }
+
+        const std::size_t bytesToCopy = std::min<std::size_t>(
+            static_cast<std::size_t>(dataSize),
+            destinationBytes - static_cast<std::size_t>(offset));
+        std::memcpy(static_cast<unsigned char*>(destination) + offset, data, bytesToCopy);
+    };
+
+    switch (index)
+    {
+    case 0:
+        copyBytes(mesh.vertices, static_cast<std::size_t>(mesh.vertexCount) * 3u * sizeof(float));
+        break;
+    case 1:
+        copyBytes(mesh.normals, static_cast<std::size_t>(mesh.vertexCount) * 3u * sizeof(float));
+        break;
+    case 2:
+        copyBytes(mesh.texcoords, static_cast<std::size_t>(mesh.vertexCount) * 2u * sizeof(float));
+        break;
+    case 6:
+        copyBytes(mesh.indices, static_cast<std::size_t>(mesh.triangleCount) * 3u * sizeof(unsigned short));
+        break;
+    default:
+        break;
+    }
+}
+
+void QuarkD3D11Renderer::UnloadMesh(Mesh& mesh)
+{
+    delete[] mesh.vertices;
+    mesh.vertices = nullptr;
+    delete[] mesh.texcoords;
+    mesh.texcoords = nullptr;
+    delete[] mesh.texcoords2;
+    mesh.texcoords2 = nullptr;
+    delete[] mesh.normals;
+    mesh.normals = nullptr;
+    delete[] mesh.tangents;
+    mesh.tangents = nullptr;
+    delete[] mesh.colors;
+    mesh.colors = nullptr;
+    delete[] mesh.indices;
+    mesh.indices = nullptr;
+    delete[] mesh.boneIndices;
+    mesh.boneIndices = nullptr;
+    delete[] mesh.boneWeights;
+    mesh.boneWeights = nullptr;
+    delete[] mesh.animVertices;
+    mesh.animVertices = nullptr;
+    delete[] mesh.animNormals;
+    mesh.animNormals = nullptr;
+
+    mesh.vertexCount = 0;
+    mesh.triangleCount = 0;
+    mesh.vaoId = 0;
+    mesh.vboId = 0;
+    mesh.eboId = 0;
+}
+
+void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform)
+{
+    if (!mesh.vertices || mesh.vertexCount <= 0)
+    {
+        return;
+    }
+
+    const ID3D11ShaderResourceView *textureResource = nullptr;
+    const MaterialMap* albedoMap = nullptr;
+    if (material.maps)
+    {
+        albedoMap = &material.maps[MATERIAL_MAP_ALBEDO];
+        if (albedoMap->texture.valid)
+        {
+            textureResource = m_resources.ShaderResource(albedoMap->texture.id);
+        }
+    }
+
+    const Mat4 finalTransform = m_currentMatrix * transform;
+    const Color baseColor = albedoMap ? albedoMap->color : WHITE;
+
+    std::vector<float> vertices;
+    vertices.reserve(static_cast<std::size_t>(mesh.vertexCount) * 10u);
+
+    auto appendVertex = [&](int vertexIndex, Color color, float u, float v)
+    {
+        const Vec4 world = finalTransform * Vec4{
+            mesh.vertices[vertexIndex * 3 + 0],
+            mesh.vertices[vertexIndex * 3 + 1],
+            mesh.vertices[vertexIndex * 3 + 2],
+            1.0f
+        };
+
+        const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
+
+        vertices.push_back(clip.x);
+        vertices.push_back(clip.y);
+        vertices.push_back(clip.z);
+        vertices.push_back(clip.w);
+        vertices.push_back(u);
+        vertices.push_back(v);
+        vertices.push_back(color.r / 255.0f);
+        vertices.push_back(color.g / 255.0f);
+        vertices.push_back(color.b / 255.0f);
+        vertices.push_back(color.a / 255.0f);
+    };
+
+    for (int vertexIndex = 0; vertexIndex < mesh.vertexCount; ++vertexIndex)
+    {
+        const Color vertexColor = MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vertexIndex, WHITE));
+        const float u = mesh.texcoords ? mesh.texcoords[vertexIndex * 2 + 0] : 0.0f;
+        const float v = mesh.texcoords ? mesh.texcoords[vertexIndex * 2 + 1] : 0.0f;
+        appendVertex(vertexIndex, vertexColor, u, v);
+    }
+
+    if (mesh.indices && mesh.triangleCount > 0)
+    {
+        std::vector<float> indexedVertices;
+        indexedVertices.reserve(static_cast<std::size_t>(mesh.triangleCount) * 3u * 10u);
+
+        for (int triangleIndex = 0; triangleIndex < mesh.triangleCount; ++triangleIndex)
+        {
+            for (int localIndex = 0; localIndex < 3; ++localIndex)
+            {
+                const int vertexIndex = mesh.indices[triangleIndex * 3 + localIndex];
+                if (vertexIndex < 0 || vertexIndex >= mesh.vertexCount)
+                {
+                    continue;
+                }
+
+                const float u = mesh.texcoords ? mesh.texcoords[vertexIndex * 2 + 0] : 0.0f;
+                const float v = mesh.texcoords ? mesh.texcoords[vertexIndex * 2 + 1] : 0.0f;
+                const Color vertexColor = MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vertexIndex, WHITE));
+                const Vec4 world = finalTransform * Vec4{
+                    mesh.vertices[vertexIndex * 3 + 0],
+                    mesh.vertices[vertexIndex * 3 + 1],
+                    mesh.vertices[vertexIndex * 3 + 2],
+                    1.0f
+                };
+                const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
+
+                indexedVertices.push_back(clip.x);
+                indexedVertices.push_back(clip.y);
+                indexedVertices.push_back(clip.z);
+                indexedVertices.push_back(clip.w);
+                indexedVertices.push_back(u);
+                indexedVertices.push_back(v);
+                indexedVertices.push_back(vertexColor.r / 255.0f);
+                indexedVertices.push_back(vertexColor.g / 255.0f);
+                indexedVertices.push_back(vertexColor.b / 255.0f);
+                indexedVertices.push_back(vertexColor.a / 255.0f);
+            }
+        }
+
+        if (!indexedVertices.empty())
+        {
+            if (textureResource)
+            {
+                m_commands.Draw3DTextured(indexedVertices.data(),
+                                         static_cast<UINT>(indexedVertices.size() / 10),
+                                         const_cast<ID3D11ShaderResourceView *>(textureResource));
+            }
+            else
+            {
+                m_commands.Draw3D(indexedVertices.data(),
+                                  static_cast<UINT>(indexedVertices.size() / 8),
+                                  D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            }
+        }
+        return;
+    }
+
+    if (!vertices.empty())
+    {
+        if (textureResource)
+        {
+            m_commands.Draw3DTextured(vertices.data(),
+                                     static_cast<UINT>(vertices.size() / 10),
+                                     const_cast<ID3D11ShaderResourceView *>(textureResource));
+        }
+        else
+        {
+            m_commands.Draw3D(vertices.data(),
+                              static_cast<UINT>(vertices.size() / 8),
+                              D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        }
+    }
+}
+
+void QuarkD3D11Renderer::DrawMeshInstanced(const Mesh& mesh,
+                                           const Material& material,
+                                           const Mat4* transforms,
+                                           int instances)
+{
+    if (!transforms || instances <= 0)
+    {
+        return;
+    }
+
+    for (int instanceIndex = 0; instanceIndex < instances; ++instanceIndex)
+    {
+        DrawMesh(mesh, material, transforms[instanceIndex]);
+    }
 }
 
 bool QuarkD3D11Renderer::LoadFontData(const char* filePath,

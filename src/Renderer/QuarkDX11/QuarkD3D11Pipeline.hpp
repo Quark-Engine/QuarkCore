@@ -16,6 +16,7 @@ public:
     void Bind(ID3D11DeviceContext *context) const;
     void Bind3D(ID3D11DeviceContext *context) const;
     void BindTexture(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource) const;
+    void BindTexture3D(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource) const;
     void BindDepthDisabled(ID3D11DeviceContext *context) const;
     void SetBackfaceCulling(bool enabled) { m_backfaceCullingEnabled = enabled; }
     bool BackfaceCulling() const { return m_backfaceCullingEnabled; }
@@ -38,6 +39,9 @@ private:
     Microsoft::WRL::ComPtr<ID3D11VertexShader> m_texturedVertexShader;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> m_texturedPixelShader;
     Microsoft::WRL::ComPtr<ID3D11InputLayout> m_texturedInputLayout;
+    Microsoft::WRL::ComPtr<ID3D11VertexShader> m_texturedVertexShader3D;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> m_texturedPixelShader3D;
+    Microsoft::WRL::ComPtr<ID3D11InputLayout> m_texturedInputLayout3D;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> m_textureSampler;
     Microsoft::WRL::ComPtr<ID3D11BlendState> m_blendState;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_rasterizerState;

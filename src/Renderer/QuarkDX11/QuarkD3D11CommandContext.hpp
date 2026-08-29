@@ -42,6 +42,8 @@ public:
                          int width,
                          int height);
     void Draw3D(const float *vertices, UINT vertexCount, D3D_PRIMITIVE_TOPOLOGY topology);
+    void Draw3DTextured(const float *vertices, UINT vertexCount,
+                        ID3D11ShaderResourceView *shaderResource);
     void ClearDepthStencil();
     void BeginTextureMode(const IRenderTexture& target);
     void EndTextureMode(int width, int height);

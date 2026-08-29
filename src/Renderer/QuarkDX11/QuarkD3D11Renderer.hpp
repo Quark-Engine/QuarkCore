@@ -174,16 +174,18 @@ public:
     void EnableBackfaceCulling() override;
     void DisableBackfaceCulling() override;
 
-    Model LoadModel(const char *) override { return {}; }
-    void UnloadModel(Model &) override {}
-    void DrawModel(const Model &, const Vec3 &, float, float, float, float) override {}
-    void DrawModelEx(const Model &, const Mat4 &) override {}
-    void DrawModelEx(const Model &, const Mat4 &, Color) override {}
-    void UploadMesh(Mesh &, bool) override {}
-    void UpdateMeshBuffer(Mesh &, int, const void *, int, int) override {}
-    void UnloadMesh(Mesh &) override {}
-    void DrawMesh(const Mesh &, const Material &, const Mat4 &) override {}
-    void DrawMeshInstanced(const Mesh &, const Material &, const Mat4 *, int) override {}
+    Model LoadModel(const char *filePath) override;
+    void UnloadModel(Model &model) override;
+    void DrawModel(const Model &model, const Vec3 &position, float scale,
+                   float rotationX, float rotationY, float rotationZ) override;
+    void DrawModelEx(const Model &model, const Mat4 &transform) override;
+    void DrawModelEx(const Model &model, const Mat4 &transform, Color tint) override;
+    void UploadMesh(Mesh &mesh, bool dynamic) override;
+    void UpdateMeshBuffer(Mesh &mesh, int index, const void *data, int dataSize, int offset) override;
+    void UnloadMesh(Mesh &mesh) override;
+    void DrawMesh(const Mesh &mesh, const Material &material, const Mat4 &transform) override;
+    void DrawMeshInstanced(const Mesh &mesh, const Material &material, const Mat4 *transforms,
+                           int instances) override;
 
     void BeginTextureMode(IRenderTexture target) override;
     void EndTextureMode() override;
