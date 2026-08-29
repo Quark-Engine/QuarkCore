@@ -2,7 +2,7 @@
 
 ### Todo
 
-- [ ] Improve light compatibility API
+- [ ] Image API
 - [ ] Audio API
 - [ ] Network API
 - [ ] QuarkSL for multibackend shaders
@@ -10,9 +10,11 @@
 
 ### In Progress
 
-- [ ] DirectX 11 Backend
+- [ ] DirectX 9 Backend
+- [ ] DirectX 12 Backend
 
 ### Done ✓
 
-- [x] Fix memory leak while dropping file
+- [x] Improve light compatibility API
 - [x] Vulkan Backend
+- [x] DirectX 11 Backend
