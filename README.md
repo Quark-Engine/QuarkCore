@@ -19,7 +19,7 @@
 - C++17 or later
 - OpenGL 3.3 support for OpenGL backend
 - Vulkan 1.2 support for Vulkan backend
-- DirectX 11 support for DirectX 11 backend
+- DirectX 11.1 support for DirectX 11 backend
 - CMake 3.16+
 
 ### Installation
