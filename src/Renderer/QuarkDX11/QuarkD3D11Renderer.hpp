@@ -192,6 +192,8 @@ public:
     RendererType GetType() const override { return RendererType::D3D11; }
     bool ShouldClose() const override { return m_shouldClose; }
     void SetTargetFPS(int fps) override { m_targetFps = fps; }
+    void SetMSAASamples(int samples);
+    void SetTextureFilterMode(TextureFilterMode mode);
     bool SetVSync(bool enabled) override {
         m_vsync = enabled;
         m_vsyncExplicitlySet = true;
@@ -281,6 +283,8 @@ private:
     int m_width = 0;
     int m_height = 0;
     int m_targetFps = 60;
+    int m_requestedMsaaSamples = 1;
+    TextureFilterMode m_textureFilterMode = TextureFilterMode::Linear;
     bool m_vsync = true;
     bool m_vsyncExplicitlySet = false;
     std::uint64_t m_lastFrameCounter = 0;

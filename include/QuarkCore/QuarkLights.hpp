@@ -1,3 +1,17 @@
+/*
+    ========================================================
+    
+        Quark Light Module
+        By Quark Engine Development Team
+
+    --------------------------------------------------------
+
+    This file contains:
+        * Light structure and management
+
+    ========================================================
+*/
+
 #ifndef __QUARK_LIGHTS__
 #define __QUARK_LIGHTS__
 

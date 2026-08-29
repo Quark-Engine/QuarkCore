@@ -123,6 +123,21 @@ IRenderTexture D3D11Resources::CreateRenderTexture(ID3D11Device *device, int wid
                                                            &resource.shaderResource),
                          "ID3D11Device::CreateShaderResourceView render target");
 
+    D3D11_TEXTURE2D_DESC depthDescription{};
+    depthDescription.Width = static_cast<UINT>(width);
+    depthDescription.Height = static_cast<UINT>(height);
+    depthDescription.MipLevels = 1;
+    depthDescription.ArraySize = 1;
+    depthDescription.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    depthDescription.SampleDesc.Count = 1;
+    depthDescription.Usage = D3D11_USAGE_DEFAULT;
+    depthDescription.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+    d3d11::ThrowIfFailed(device->CreateTexture2D(&depthDescription, nullptr, &resource.depthTexture),
+                         "ID3D11Device::CreateTexture2D render target depth");
+    d3d11::ThrowIfFailed(device->CreateDepthStencilView(resource.depthTexture.Get(), nullptr,
+                                                        &resource.depthStencilView),
+                         "ID3D11Device::CreateDepthStencilView render target depth");
+
     result.id = m_nextTextureId++;
     result.texture = {result.id, width, height, true};
     m_renderTextures.emplace(result.id, std::move(resource));
@@ -143,6 +158,14 @@ ID3D11RenderTargetView *D3D11Resources::RenderTarget(uint32_t id) const
 {
     auto renderTexture = m_renderTextures.find(id);
     return renderTexture == m_renderTextures.end() ? nullptr : renderTexture->second.renderTarget.Get();
+}
+
+ID3D11DepthStencilView *D3D11Resources::DepthStencil(uint32_t id) const
+{
+    auto renderTexture = m_renderTextures.find(id);
+    return renderTexture == m_renderTextures.end()
+               ? nullptr
+               : renderTexture->second.depthStencilView.Get();
 }
 
 bool D3D11Resources::IsRenderTexture(uint32_t id) const

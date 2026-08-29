@@ -20,6 +20,8 @@
     Backend:
         * SDL3
         * OpenGL
+        * Vulkan
+        * Direct3D 11
 
     Language:
         * Modern C++

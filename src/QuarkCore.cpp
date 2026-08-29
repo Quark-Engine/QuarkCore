@@ -220,10 +220,16 @@ void SetMSAASamples(int samples) {
 #if defined(QC_ENABLE_VULKAN)
     gVkRenderer.SetMSAASamples(gRequestedMSAASamples);
 #endif
+#if defined(QC_ENABLE_D3D11)
+    gD3D11Renderer.SetMSAASamples(gRequestedMSAASamples);
+#endif
 }
 
 void SetTextureFilterMode(TextureFilterMode mode) {
     gTextureFilterMode = mode;
+#if defined(QC_ENABLE_D3D11)
+    gD3D11Renderer.SetTextureFilterMode(mode);
+#endif
 }
 
 #if defined(QC_ENABLE_VULKAN)

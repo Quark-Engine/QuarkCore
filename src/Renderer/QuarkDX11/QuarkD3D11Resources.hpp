@@ -22,6 +22,7 @@ public:
     IRenderTexture CreateRenderTexture(ID3D11Device *device, int width, int height);
     ID3D11ShaderResourceView *ShaderResource(uint32_t id) const;
     ID3D11RenderTargetView *RenderTarget(uint32_t id) const;
+    ID3D11DepthStencilView *DepthStencil(uint32_t id) const;
     bool IsRenderTexture(uint32_t id) const;
     void DestroyTexture(uint32_t id);
     void DestroyRenderTexture(uint32_t id);
@@ -34,6 +35,8 @@ private:
         Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> shaderResource;
         Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTarget;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> depthTexture;
+        Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
     };
 
     std::unordered_map<uint32_t, TextureResource> m_textures;

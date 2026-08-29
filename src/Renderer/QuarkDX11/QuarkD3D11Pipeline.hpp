@@ -19,6 +19,8 @@ public:
                    ID3D11Buffer *indexBuffer) const;
     void SetBackfaceCulling(bool enabled) { m_backfaceCullingEnabled = enabled; }
     bool BackfaceCulling() const { return m_backfaceCullingEnabled; }
+    void SetTextureFilterMode(TextureFilterMode mode);
+    TextureFilterMode GetTextureFilterMode() const { return m_textureFilterMode; }
     ID3D11Buffer *VertexBuffer() const { return m_vertexBuffer; }
     ID3D11Buffer *VertexBuffer3D() const { return m_vertexBuffer3D; }
     ID3D11RasterizerState *Rasterizer() const { return m_rasterizerState.Get(); }
@@ -30,6 +32,8 @@ public:
     }
 
 private:
+    void CreateSamplerState(TextureFilterMode mode);
+    ID3D11Device *m_device = nullptr;
     ID3D11Buffer *m_vertexBuffer = nullptr;
     ID3D11Buffer *m_vertexBuffer3D = nullptr;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> m_texturedVertexShader;
@@ -48,6 +52,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D11DepthStencilState> m_depthStencilDisabledState;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_rasterizerStateCull;
     bool m_backfaceCullingEnabled = false;
+    TextureFilterMode m_textureFilterMode = TextureFilterMode::Linear;
 };
 
 using D3D11PipelineState = D3D11Pipeline;

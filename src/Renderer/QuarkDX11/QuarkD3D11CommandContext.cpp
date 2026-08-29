@@ -99,9 +99,10 @@ void D3D11CommandContext::BeginDrawing()
 
     ID3D11RenderTargetView *renderTarget = m_swapChain->RenderTarget();
     m_activeRenderTarget = renderTarget;
+    m_activeDepthStencil = m_swapChain->DepthStencilView();
     m_activeWidth = m_defaultWidth > 0 ? m_defaultWidth : m_activeWidth;
     m_activeHeight = m_defaultHeight > 0 ? m_defaultHeight : m_activeHeight;
-    m_context->OMSetRenderTargets(1, &renderTarget, m_swapChain->DepthStencilView());
+    m_context->OMSetRenderTargets(1, &renderTarget, m_activeDepthStencil);
     RefreshViewport(m_activeWidth, m_activeHeight);
 }
 
@@ -109,6 +110,7 @@ void D3D11CommandContext::Present(bool vsync)
 {
     if (m_swapChain)
     {
+        m_swapChain->Resolve();
         m_swapChain->Present(vsync);
     }
 }
@@ -135,7 +137,7 @@ void D3D11CommandContext::ClearDepthStencil()
         return;
     }
 
-    ID3D11DepthStencilView *depthStencil = m_swapChain->DepthStencilView();
+    ID3D11DepthStencilView *depthStencil = m_activeDepthStencil;
     if (depthStencil)
     {
         m_context->ClearDepthStencilView(depthStencil, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL,
@@ -152,7 +154,7 @@ void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
         return;
     }
 
-    ID3D11DepthStencilView *depthStencil = m_swapChain->DepthStencilView();
+    ID3D11DepthStencilView *depthStencil = m_activeDepthStencil;
     if (!depthStencil)
     {
         return;
@@ -525,11 +527,18 @@ void D3D11CommandContext::BeginTextureMode(const IRenderTexture& target)
 
     FlushBatch();
 
-    m_context->OMSetRenderTargets(1, &renderTarget, nullptr);
+    ID3D11DepthStencilView* depthStencil = m_resources->DepthStencil(target.id);
+    m_context->OMSetRenderTargets(1, &renderTarget, depthStencil);
     m_activeRenderTarget = renderTarget;
+    m_activeDepthStencil = depthStencil;
     m_activeWidth = target.texture.width;
     m_activeHeight = target.texture.height;
     RefreshViewport(target.texture.width, target.texture.height);
+
+    if (depthStencil) {
+        m_context->ClearDepthStencilView(depthStencil, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL,
+                                         1.0f, 0);
+    }
 }
 
 void D3D11CommandContext::EndTextureMode(int width, int height)

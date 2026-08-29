@@ -8,6 +8,8 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
 {
     TraceLog(LogLevel::Info, "D3D11", "Creating built-in D3D11 pipeline...");
 
+    m_device = device;
+
     static constexpr char texturedVertexSource[] = R"(
         struct VSInput {
             float2 position : POSITION;
@@ -237,18 +239,7 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         device->CreateRasterizerState(&cullRasterizerDescription, &m_rasterizerStateCull),
         "ID3D11Device::CreateRasterizerState cull");
 
-    D3D11_SAMPLER_DESC samplerDescription{};
-    samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-    samplerDescription.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-    samplerDescription.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-    samplerDescription.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-    samplerDescription.ComparisonFunc = D3D11_COMPARISON_NEVER;
-    samplerDescription.MinLOD = 0.0f;
-    samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
-
-    d3d11::ThrowIfFailed(
-        device->CreateSamplerState(&samplerDescription, &m_textureSampler),
-        "ID3D11Device::CreateSamplerState");
+    CreateSamplerState(m_textureFilterMode);
 
     D3D11_BLEND_DESC blendDescription{};
     blendDescription.RenderTarget[0].BlendEnable = TRUE;
@@ -330,6 +321,42 @@ void D3D11Pipeline::Bind3D(ID3D11DeviceContext *context) const
     context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
 }
 
+void D3D11Pipeline::CreateSamplerState(TextureFilterMode mode)
+{
+    if (!m_device) {
+        return;
+    }
+
+    const bool point = (mode == TextureFilterMode::Nearest);
+
+    D3D11_SAMPLER_DESC samplerDescription{};
+    samplerDescription.Filter =
+        point ? D3D11_FILTER_MIN_MAG_MIP_POINT : D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    samplerDescription.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDescription.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDescription.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDescription.ComparisonFunc = D3D11_COMPARISON_NEVER;
+    samplerDescription.MinLOD = 0.0f;
+    samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
+
+    m_textureSampler.Reset();
+    d3d11::ThrowIfFailed(m_device->CreateSamplerState(&samplerDescription, &m_textureSampler),
+                         "ID3D11Device::CreateSamplerState");
+}
+
+void D3D11Pipeline::SetTextureFilterMode(TextureFilterMode mode)
+{
+    if (mode == m_textureFilterMode) {
+        return;
+    }
+
+    m_textureFilterMode = mode;
+    CreateSamplerState(mode);
+    TraceLog(LogLevel::Info, "D3D11",
+             TextFormat("Texture filter mode set to %s.",
+                        mode == TextureFilterMode::Nearest ? "Nearest (point)" : "Bilinear"));
+}
+
 void D3D11Pipeline::Shutdown()
 {
     TraceLog(LogLevel::Trace, "D3D11", "Releasing built-in pipeline state...");
@@ -352,6 +379,8 @@ void D3D11Pipeline::Shutdown()
     m_depthStencilDisabledState.Reset();
     m_rasterizerStateCull.Reset();
     m_backfaceCullingEnabled = false;
+    m_textureFilterMode = TextureFilterMode::Linear;
+    m_device = nullptr;
 
     TraceLog(LogLevel::Trace, "D3D11", "Built-in pipeline state released.");
 }

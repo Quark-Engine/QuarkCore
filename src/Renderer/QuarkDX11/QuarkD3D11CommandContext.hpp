@@ -80,6 +80,7 @@ private:
     D3D11Pipeline *m_pipeline = nullptr;
     D3D11Resources *m_resources = nullptr;
     ID3D11RenderTargetView *m_activeRenderTarget = nullptr;
+    ID3D11DepthStencilView *m_activeDepthStencil = nullptr;
     int m_defaultWidth = 0;
     int m_defaultHeight = 0;
     int m_activeWidth = 0;

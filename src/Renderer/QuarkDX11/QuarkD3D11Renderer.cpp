@@ -235,6 +235,12 @@ void QuarkD3D11Renderer::Init(SDL_Window *window, int width, int height)
         const uint8_t white[4] = {255, 255, 255, 255};
         m_whiteShaderTexture = m_resources.CreateTexture(m_device.Get(), white, 1, 1);
     }
+    if (m_requestedMsaaSamples > 1)
+    {
+        m_swapChain.SetMSAASamples(static_cast<UINT>(m_requestedMsaaSamples));
+    }
+    m_textureFilterMode = gTextureFilterMode;
+    m_pipeline.SetTextureFilterMode(m_textureFilterMode);
     RefreshViewport();
     TraceLog(LogLevel::Info, "D3D11", "Renderer initialized successfully.");
 }
@@ -258,6 +264,21 @@ void QuarkD3D11Renderer::Shutdown()
     m_drawing = false;
 
     TraceLog(LogLevel::Info, "D3D11", "D3D11 renderer shut down successfully.");
+}
+
+void QuarkD3D11Renderer::SetMSAASamples(int samples)
+{
+    m_requestedMsaaSamples = (samples == 2 || samples == 4 || samples == 8) ? samples : 1;
+    if (m_swapChain.Get() != nullptr)
+    {
+        m_swapChain.SetMSAASamples(static_cast<UINT>(m_requestedMsaaSamples));
+    }
+}
+
+void QuarkD3D11Renderer::SetTextureFilterMode(TextureFilterMode mode)
+{
+    m_textureFilterMode = mode;
+    m_pipeline.SetTextureFilterMode(mode);
 }
 
 void QuarkD3D11Renderer::RefreshViewport()
