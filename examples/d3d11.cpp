@@ -34,7 +34,7 @@ int main() {
     camera3d.fovy = 45.0f;
     camera3d.projection = qc::CAMERA_PERSPECTIVE;
 
-    qc::Model model = qc::LoadModel("lantern/lantern.obj");
+    qc::Model model = qc::LoadModel("resources/lantern.obj");
 
     qc::RenderTexture2D target = qc::LoadRenderTexture(320, 240);
 
