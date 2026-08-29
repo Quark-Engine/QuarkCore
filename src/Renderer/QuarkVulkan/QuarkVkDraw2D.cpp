@@ -131,8 +131,8 @@ void QuarkVkRenderer::DrawEllipse(float cx, float cy, float rH, float rV, Color 
 }
 
 void QuarkVkRenderer::DrawLine(float x1, float y1, float x2, float y2, Color color) {
-    auto it = m_textures.find(m_whiteTextureId);
-    if (it == m_textures.end()) {
+    const VkDescriptorSet whiteDs = m_vkResources.DescriptorSet(m_whiteTextureId);
+    if (whiteDs == VK_NULL_HANDLE) {
         return;
     }
 
@@ -165,7 +165,7 @@ void QuarkVkRenderer::DrawLine(float x1, float y1, float x2, float y2, Color col
     const float bCol = NormalizeColorComponent(color.b);
     const float aCol = NormalizeColorComponent(color.a);
 
-    AppendQuad(it->second.descriptorSet,
+    AppendQuad(whiteDs,
                a.x, a.y,
                b.x, b.y,
                c0.x, c0.y,
@@ -178,8 +178,8 @@ void QuarkVkRenderer::DrawLineV(Vec2 start, Vec2 end, Color color) {
 }
 
 void QuarkVkRenderer::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color) {
-    auto it = m_textures.find(m_whiteTextureId);
-    if (it == m_textures.end()) {
+    const VkDescriptorSet whiteDs = m_vkResources.DescriptorSet(m_whiteTextureId);
+    if (whiteDs == VK_NULL_HANDLE) {
         return;
     }
 
@@ -215,12 +215,12 @@ void QuarkVkRenderer::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color) {
     indices->push_back(base + 2);
 
     if (!drawItems->empty() &&
-        drawItems->back().descriptorSet == it->second.descriptorSet &&
-        drawItems->back().shaderProgramId == m_currentShaderProgramId &&
+        drawItems->back().descriptorSet == whiteDs &&
+        drawItems->back().shaderProgramId == m_vkShaderCompiler.CurrentProgramId() &&
         drawItems->back().firstIndex + drawItems->back().indexCount == firstIndex) {
         drawItems->back().indexCount += 3;
     } else {
-        drawItems->push_back({ 0, m_currentShaderProgramId, it->second.descriptorSet, firstIndex, 3 });
+        drawItems->push_back({ 0, m_vkShaderCompiler.CurrentProgramId(), whiteDs, firstIndex, 3 });
     }
 }
 

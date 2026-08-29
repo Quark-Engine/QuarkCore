@@ -42,14 +42,24 @@
 #include "../QuarkIRenderer.hpp"
 #include "../QuarkFont.hpp"
 #include "QuarkCore/QuarkCore.hpp"
+#include "QuarkVkCommandContext.hpp"
+#include "QuarkVkCommon.hpp"
+#include "QuarkVkDescriptorSetManager.hpp"
+#include "QuarkVkDevice.hpp"
+#include "QuarkVkFrameManager.hpp"
+#include "QuarkVkFramebufferManager.hpp"
 #include "QuarkVkGpuAllocator.hpp"
+#include "QuarkVkPipeline.hpp"
+#include "QuarkVkRenderPass.hpp"
+#include "QuarkVkRenderTarget.hpp"
+#include "QuarkVkResources.hpp"
+#include "QuarkVkShaderCompiler.hpp"
+#include "QuarkVkSwapChain.hpp"
 
-#include <vulkan/vulkan.h>
 #include <SDL3/SDL_vulkan.h>
 
 #include <array>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -64,55 +74,7 @@ static constexpr size_t kVkMaxBatchIndices    = kVkMaxBatchQuads * 6;
 static constexpr size_t kVkMaxVerticesPerFrame = kVkMaxBatchVertices * 16;
 static constexpr size_t kVkMaxIndicesPerFrame  = kVkMaxBatchIndices  * 16;
 
-static constexpr uint32_t kVkDescriptorPoolSlabSize = 256;
-
-struct VkQueueFamilyIndices {
-    std::optional<uint32_t> graphicsFamily;
-    std::optional<uint32_t> presentFamily;
-
-    bool isComplete() const {
-        return graphicsFamily.has_value() && presentFamily.has_value();
-    }
-};
-
-struct VkSwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR        capabilities{};
-    std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR>   presentModes;
-};
-
-struct VkBatchVertex {
-    float x, y;
-    float u, v;
-    float r, g, b, a;
-};
-
-struct Vk3DVertex {
-    float x, y, z, w;
-    float u, v;
-    float r, g, b, a;
-    float nx, ny, nz, nw;
-    float wx, wy, wz, ww;
-};
-
-struct Vk3DPushConstants {
-    float lightPositions[4][4];
-    float lightColors[4][4];
-    float timeData[4];
-    float lightEnabled[4];
-};
-
-struct VkPushConstants2D {
-    float screenWidth;
-    float screenHeight;
-};
-
 struct VkFrameData {
-    VkCommandBuffer commandBuffer  = VK_NULL_HANDLE;
-    VkSemaphore     imageAvailable = VK_NULL_HANDLE;
-    VkSemaphore     renderFinished = VK_NULL_HANDLE;
-    VkFence         inFlightFence  = VK_NULL_HANDLE;
-
     VkBuffer       vertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory vertexMemory = VK_NULL_HANDLE;
     VmaAllocation  vertexAllocation = VK_NULL_HANDLE;
@@ -130,19 +92,6 @@ struct VkFrameData {
     VmaAllocation  vertex3DAllocation = VK_NULL_HANDLE;
     void*          vertexMapped3D = nullptr;
     VkDeviceSize   vertexCapacity3D = 0;
-};
-
-struct VkTextureData {
-    VkImage         image         = VK_NULL_HANDLE;
-    VkDeviceMemory  memory        = VK_NULL_HANDLE;
-    VmaAllocation   allocation    = VK_NULL_HANDLE;
-    VkImageView     view          = VK_NULL_HANDLE;
-    VkSampler       sampler       = VK_NULL_HANDLE;
-    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-
-    uint32_t width  = 0;
-    uint32_t height = 0;
-    bool      isRenderTarget = false;
 };
 
 struct VkCachedTexture {
@@ -191,13 +140,8 @@ struct VkRenderTargetData {
     uint32_t      textureId   = 0;
     uint32_t      width       = 0;
     uint32_t      height      = 0;
-    VkFramebuffer framebuffer = VK_NULL_HANDLE;
     VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     Color         clearColor  = {0, 0, 0, 255};
-    VkImage       depthImage  = VK_NULL_HANDLE;
-    VkDeviceMemory depthMemory = VK_NULL_HANDLE;
-    VmaAllocation depthAllocation = VK_NULL_HANDLE;
-    VkImageView   depthView    = VK_NULL_HANDLE;
 
     std::vector<VkBatchVertex> vertices;
     std::vector<uint32_t>      indices;
@@ -205,21 +149,6 @@ struct VkRenderTargetData {
     std::vector<Vk3DVertex>    triangleVertices3D;
     std::vector<Vk3DVertex>    lineVertices3D;
     std::vector<Vk3DDrawItem>  drawItems3D;
-};
-
-struct VkShaderProgramData {
-    VkShaderModule vertexModule   = VK_NULL_HANDLE;
-    VkShaderModule fragmentModule = VK_NULL_HANDLE;
-    VkPipeline     pipeline       = VK_NULL_HANDLE;
-    VkPipeline     pipeline3D     = VK_NULL_HANDLE;
-    VkPipeline     pipeline3DOffscreen = VK_NULL_HANDLE;
-    VkDescriptorSet descriptorSet3D = VK_NULL_HANDLE;
-    bool            supports3D    = false;
-    std::unordered_map<std::string, int> uniforms;
-    std::unordered_map<std::string, int> attributes;
-    std::unordered_map<int, std::vector<uint8_t>> uniformValues;
-    std::unordered_map<int, int> uniformTypes;
-    std::unordered_map<int, std::string> uniformNames;
 };
 
 struct VkMaterialCacheEntry {
@@ -368,10 +297,10 @@ public:
     VkDevice              GetVulkanDevice() const { return m_device; }
     uint32_t              GetVulkanGraphicsQueueFamily() const { return m_graphicsQueueFamily; }
     VkQueue               GetVulkanGraphicsQueue() const { return m_graphicsQueue; }
-    VkDescriptorPool      GetVulkanDescriptorPool() const { return m_imguiDescriptorPool; }
-    VkRenderPass          GetVulkanMainRenderPass() const { return m_renderPass; }
-    uint32_t              GetVulkanMinImageCount() const { return m_swapChainMinImageCount; }
-    uint32_t              GetVulkanImageCount() const { return static_cast<uint32_t>(m_swapChainImages.size()); }
+    VkDescriptorPool      GetVulkanDescriptorPool() const { return m_vkDescriptorSetManager.ImGuiDescriptorPool(); }
+    VkRenderPass          GetVulkanMainRenderPass() const { return m_vkRenderPass.Get(); }
+    uint32_t              GetVulkanMinImageCount() const { return m_vkSwapChain.GetMinImageCount(); }
+    uint32_t              GetVulkanImageCount() const { return m_vkSwapChain.GetImageCount(); }
     void                  SetMSAASamples(int samples);
     VkSampleCountFlagBits GetVulkanMSAASamples() const { return m_msaaSamples; }
     VkDescriptorSet       GetTextureDescriptorSet(uint32_t textureId) const;
@@ -382,30 +311,15 @@ private:
     void PickPhysicalDevice();
     void CreateLogicalDevice();
     void CreateSwapChain();
-    void CreateImageViews();
     void CreateRenderPass();
-    void CreateOffscreenRenderPass();
-    void CreateDescriptorSetLayout();
-    void CreatePipeline2D();
-    void CreateOffscreenPipeline2D();
-    VkPipeline CreatePipelineForRenderPass(VkRenderPass renderPass,
-                                           VkShaderModule vertexModule = VK_NULL_HANDLE,
-                                           VkShaderModule fragmentModule = VK_NULL_HANDLE);
+    void Create3DUniformBuffer();
     void CreateShaderPipelines();
-    VkPipeline Create3DPipelineForRenderPass(VkRenderPass renderPass, VkPrimitiveTopology topology,
-                                             VkShaderModule vertexModule = VK_NULL_HANDLE,
-                                             VkShaderModule fragmentModule = VK_NULL_HANDLE);
-    void CreatePipeline3D();
     void CreateFramebuffers();
-    void CreateCommandPool();
-    void CreateCommandBuffers();
-    void CreateSyncObjects();
     void CreateFrameVertexIndexBuffers();
     void CreateWhiteTexture();
 
-    bool CreateDescriptorPoolSlab(uint32_t maxSets, VkDescriptorPool& outPool);
     bool AllocateTextureDescriptorSet(VkDescriptorSet& outSet);
-    bool Allocate3DDescriptorSet(VkDescriptorSet& outSet);
+    bool Allocate3DDescriptorSet(VkDescriptorSet& outSet, VkDescriptorPool& outPool);
     uint64_t ComputeMaterialCacheKey(const Material& material) const;
     VkDescriptorSet CreateMaterialDescriptorSet(const Material& material);
     void ClearMaterialDescriptorCache();
@@ -421,6 +335,19 @@ private:
     VkQueueFamilyIndices      FindQueueFamilies(VkPhysicalDevice device) const;
     VkSwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device) const;
     bool                      IsDeviceSuitable(VkPhysicalDevice device) const;
+
+    QuarkVkDevice m_vkDevice;
+    QuarkVkSwapChain m_vkSwapChain;
+    QuarkVkPipeline m_vkPipeline;
+    QuarkVkRenderTarget m_vkRenderTarget;
+    QuarkVkResources m_vkResources;
+    QuarkVkCommandContext m_vkCommandContext;
+    QuarkVkFrameManager m_vkFrameManager;
+    QuarkVkFramebufferManager m_vkFramebufferManager;
+    QuarkVkDescriptorSetManager m_vkDescriptorSetManager;
+    QuarkVkRenderPass m_vkRenderPass;
+    QuarkVkShaderCompiler m_vkShaderCompiler;
+
     VkSurfaceFormatKHR        ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats) const;
     VkPresentModeKHR          ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& modes) const;
     VkExtent2D                ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& caps) const;
@@ -446,33 +373,13 @@ private:
                                     VkDeviceSize& capacity, VkDeviceSize required,
                                     VkBufferUsageFlags usage);
 
-    bool TransitionImageLayout(VkImage image, VkFormat format,
-                               VkImageLayout oldLayout, VkImageLayout newLayout);
-
-    bool CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t w, uint32_t h);
-
-    VkCommandBuffer BeginSingleTimeCommands();
-    void            EndSingleTimeCommands(VkCommandBuffer cmd);
-
-    bool     CreateTextureFromRGBA(const unsigned char* rgba,
-                                   uint32_t width, uint32_t height,
-                                   uint32_t& outId);
-    void     DestroyTexture(uint32_t textureId);
-    void     CreateMSAAColorResources();
-    void     DestroyMSAAColorResources();
     VkSampleCountFlagBits GetSampleCountForSamples(int samples) const;
-    bool     CreateDepthResources(uint32_t width, uint32_t height,
-                                  VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView,
-                                  VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
-                                  VmaAllocation* outAllocation = nullptr);
-    void     DestroyDepthResources(VkImage& image, VkDeviceMemory& memory, VkImageView& view,
-                                  VmaAllocation allocation = VK_NULL_HANDLE);
 
     IRenderTexture CreateRenderTargetInternal(int width, int height);
     void           DestroyRenderTargetInternal(uint32_t renderTargetId);
 
-    VkShaderModule CreateShaderModule(const std::vector<uint32_t>& spirv);
-    bool           ReadBinaryFile(const char* path, std::vector<char>& outData) const;
+    Shader FinishShaderProgram(uint32_t shaderId);
+    bool   ReadBinaryFile(const char* path, std::vector<char>& outData) const;
 
     void BuildCombinedFrameGeometry();
     bool UploadFrameGeometry(uint32_t frameIndex);
@@ -571,52 +478,22 @@ private:
     VkQueue          m_graphicsQueue  = VK_NULL_HANDLE;
     VkQueue          m_presentQueue   = VK_NULL_HANDLE;
 
-    VkSwapchainKHR           m_swapChain            = VK_NULL_HANDLE;
-    std::vector<VkImage>     m_swapChainImages;
-    std::vector<VkImageView> m_swapChainImageViews;
-    std::vector<VkImage>     m_swapChainDepthImages;
-    std::vector<VkDeviceMemory> m_swapChainDepthMemories;
-    std::vector<VmaAllocation>  m_swapChainDepthAllocations;
-    std::vector<VkImageView> m_swapChainDepthImageViews;
     VkFormat                 m_swapChainImageFormat = VK_FORMAT_UNDEFINED;
     VkFormat                 m_depthFormat          = VK_FORMAT_UNDEFINED;
     VkExtent2D               m_swapChainExtent      = {0, 0};
 
-    VkRenderPass m_renderPass          = VK_NULL_HANDLE;
-    VkRenderPass m_offscreenRenderPass = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> m_swapChainFramebuffers;
 
-    VkDescriptorSetLayout         m_descriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout         m_descriptorSetLayout3D = VK_NULL_HANDLE;
-    std::vector<VkDescriptorPool> m_descriptorPools;
-    VkDescriptorPool              m_imguiDescriptorPool = VK_NULL_HANDLE;
     VkBuffer                      m_3DDummyBuffer = VK_NULL_HANDLE;
     VkDeviceMemory                m_3DDummyMemory = VK_NULL_HANDLE;
     VmaAllocation                 m_3DDummyAllocation = VK_NULL_HANDLE;
     void*                         m_3DDummyMapped = nullptr;
     QuarkVkGpuAllocator           m_gpuAllocator;
 
-    VkPipelineLayout m_pipelineLayout      = VK_NULL_HANDLE;
-    VkPipelineLayout m_pipelineLayout3D    = VK_NULL_HANDLE;
-    VkPipeline       m_pipeline2D          = VK_NULL_HANDLE;
-    VkPipeline       m_offscreenPipeline2D = VK_NULL_HANDLE;
-    VkPipeline       m_pipeline3DTri       = VK_NULL_HANDLE;
-    VkPipeline       m_pipeline3DLines     = VK_NULL_HANDLE;
-    VkPipeline       m_offscreenPipeline3DTri   = VK_NULL_HANDLE;
-    VkPipeline       m_offscreenPipeline3DLines = VK_NULL_HANDLE;
-    bool             m_backfaceCullingEnabled   = false;
-
-    VkCommandPool m_commandPool = VK_NULL_HANDLE;
-
     std::array<VkFrameData, kVkMaxFramesInFlight> m_frames{};
     uint32_t m_currentFrame = 0;
     uint32_t m_imageIndex   = 0;
     uint32_t m_graphicsQueueFamily = UINT32_MAX;
-    uint32_t m_swapChainMinImageCount = 0;
-    VkImage               m_msaaColorImage       = VK_NULL_HANDLE;
-    VkDeviceMemory        m_msaaColorMemory      = VK_NULL_HANDLE;
-    VmaAllocation         m_msaaColorAllocation   = VK_NULL_HANDLE;
-    VkImageView           m_msaaColorImageView   = VK_NULL_HANDLE;
     int                   m_requestedMsaaSamples = 1;
     VkSampleCountFlagBits m_msaaSamples          = VK_SAMPLE_COUNT_1_BIT;
 
@@ -625,8 +502,6 @@ private:
     uint32_t m_flatNormalTextureId = 0;
     VkDescriptorSet m_white3DDescriptorSet = VK_NULL_HANDLE;
 
-    uint32_t m_nextShaderProgramId = 1;
-    uint32_t m_currentShaderProgramId = 0;
     std::array<bool, 4> m_3DLightEnabled{ true, true, true, true };
     std::array<VkLight3D, 4> m_lights{{
         { {-3.0f, 4.0f,  3.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, 0.08f, 1, true },
@@ -634,11 +509,8 @@ private:
         { {-3.0f, 3.0f, -3.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 0.08f, 1, true },
         { { 3.0f, 3.0f, -3.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, 0.08f, 1, true }
     }};
-    std::unordered_map<uint32_t, VkShaderProgramData> m_shaderPrograms;
     std::unordered_map<uint64_t, VkMaterialCacheEntry> m_materialCache;
 
-    uint32_t                                   m_nextTextureId = 1;
-    std::unordered_map<uint32_t, VkTextureData> m_textures;
     std::unordered_map<std::string, VkCachedTexture> m_textureCache;
     std::unordered_map<uint32_t, std::string> m_textureCacheKeys;
     std::unordered_map<uint32_t, FontData>      m_fonts;

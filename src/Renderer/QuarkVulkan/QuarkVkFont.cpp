@@ -138,8 +138,8 @@ bool QuarkVkRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
         renderedGlyphs++;
     }
 
-    uint32_t textureId = 0;
-    if (!CreateTextureFromRGBA(atlas.data(), atlasWidth, atlasHeight, textureId)) {
+    const uint32_t textureId = m_vkResources.CreateTextureFromRGBA(atlas.data(), atlasWidth, atlasHeight);
+    if (textureId == 0) {
         TraceLog(LogLevel::Error, "FONT", TextFormat("[Vulkan] Failed to create atlas texture for font: %s", filePath));
         FT_Done_Face(face);
         FT_Done_FreeType(ft);
@@ -211,8 +211,8 @@ void QuarkVkRenderer::DrawTextWithFontData(const FontData& fd, const char* text,
     const float b = NormalizeColorComponent(tint.b);
     const float a = NormalizeColorComponent(tint.a);
 
-    const auto it = m_textures.find(fd.atlasTextureId);
-    if (it == m_textures.end()) {
+    const VkDescriptorSet atlasDs = m_vkResources.DescriptorSet(fd.atlasTextureId);
+    if (atlasDs == VK_NULL_HANDLE) {
         return;
     }
 
@@ -241,7 +241,7 @@ void QuarkVkRenderer::DrawTextWithFontData(const FontData& fd, const char* text,
         const float gh = static_cast<float>(glyph.height) * scale;
 
         if (gw > 0.f && gh > 0.f) {
-            AppendQuad(it->second.descriptorSet,
+            AppendQuad(atlasDs,
                        gx, gy,
                        gx + gw, gy,
                        gx + gw, gy + gh,
@@ -372,7 +372,7 @@ void QuarkVkRenderer::UnloadFont(IFont& font) {
     if (it != m_fonts.end()) {
         const uint32_t atlasId = it->second.atlasTextureId;
         if (it->second.atlasTextureId != 0) {
-            DestroyTexture(it->second.atlasTextureId);
+            m_vkResources.DestroyTexture(it->second.atlasTextureId);
         }
         if (font.id == m_defaultFontId) {
             m_defaultFontId = 0;

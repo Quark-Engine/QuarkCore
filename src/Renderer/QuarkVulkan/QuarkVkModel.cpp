@@ -435,7 +435,7 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
     const auto finishDraw = [&]() {
         const uint32_t vertexCount = static_cast<uint32_t>(vertices.size()) - firstVertex;
         if (vertexCount > 0) {
-            drawItems->push_back({ materialDescriptorSet, m_currentShaderProgramId, firstVertex, vertexCount });
+            drawItems->push_back({ materialDescriptorSet, m_vkShaderCompiler.CurrentProgramId(), firstVertex, vertexCount });
         }
     };
 
@@ -479,7 +479,7 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
     };
 
     if (vertices.empty() && m_activeRenderTargetId == 0) {
-        m_main3DBatch.shaderProgramId = m_currentShaderProgramId;
+        m_main3DBatch.shaderProgramId = m_vkShaderCompiler.CurrentProgramId();
     }
 
     auto pushTriangle = [&](int i0, int i1, int i2) {

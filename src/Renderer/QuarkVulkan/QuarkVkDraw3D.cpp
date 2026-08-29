@@ -62,7 +62,7 @@ void QuarkVkRenderer::AppendTriangle3D(std::vector<Vk3DVertex>& vertices,
                                        Vec3 a, Vec3 b, Vec3 c, Color color) {
     const uint32_t firstVertex = static_cast<uint32_t>(vertices.size());
     if (vertices.empty() && m_activeRenderTargetId == 0) {
-        m_main3DBatch.shaderProgramId = m_currentShaderProgramId;
+        m_main3DBatch.shaderProgramId = m_vkShaderCompiler.CurrentProgramId();
     }
     vertices.push_back(Transform3DVertex(a, color));
     vertices.push_back(Transform3DVertex(b, color));
@@ -85,11 +85,11 @@ void QuarkVkRenderer::AppendTriangle3D(std::vector<Vk3DVertex>& vertices,
     }
 
     VkDescriptorSet descriptorSet = m_white3DDescriptorSet;
-    const auto shaderIt = m_shaderPrograms.find(m_currentShaderProgramId);
-    if (shaderIt != m_shaderPrograms.end() && shaderIt->second.supports3D) {
-        descriptorSet = shaderIt->second.descriptorSet3D;
+    const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(m_vkShaderCompiler.CurrentProgramId());
+    if (shaderProgram != nullptr && shaderProgram->supports3D) {
+        descriptorSet = shaderProgram->descriptorSet3D;
     }
-    drawItems->push_back({ descriptorSet, m_currentShaderProgramId, firstVertex, 3 });
+    drawItems->push_back({ descriptorSet, m_vkShaderCompiler.CurrentProgramId(), firstVertex, 3 });
 }
 
 void QuarkVkRenderer::AppendLine3D(std::vector<Vk3DVertex>& vertices,

@@ -34,136 +34,6 @@ static float NormalizeColorComponent(std::uint8_t value) {
     return static_cast<float>(value) / 255.0f;
 }
 
-static const char* kRuntime2DVertexShader = R"glsl(
-#version 450
-layout(push_constant) uniform ScreenData {
-    vec2 screenSize;
-} screen;
-layout(location = 0) in vec2 aPosition;
-layout(location = 1) in vec2 aTexCoord;
-layout(location = 2) in vec4 aColor;
-layout(location = 0) out vec2 vTexCoord;
-layout(location = 1) out vec4 vColor;
-void main() {
-    vec2 ndc = (aPosition / screen.screenSize) * 2.0 - 1.0;
-    gl_Position = vec4(ndc.x, ndc.y, 0.0, 1.0);
-    vTexCoord = aTexCoord;
-    vColor = aColor;
-}
-)glsl";
-
-static const char* kRuntime2DFragmentShader = R"glsl(
-#version 450
-layout(set = 0, binding = 0) uniform sampler2D texture0;
-layout(location = 0) in vec2 vTexCoord;
-layout(location = 1) in vec4 vColor;
-layout(location = 0) out vec4 outColor;
-void main() {
-    outColor = texture(texture0, vTexCoord) * vColor;
-}
-)glsl";
-
-static const char* kRuntime3DVertexShader = R"glsl(
-#version 450
-layout(location = 0) in vec4 aPosition;
-layout(location = 1) in vec2 aTexCoord;
-layout(location = 2) in vec4 aColor;
-layout(location = 3) in vec4 aNormal;
-layout(location = 4) in vec4 aWorldPosition;
-layout(location = 0) out vec2 vTexCoord;
-layout(location = 1) out vec4 vColor;
-layout(location = 2) out vec3 vNormal;
-layout(location = 3) out vec3 vWorldPosition;
-void main() {
-    gl_Position = aPosition;
-    vTexCoord = aTexCoord;
-    vColor = aColor;
-    vNormal = normalize(aNormal.xyz);
-    vWorldPosition = aWorldPosition.xyz;
-}
-)glsl";
-
-static const char* kRuntime3DFragmentShader = R"glsl(
-#version 450
-layout(set = 0, binding = 1) uniform sampler2D albedoMap;
-layout(location = 0) in vec2 vTexCoord;
-layout(location = 1) in vec4 vColor;
-layout(location = 2) in vec3 vNormal;
-layout(location = 3) in vec3 vWorldPosition;
-layout(location = 0) out vec4 outColor;
-
-void main() {
-    outColor = texture(albedoMap, vTexCoord) * vColor;
-}
-)glsl";
-
-static std::vector<uint32_t> CompileRuntimeShader(const char* source,
-                                                  shaderc_shader_kind kind,
-                                                  const char* stageName) {
-    static std::unordered_map<std::string, std::vector<uint32_t>> cache;
-    const std::string sourceText = source ? source : "";
-    const std::string cacheKey = std::string(stageName) + "\n" + sourceText;
-    const auto cached = cache.find(cacheKey);
-    if (cached != cache.end()) {
-        return cached->second;
-    }
-
-    const auto hashText = [](const std::string& text) {
-        uint64_t hash = 14695981039346656037ull;
-        for (unsigned char character : text) {
-            hash ^= character;
-            hash *= 1099511628211ull;
-        }
-        return hash;
-    };
-    const auto cacheFile = [&]() -> std::filesystem::path {
-        std::error_code error;
-        const std::filesystem::path directory =
-            std::filesystem::temp_directory_path(error) / "QuarkCore" / "shader-cache";
-        if (error) {
-            return {};
-        }
-        return directory / (std::to_string(hashText(cacheKey)) + ".spv");
-    };
-    const std::filesystem::path path = cacheFile();
-    if (!path.empty()) {
-        std::ifstream file(path, std::ios::binary);
-        uint32_t wordCount = 0;
-        if (file && file.read(reinterpret_cast<char*>(&wordCount), sizeof(wordCount)) && wordCount > 0) {
-            std::vector<uint32_t> spirv(wordCount);
-            if (file.read(reinterpret_cast<char*>(spirv.data()), static_cast<std::streamsize>(spirv.size() * sizeof(uint32_t)))) {
-                cache.emplace(cacheKey, spirv);
-                return spirv;
-            }
-        }
-    }
-
-    shaderc::Compiler compiler;
-    shaderc::CompileOptions options;
-    options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
-    const auto result = compiler.CompileGlslToSpv(source, kind, stageName, options);
-    if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
-        throw std::runtime_error(std::string("Failed to compile runtime Vulkan ") + stageName + ": " + result.GetErrorMessage());
-    }
-    std::vector<uint32_t> spirv(result.cbegin(), result.cend());
-    if (!path.empty()) {
-        std::error_code error;
-        std::filesystem::create_directories(path.parent_path(), error);
-        std::ofstream file(path, std::ios::binary | std::ios::trunc);
-        const uint32_t wordCount = static_cast<uint32_t>(spirv.size());
-        if (file && file.write(reinterpret_cast<const char*>(&wordCount), sizeof(wordCount))) {
-            file.write(reinterpret_cast<const char*>(spirv.data()),
-                       static_cast<std::streamsize>(spirv.size() * sizeof(uint32_t)));
-        }
-    }
-    cache.emplace(cacheKey, spirv);
-    return spirv;
-}
-
-bool HasStencilComponent(VkFormat format) {
-    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
-}
-
 const char* GetVulkanVendorName(uint32_t vendorID) {
     switch (vendorID) {
         case 0x10DE: return "NVIDIA";
@@ -265,25 +135,20 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     CreateLogicalDevice();
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateSwapChain");
     CreateSwapChain();
-    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateImageViews");
-    CreateImageViews();
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateRenderPass");
     CreateRenderPass();
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateOffscreenRenderPass");
-    CreateOffscreenRenderPass();
-    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateDescriptorSetLayout");
-    CreateDescriptorSetLayout();
-    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreatePipeline2D");
-    CreatePipeline2D();
-    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateOffscreenPipeline2D");
-    CreateOffscreenPipeline2D();
+    m_vkRenderTarget.Initialize(m_device, m_gpuAllocator, m_swapChainImageFormat, m_depthFormat);
+    m_vkRenderTarget.CreateRenderPass();
+    TraceLog(LogLevel::Info, "VULKAN", "Init step: DescriptorSetManager");
+    m_vkDescriptorSetManager.Initialize(m_device);
+    m_vkPipeline.Initialize(m_device, m_vkDescriptorSetManager.TextureSetLayout(), m_vkDescriptorSetManager.MaterialSetLayout());
+    Create3DUniformBuffer();
+    m_vkPipeline.CreatePipelines(m_vkRenderPass.Get(), m_vkRenderTarget.RenderPass(), m_msaaSamples);
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateShaderPipelines");
     CreateShaderPipelines();
-    TraceLog(LogLevel::Info, "VULKAN", "Init step: CreatePipeline3D");
-    CreatePipeline3D();
     CreateFramebuffers();
-    CreateCommandPool();
-    CreateCommandBuffers();
+    m_vkCommandContext.Initialize(m_device, FindQueueFamilies(m_physicalDevice).graphicsFamily.value());
     CreateFrameVertexIndexBuffers();
     m_batchVertices.reserve(kVkMaxVerticesPerFrame);
     m_batchIndices.reserve(kVkMaxIndicesPerFrame);
@@ -295,7 +160,9 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     m_main3DBatch.lineVertices.reserve(kVkMaxVerticesPerFrame / 2);
     m_frameTriangleVertices3D.reserve(kVkMaxVerticesPerFrame);
     m_frameLineVertices3D.reserve(kVkMaxVerticesPerFrame);
-    CreateSyncObjects();
+    m_vkFrameManager.Initialize(m_device, m_vkCommandContext.Pool(), kVkMaxFramesInFlight);
+    m_vkResources.Initialize(m_device, m_gpuAllocator, m_vkCommandContext.Pool(), m_graphicsQueue,
+                             [this](VkDescriptorSet& set) { return AllocateTextureDescriptorSet(set); });
     CreateWhiteTexture();
 
     TraceLog(LogLevel::Info, "VULKAN", "Vulkan renderer initialized successfully.");
@@ -319,30 +186,16 @@ void QuarkVkRenderer::Shutdown() {
         for (uint32_t id : ids) { DestroyRenderTargetInternal(id); }
     }
 
-    {
-        std::vector<uint32_t> ids;
-        ids.reserve(m_textures.size());
-        for (const auto& [id, _] : m_textures) { ids.push_back(id); }
-        for (uint32_t id : ids) { DestroyTexture(id); }
-    }
+    m_vkResources.Shutdown();
     m_textureCache.clear();
     m_textureCacheKeys.clear();
 
     CleanupSwapChain();
+    m_vkRenderTarget.Shutdown();
+    m_vkFrameManager.Shutdown();
+    m_vkShaderCompiler.Shutdown();
 
     for (auto& frame : m_frames) {
-        if (frame.imageAvailable != VK_NULL_HANDLE) {
-            vkDestroySemaphore(m_device, frame.imageAvailable, nullptr);
-            frame.imageAvailable = VK_NULL_HANDLE;
-        }
-        if (frame.renderFinished != VK_NULL_HANDLE) {
-            vkDestroySemaphore(m_device, frame.renderFinished, nullptr);
-            frame.renderFinished = VK_NULL_HANDLE;
-        }
-        if (frame.inFlightFence != VK_NULL_HANDLE) {
-            vkDestroyFence(m_device, frame.inFlightFence, nullptr);
-            frame.inFlightFence = VK_NULL_HANDLE;
-        }
 
         if (frame.vertexMapped && frame.vertexAllocation != VK_NULL_HANDLE) {
             vmaUnmapMemory(m_gpuAllocator.GetAllocator(), frame.vertexAllocation);
@@ -393,12 +246,8 @@ void QuarkVkRenderer::Shutdown() {
 
     ClearMaterialDescriptorCache();
 
-    for (VkDescriptorPool pool : m_descriptorPools) {
-        if (pool != VK_NULL_HANDLE) {
-            vkDestroyDescriptorPool(m_device, pool, nullptr);
-        }
-    }
-    m_descriptorPools.clear();
+    m_vkPipeline.Shutdown();
+    m_vkDescriptorSetManager.Shutdown(m_device);
 
     if (m_3DDummyBuffer != VK_NULL_HANDLE) {
         if (m_3DDummyMapped != nullptr) {
@@ -415,23 +264,8 @@ void QuarkVkRenderer::Shutdown() {
         m_3DDummyMemory = VK_NULL_HANDLE;
     }
 
-    if (m_imguiDescriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
-        m_imguiDescriptorPool = VK_NULL_HANDLE;
-    }
-
-    if (m_descriptorSetLayout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
-        m_descriptorSetLayout = VK_NULL_HANDLE;
-    }
-    if (m_descriptorSetLayout3D != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout3D, nullptr);
-        m_descriptorSetLayout3D = VK_NULL_HANDLE;
-    }
-
-    if (m_commandPool != VK_NULL_HANDLE) {
-        vkDestroyCommandPool(m_device, m_commandPool, nullptr);
-        m_commandPool = VK_NULL_HANDLE;
+    if (m_vkCommandContext.IsInitialized()) {
+        m_vkCommandContext.Shutdown();
     }
 
     m_gpuAllocator.Shutdown();
@@ -458,12 +292,9 @@ void QuarkVkRenderer::Shutdown() {
     m_currentFrame       = 0;
     m_imageIndex         = 0;
     m_whiteTextureId     = 0;
-    m_nextTextureId      = 1;
     m_nextRenderTargetId = 1;
     m_activeRenderTargetId = 0;
     m_graphicsQueueFamily = UINT32_MAX;
-    m_swapChainMinImageCount = 0;
-    DestroyMSAAColorResources();
     m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
     m_requestedMsaaSamples = 1;
     m_main3DBatch.triangleVertices.clear();
@@ -475,7 +306,7 @@ void QuarkVkRenderer::Shutdown() {
 }
 
 void QuarkVkRenderer::BeginDrawing() {
-    if (!m_device || !m_swapChain || m_drawing) {
+    if (!m_device || m_vkSwapChain.Get() == VK_NULL_HANDLE || m_drawing) {
         return;
     }
 
@@ -484,12 +315,9 @@ void QuarkVkRenderer::BeginDrawing() {
         m_lastFrameCounter = SDL_GetPerformanceCounter();
     }
 
-    VkFrameData& frame = m_frames[m_currentFrame];
-    vkWaitForFences(m_device, 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
+    m_vkFrameManager.BeginFrame(m_currentFrame);
 
-    VkResult result = vkAcquireNextImageKHR(
-        m_device, m_swapChain, UINT64_MAX,
-        frame.imageAvailable, VK_NULL_HANDLE, &m_imageIndex);
+    VkResult result = m_vkFrameManager.AcquireNextImage(m_vkSwapChain.Get(), m_currentFrame, m_imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         RecreateSwapChain();
@@ -503,13 +331,11 @@ void QuarkVkRenderer::BeginDrawing() {
 }
 
 void QuarkVkRenderer::EndDrawing() {
-    if (!m_drawing || !m_device || !m_swapChain) return;
+    if (!m_drawing || !m_device || m_vkSwapChain.Get() == VK_NULL_HANDLE) return;
 
-    VkFrameData& frame = m_frames[m_currentFrame];
-    VkCommandBuffer cmd = frame.commandBuffer;
+    VkCommandBuffer cmd = m_vkFrameManager.GetCommandBuffer(m_currentFrame);
 
-    vkResetFences(m_device, 1, &frame.inFlightFence);
-    vkResetCommandBuffer(cmd, 0);
+    m_vkFrameManager.ResetFrame(m_currentFrame);
 
     BuildCombinedFrameGeometry();
 
@@ -538,21 +364,7 @@ void QuarkVkRenderer::EndDrawing() {
         return;
     }
 
-    VkSemaphore waitSemaphores[]   = { frame.imageAvailable };
-    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-    VkSemaphore signalSemaphores[] = { frame.renderFinished };
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount   = 1;
-    submitInfo.pWaitSemaphores      = waitSemaphores;
-    submitInfo.pWaitDstStageMask    = waitStages;
-    submitInfo.commandBufferCount   = 1;
-    submitInfo.pCommandBuffers      = &cmd;
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores    = signalSemaphores;
-
-    if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, frame.inFlightFence) != VK_SUCCESS) {
+    if (!m_vkFrameManager.Submit(m_currentFrame, m_graphicsQueue)) {
         throw std::runtime_error("Failed to submit Vulkan command buffer.");
     }
 
@@ -576,18 +388,7 @@ void QuarkVkRenderer::EndDrawing() {
     m_frameTime = static_cast<float>(frameEnd - m_lastFrameCounter) / static_cast<float>(freq);
     m_lastFrameCounter = frameEnd;
 
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores    = signalSemaphores;
-    presentInfo.swapchainCount     = 1;
-    presentInfo.pSwapchains        = &m_swapChain;
-    presentInfo.pImageIndices      = &m_imageIndex;
-
-    VkResult presentResult = vkQueuePresentKHR(m_presentQueue, &presentInfo);
-    if (presentResult == VK_SUCCESS) {
-        vkQueueWaitIdle(m_presentQueue);
-    }
+    VkResult presentResult = m_vkFrameManager.Present(m_vkSwapChain.Get(), m_currentFrame, m_imageIndex, m_presentQueue);
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR ||
         presentResult == VK_SUBOPTIMAL_KHR ||
         m_framebufferResized)
@@ -655,26 +456,24 @@ const float* QuarkVkRenderer::GetMatrixProjection() {
 }
 
 void QuarkVkRenderer::EnableBackfaceCulling() {
-    if (m_backfaceCullingEnabled || m_device == VK_NULL_HANDLE) {
-        m_backfaceCullingEnabled = true;
+    if (m_vkPipeline.BackfaceCulling() || m_device == VK_NULL_HANDLE) {
+        m_vkPipeline.SetBackfaceCulling(true);
         return;
     }
 
-    m_backfaceCullingEnabled = true;
     vkDeviceWaitIdle(m_device);
-    CreatePipeline3D();
+    m_vkPipeline.SetBackfaceCulling(true);
     CreateShaderPipelines();
 }
 
 void QuarkVkRenderer::DisableBackfaceCulling() {
-    if (!m_backfaceCullingEnabled || m_device == VK_NULL_HANDLE) {
-        m_backfaceCullingEnabled = false;
+    if (!m_vkPipeline.BackfaceCulling() || m_device == VK_NULL_HANDLE) {
+        m_vkPipeline.SetBackfaceCulling(false);
         return;
     }
 
-    m_backfaceCullingEnabled = false;
     vkDeviceWaitIdle(m_device);
-    CreatePipeline3D();
+    m_vkPipeline.SetBackfaceCulling(false);
     CreateShaderPipelines();
 }
 
@@ -683,11 +482,7 @@ void QuarkVkRenderer::RefreshViewport() {
 }
 
 VkDescriptorSet QuarkVkRenderer::GetTextureDescriptorSet(uint32_t textureId) const {
-    const auto it = m_textures.find(textureId);
-    if (it == m_textures.end()) {
-        return VK_NULL_HANDLE;
-    }
-    return it->second.descriptorSet;
+    return m_vkResources.DescriptorSet(textureId);
 }
 
 void QuarkVkRenderer::CreateInstance() {
@@ -835,40 +630,12 @@ void QuarkVkRenderer::PickPhysicalDevice() {
 
 void QuarkVkRenderer::CreateLogicalDevice() {
     VkQueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
-    m_graphicsQueueFamily = indices.graphicsFamily.value();
-
-    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = {
-        indices.graphicsFamily.value(), indices.presentFamily.value()
-    };
-
-    float queuePriority = 1.0f;
-    for (uint32_t queueFamily : uniqueQueueFamilies) {
-        VkDeviceQueueCreateInfo queueCreateInfo{};
-        queueCreateInfo.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueCreateInfo.queueFamilyIndex = queueFamily;
-        queueCreateInfo.queueCount       = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
-        queueCreateInfos.push_back(queueCreateInfo);
-    }
-
-    VkPhysicalDeviceFeatures deviceFeatures{};
-
-    VkDeviceCreateInfo createInfo{};
-    createInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.queueCreateInfoCount    = static_cast<uint32_t>(queueCreateInfos.size());
-    createInfo.pQueueCreateInfos       = queueCreateInfos.data();
-    createInfo.pEnabledFeatures        = &deviceFeatures;
-    createInfo.enabledExtensionCount   = static_cast<uint32_t>(kDeviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = kDeviceExtensions.data();
-    createInfo.enabledLayerCount       = 0;
-
-    if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS) {
-        TraceLog(LogLevel::Error, "VULKAN", "Failed to create Vulkan logical device.");
-        throw std::runtime_error("Failed to create Vulkan logical device.");
-    }
-    vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
-    vkGetDeviceQueue(m_device, indices.presentFamily.value(),  0, &m_presentQueue);
+    m_vkDevice.Initialize(m_instance, m_physicalDevice, m_surface);
+    m_vkDevice.CreateLogicalDevice(indices, kDeviceExtensions);
+    m_device = m_vkDevice.Get();
+    m_graphicsQueue = m_vkDevice.GraphicsQueue();
+    m_presentQueue = m_vkDevice.PresentQueue();
+    m_graphicsQueueFamily = m_vkDevice.GraphicsQueueFamily();
 
     if (!m_gpuAllocator.Initialize(m_instance, m_physicalDevice, m_device)) {
         throw std::runtime_error("Failed to initialize Vulkan GPU allocator.");
@@ -880,369 +647,30 @@ void QuarkVkRenderer::CreateLogicalDevice() {
 
 void QuarkVkRenderer::CreateSwapChain() {
     VkSwapChainSupportDetails details = QuerySwapChainSupport(m_physicalDevice);
-    m_swapChainMinImageCount = details.capabilities.minImageCount;
 
     VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(details.formats);
     VkPresentModeKHR   presentMode   = ChooseSwapPresentMode(details.presentModes);
-    VkExtent2D         extent        = ChooseSwapExtent(details.capabilities);
+    VkQueueFamilyIndices indices    = FindQueueFamilies(m_physicalDevice);
 
-    uint32_t imageCount = details.capabilities.minImageCount + 1;
-    if (details.capabilities.maxImageCount > 0 && imageCount > details.capabilities.maxImageCount) {
-        imageCount = details.capabilities.maxImageCount;
-    }
+    m_vkSwapChain.Initialize(m_device, m_physicalDevice, m_surface,
+                             m_width, m_height, details, indices, surfaceFormat, presentMode);
 
-    VkSwapchainCreateInfoKHR createInfo{};
-    createInfo.sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface          = m_surface;
-    createInfo.minImageCount    = imageCount;
-    createInfo.imageFormat      = surfaceFormat.format;
-    createInfo.imageColorSpace  = surfaceFormat.colorSpace;
-    createInfo.imageExtent      = extent;
-    createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-    VkQueueFamilyIndices indices         = FindQueueFamilies(m_physicalDevice);
-    uint32_t             queueFamilyIndices[] = {
-        indices.graphicsFamily.value(), indices.presentFamily.value()
-    };
-
-    if (indices.graphicsFamily != indices.presentFamily) {
-        createInfo.imageSharingMode      = VK_SHARING_MODE_CONCURRENT;
-        createInfo.queueFamilyIndexCount = 2;
-        createInfo.pQueueFamilyIndices   = queueFamilyIndices;
-    } else {
-        createInfo.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE;
-        createInfo.queueFamilyIndexCount = 0;
-        createInfo.pQueueFamilyIndices   = nullptr;
-    }
-
-    createInfo.preTransform   = details.capabilities.currentTransform;
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    createInfo.presentMode    = presentMode;
-    createInfo.clipped        = VK_TRUE;
-    createInfo.oldSwapchain   = VK_NULL_HANDLE;
-
-    if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain) != VK_SUCCESS) {
-        TraceLog(LogLevel::Error, "VULKAN", "Failed to create Vulkan swap chain.");
-        throw std::runtime_error("Failed to create Vulkan swap chain.");
-    }
-
-    vkGetSwapchainImagesKHR(m_device, m_swapChain, &imageCount, nullptr);
-    m_swapChainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(m_device, m_swapChain, &imageCount, m_swapChainImages.data());
-
-    m_swapChainImageFormat = surfaceFormat.format;
-    m_swapChainExtent      = extent;
+    m_swapChainImageFormat = m_vkSwapChain.GetImageFormat();
+    m_swapChainExtent = m_vkSwapChain.GetExtent();
 
     TraceLog(LogLevel::Info, "VULKAN", TextFormat("Swapchain created: %ux%u, Images: %u, Format: %s (%d), PresentMode: %s, MSAA: %dx",
-        m_swapChainExtent.width, m_swapChainExtent.height, imageCount,
+        m_swapChainExtent.width, m_swapChainExtent.height, m_vkSwapChain.GetImageCount(),
         GetVkFormatString(m_swapChainImageFormat), m_swapChainImageFormat,
         GetPresentModeString(presentMode), m_requestedMsaaSamples));
 }
 
-void QuarkVkRenderer::CreateImageViews() {
-    m_swapChainImageViews.resize(m_swapChainImages.size());
-
-    for (size_t i = 0; i < m_swapChainImages.size(); ++i) {
-        VkImageViewCreateInfo createInfo{};
-        createInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image                           = m_swapChainImages[i];
-        createInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format                          = m_swapChainImageFormat;
-        createInfo.components.r                    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.g                    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.b                    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.a                    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-        createInfo.subresourceRange.baseMipLevel   = 0;
-        createInfo.subresourceRange.levelCount     = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount     = 1;
-
-        if (vkCreateImageView(m_device, &createInfo, nullptr, &m_swapChainImageViews[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan image views.");
-        }
-    }
-    TraceLog(LogLevel::Trace, "VULKAN", TextFormat("Created %zu image views.", m_swapChainImageViews.size()));
-}
-
 void QuarkVkRenderer::CreateRenderPass() {
     m_depthFormat = FindDepthFormat();
-
-    if (m_msaaSamples > VK_SAMPLE_COUNT_1_BIT) {
-        VkAttachmentDescription colorAttachment{};
-        colorAttachment.format         = m_swapChainImageFormat;
-        colorAttachment.samples        = m_msaaSamples;
-        colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-        VkAttachmentDescription depthAttachment{};
-        depthAttachment.format         = m_depthFormat;
-        depthAttachment.samples        = m_msaaSamples;
-        depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-        depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-        VkAttachmentDescription colorAttachmentResolve{};
-        colorAttachmentResolve.format         = m_swapChainImageFormat;
-        colorAttachmentResolve.samples        = VK_SAMPLE_COUNT_1_BIT;
-        colorAttachmentResolve.loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAttachmentResolve.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttachmentResolve.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachmentResolve.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachmentResolve.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-        VkAttachmentReference colorAttachmentRef{};
-        colorAttachmentRef.attachment = 0;
-        colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-        VkAttachmentReference depthAttachmentRef{};
-        depthAttachmentRef.attachment = 1;
-        depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-        VkAttachmentReference colorAttachmentResolveRef{};
-        colorAttachmentResolveRef.attachment = 2;
-        colorAttachmentResolveRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-        VkSubpassDescription subpass{};
-        subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpass.colorAttachmentCount    = 1;
-        subpass.pColorAttachments       = &colorAttachmentRef;
-        subpass.pDepthStencilAttachment = &depthAttachmentRef;
-        subpass.pResolveAttachments     = &colorAttachmentResolveRef;
-
-        VkSubpassDependency dependency{};
-        dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-        dependency.dstSubpass    = 0;
-        dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        dependency.srcAccessMask = 0;
-        dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-        std::array<VkAttachmentDescription, 3> attachments = {
-            colorAttachment, depthAttachment, colorAttachmentResolve
-        };
-
-        VkRenderPassCreateInfo renderPassInfo{};
-        renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        renderPassInfo.pAttachments    = attachments.data();
-        renderPassInfo.subpassCount    = 1;
-        renderPassInfo.pSubpasses      = &subpass;
-        renderPassInfo.dependencyCount = 1;
-        renderPassInfo.pDependencies   = &dependency;
-
-        if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan render pass.");
-        }
-    } else {
-        VkAttachmentDescription colorAttachment{};
-        colorAttachment.format         = m_swapChainImageFormat;
-        colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-        colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-        VkAttachmentDescription depthAttachment{};
-        depthAttachment.format         = m_depthFormat;
-        depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-        depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-        depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-        VkAttachmentReference colorAttachmentRef{};
-        colorAttachmentRef.attachment = 0;
-        colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-        VkAttachmentReference depthAttachmentRef{};
-        depthAttachmentRef.attachment = 1;
-        depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-        VkSubpassDescription subpass{};
-        subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpass.colorAttachmentCount    = 1;
-        subpass.pColorAttachments       = &colorAttachmentRef;
-        subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-        VkSubpassDependency dependency{};
-        dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-        dependency.dstSubpass    = 0;
-        dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        dependency.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-        std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
-
-        VkRenderPassCreateInfo renderPassInfo{};
-        renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        renderPassInfo.pAttachments    = attachments.data();
-        renderPassInfo.subpassCount    = 1;
-        renderPassInfo.pSubpasses      = &subpass;
-        renderPassInfo.dependencyCount = 1;
-        renderPassInfo.pDependencies   = &dependency;
-
-        if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan render pass.");
-        }
-    }
+    m_vkRenderPass.Initialize(m_device, m_swapChainImageFormat, m_depthFormat, m_msaaSamples > VK_SAMPLE_COUNT_1_BIT, false);
     TraceLog(LogLevel::Trace, "VULKAN", "Swapchain render pass created.");
 }
 
-void QuarkVkRenderer::CreateOffscreenRenderPass() {
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format         = m_swapChainImageFormat;
-    colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkAttachmentDescription depthAttachment{};
-    depthAttachment.format         = m_depthFormat;
-    depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments    = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass    = 0;
-    dependency.srcStageMask  = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependency.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    renderPassInfo.pAttachments    = attachments.data();
-    renderPassInfo.subpassCount    = 1;
-    renderPassInfo.pSubpasses      = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies   = &dependency;
-
-    if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_offscreenRenderPass) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan offscreen render pass.");
-    }
-    TraceLog(LogLevel::Trace, "VULKAN", "Offscreen render pass created.");
-}
-
-void QuarkVkRenderer::CreateDescriptorSetLayout() {
-    VkDescriptorSetLayoutBinding samplerBinding{};
-    samplerBinding.binding            = 0;
-    samplerBinding.descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerBinding.descriptorCount    = 1;
-    samplerBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT;
-    samplerBinding.pImmutableSamplers = nullptr;
-
-    std::array<VkDescriptorSetLayoutBinding, 7> material2DBindings{};
-    material2DBindings[0] = samplerBinding;
-    for (uint32_t binding = 5; binding <= 10; ++binding) {
-        material2DBindings[binding - 4] = { binding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-                                            VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
-    }
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(material2DBindings.size());
-    layoutInfo.pBindings    = material2DBindings.data();
-
-    if (vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan descriptor set layout.");
-    }
-
-    std::array<VkDescriptorSetLayoutBinding, 11> bindings3D{};
-    bindings3D[0] = { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr };
-    bindings3D[1] = { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
-    bindings3D[2] = { 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
-    bindings3D[3] = { 3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
-    bindings3D[4] = { 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
-    for (uint32_t binding = 5; binding <= 10; ++binding) {
-        bindings3D[binding] = { binding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-                                VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
-    }
-    VkDescriptorSetLayoutCreateInfo layoutInfo3D{};
-    layoutInfo3D.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo3D.bindingCount = static_cast<uint32_t>(bindings3D.size());
-    layoutInfo3D.pBindings = bindings3D.data();
-    if (vkCreateDescriptorSetLayout(m_device, &layoutInfo3D, nullptr, &m_descriptorSetLayout3D) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan 3D descriptor set layout.");
-    }
-
-    if (m_imguiDescriptorPool == VK_NULL_HANDLE) {
-        std::array<VkDescriptorPoolSize, 11> poolSizes = {{
-            { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
-            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-            { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
-            { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
-            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
-            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
-            { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
-        }};
-
-        VkDescriptorPoolCreateInfo poolInfo{};
-        poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        poolInfo.maxSets       = 1000 * static_cast<uint32_t>(poolSizes.size());
-        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-        poolInfo.pPoolSizes    = poolSizes.data();
-
-        if (vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_imguiDescriptorPool) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan ImGui descriptor pool.");
-        }
-    }
-
-    VkDescriptorPool firstSlab = VK_NULL_HANDLE;
-    if (!CreateDescriptorPoolSlab(kVkDescriptorPoolSlabSize, firstSlab)) {
-        throw std::runtime_error("Failed to create initial Vulkan descriptor pool.");
-    }
-    m_descriptorPools.push_back(firstSlab);
+void QuarkVkRenderer::Create3DUniformBuffer() {
     {
         VkDeviceMemory dummyMemory = VK_NULL_HANDLE;
         if (!CreateBuffer(4096,
@@ -1265,42 +693,10 @@ void QuarkVkRenderer::CreateDescriptorSetLayout() {
     std::memcpy(static_cast<char*>(m_3DDummyMapped) + 0, identity.m, sizeof(identity.m));
     std::memcpy(static_cast<char*>(m_3DDummyMapped) + 64, identity.m, sizeof(identity.m));
     std::memcpy(static_cast<char*>(m_3DDummyMapped) + 128, identity.m, sizeof(identity.m));
-    TraceLog(LogLevel::Trace, "VULKAN", "Descriptor set layout and initial pool created.");
 }
 
-bool QuarkVkRenderer::CreateDescriptorPoolSlab(uint32_t maxSets, VkDescriptorPool& outPool) {
-    std::array<VkDescriptorPoolSize, 2> poolSizes = {{
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, maxSets * 11 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, maxSets * 3 }
-    }};
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.maxSets       = maxSets;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    poolInfo.pPoolSizes    = poolSizes.data();
-
-    outPool = VK_NULL_HANDLE;
-    return vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &outPool) == VK_SUCCESS;
-}
-
-bool QuarkVkRenderer::Allocate3DDescriptorSet(VkDescriptorSet& outSet) {
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &m_descriptorSetLayout3D;
-    for (auto it = m_descriptorPools.rbegin(); it != m_descriptorPools.rend(); ++it) {
-        allocInfo.descriptorPool = *it;
-        VkResult result = vkAllocateDescriptorSets(m_device, &allocInfo, &outSet);
-        if (result == VK_SUCCESS) return true;
-        if (result != VK_ERROR_OUT_OF_POOL_MEMORY && result != VK_ERROR_FRAGMENTED_POOL) return false;
-    }
-    VkDescriptorPool newSlab = VK_NULL_HANDLE;
-    if (!CreateDescriptorPoolSlab(kVkDescriptorPoolSlabSize, newSlab)) return false;
-    m_descriptorPools.push_back(newSlab);
-    allocInfo.descriptorPool = newSlab;
-    return vkAllocateDescriptorSets(m_device, &allocInfo, &outSet) == VK_SUCCESS;
+bool QuarkVkRenderer::Allocate3DDescriptorSet(VkDescriptorSet& outSet, VkDescriptorPool& outPool) {
+    return m_vkDescriptorSetManager.Allocate3DDescriptorSet(m_device, outSet, outPool);
 }
 
 uint64_t QuarkVkRenderer::ComputeMaterialCacheKey(const Material& material) const {
@@ -1347,26 +743,27 @@ VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& mat
     }
 
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    if (!Allocate3DDescriptorSet(descriptorSet)) return VK_NULL_HANDLE;
+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    if (!Allocate3DDescriptorSet(descriptorSet, descriptorPool)) return VK_NULL_HANDLE;
 
-    const auto whiteIt = m_textures.find(m_whiteTextureId);
-    if (whiteIt == m_textures.end()) {
-        vkFreeDescriptorSets(m_device, m_descriptorPools.back(), 1, &descriptorSet);
+    const VkTextureData* whiteTex = m_vkResources.Get(m_whiteTextureId);
+    if (whiteTex == nullptr) {
+        vkFreeDescriptorSets(m_device, descriptorPool, 1, &descriptorSet);
         return VK_NULL_HANDLE;
     }
 
     VkDescriptorImageInfo whiteImage{};
     whiteImage.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    whiteImage.imageView = whiteIt->second.view;
-    whiteImage.sampler = whiteIt->second.sampler;
+    whiteImage.imageView = whiteTex->view;
+    whiteImage.sampler = whiteTex->sampler;
 
     std::array<VkDescriptorImageInfo, 7> images{};
     images.fill(whiteImage);
     const auto setFallbackImage = [&](size_t index, uint32_t textureId) {
-        const auto textureIt = m_textures.find(textureId);
-        if (textureIt != m_textures.end()) {
-            images[index].imageView = textureIt->second.view;
-            images[index].sampler = textureIt->second.sampler;
+        const VkTextureData* texture = m_vkResources.Get(textureId);
+        if (texture != nullptr) {
+            images[index].imageView = texture->view;
+            images[index].sampler = texture->sampler;
         }
     };
     setFallbackImage(1, m_blackTextureId);
@@ -1379,10 +776,10 @@ VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& mat
     for (size_t i = 0; i < mapIndices.size(); ++i) {
         if (!material.maps) continue;
         const MaterialMap& map = material.maps[mapIndices[i]];
-        const auto textureIt = m_textures.find(map.texture.id);
-        if (map.texture.valid && textureIt != m_textures.end()) {
-            images[i].imageView = textureIt->second.view;
-            images[i].sampler = textureIt->second.sampler;
+        const VkTextureData* texture = m_vkResources.Get(map.texture.id);
+        if (map.texture.valid && texture != nullptr) {
+            images[i].imageView = texture->view;
+            images[i].sampler = texture->sampler;
         }
     }
 
@@ -1401,10 +798,10 @@ VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& mat
     if (material.maps) {
         for (uint32_t i = 0; i < 4; ++i) {
             const MaterialMap& map = material.maps[MATERIAL_MAP_HEIGHT + i];
-            const auto textureIt = m_textures.find(map.texture.id);
-            if (map.texture.valid && textureIt != m_textures.end()) {
-                shadowImages[i].imageView = textureIt->second.view;
-                shadowImages[i].sampler = textureIt->second.sampler;
+            const VkTextureData* texture = m_vkResources.Get(map.texture.id);
+            if (map.texture.valid && texture != nullptr) {
+                shadowImages[i].imageView = texture->view;
+                shadowImages[i].sampler = texture->sampler;
             }
         }
     }
@@ -1428,6 +825,7 @@ VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& mat
 
     VkMaterialCacheEntry entry{};
     entry.descriptorSet = descriptorSet;
+    entry.descriptorPool = descriptorPool;
     entry.key = cacheKey;
     if (material.maps) {
         for (int i = 0; i <= MATERIAL_MAP_BRDF; ++i) {
@@ -1441,153 +839,41 @@ VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& mat
 void QuarkVkRenderer::ClearMaterialDescriptorCache() {
     for (auto& [key, entry] : m_materialCache) {
         if (entry.descriptorSet != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
-            vkFreeDescriptorSets(m_device, entry.descriptorPool != VK_NULL_HANDLE ? entry.descriptorPool : m_descriptorPools.back(), 1, &entry.descriptorSet);
+            vkFreeDescriptorSets(m_device, entry.descriptorPool, 1, &entry.descriptorSet);
         }
     }
     m_materialCache.clear();
 }
 
 bool QuarkVkRenderer::AllocateTextureDescriptorSet(VkDescriptorSet& outSet) {
-    if (m_descriptorSetLayout == VK_NULL_HANDLE) return false;
-
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts        = &m_descriptorSetLayout;
-
-    for (auto it = m_descriptorPools.rbegin(); it != m_descriptorPools.rend(); ++it) {
-        allocInfo.descriptorPool = *it;
-        VkResult result = vkAllocateDescriptorSets(m_device, &allocInfo, &outSet);
-        if (result == VK_SUCCESS) return true;
-        if (result != VK_ERROR_OUT_OF_POOL_MEMORY && result != VK_ERROR_FRAGMENTED_POOL) {
-            return false;
-        }
-    }
-
-    VkDescriptorPool newSlab = VK_NULL_HANDLE;
-    if (!CreateDescriptorPoolSlab(kVkDescriptorPoolSlabSize, newSlab)) return false;
-    m_descriptorPools.push_back(newSlab);
-
-    allocInfo.descriptorPool = newSlab;
-    return vkAllocateDescriptorSets(m_device, &allocInfo, &outSet) == VK_SUCCESS;
+    return m_vkDescriptorSetManager.AllocateTextureDescriptorSet(m_device, outSet);
 }
 
 void QuarkVkRenderer::CreateFramebuffers() {
-    CreateMSAAColorResources();
+    m_vkSwapChain.CreateAttachmentResources(m_device, m_gpuAllocator, m_depthFormat, m_msaaSamples);
 
-    m_swapChainDepthImages.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
-    m_swapChainDepthMemories.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
-    m_swapChainDepthAllocations.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
-    m_swapChainDepthImageViews.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
-
-    for (size_t i = 0; i < m_swapChainImageViews.size(); ++i) {
-        if (!CreateDepthResources(m_swapChainExtent.width, m_swapChainExtent.height,
-                                  m_swapChainDepthImages[i],
-                                  m_swapChainDepthMemories[i],
-                                  m_swapChainDepthImageViews[i],
-                                  m_msaaSamples,
-                                  &m_swapChainDepthAllocations[i])) {
-            throw std::runtime_error("Failed to create Vulkan depth resources.");
-        }
-    }
-
-    m_swapChainFramebuffers.resize(m_swapChainImageViews.size());
-
-    for (size_t i = 0; i < m_swapChainImageViews.size(); ++i) {
-        std::vector<VkImageView> attachments;
-        if (m_msaaSamples > VK_SAMPLE_COUNT_1_BIT) {
-            attachments = {
-                m_msaaColorImageView,
-                m_swapChainDepthImageViews[i],
-                m_swapChainImageViews[i]
-            };
-        } else {
-            attachments = {
-                m_swapChainImageViews[i],
-                m_swapChainDepthImageViews[i]
-            };
-        }
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass      = m_renderPass;
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        framebufferInfo.pAttachments    = attachments.data();
-        framebufferInfo.width           = m_swapChainExtent.width;
-        framebufferInfo.height          = m_swapChainExtent.height;
-        framebufferInfo.layers          = 1;
-
-        if (vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_swapChainFramebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan framebuffer.");
-        }
-    }
+    m_vkFramebufferManager.Initialize(m_device);
+    m_vkFramebufferManager.CreateSwapChainFramebuffers(m_device,
+                                                      m_vkRenderPass.Get(),
+                                                      m_vkSwapChain.ImageViews(),
+                                                      m_vkSwapChain.GetExtent(),
+                                                      m_vkSwapChain.MsaaColorImageView(),
+                                                      m_msaaSamples,
+                                                      m_vkSwapChain.DepthImageViews());
+    m_swapChainFramebuffers = m_vkFramebufferManager.Framebuffers();
     TraceLog(LogLevel::Trace, "VULKAN", TextFormat("Created %zu framebuffers.", m_swapChainFramebuffers.size()));
 }
 
 bool QuarkVkRenderer::RecreateRenderTargetFramebuffers() {
-    for (auto& [id, rt] : m_renderTargets) {
-        (void)id;
-        auto itTex = m_textures.find(rt.textureId);
-        if (itTex == m_textures.end()) continue;
+    for (const auto& [id, rt] : m_renderTargets) {
+        const VkTextureData* tex = m_vkResources.Get(rt.textureId);
+        if (tex == nullptr) continue;
 
-        if (rt.framebuffer != VK_NULL_HANDLE) {
-            vkDestroyFramebuffer(m_device, rt.framebuffer, nullptr);
-            rt.framebuffer = VK_NULL_HANDLE;
-        }
-
-        if (rt.depthView == VK_NULL_HANDLE) {
-            if (!CreateDepthResources(rt.width, rt.height, rt.depthImage, rt.depthMemory, rt.depthView, VK_SAMPLE_COUNT_1_BIT, &rt.depthAllocation)) {
-                return false;
-            }
-        }
-
-        std::array<VkImageView, 2> attachments = { itTex->second.view, rt.depthView };
-        VkFramebufferCreateInfo fbInfo{};
-        fbInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fbInfo.renderPass      = m_offscreenRenderPass;
-        fbInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        fbInfo.pAttachments    = attachments.data();
-        fbInfo.width           = rt.width;
-        fbInfo.height          = rt.height;
-        fbInfo.layers          = 1;
-        if (vkCreateFramebuffer(m_device, &fbInfo, nullptr, &rt.framebuffer) != VK_SUCCESS) {
-            DestroyDepthResources(rt.depthImage, rt.depthMemory, rt.depthView, rt.depthAllocation);
-            rt.depthAllocation = VK_NULL_HANDLE;
+        if (!m_vkRenderTarget.CreateTarget(id, tex->view, rt.width, rt.height)) {
             return false;
         }
     }
     return true;
-}
-
-void QuarkVkRenderer::CreateCommandPool() {
-    VkQueueFamilyIndices queueFamilyIndices = FindQueueFamilies(m_physicalDevice);
-
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
-    poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-
-    if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan command pool.");
-    }
-    TraceLog(LogLevel::Trace, "VULKAN", "Command pool created.");
-}
-
-void QuarkVkRenderer::CreateCommandBuffers() {
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool        = m_commandPool;
-    allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = static_cast<uint32_t>(m_frames.size());
-
-    std::vector<VkCommandBuffer> commandBuffers(m_frames.size());
-    if (vkAllocateCommandBuffers(m_device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to allocate Vulkan command buffers.");
-    }
-    for (size_t i = 0; i < m_frames.size(); ++i) {
-        m_frames[i].commandBuffer = commandBuffers[i];
-    }
-    TraceLog(LogLevel::Trace, "VULKAN", TextFormat("Allocated %zu command buffers.", m_frames.size()));
 }
 
 void QuarkVkRenderer::CreateFrameVertexIndexBuffers() {
@@ -1656,35 +942,20 @@ void QuarkVkRenderer::CreateFrameVertexIndexBuffers() {
     TraceLog(LogLevel::Trace, "VULKAN", "Per-frame vertex/index buffers created.");
 }
 
-void QuarkVkRenderer::CreateSyncObjects() {
-    for (auto& frame : m_frames) {
-        VkSemaphoreCreateInfo semaphoreInfo{};
-        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        VkFenceCreateInfo fenceInfo{};
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-        if (vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &frame.imageAvailable) != VK_SUCCESS ||
-            vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &frame.renderFinished) != VK_SUCCESS ||
-            vkCreateFence(m_device, &fenceInfo, nullptr, &frame.inFlightFence) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan synchronization objects.");
-        }
-    }
-    TraceLog(LogLevel::Trace, "VULKAN", "Synchronization objects created.");
-}
-
 void QuarkVkRenderer::CreateWhiteTexture() {
     const unsigned char white[4] = {255, 255, 255, 255};
-    if (!CreateTextureFromRGBA(white, 1, 1, m_whiteTextureId)) {
+    m_whiteTextureId = m_vkResources.CreateTextureFromRGBA(white, 1, 1);
+    if (m_whiteTextureId == 0) {
         throw std::runtime_error("Failed to create Vulkan white fallback texture.");
     }
     const unsigned char black[4] = {0, 0, 0, 255};
-    if (!CreateTextureFromRGBA(black, 1, 1, m_blackTextureId)) {
+    m_blackTextureId = m_vkResources.CreateTextureFromRGBA(black, 1, 1);
+    if (m_blackTextureId == 0) {
         throw std::runtime_error("Failed to create Vulkan black fallback texture.");
     }
     const unsigned char flatNormal[4] = {128, 128, 255, 255};
-    if (!CreateTextureFromRGBA(flatNormal, 1, 1, m_flatNormalTextureId)) {
+    m_flatNormalTextureId = m_vkResources.CreateTextureFromRGBA(flatNormal, 1, 1);
+    if (m_flatNormalTextureId == 0) {
         throw std::runtime_error("Failed to create Vulkan normal fallback texture.");
     }
     Material whiteMaterial{};
@@ -1695,203 +966,21 @@ void QuarkVkRenderer::CreateWhiteTexture() {
     TraceLog(LogLevel::Trace, "VULKAN", "White fallback texture created.");
 }
 
-VkPipeline QuarkVkRenderer::CreatePipelineForRenderPass(VkRenderPass renderPass,
-                                                        VkShaderModule vertexModule,
-                                                        VkShaderModule fragmentModule) {
-    if (m_device == VK_NULL_HANDLE || renderPass == VK_NULL_HANDLE) {
-        return VK_NULL_HANDLE;
-    }
-
-    if (m_pipelineLayout == VK_NULL_HANDLE) {
-        VkPushConstantRange pushConstantRange{};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        pushConstantRange.offset     = 0;
-        pushConstantRange.size       = sizeof(VkPushConstants2D);
-
-        VkPipelineLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        layoutInfo.setLayoutCount         = 1;
-        layoutInfo.pSetLayouts            = &m_descriptorSetLayout;
-        layoutInfo.pushConstantRangeCount  = 1;
-        layoutInfo.pPushConstantRanges     = &pushConstantRange;
-
-        if (vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan pipeline layout.");
-        }
-    }
-
-    bool ownsVertexModule = vertexModule == VK_NULL_HANDLE;
-    bool ownsFragmentModule = fragmentModule == VK_NULL_HANDLE;
-    if (ownsVertexModule) {
-        const std::vector<uint32_t> vertCode = CompileRuntimeShader(
-            kRuntime2DVertexShader, shaderc_vertex_shader, "built-in 2D vertex shader");
-        vertexModule = CreateShaderModule(vertCode);
-    }
-    if (ownsFragmentModule) {
-        const std::vector<uint32_t> fragCode = CompileRuntimeShader(
-            kRuntime2DFragmentShader, shaderc_fragment_shader, "built-in 2D fragment shader");
-        fragmentModule = CreateShaderModule(fragCode);
-    }
-
-    VkPipelineShaderStageCreateInfo vertStage{};
-    vertStage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertStage.stage  = VK_SHADER_STAGE_VERTEX_BIT;
-    vertStage.module = vertexModule;
-    vertStage.pName  = "main";
-
-    VkPipelineShaderStageCreateInfo fragStage{};
-    fragStage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragStage.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragStage.module = fragmentModule;
-    fragStage.pName  = "main";
-
-    VkVertexInputBindingDescription bindingDesc{};
-    bindingDesc.binding   = 0;
-    bindingDesc.stride    = sizeof(VkBatchVertex);
-    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    std::array<VkVertexInputAttributeDescription, 3> attributes{};
-    attributes[0].binding  = 0;
-    attributes[0].location = 0;
-    attributes[0].format   = VK_FORMAT_R32G32_SFLOAT;
-    attributes[0].offset   = offsetof(VkBatchVertex, x);
-
-    attributes[1].binding  = 0;
-    attributes[1].location = 1;
-    attributes[1].format   = VK_FORMAT_R32G32_SFLOAT;
-    attributes[1].offset   = offsetof(VkBatchVertex, u);
-
-    attributes[2].binding  = 0;
-    attributes[2].location = 2;
-    attributes[2].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attributes[2].offset   = offsetof(VkBatchVertex, r);
-
-    VkPipelineVertexInputStateCreateInfo vertexInput{};
-    vertexInput.sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInput.vertexBindingDescriptionCount   = 1;
-    vertexInput.pVertexBindingDescriptions      = &bindingDesc;
-    vertexInput.vertexAttributeDescriptionCount  = static_cast<uint32_t>(attributes.size());
-    vertexInput.pVertexAttributeDescriptions    = attributes.data();
-
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType                  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    inputAssembly.primitiveRestartEnable  = VK_FALSE;
-
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.scissorCount  = 1;
-
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable        = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode             = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth               = 1.0f;
-    rasterizer.cullMode                = VK_CULL_MODE_NONE;
-    rasterizer.frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.depthBiasEnable         = VK_FALSE;
-
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = (renderPass == m_renderPass) ? m_msaaSamples : VK_SAMPLE_COUNT_1_BIT;
-    multisampling.sampleShadingEnable  = VK_FALSE;
-
-    VkPipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.sType                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable       = VK_FALSE;
-    depthStencil.depthWriteEnable      = VK_FALSE;
-    depthStencil.depthCompareOp        = VK_COMPARE_OP_ALWAYS;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable     = VK_FALSE;
-
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-                                          VK_COLOR_COMPONENT_G_BIT |
-                                          VK_COLOR_COMPONENT_B_BIT |
-                                          VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable    = VK_TRUE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
-
-    VkPipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.sType             = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable     = VK_FALSE;
-    colorBlending.attachmentCount   = 1;
-    colorBlending.pAttachments      = &colorBlendAttachment;
-
-    VkDynamicState dynamicStates[] = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR
-    };
-
-    VkPipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(sizeof(dynamicStates) / sizeof(dynamicStates[0]));
-    dynamicState.pDynamicStates    = dynamicStates;
-
-    std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
-
-    VkGraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount          = static_cast<uint32_t>(stages.size());
-    pipelineInfo.pStages             = stages.data();
-    pipelineInfo.pVertexInputState   = &vertexInput;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState      = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState   = &multisampling;
-    pipelineInfo.pDepthStencilState  = &depthStencil;
-    pipelineInfo.pColorBlendState    = &colorBlending;
-    pipelineInfo.pDynamicState       = &dynamicState;
-    pipelineInfo.layout              = m_pipelineLayout;
-    pipelineInfo.renderPass          = renderPass;
-    pipelineInfo.subpass             = 0;
-
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
-        if (ownsFragmentModule) vkDestroyShaderModule(m_device, fragmentModule, nullptr);
-        if (ownsVertexModule) vkDestroyShaderModule(m_device, vertexModule, nullptr);
-        throw std::runtime_error("Failed to create Vulkan 2D pipeline.");
-    }
-
-    if (ownsFragmentModule) vkDestroyShaderModule(m_device, fragmentModule, nullptr);
-    if (ownsVertexModule) vkDestroyShaderModule(m_device, vertexModule, nullptr);
-    return pipeline;
-}
-
 void QuarkVkRenderer::CreateShaderPipelines() {
-    for (auto& [id, program] : m_shaderPrograms) {
+    m_vkShaderCompiler.FreePipelines();
+    for (auto& [id, program] : m_vkShaderCompiler.Programs()) {
         (void)id;
-        if (program.pipeline != VK_NULL_HANDLE) {
-            vkDestroyPipeline(m_device, program.pipeline, nullptr);
-            program.pipeline = VK_NULL_HANDLE;
-        }
         if (!program.supports3D) {
-            program.pipeline = CreatePipelineForRenderPass(m_renderPass,
-                                                           program.vertexModule,
-                                                           program.fragmentModule);
-        }
-        if (program.pipeline3D != VK_NULL_HANDLE) {
-            vkDestroyPipeline(m_device, program.pipeline3D, nullptr);
-            program.pipeline3D = VK_NULL_HANDLE;
-        }
-        if (program.pipeline3DOffscreen != VK_NULL_HANDLE) {
-            vkDestroyPipeline(m_device, program.pipeline3DOffscreen, nullptr);
-            program.pipeline3DOffscreen = VK_NULL_HANDLE;
-        }
-        if (program.supports3D) {
-            program.pipeline3D = Create3DPipelineForRenderPass(m_renderPass,
-                                                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                                                                program.vertexModule,
-                                                                program.fragmentModule);
-            if (m_offscreenRenderPass != VK_NULL_HANDLE) {
-                program.pipeline3DOffscreen = Create3DPipelineForRenderPass(m_offscreenRenderPass,
+            program.pipeline = m_vkPipeline.Create2DPipeline(m_vkRenderPass.Get(),
+                                                             program.vertexModule,
+                                                             program.fragmentModule);
+        } else {
+            program.pipeline3D = m_vkPipeline.Create3DPipeline(m_vkRenderPass.Get(),
+                                                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                                               program.vertexModule,
+                                                               program.fragmentModule);
+            if (m_vkRenderTarget.RenderPass() != VK_NULL_HANDLE) {
+                program.pipeline3DOffscreen = m_vkPipeline.Create3DPipeline(m_vkRenderTarget.RenderPass(),
                                                                             VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                             program.vertexModule,
                                                                             program.fragmentModule);
@@ -1899,226 +988,6 @@ void QuarkVkRenderer::CreateShaderPipelines() {
         }
     }
 }
-
-void QuarkVkRenderer::CreatePipeline2D() {
-    if (m_pipeline2D != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_pipeline2D, nullptr);
-        m_pipeline2D = VK_NULL_HANDLE;
-    }
-    m_pipeline2D = CreatePipelineForRenderPass(m_renderPass);
-}
-
-void QuarkVkRenderer::CreateOffscreenPipeline2D() {
-    if (m_offscreenPipeline2D != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_offscreenPipeline2D, nullptr);
-        m_offscreenPipeline2D = VK_NULL_HANDLE;
-    }
-    m_offscreenPipeline2D = CreatePipelineForRenderPass(m_offscreenRenderPass);
-}
-
-VkPipeline QuarkVkRenderer::Create3DPipelineForRenderPass(VkRenderPass renderPass, VkPrimitiveTopology topology,
-                                                           VkShaderModule vertexModule, VkShaderModule fragmentModule) {
-    if (m_device == VK_NULL_HANDLE || renderPass == VK_NULL_HANDLE) {
-        return VK_NULL_HANDLE;
-    }
-
-    if (m_pipelineLayout3D == VK_NULL_HANDLE) {
-        VkPushConstantRange pushConstantRange{};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-        pushConstantRange.offset     = 0;
-        pushConstantRange.size       = sizeof(Vk3DPushConstants);
-
-        VkPipelineLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType                 = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        layoutInfo.setLayoutCount        = 1;
-        layoutInfo.pSetLayouts           = &m_descriptorSetLayout3D;
-        layoutInfo.pushConstantRangeCount = 1;
-        layoutInfo.pPushConstantRanges   = &pushConstantRange;
-
-        if (vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_pipelineLayout3D) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan 3D pipeline layout.");
-        }
-    }
-
-    const bool ownsVertexModule = vertexModule == VK_NULL_HANDLE;
-    const bool ownsFragmentModule = fragmentModule == VK_NULL_HANDLE;
-    if (ownsVertexModule) {
-        const std::vector<uint32_t> vertCode = CompileRuntimeShader(
-            kRuntime3DVertexShader, shaderc_vertex_shader, "built-in 3D vertex shader");
-        vertexModule = CreateShaderModule(vertCode);
-    }
-    if (ownsFragmentModule) {
-        const std::vector<uint32_t> fragCode = CompileRuntimeShader(
-            kRuntime3DFragmentShader, shaderc_fragment_shader, "built-in 3D fragment shader");
-        fragmentModule = CreateShaderModule(fragCode);
-    }
-
-    VkPipelineShaderStageCreateInfo vertStage{};
-    vertStage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertStage.stage  = VK_SHADER_STAGE_VERTEX_BIT;
-    vertStage.module = vertexModule;
-    vertStage.pName  = "main";
-
-    VkPipelineShaderStageCreateInfo fragStage{};
-    fragStage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragStage.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragStage.module = fragmentModule;
-    fragStage.pName  = "main";
-
-    VkVertexInputBindingDescription bindingDesc{};
-    bindingDesc.binding   = 0;
-    bindingDesc.stride    = sizeof(Vk3DVertex);
-    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    std::array<VkVertexInputAttributeDescription, 5> attributes{};
-    attributes[0].binding  = 0;
-    attributes[0].location = 0;
-    attributes[0].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attributes[0].offset   = offsetof(Vk3DVertex, x);
-
-    attributes[1].binding  = 0;
-    attributes[1].location = 1;
-    attributes[1].format   = VK_FORMAT_R32G32_SFLOAT;
-    attributes[1].offset   = offsetof(Vk3DVertex, u);
-
-    attributes[2].binding  = 0;
-    attributes[2].location = 2;
-    attributes[2].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attributes[2].offset   = offsetof(Vk3DVertex, r);
-
-    attributes[3].binding  = 0;
-    attributes[3].location = 3;
-    attributes[3].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attributes[3].offset   = offsetof(Vk3DVertex, nx);
-
-    attributes[4].binding  = 0;
-    attributes[4].location = 4;
-    attributes[4].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attributes[4].offset   = offsetof(Vk3DVertex, wx);
-
-    VkPipelineVertexInputStateCreateInfo vertexInput{};
-    vertexInput.sType                          = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInput.vertexBindingDescriptionCount  = 1;
-    vertexInput.pVertexBindingDescriptions     = &bindingDesc;
-    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size());
-    vertexInput.pVertexAttributeDescriptions   = attributes.data();
-
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType                 = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology              = topology;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType        = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.scissorCount  = 1;
-
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable        = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode             = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth               = 1.0f;
-    rasterizer.cullMode                = m_backfaceCullingEnabled ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
-    rasterizer.frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.depthBiasEnable         = VK_FALSE;
-
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = (renderPass == m_renderPass) ? m_msaaSamples : VK_SAMPLE_COUNT_1_BIT;
-    multisampling.sampleShadingEnable  = VK_FALSE;
-
-    VkPipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.sType                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable       = VK_TRUE;
-    depthStencil.depthWriteEnable      = VK_TRUE;
-    depthStencil.depthCompareOp        = VK_COMPARE_OP_LESS;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable     = VK_FALSE;
-
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-                                          VK_COLOR_COMPONENT_G_BIT |
-                                          VK_COLOR_COMPONENT_B_BIT |
-                                          VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable    = VK_TRUE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
-
-    VkPipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable   = VK_FALSE;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments    = &colorBlendAttachment;
-
-    VkDynamicState dynamicStates[] = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR
-    };
-
-    VkPipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(sizeof(dynamicStates) / sizeof(dynamicStates[0]));
-    dynamicState.pDynamicStates    = dynamicStates;
-
-    std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
-
-    VkGraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount          = static_cast<uint32_t>(stages.size());
-    pipelineInfo.pStages             = stages.data();
-    pipelineInfo.pVertexInputState    = &vertexInput;
-    pipelineInfo.pInputAssemblyState  = &inputAssembly;
-    pipelineInfo.pViewportState       = &viewportState;
-    pipelineInfo.pRasterizationState  = &rasterizer;
-    pipelineInfo.pMultisampleState    = &multisampling;
-    pipelineInfo.pDepthStencilState   = &depthStencil;
-    pipelineInfo.pColorBlendState     = &colorBlending;
-    pipelineInfo.pDynamicState        = &dynamicState;
-    pipelineInfo.layout               = m_pipelineLayout3D;
-    pipelineInfo.renderPass           = renderPass;
-    pipelineInfo.subpass              = 0;
-
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
-        if (ownsFragmentModule) vkDestroyShaderModule(m_device, fragmentModule, nullptr);
-        if (ownsVertexModule) vkDestroyShaderModule(m_device, vertexModule, nullptr);
-        throw std::runtime_error("Failed to create Vulkan 3D pipeline.");
-    }
-
-    if (ownsFragmentModule) vkDestroyShaderModule(m_device, fragmentModule, nullptr);
-    if (ownsVertexModule) vkDestroyShaderModule(m_device, vertexModule, nullptr);
-    return pipeline;
-}
-
-void QuarkVkRenderer::CreatePipeline3D() {
-    if (m_pipeline3DTri != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_pipeline3DTri, nullptr);
-        m_pipeline3DTri = VK_NULL_HANDLE;
-    }
-    if (m_pipeline3DLines != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_pipeline3DLines, nullptr);
-        m_pipeline3DLines = VK_NULL_HANDLE;
-    }
-    if (m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_offscreenPipeline3DTri, nullptr);
-        m_offscreenPipeline3DTri = VK_NULL_HANDLE;
-    }
-    if (m_offscreenPipeline3DLines != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_offscreenPipeline3DLines, nullptr);
-        m_offscreenPipeline3DLines = VK_NULL_HANDLE;
-    }
-
-    m_pipeline3DTri = Create3DPipelineForRenderPass(m_renderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    m_pipeline3DLines = Create3DPipelineForRenderPass(m_renderPass, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
-    m_offscreenPipeline3DTri = Create3DPipelineForRenderPass(m_offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    m_offscreenPipeline3DLines = Create3DPipelineForRenderPass(m_offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
-}
-
 void QuarkVkRenderer::RecreateSwapChain() {
     TraceLog(LogLevel::Info, "VULKAN", "Recreating swapchain...");
     vkDeviceWaitIdle(m_device);
@@ -2126,13 +995,11 @@ void QuarkVkRenderer::RecreateSwapChain() {
     CleanupSwapChain();
 
     CreateSwapChain();
-    CreateImageViews();
     CreateRenderPass();
-    CreateOffscreenRenderPass();
-    CreatePipeline2D();
-    CreateOffscreenPipeline2D();
+    m_vkRenderTarget.Initialize(m_device, m_gpuAllocator, m_swapChainImageFormat, m_depthFormat);
+    m_vkRenderTarget.CreateRenderPass();
+    m_vkPipeline.CreatePipelines(m_vkRenderPass.Get(), m_vkRenderTarget.RenderPass(), m_msaaSamples);
     CreateShaderPipelines();
-    CreatePipeline3D();
     CreateFramebuffers();
     RecreateRenderTargetFramebuffers();
 }
@@ -2140,111 +1007,17 @@ void QuarkVkRenderer::RecreateSwapChain() {
 void QuarkVkRenderer::CleanupSwapChain() {
     TraceLog(LogLevel::Trace, "VULKAN", "Cleaning up swapchain resources...");
 
-    DestroyMSAAColorResources();
+    m_vkRenderTarget.DestroyFramebuffers();
 
-    for (auto& [id, rt] : m_renderTargets) {
-        (void)id;
-        if (rt.framebuffer != VK_NULL_HANDLE) {
-            vkDestroyFramebuffer(m_device, rt.framebuffer, nullptr);
-            rt.framebuffer = VK_NULL_HANDLE;
-        }
-    }
-
-    for (auto framebuffer : m_swapChainFramebuffers) {
-        if (framebuffer != VK_NULL_HANDLE) {
-            vkDestroyFramebuffer(m_device, framebuffer, nullptr);
-        }
-    }
+    m_vkFramebufferManager.Shutdown(m_device);
     m_swapChainFramebuffers.clear();
 
-    for (size_t i = 0; i < m_swapChainDepthImageViews.size(); ++i) {
-        if (m_swapChainDepthImageViews[i] != VK_NULL_HANDLE) {
-            vkDestroyImageView(m_device, m_swapChainDepthImageViews[i], nullptr);
-            m_swapChainDepthImageViews[i] = VK_NULL_HANDLE;
-        }
-        if (m_swapChainDepthImages.size() > i && m_swapChainDepthImages[i] != VK_NULL_HANDLE) {
-            if (m_swapChainDepthAllocations.size() > i && m_swapChainDepthAllocations[i] != VK_NULL_HANDLE) {
-                m_gpuAllocator.DestroyImage(m_swapChainDepthImages[i], m_swapChainDepthAllocations[i]);
-                m_swapChainDepthAllocations[i] = VK_NULL_HANDLE;
-            } else {
-                vkDestroyImage(m_device, m_swapChainDepthImages[i], nullptr);
-            }
-            m_swapChainDepthImages[i] = VK_NULL_HANDLE;
-        }
-        if (m_swapChainDepthMemories.size() > i) {
-            m_swapChainDepthMemories[i] = VK_NULL_HANDLE;
-        }
-    }
-    m_swapChainDepthImageViews.clear();
-    m_swapChainDepthImages.clear();
-    m_swapChainDepthMemories.clear();
-    m_swapChainDepthAllocations.clear();
+    m_vkPipeline.DestroyPipelines();
+    m_vkShaderCompiler.FreePipelines();
+    m_vkRenderTarget.DestroyRenderPass();
+    m_vkRenderPass.Shutdown();
 
-    if (m_offscreenPipeline2D != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_offscreenPipeline2D, nullptr);
-        m_offscreenPipeline2D = VK_NULL_HANDLE;
-    }
-    if (m_offscreenPipeline3DLines != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_offscreenPipeline3DLines, nullptr);
-        m_offscreenPipeline3DLines = VK_NULL_HANDLE;
-    }
-    if (m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_offscreenPipeline3DTri, nullptr);
-        m_offscreenPipeline3DTri = VK_NULL_HANDLE;
-    }
-    if (m_pipeline2D != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_pipeline2D, nullptr);
-        m_pipeline2D = VK_NULL_HANDLE;
-    }
-    if (m_pipeline3DLines != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_pipeline3DLines, nullptr);
-        m_pipeline3DLines = VK_NULL_HANDLE;
-    }
-    if (m_pipeline3DTri != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_pipeline3DTri, nullptr);
-        m_pipeline3DTri = VK_NULL_HANDLE;
-    }
-    for (auto& [id, shaderProgram] : m_shaderPrograms) {
-        (void)id;
-        if (shaderProgram.pipeline != VK_NULL_HANDLE) {
-            vkDestroyPipeline(m_device, shaderProgram.pipeline, nullptr);
-            shaderProgram.pipeline = VK_NULL_HANDLE;
-        }
-        if (shaderProgram.pipeline3D != VK_NULL_HANDLE) {
-            vkDestroyPipeline(m_device, shaderProgram.pipeline3D, nullptr);
-            shaderProgram.pipeline3D = VK_NULL_HANDLE;
-        }
-    }
-    if (m_pipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
-        m_pipelineLayout = VK_NULL_HANDLE;
-    }
-    if (m_pipelineLayout3D != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(m_device, m_pipelineLayout3D, nullptr);
-        m_pipelineLayout3D = VK_NULL_HANDLE;
-    }
-
-    if (m_offscreenRenderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(m_device, m_offscreenRenderPass, nullptr);
-        m_offscreenRenderPass = VK_NULL_HANDLE;
-    }
-    if (m_renderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(m_device, m_renderPass, nullptr);
-        m_renderPass = VK_NULL_HANDLE;
-    }
-
-    for (auto imageView : m_swapChainImageViews) {
-        if (imageView != VK_NULL_HANDLE) {
-            vkDestroyImageView(m_device, imageView, nullptr);
-        }
-    }
-    m_swapChainImageViews.clear();
-
-    if (m_swapChain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(m_device, m_swapChain, nullptr);
-        m_swapChain = VK_NULL_HANDLE;
-    }
-    m_swapChainImages.clear();
+    m_vkSwapChain.Shutdown(m_device);
 }
 
 VkQueueFamilyIndices QuarkVkRenderer::FindQueueFamilies(VkPhysicalDevice device) const {
@@ -2322,7 +1095,7 @@ VkPresentModeKHR QuarkVkRenderer::ChooseSwapPresentMode(const std::vector<VkPres
 
 void QuarkVkRenderer::SetTargetFPS(int fps) {
     m_targetFps = fps;
-    if (!m_vsyncExplicitlySet && m_swapChain != VK_NULL_HANDLE) {
+    if (!m_vsyncExplicitlySet && m_vkSwapChain.Get() != VK_NULL_HANDLE) {
         RecreateSwapChain();
     }
 }
@@ -2333,7 +1106,7 @@ bool QuarkVkRenderer::SetVSync(bool enabled) {
     }
     m_vsync = enabled;
     m_vsyncExplicitlySet = true;
-    if (m_swapChain != VK_NULL_HANDLE) {
+    if (m_vkSwapChain.Get() != VK_NULL_HANDLE) {
         RecreateSwapChain();
     }
     return true;
@@ -2482,101 +1255,12 @@ bool QuarkVkRenderer::EnsureMappedBufferCapacity(VkBuffer& buffer, VkDeviceMemor
     return true;
 }
 
-bool QuarkVkRenderer::CreateDepthResources(uint32_t width, uint32_t height,
-                                           VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView,
-                                           VkSampleCountFlagBits samples,
-                                           VmaAllocation* outAllocation) {
-    outImage = VK_NULL_HANDLE;
-    outMemory = VK_NULL_HANDLE;
-    outView = VK_NULL_HANDLE;
-    if (outAllocation != nullptr) {
-        *outAllocation = VK_NULL_HANDLE;
-    }
-
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width  = width;
-    imageInfo.extent.height = height;
-    imageInfo.extent.depth  = 1;
-    imageInfo.mipLevels     = 1;
-    imageInfo.arrayLayers   = 1;
-    imageInfo.format        = m_depthFormat;
-    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    imageInfo.samples       = samples;
-    imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocation allocation = VK_NULL_HANDLE;
-    if (!m_gpuAllocator.CreateImage(imageInfo,
-                                    VMA_MEMORY_USAGE_AUTO,
-                                    outImage,
-                                    allocation,
-                                    VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)) {
-        return false;
-    }
-
-    VmaAllocationInfo allocInfo{};
-    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), allocation, &allocInfo);
-    outMemory = allocInfo.deviceMemory;
-    if (outAllocation != nullptr) {
-        *outAllocation = allocation;
-    }
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image                           = outImage;
-    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format                          = m_depthFormat;
-    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
-    if (HasStencilComponent(m_depthFormat)) {
-        viewInfo.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-    }
-    viewInfo.subresourceRange.baseMipLevel   = 0;
-    viewInfo.subresourceRange.levelCount     = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount     = 1;
-
-    if (vkCreateImageView(m_device, &viewInfo, nullptr, &outView) != VK_SUCCESS) {
-        if (outAllocation != nullptr && *outAllocation != VK_NULL_HANDLE) {
-            m_gpuAllocator.DestroyImage(outImage, *outAllocation);
-            *outAllocation = VK_NULL_HANDLE;
-        } else if (outImage != VK_NULL_HANDLE) {
-            vkDestroyImage(m_device, outImage, nullptr);
-        }
-        outImage = VK_NULL_HANDLE;
-        outMemory = VK_NULL_HANDLE;
-        return false;
-    }
-
-    return true;
-}
-
-void QuarkVkRenderer::DestroyDepthResources(VkImage& image, VkDeviceMemory& memory, VkImageView& view,
-                                            VmaAllocation allocation) {
-    if (view != VK_NULL_HANDLE) {
-        vkDestroyImageView(m_device, view, nullptr);
-        view = VK_NULL_HANDLE;
-    }
-    if (image != VK_NULL_HANDLE) {
-        if (allocation != VK_NULL_HANDLE) {
-            m_gpuAllocator.DestroyImage(image, allocation);
-        } else {
-            vkDestroyImage(m_device, image, nullptr);
-        }
-        image = VK_NULL_HANDLE;
-    }
-    if (memory != VK_NULL_HANDLE) {
-        memory = VK_NULL_HANDLE;
-    }
-}
-
 VkSampleCountFlagBits QuarkVkRenderer::GetSampleCountForSamples(int samples) const {
     if (samples <= 1 || m_physicalDevice == VK_NULL_HANDLE) return VK_SAMPLE_COUNT_1_BIT;
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
-    VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
+    VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts &
+                                props.limits.framebufferDepthSampleCounts;
 
     VkSampleCountFlagBits requested = VK_SAMPLE_COUNT_1_BIT;
     if (samples >= 8) requested = VK_SAMPLE_COUNT_8_BIT;
@@ -2597,410 +1281,17 @@ void QuarkVkRenderer::SetMSAASamples(int samples) {
         VkSampleCountFlagBits newSamples = GetSampleCountForSamples(m_requestedMsaaSamples);
         if (newSamples != m_msaaSamples) {
             m_msaaSamples = newSamples;
-            if (m_swapChain != VK_NULL_HANDLE) {
+            if (m_vkSwapChain.Get() != VK_NULL_HANDLE) {
                 RecreateSwapChain();
             }
         }
     }
 }
 
-void QuarkVkRenderer::CreateMSAAColorResources() {
-    if (m_msaaSamples <= VK_SAMPLE_COUNT_1_BIT) {
-        return;
-    }
-
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width  = m_swapChainExtent.width;
-    imageInfo.extent.height = m_swapChainExtent.height;
-    imageInfo.extent.depth  = 1;
-    imageInfo.mipLevels     = 1;
-    imageInfo.arrayLayers   = 1;
-    imageInfo.format        = m_swapChainImageFormat;
-    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage         = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    imageInfo.samples       = m_msaaSamples;
-    imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-
-    m_msaaColorAllocation = VK_NULL_HANDLE;
-    if (!m_gpuAllocator.CreateImage(imageInfo,
-                                    VMA_MEMORY_USAGE_AUTO,
-                                    m_msaaColorImage,
-                                    m_msaaColorAllocation,
-                                    VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)) {
-        throw std::runtime_error("Failed to create MSAA color image.");
-    }
-
-    VmaAllocationInfo allocInfo{};
-    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), m_msaaColorAllocation, &allocInfo);
-    m_msaaColorMemory = allocInfo.deviceMemory;
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image                           = m_msaaColorImage;
-    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format                          = m_swapChainImageFormat;
-    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel   = 0;
-    viewInfo.subresourceRange.levelCount     = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount     = 1;
-
-    if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_msaaColorImageView) != VK_SUCCESS) {
-        if (m_msaaColorAllocation != VK_NULL_HANDLE) {
-            m_gpuAllocator.DestroyImage(m_msaaColorImage, m_msaaColorAllocation);
-            m_msaaColorAllocation = VK_NULL_HANDLE;
-        } else if (m_msaaColorImage != VK_NULL_HANDLE) {
-            vkDestroyImage(m_device, m_msaaColorImage, nullptr);
-        }
-        m_msaaColorMemory = VK_NULL_HANDLE;
-        m_msaaColorImage = VK_NULL_HANDLE;
-        throw std::runtime_error("Failed to create MSAA color image view.");
-    }
-}
-
-void QuarkVkRenderer::DestroyMSAAColorResources() {
-    if (m_msaaColorImageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(m_device, m_msaaColorImageView, nullptr);
-        m_msaaColorImageView = VK_NULL_HANDLE;
-    }
-    if (m_msaaColorImage != VK_NULL_HANDLE) {
-        if (m_msaaColorAllocation != VK_NULL_HANDLE) {
-            m_gpuAllocator.DestroyImage(m_msaaColorImage, m_msaaColorAllocation);
-        } else {
-            vkDestroyImage(m_device, m_msaaColorImage, nullptr);
-        }
-        m_msaaColorImage = VK_NULL_HANDLE;
-    }
-    if (m_msaaColorMemory != VK_NULL_HANDLE) {
-        m_msaaColorMemory = VK_NULL_HANDLE;
-    }
-    m_msaaColorAllocation = VK_NULL_HANDLE;
-}
-
-VkCommandBuffer QuarkVkRenderer::BeginSingleTimeCommands() {
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool        = m_commandPool;
-    allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer cmd = VK_NULL_HANDLE;
-    if (vkAllocateCommandBuffers(m_device, &allocInfo, &cmd) != VK_SUCCESS) {
-        return VK_NULL_HANDLE;
-    }
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
-    return cmd;
-}
-
-void QuarkVkRenderer::EndSingleTimeCommands(VkCommandBuffer cmd) {
-    if (cmd == VK_NULL_HANDLE) return;
-    vkEndCommandBuffer(cmd);
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers    = &cmd;
-    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(m_graphicsQueue);
-    vkFreeCommandBuffers(m_device, m_commandPool, 1, &cmd);
-}
-
-bool QuarkVkRenderer::TransitionImageLayout(VkImage image, VkFormat /*format*/,
-                                             VkImageLayout oldLayout, VkImageLayout newLayout) {
-    VkCommandBuffer cmd = BeginSingleTimeCommands();
-    if (cmd == VK_NULL_HANDLE) return false;
-
-    VkImageMemoryBarrier barrier{};
-    barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout                       = oldLayout;
-    barrier.newLayout                       = newLayout;
-    barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image                           = image;
-    barrier.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel   = 0;
-    barrier.subresourceRange.levelCount     = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount     = 1;
-
-    VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-        newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
-             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
-             newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        srcStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        dstStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
-             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        srcStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-             newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        dstStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
-             newLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
-        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        barrier.dstAccessMask = 0;
-        srcStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dstStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-             newLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = 0;
-        srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        dstStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    }
-
-    vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    EndSingleTimeCommands(cmd);
-    return true;
-}
-
-bool QuarkVkRenderer::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t w, uint32_t h) {
-    VkCommandBuffer cmd = BeginSingleTimeCommands();
-    if (cmd == VK_NULL_HANDLE) return false;
-
-    VkBufferImageCopy region{};
-    region.bufferOffset                    = 0;
-    region.bufferRowLength                 = 0;
-    region.bufferImageHeight               = 0;
-    region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel       = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount     = 1;
-    region.imageOffset                     = {0, 0, 0};
-    region.imageExtent                     = {w, h, 1};
-
-    vkCmdCopyBufferToImage(cmd, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-    EndSingleTimeCommands(cmd);
-    return true;
-}
-
-bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
-                                             uint32_t width, uint32_t height,
-                                             uint32_t& outId) {
-    if (!rgba || width == 0 || height == 0) {
-        TraceLog(LogLevel::Warn, "TEXTURE", "[Vulkan] Cannot create texture: invalid parameters (null data or zero size)");
-        return false;
-    }
-
-    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4u;
-    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Creating GPU texture: %ux%u (%llu bytes RGBA8)",
-        width, height, static_cast<unsigned long long>(imageSize)));
-
-    VkBuffer        stagingBuffer = VK_NULL_HANDLE;
-    VmaAllocation   stagingAllocation = VK_NULL_HANDLE;
-    VkDeviceMemory  stagingMemory = VK_NULL_HANDLE;
-    if (!CreateBuffer(imageSize,
-                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                      VMA_MEMORY_USAGE_AUTO,
-                      stagingBuffer,
-                      stagingAllocation,
-                      stagingMemory,
-                      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                      VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
-        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to allocate staging buffer for texture upload");
-        return false;
-    }
-
-    void* mapped = nullptr;
-    if (vmaMapMemory(m_gpuAllocator.GetAllocator(), stagingAllocation, &mapped) != VK_SUCCESS) {
-        m_gpuAllocator.DestroyBuffer(stagingBuffer, stagingAllocation);
-        return false;
-    }
-    std::memcpy(mapped, rgba, static_cast<size_t>(imageSize));
-    vmaUnmapMemory(m_gpuAllocator.GetAllocator(), stagingAllocation);
-
-    VkTextureData tex{};
-    tex.width  = width;
-    tex.height = height;
-
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width  = width;
-    imageInfo.extent.height = height;
-    imageInfo.extent.depth  = 1;
-    imageInfo.mipLevels     = 1;
-    imageInfo.arrayLayers   = 1;
-    imageInfo.format        = VK_FORMAT_R8G8B8A8_UNORM;
-    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-
-    tex.allocation = VK_NULL_HANDLE;
-    if (!m_gpuAllocator.CreateImage(imageInfo,
-                                    VMA_MEMORY_USAGE_AUTO,
-                                    tex.image,
-                                    tex.allocation,
-                                    VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)) {
-        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkImage with VMA");
-        m_gpuAllocator.DestroyBuffer(stagingBuffer, stagingAllocation);
-        return false;
-    }
-
-    VmaAllocationInfo imageAllocInfo{};
-    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), tex.allocation, &imageAllocInfo);
-    tex.memory = imageAllocInfo.deviceMemory;
-
-    if (!TransitionImageLayout(tex.image, imageInfo.format,
-                               VK_IMAGE_LAYOUT_UNDEFINED,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) ||
-        !CopyBufferToImage(stagingBuffer, tex.image, width, height) ||
-        !TransitionImageLayout(tex.image, imageInfo.format,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
-        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed image transitions or buffer copy for texture");
-        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
-        tex.image = VK_NULL_HANDLE;
-        tex.allocation = VK_NULL_HANDLE;
-        tex.memory = VK_NULL_HANDLE;
-        m_gpuAllocator.DestroyBuffer(stagingBuffer, stagingAllocation);
-        return false;
-    }
-
-    m_gpuAllocator.DestroyBuffer(stagingBuffer, stagingAllocation);
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image                           = tex.image;
-    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format                          = VK_FORMAT_R8G8B8A8_UNORM;
-    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel   = 0;
-    viewInfo.subresourceRange.levelCount     = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount     = 1;
-
-    if (vkCreateImageView(m_device, &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
-        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkImageView");
-        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
-        tex.image = VK_NULL_HANDLE;
-        tex.allocation = VK_NULL_HANDLE;
-        tex.memory = VK_NULL_HANDLE;
-        return false;
-    }
-
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter    = (gTextureFilterMode == TextureFilterMode::Nearest) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
-    samplerInfo.minFilter    = (gTextureFilterMode == TextureFilterMode::Nearest) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
-    samplerInfo.mipmapMode   = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.maxLod       = 1.0f;
-
-    if (vkCreateSampler(m_device, &samplerInfo, nullptr, &tex.sampler) != VK_SUCCESS) {
-        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkSampler");
-        vkDestroyImageView(m_device, tex.view, nullptr);
-        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
-        tex.image = VK_NULL_HANDLE;
-        tex.allocation = VK_NULL_HANDLE;
-        tex.memory = VK_NULL_HANDLE;
-        return false;
-    }
-
-    if (!AllocateTextureDescriptorSet(tex.descriptorSet)) {
-        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to allocate texture descriptor set");
-        vkDestroySampler(m_device, tex.sampler, nullptr);
-        vkDestroyImageView(m_device, tex.view, nullptr);
-        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
-        tex.image = VK_NULL_HANDLE;
-        tex.allocation = VK_NULL_HANDLE;
-        tex.memory = VK_NULL_HANDLE;
-        return false;
-    }
-
-    VkDescriptorImageInfo imageDescriptor{};
-    imageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageDescriptor.imageView   = tex.view;
-    imageDescriptor.sampler     = tex.sampler;
-
-    VkWriteDescriptorSet write{};
-    write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet          = tex.descriptorSet;
-    write.dstBinding      = 0;
-    write.descriptorCount = 1;
-    write.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo      = &imageDescriptor;
-    vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
-
-    outId = m_nextTextureId++;
-    m_textures[outId] = tex;
-
-    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Texture uploaded to GPU (ID: %u, %ux%u, Mem: %llu bytes, DS: %p)",
-        outId, width, height, static_cast<unsigned long long>(imageSize), (void*)tex.descriptorSet));
-    return true;
-}
-
-void QuarkVkRenderer::DestroyTexture(uint32_t textureId) {
-    auto it = m_textures.find(textureId);
-    if (it == m_textures.end()) return;
-
-    VkTextureData& tex = it->second;
-    TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[Vulkan] Texture destroyed (ID: %u, %ux%u)", textureId, tex.width, tex.height));
-
-    if (tex.sampler  != VK_NULL_HANDLE) vkDestroySampler   (m_device, tex.sampler,  nullptr);
-    if (tex.view     != VK_NULL_HANDLE) vkDestroyImageView (m_device, tex.view,     nullptr);
-    if (tex.image    != VK_NULL_HANDLE) {
-        if (tex.allocation != VK_NULL_HANDLE) {
-            m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
-        } else {
-            vkDestroyImage(m_device, tex.image, nullptr);
-        }
-        tex.image = VK_NULL_HANDLE;
-    }
-    tex.memory = VK_NULL_HANDLE;
-    tex.allocation = VK_NULL_HANDLE;
-    m_textures.erase(it);
-}
-
 IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height) {
     if (width <= 0 || height <= 0 ||
         m_device == VK_NULL_HANDLE ||
-        m_offscreenRenderPass == VK_NULL_HANDLE) {
+        m_vkRenderTarget.RenderPass() == VK_NULL_HANDLE) {
         return IRenderTexture{};
     }
 
@@ -3035,9 +1326,9 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), tex.allocation, &rtAllocInfo);
     tex.memory = rtAllocInfo.deviceMemory;
 
-    if (!TransitionImageLayout(tex.image, imageInfo.format,
-                               VK_IMAGE_LAYOUT_UNDEFINED,
-                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
+    if (!m_vkResources.TransitionImageLayout(tex.image, imageInfo.format,
+                                         VK_IMAGE_LAYOUT_UNDEFINED,
+                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
         m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
         tex.image = VK_NULL_HANDLE;
         tex.allocation = VK_NULL_HANDLE;
@@ -3103,46 +1394,19 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     write.pImageInfo      = &imageDescriptor;
     vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
 
-    const uint32_t textureId = m_nextTextureId++;
-    m_textures[textureId] = tex;
-
-    VkImage depthImage = VK_NULL_HANDLE;
-    VkDeviceMemory depthMemory = VK_NULL_HANDLE;
-    VkImageView depthView = VK_NULL_HANDLE;
-    VmaAllocation depthAllocation = VK_NULL_HANDLE;
-    if (!CreateDepthResources(tex.width, tex.height, depthImage, depthMemory, depthView, VK_SAMPLE_COUNT_1_BIT, &depthAllocation)) {
-        DestroyTexture(textureId);
-        return IRenderTexture{};
-    }
-
-    VkFramebuffer framebuffer = VK_NULL_HANDLE;
-    std::array<VkImageView, 2> attachments = { tex.view, depthView };
-
-    VkFramebufferCreateInfo fbInfo{};
-    fbInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    fbInfo.renderPass      = m_offscreenRenderPass;
-    fbInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    fbInfo.pAttachments    = attachments.data();
-    fbInfo.width           = tex.width;
-    fbInfo.height          = tex.height;
-    fbInfo.layers          = 1;
-    if (vkCreateFramebuffer(m_device, &fbInfo, nullptr, &framebuffer) != VK_SUCCESS) {
-        DestroyDepthResources(depthImage, depthMemory, depthView, depthAllocation);
-        DestroyTexture(textureId);
-        return IRenderTexture{};
-    }
+    const uint32_t textureId = m_vkResources.Import(tex);
 
     const uint32_t rtId = m_nextRenderTargetId++;
+    if (!m_vkRenderTarget.CreateTarget(rtId, tex.view, tex.width, tex.height)) {
+        m_vkResources.DestroyTexture(textureId);
+        return IRenderTexture{};
+    }
+
     VkRenderTargetData rt{};
     rt.textureId   = textureId;
     rt.width       = tex.width;
     rt.height      = tex.height;
-    rt.framebuffer = framebuffer;
     rt.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    rt.depthImage  = depthImage;
-    rt.depthMemory = depthMemory;
-    rt.depthAllocation = depthAllocation;
-    rt.depthView   = depthView;
     m_renderTargets[rtId] = rt;
 
     TraceLog(LogLevel::Info, "RENDER_TARGET", TextFormat("[Vulkan] Render target created: %ux%u (Target ID: %u, Color Tex ID: %u, Depth Buffer: yes)",
@@ -3158,35 +1422,13 @@ void QuarkVkRenderer::DestroyRenderTargetInternal(uint32_t renderTargetId) {
         renderTargetId, it->second.width, it->second.height));
 
     const uint32_t textureId = it->second.textureId;
-    if (it->second.framebuffer != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
-        vkDestroyFramebuffer(m_device, it->second.framebuffer, nullptr);
-    }
-    if (m_device != VK_NULL_HANDLE) {
-        DestroyDepthResources(it->second.depthImage, it->second.depthMemory, it->second.depthView, it->second.depthAllocation);
-        it->second.depthAllocation = VK_NULL_HANDLE;
-    }
+    m_vkRenderTarget.DestroyTarget(renderTargetId);
     m_renderTargets.erase(it);
 
     if (m_activeRenderTargetId == renderTargetId) {
         m_activeRenderTargetId = 0;
     }
-    DestroyTexture(textureId);
-}
-
-VkShaderModule QuarkVkRenderer::CreateShaderModule(const std::vector<uint32_t>& spirv) {
-    VkShaderModuleCreateInfo createInfo{};
-    createInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = spirv.size() * sizeof(uint32_t);
-    createInfo.pCode    = spirv.data();
-
-    VkShaderModule shaderModule = VK_NULL_HANDLE;
-    if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        TraceLog(LogLevel::Error, "VULKAN", "[Vulkan] Failed to create Vulkan shader module.");
-        throw std::runtime_error("Failed to create Vulkan shader module.");
-    }
-    TraceLog(LogLevel::Trace, "SHADER", TextFormat("[Vulkan] Created VkShaderModule (%zu words / %zu bytes, Handle: %p)",
-        spirv.size(), createInfo.codeSize, (void*)shaderModule));
-    return shaderModule;
+    m_vkResources.DestroyTexture(textureId);
 }
 
 bool QuarkVkRenderer::ReadBinaryFile(const char* path, std::vector<char>& outData) const {
@@ -3371,11 +1613,11 @@ void QuarkVkRenderer::AppendQuadToBatch(
 
     if (!drawItems.empty() &&
         drawItems.back().descriptorSet == ds &&
-        drawItems.back().shaderProgramId == m_currentShaderProgramId &&
+        drawItems.back().shaderProgramId == m_vkShaderCompiler.CurrentProgramId() &&
         drawItems.back().firstIndex + drawItems.back().indexCount == firstIndex) {
         drawItems.back().indexCount += 6;
     } else {
-        drawItems.push_back({ 0, m_currentShaderProgramId, ds, firstIndex, 6 });
+        drawItems.push_back({ 0, m_vkShaderCompiler.CurrentProgramId(), ds, firstIndex, 6 });
     }
 }
 
@@ -3412,9 +1654,9 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     VkDeviceSize offsets[] = { 0 };
     VkDescriptorSet whiteDescriptorSet = m_white3DDescriptorSet;
     VkDescriptorSet white2DDescriptorSet = VK_NULL_HANDLE;
-    const auto whiteTexIt = m_textures.find(m_whiteTextureId);
-    if (whiteTexIt != m_textures.end()) {
-        white2DDescriptorSet = whiteTexIt->second.descriptorSet;
+    const VkTextureData* whiteTex = m_vkResources.Get(m_whiteTextureId);
+    if (whiteTex != nullptr) {
+        white2DDescriptorSet = whiteTex->descriptorSet;
     }
     
     for (const VkFramePass& pass : m_framePasses) {
@@ -3441,8 +1683,8 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
 
         VkRenderPassBeginInfo rtPassInfo{};
         rtPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rtPassInfo.renderPass        = m_offscreenRenderPass;
-        rtPassInfo.framebuffer       = itRt->second.framebuffer;
+        rtPassInfo.renderPass        = m_vkRenderTarget.RenderPass();
+        rtPassInfo.framebuffer       = m_vkRenderTarget.Framebuffer(pass.renderTargetId);
         rtPassInfo.renderArea.extent = { pass.width, pass.height };
         rtPassInfo.clearValueCount   = static_cast<uint32_t>(clearValues.size());
         rtPassInfo.pClearValues      = clearValues.data();
@@ -3465,60 +1707,60 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
             whiteDescriptorSet != VK_NULL_HANDLE) {
             vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                    m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
 
             if (pass.drawItemCount3D > 0) {
                 uint32_t cursor = pass.triFirstVertex;
                 for (uint32_t i = 0; i < pass.drawItemCount3D; ++i) {
                     const Vk3DDrawItem& item = m_frame3DDrawItems[pass.first3DDrawItem + i];
-                    if (item.firstVertex > cursor && m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
-                        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DTri);
+                    if (item.firstVertex > cursor && m_vkPipeline.GetOffscreen3DTri() != VK_NULL_HANDLE) {
+                        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DTri());
                         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                                m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
                         vkCmdDraw(cmd, item.firstVertex - cursor, 1, cursor, 0);
                     }
                     const VkDescriptorSet descriptorSet = item.descriptorSet != VK_NULL_HANDLE
                         ? item.descriptorSet : whiteDescriptorSet;
-                    VkPipeline itemPipeline = m_offscreenPipeline3DTri;
+                    VkPipeline itemPipeline = m_vkPipeline.GetOffscreen3DTri();
                     if (item.shaderProgramId != 0) {
-                        const auto shaderIt = m_shaderPrograms.find(item.shaderProgramId);
-                        if (shaderIt != m_shaderPrograms.end() && shaderIt->second.pipeline3DOffscreen != VK_NULL_HANDLE) {
-                            itemPipeline = shaderIt->second.pipeline3DOffscreen;
+                        const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(item.shaderProgramId);
+                        if (shaderProgram != nullptr && shaderProgram->pipeline3DOffscreen != VK_NULL_HANDLE) {
+                            itemPipeline = shaderProgram->pipeline3DOffscreen;
                         }
                     }
                     if (itemPipeline == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE) continue;
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, itemPipeline);
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            m_pipelineLayout3D, 0, 1, &descriptorSet, 0, nullptr);
+                                            m_vkPipeline.GetLayout3D(), 0, 1, &descriptorSet, 0, nullptr);
                     vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
                     cursor = std::max(cursor, item.firstVertex + item.vertexCount);
                 }
                 const uint32_t triEnd = pass.triFirstVertex + pass.triVertexCount;
-                if (cursor < triEnd && m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DTri);
+                if (cursor < triEnd && m_vkPipeline.GetOffscreen3DTri() != VK_NULL_HANDLE) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DTri());
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                            m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
                     vkCmdDraw(cmd, triEnd - cursor, 1, cursor, 0);
                 }
-            } else if (pass.triVertexCount > 0 && m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DTri);
+            } else if (pass.triVertexCount > 0 && m_vkPipeline.GetOffscreen3DTri() != VK_NULL_HANDLE) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DTri());
                 vkCmdDraw(cmd, pass.triVertexCount, 1, pass.triFirstVertex, 0);
             }
-            if (pass.lineVertexCount > 0 && m_offscreenPipeline3DLines != VK_NULL_HANDLE) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline3DLines);
+            if (pass.lineVertexCount > 0 && m_vkPipeline.GetOffscreen3DLines() != VK_NULL_HANDLE) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DLines());
                 vkCmdDraw(cmd, pass.lineVertexCount, 1,
                           static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + pass.lineFirstVertex, 0);
             }
         }
 
-        if (m_offscreenPipeline2D != VK_NULL_HANDLE) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_offscreenPipeline2D);
+        if (m_vkPipeline.GetOffscreen2D() != VK_NULL_HANDLE) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen2D());
         }
         const VkPushConstants2D rtPushConstants{
             static_cast<float>(pass.width),
             static_cast<float>(pass.height)
         };
-        vkCmdPushConstants(cmd, m_pipelineLayout,
+        vkCmdPushConstants(cmd, m_vkPipeline.GetLayout2D(),
                    VK_SHADER_STAGE_VERTEX_BIT,
                    0, sizeof(rtPushConstants), &rtPushConstants);
         vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, offsets);
@@ -3528,7 +1770,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
             const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
             if (item.descriptorSet == VK_NULL_HANDLE) continue;
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_pipelineLayout, 0, 1, &item.descriptorSet, 0, nullptr);
+                                    m_vkPipeline.GetLayout2D(), 0, 1, &item.descriptorSet, 0, nullptr);
             vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
         }
 
@@ -3554,7 +1796,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass        = m_renderPass;
+    renderPassInfo.renderPass        = m_vkRenderPass.Get();
     renderPassInfo.framebuffer       = m_swapChainFramebuffers[imageIndex];
     renderPassInfo.renderArea.extent = m_swapChainExtent;
     renderPassInfo.clearValueCount   = static_cast<uint32_t>(clearValues.size());
@@ -3577,15 +1819,15 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     if (mainPass && (mainPass->triVertexCount + mainPass->lineVertexCount) > 0 &&
         whiteDescriptorSet != VK_NULL_HANDLE) {
         vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-        VkPipeline custom3DPipeline = m_pipeline3DTri;
-        VkPipelineLayout custom3DLayout = m_pipelineLayout3D;
+        VkPipeline custom3DPipeline = m_vkPipeline.Get3DTri();
+        VkPipelineLayout custom3DLayout = m_vkPipeline.GetLayout3D();
         VkDescriptorSet custom3DSet = whiteDescriptorSet;
         if (m_frame3DShaderProgramId != 0) {
-            const auto shaderIt = m_shaderPrograms.find(m_frame3DShaderProgramId);
-            if (shaderIt != m_shaderPrograms.end() && shaderIt->second.pipeline3D != VK_NULL_HANDLE) {
-                custom3DPipeline = shaderIt->second.pipeline3D;
-                custom3DLayout = m_pipelineLayout3D;
-                custom3DSet = shaderIt->second.descriptorSet3D;
+            const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(m_frame3DShaderProgramId);
+            if (shaderProgram != nullptr && shaderProgram->pipeline3D != VK_NULL_HANDLE) {
+                custom3DPipeline = shaderProgram->pipeline3D;
+                custom3DLayout = m_vkPipeline.GetLayout3D();
+                custom3DSet = shaderProgram->descriptorSet3D;
             }
         }
 
@@ -3661,19 +1903,19 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
             uint32_t cursor = mainPass->triFirstVertex;
             for (uint32_t i = 0; i < mainPass->drawItemCount3D; ++i) {
                 const Vk3DDrawItem& item = m_frame3DDrawItems[mainPass->first3DDrawItem + i];
-                if (item.firstVertex > cursor && m_pipeline3DTri != VK_NULL_HANDLE) {
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DTri);
+                if (item.firstVertex > cursor && m_vkPipeline.Get3DTri() != VK_NULL_HANDLE) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get3DTri());
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                            m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
                     vkCmdDraw(cmd, item.firstVertex - cursor, 1, cursor, 0);
                 }
-                VkPipeline pipeline = m_pipeline3DTri;
-                VkPipelineLayout layout = m_pipelineLayout3D;
+                VkPipeline pipeline = m_vkPipeline.Get3DTri();
+                VkPipelineLayout layout = m_vkPipeline.GetLayout3D();
                 VkDescriptorSet descriptorSet = whiteDescriptorSet;
-                const auto shaderIt = m_shaderPrograms.find(item.shaderProgramId);
-                if (shaderIt != m_shaderPrograms.end() && shaderIt->second.pipeline3D != VK_NULL_HANDLE) {
-                    pipeline = shaderIt->second.pipeline3D;
-                    layout = m_pipelineLayout3D;
+                const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(item.shaderProgramId);
+                if (shaderProgram != nullptr && shaderProgram->pipeline3D != VK_NULL_HANDLE) {
+                    pipeline = shaderProgram->pipeline3D;
+                    layout = m_vkPipeline.GetLayout3D();
                     descriptorSet = item.descriptorSet;
                 } else if (item.descriptorSet != VK_NULL_HANDLE) {
                     descriptorSet = item.descriptorSet;
@@ -3686,10 +1928,10 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                 cursor = std::max(cursor, item.firstVertex + item.vertexCount);
             }
             const uint32_t triEnd = mainPass->triFirstVertex + mainPass->triVertexCount;
-            if (cursor < triEnd && m_pipeline3DTri != VK_NULL_HANDLE) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DTri);
+            if (cursor < triEnd && m_vkPipeline.Get3DTri() != VK_NULL_HANDLE) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get3DTri());
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                        m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
                 vkCmdDraw(cmd, triEnd - cursor, 1, cursor, 0);
             }
         } else {
@@ -3699,10 +1941,10 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
             }
         }
 
-        if (mainPass->lineVertexCount > 0 && m_pipeline3DLines != VK_NULL_HANDLE) {
+        if (mainPass->lineVertexCount > 0 && m_vkPipeline.Get3DLines() != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_pipelineLayout3D, 0, 1, &whiteDescriptorSet, 0, nullptr);
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline3DLines);
+                                    m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get3DLines());
             vkCmdDraw(cmd, mainPass->lineVertexCount, 1,
                       static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + mainPass->lineFirstVertex, 0);
         }
@@ -3710,21 +1952,21 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
 
     if (white2DDescriptorSet != VK_NULL_HANDLE) {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_pipelineLayout, 0, 1, &white2DDescriptorSet, 0, nullptr);
+                                m_vkPipeline.GetLayout2D(), 0, 1, &white2DDescriptorSet, 0, nullptr);
     }
 
-    VkPipeline pipeline2D = m_pipeline2D;
-    if (m_currentShaderProgramId != 0) {
-        const auto shaderIt = m_shaderPrograms.find(m_currentShaderProgramId);
-        if (shaderIt != m_shaderPrograms.end() && shaderIt->second.pipeline != VK_NULL_HANDLE) {
-            pipeline2D = shaderIt->second.pipeline;
+    VkPipeline pipeline2D = m_vkPipeline.Get2D();
+    if (m_vkShaderCompiler.CurrentProgramId() != 0) {
+        const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(m_vkShaderCompiler.CurrentProgramId());
+        if (shaderProgram != nullptr && shaderProgram->pipeline != VK_NULL_HANDLE) {
+            pipeline2D = shaderProgram->pipeline;
         }
     }
     const VkPushConstants2D screenPushConstants{
         static_cast<float>(m_swapChainExtent.width),
         static_cast<float>(m_swapChainExtent.height)
     };
-    vkCmdPushConstants(cmd, m_pipelineLayout,
+    vkCmdPushConstants(cmd, m_vkPipeline.GetLayout2D(),
                        VK_SHADER_STAGE_VERTEX_BIT,
                        0, sizeof(screenPushConstants), &screenPushConstants);
     vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, offsets);
@@ -3739,9 +1981,9 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
 
             VkPipeline itemPipeline = pipeline2D;
             if (item.shaderProgramId != 0) {
-                const auto shaderIt = m_shaderPrograms.find(item.shaderProgramId);
-                if (shaderIt != m_shaderPrograms.end() && shaderIt->second.pipeline != VK_NULL_HANDLE) {
-                    itemPipeline = shaderIt->second.pipeline;
+                const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(item.shaderProgramId);
+                if (shaderProgram != nullptr && shaderProgram->pipeline != VK_NULL_HANDLE) {
+                    itemPipeline = shaderProgram->pipeline;
                 }
             }
             if (itemPipeline != boundPipeline) {
@@ -3749,7 +1991,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                 boundPipeline = itemPipeline;
             }
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_pipelineLayout, 0, 1, &item.descriptorSet, 0, nullptr);
+                                    m_vkPipeline.GetLayout2D(), 0, 1, &item.descriptorSet, 0, nullptr);
             vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
         }
     }
@@ -3766,8 +2008,8 @@ void QuarkVkRenderer::FlushBatch() {}
 
 void QuarkVkRenderer::PushQuad(float x, float y, float w, float h, Color color,
                                 float u0, float v0, float u1, float v1) {
-    if (m_textures.find(m_whiteTextureId) == m_textures.end()) return;
-    VkDescriptorSet ds = m_textures.at(m_whiteTextureId).descriptorSet;
+    VkDescriptorSet ds = m_vkResources.DescriptorSet(m_whiteTextureId);
+    if (ds == VK_NULL_HANDLE) return;
 
     const float r = NormalizeColorComponent(color.r);
     const float g = NormalizeColorComponent(color.g);

@@ -21,13 +21,13 @@ static float NormalizeColorComponent(std::uint8_t value) {
 }
 
 void QuarkVkRenderer::DrawTexture(const ITexture& texture, float x, float y, Color tint) {
-    auto it = m_textures.find(texture.id);
-    if (it == m_textures.end()) {
+    const VkTextureData* tex = m_vkResources.Get(texture.id);
+    if (tex == nullptr) {
         return;
     }
 
-    const float width  = texture.width  > 0 ? static_cast<float>(texture.width)  : static_cast<float>(it->second.width);
-    const float height = texture.height > 0 ? static_cast<float>(texture.height) : static_cast<float>(it->second.height);
+    const float width  = texture.width  > 0 ? static_cast<float>(texture.width)  : static_cast<float>(tex->width);
+    const float height = texture.height > 0 ? static_cast<float>(texture.height) : static_cast<float>(tex->height);
     DrawTexturePro(texture, Rectangle{ 0.f, 0.f, width, height },
                    Rectangle{ x, y, width, height },
                    Vec2{ 0.f, 0.f }, 0.f, tint);
@@ -38,13 +38,13 @@ void QuarkVkRenderer::DrawTextureV(const ITexture& texture, Vec2 position, Color
 }
 
 void QuarkVkRenderer::DrawTextureEx(const ITexture& texture, Vec2 position, float rotation, float scale, Color tint) {
-    auto it = m_textures.find(texture.id);
-    if (it == m_textures.end()) {
+    const VkTextureData* tex = m_vkResources.Get(texture.id);
+    if (tex == nullptr) {
         return;
     }
 
-    const float width  = texture.width  > 0 ? static_cast<float>(texture.width)  : static_cast<float>(it->second.width);
-    const float height = texture.height > 0 ? static_cast<float>(texture.height) : static_cast<float>(it->second.height);
+    const float width  = texture.width  > 0 ? static_cast<float>(texture.width)  : static_cast<float>(tex->width);
+    const float height = texture.height > 0 ? static_cast<float>(texture.height) : static_cast<float>(tex->height);
     DrawTexturePro(texture,
                    Rectangle{ 0.f, 0.f, width, height },
                    Rectangle{ position.x, position.y, width * scale, height * scale },
@@ -54,16 +54,16 @@ void QuarkVkRenderer::DrawTextureEx(const ITexture& texture, Vec2 position, floa
 }
 
 void QuarkVkRenderer::DrawTextureRec(const ITexture& texture, Rectangle source, Vec2 position, Color tint) {
-    auto it = m_textures.find(texture.id);
-    if (it == m_textures.end()) {
+    const VkTextureData* tex = m_vkResources.Get(texture.id);
+    if (tex == nullptr) {
         return;
     }
 
     if (source.width == 0.f || source.height == 0.f) {
         source.x = 0.f;
         source.y = 0.f;
-        source.width = static_cast<float>(texture.width > 0 ? texture.width : it->second.width);
-        source.height = static_cast<float>(texture.height > 0 ? texture.height : it->second.height);
+        source.width = static_cast<float>(texture.width > 0 ? texture.width : tex->width);
+        source.height = static_cast<float>(texture.height > 0 ? texture.height : tex->height);
     }
 
     DrawTexturePro(texture,
@@ -75,13 +75,13 @@ void QuarkVkRenderer::DrawTextureRec(const ITexture& texture, Rectangle source, 
 }
 
 void QuarkVkRenderer::DrawTexturePro(ITexture texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint) {
-    auto it = m_textures.find(texture.id);
-    if (it == m_textures.end()) {
+    const VkTextureData* tex = m_vkResources.Get(texture.id);
+    if (tex == nullptr) {
         return;
     }
 
-    const float texW = texture.width  > 0 ? static_cast<float>(texture.width)  : static_cast<float>(it->second.width);
-    const float texH = texture.height > 0 ? static_cast<float>(texture.height) : static_cast<float>(it->second.height);
+    const float texW = texture.width  > 0 ? static_cast<float>(texture.width)  : static_cast<float>(tex->width);
+    const float texH = texture.height > 0 ? static_cast<float>(texture.height) : static_cast<float>(tex->height);
     if (texW <= 0.f || texH <= 0.f) {
         return;
     }
@@ -90,7 +90,7 @@ void QuarkVkRenderer::DrawTexturePro(ITexture texture, Rectangle source, Rectang
     float v0 = source.y / texH;
     const float u1 = (source.x + source.width) / texW;
     float v1 = (source.y + source.height) / texH;
-    if (it->second.isRenderTarget) {
+    if (tex->isRenderTarget) {
         std::swap(v0, v1);
     }
 
@@ -119,7 +119,7 @@ void QuarkVkRenderer::DrawTexturePro(ITexture texture, Rectangle source, Rectang
         corner.y += dest.y;
     }
 
-    const VkDescriptorSet ds = it->second.descriptorSet;
+    const VkDescriptorSet ds = tex->descriptorSet;
     const float r = NormalizeColorComponent(tint.r);
     const float g = NormalizeColorComponent(tint.g);
     const float b = NormalizeColorComponent(tint.b);
@@ -135,13 +135,13 @@ void QuarkVkRenderer::DrawTexturePro(ITexture texture, Rectangle source, Rectang
 }
 
 void QuarkVkRenderer::DrawTextureTiled(ITexture texture, float scale, Vec2 offset, Color tint) {
-    auto it = m_textures.find(texture.id);
-    if (it == m_textures.end() || scale <= 0.f) {
+    const VkTextureData* tex = m_vkResources.Get(texture.id);
+    if (tex == nullptr || scale <= 0.f) {
         return;
     }
 
-    const float texW = texture.width  > 0 ? static_cast<float>(texture.width)  : static_cast<float>(it->second.width);
-    const float texH = texture.height > 0 ? static_cast<float>(texture.height) : static_cast<float>(it->second.height);
+    const float texW = texture.width  > 0 ? static_cast<float>(texture.width)  : static_cast<float>(tex->width);
+    const float texH = texture.height > 0 ? static_cast<float>(texture.height) : static_cast<float>(tex->height);
     if (texW <= 0.f || texH <= 0.f) {
         return;
     }
@@ -205,11 +205,10 @@ ITexture QuarkVkRenderer::LoadTexture(const char* filePath) {
         return ITexture{};
     }
 
-    uint32_t textureId = 0;
-    if (!CreateTextureFromRGBA(img.pixels.data(),
-                               static_cast<uint32_t>(img.width),
-                               static_cast<uint32_t>(img.height),
-                               textureId)) {
+    const uint32_t textureId = m_vkResources.CreateTextureFromRGBA(img.pixels.data(),
+                                                              static_cast<uint32_t>(img.width),
+                                                              static_cast<uint32_t>(img.height));
+    if (textureId == 0) {
         TraceLog(LogLevel::Error, "TEXTURE", TextFormat("[Vulkan] Failed to upload texture to GPU: %s", filePath ? filePath : "<null>"));
         return ITexture{};
     }
@@ -230,15 +229,15 @@ ITexture QuarkVkRenderer::GetRenderTextureTexture(IRenderTexture target) {
         return ITexture{};
     }
 
-    auto itTex = m_textures.find(itRt->second.textureId);
-    if (itTex == m_textures.end()) {
+    const VkTextureData* tex = m_vkResources.Get(itRt->second.textureId);
+    if (tex == nullptr) {
         return ITexture{};
     }
 
     return ITexture{
         itRt->second.textureId,
-        static_cast<int>(itTex->second.width),
-        static_cast<int>(itTex->second.height),
+        static_cast<int>(tex->width),
+        static_cast<int>(tex->height),
         true
     };
 }
@@ -265,12 +264,12 @@ void QuarkVkRenderer::UnloadTexture(ITexture& texture) {
     }
 
     TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[Vulkan] Texture unloaded (ID: %u, %dx%d)", texture.id, texture.width, texture.height));
-    DestroyTexture(texture.id);
+    m_vkResources.DestroyTexture(texture.id);
     texture = ITexture{};
 }
 
 bool QuarkVkRenderer::isTextureValid(ITexture& texture) {
-    return texture.id != 0 && texture.valid && m_textures.find(texture.id) != m_textures.end();
+    return texture.id != 0 && texture.valid && m_vkResources.Contains(texture.id);
 }
 
 IRenderTexture QuarkVkRenderer::LoadRenderTexture(int width, int height) {
@@ -314,11 +313,10 @@ ITexture QuarkVkRenderer::GenCheckerTexture(int width, int height, int cellSize,
         }
     }
 
-    uint32_t textureId = 0;
-    if (!CreateTextureFromRGBA(pixels.data(),
-                               static_cast<uint32_t>(width),
-                               static_cast<uint32_t>(height),
-                               textureId)) {
+    const uint32_t textureId = m_vkResources.CreateTextureFromRGBA(pixels.data(),
+                                                              static_cast<uint32_t>(width),
+                                                              static_cast<uint32_t>(height));
+    if (textureId == 0) {
         return ITexture{};
     }
 

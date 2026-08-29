@@ -431,6 +431,29 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
         )
     elseif(BACKEND_NAME STREQUAL "VULKAN")
         target_sources(${TARGET_NAME} PRIVATE
+            src/Renderer/QuarkVulkan/QuarkVkCommon.hpp
+            src/Renderer/QuarkVulkan/QuarkVkDescriptorSetManager.cpp
+            src/Renderer/QuarkVulkan/QuarkVkDescriptorSetManager.hpp
+            src/Renderer/QuarkVulkan/QuarkVkDevice.hpp
+            src/Renderer/QuarkVulkan/QuarkVkDevice.cpp
+            src/Renderer/QuarkVulkan/QuarkVkPipeline.hpp
+            src/Renderer/QuarkVulkan/QuarkVkPipeline.cpp
+            src/Renderer/QuarkVulkan/QuarkVkRenderTarget.hpp
+            src/Renderer/QuarkVulkan/QuarkVkRenderTarget.cpp
+            src/Renderer/QuarkVulkan/QuarkVkSwapChain.hpp
+            src/Renderer/QuarkVulkan/QuarkVkSwapChain.cpp
+            src/Renderer/QuarkVulkan/QuarkVkResources.hpp
+            src/Renderer/QuarkVulkan/QuarkVkResources.cpp
+            src/Renderer/QuarkVulkan/QuarkVkCommandContext.hpp
+            src/Renderer/QuarkVulkan/QuarkVkCommandContext.cpp
+            src/Renderer/QuarkVulkan/QuarkVkShaderCompiler.hpp
+            src/Renderer/QuarkVulkan/QuarkVkShaderCompiler.cpp
+            src/Renderer/QuarkVulkan/QuarkVkRenderPass.hpp
+            src/Renderer/QuarkVulkan/QuarkVkRenderPass.cpp
+            src/Renderer/QuarkVulkan/QuarkVkFrameManager.hpp
+            src/Renderer/QuarkVulkan/QuarkVkFrameManager.cpp
+            src/Renderer/QuarkVulkan/QuarkVkFramebufferManager.hpp
+            src/Renderer/QuarkVulkan/QuarkVkFramebufferManager.cpp
             src/Renderer/QuarkVulkan/QuarkVkRenderer.cpp
             src/Renderer/QuarkVulkan/QuarkVkDraw2D.cpp
             src/Renderer/QuarkVulkan/QuarkVkDraw3D.cpp
