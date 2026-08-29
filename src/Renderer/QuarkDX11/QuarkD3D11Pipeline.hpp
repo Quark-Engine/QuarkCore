@@ -9,10 +9,26 @@
 
 namespace qc {
 
+struct D3D11LightConstantData {
+    float ambientColor[4];
+    float viewPosition[4];
+    float lightPositions[4][4];
+    float lightColors[4][4];
+    float lightParams[4][4]; // x = attenuation, y = enabled, z = type, w = padding
+
+    void SetAmbient(const float values[3]) {
+        ambientColor[0] = values[0];
+        ambientColor[1] = values[1];
+        ambientColor[2] = values[2];
+        ambientColor[3] = 1.0f;
+    }
+};
+
 class D3D11Pipeline {
 public:
     void Initialize(ID3D11Device *device, D3D11ShaderCompiler &compiler, D3D11Resources &resources);
     void Shutdown();
+    void UpdateLights(ID3D11DeviceContext *context, const D3D11LightConstantData &lights);
     void Bind3D(ID3D11DeviceContext *context) const;
     void BindTexture3D(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource) const;
     void BindBatch(ID3D11DeviceContext *context, ID3D11Buffer *vertexBuffer,
@@ -51,6 +67,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D11DepthStencilState> m_depthStencilState;
     Microsoft::WRL::ComPtr<ID3D11DepthStencilState> m_depthStencilDisabledState;
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_rasterizerStateCull;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> m_lightConstantBuffer;
     bool m_backfaceCullingEnabled = false;
     TextureFilterMode m_textureFilterMode = TextureFilterMode::Linear;
 };

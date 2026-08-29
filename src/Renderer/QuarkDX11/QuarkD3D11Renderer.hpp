@@ -194,6 +194,7 @@ public:
     void SetTargetFPS(int fps) override { m_targetFps = fps; }
     void SetMSAASamples(int samples);
     void SetTextureFilterMode(TextureFilterMode mode);
+    void Set3DLightEnabled(int index, bool enabled) override;
     bool SetVSync(bool enabled) override {
         m_vsync = enabled;
         m_vsyncExplicitlySet = true;
@@ -213,6 +214,15 @@ private:
         float offsetY = 0.0f;
         int width = 0;
         int height = 0;
+    };
+
+    struct Light3D {
+        Vec3 position{};
+        Vec3 target{};
+        Vec3 color{1.0f, 1.0f, 1.0f};
+        float attenuation = 0.08f;
+        int type = 1;
+        bool enabled = true;
     };
 
     struct FontData {
@@ -269,7 +279,8 @@ private:
     Vec2 MeasureTextWithFontData(const FontData &fontData, const char *text,
                                  float fontSize, float spacing) const;
     uint32_t EnsureDefaultFont();
-    void DrawTris3D(const Vec3 *positions, size_t vertexCount, const Mat4 &mvp, Color color);
+    void DrawTris3D(const Vec3 *positions, const Vec3 *normals, size_t vertexCount,
+                    const Mat4 &mvp, Color color);
     void DrawLines3D(const Vec3 *positions, size_t vertexCount, const Mat4 &mvp, Color color);
     Mat4 CurrentMVP() const;
 
@@ -304,6 +315,13 @@ private:
     Mat4 m_currentMatrix{};
     Mat4 m_modelviewCapture{};
     std::vector<Mat4> m_matrixStack;
+    Vec3 m_viewPos{};
+    std::array<Light3D, 4> m_lights{{
+        Light3D{Vec3{-3.0f, 4.0f, 3.0f}, Vec3{0, 0, 0}, Vec3{1.0f, 1.0f, 0.0f}, 0.08f, 1, false},
+        Light3D{Vec3{ 3.0f, 3.0f, 3.0f}, Vec3{0, 0, 0}, Vec3{1.0f, 0.0f, 0.0f}, 0.08f, 1, false},
+        Light3D{Vec3{-3.0f, 3.0f, -3.0f}, Vec3{0, 0, 0}, Vec3{0.0f, 1.0f, 0.0f}, 0.08f, 1, false},
+        Light3D{Vec3{ 3.0f, 3.0f, -3.0f}, Vec3{0, 0, 0}, Vec3{0.0f, 0.0f, 1.0f}, 0.08f, 1, false}
+    }};
 };
 
 } // namespace qc

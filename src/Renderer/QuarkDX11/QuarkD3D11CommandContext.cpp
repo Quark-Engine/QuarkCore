@@ -167,7 +167,7 @@ void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
     }
 
     m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), vertices,
-                                     static_cast<size_t>(vertexCount) * sizeof(float) * 8);
+                                     static_cast<size_t>(vertexCount) * sizeof(float) * 16);
 
     m_pipeline->Bind3D(m_context);
     m_context->IASetPrimitiveTopology(topology);
@@ -189,7 +189,7 @@ void D3D11CommandContext::Draw3DTextured(const float *vertices, UINT vertexCount
     }
 
     m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), vertices,
-                                     static_cast<size_t>(vertexCount) * sizeof(float) * 10);
+                                     static_cast<size_t>(vertexCount) * sizeof(float) * 18);
     m_pipeline->BindTexture3D(m_context, shaderResource);
     m_context->Draw(vertexCount, 0);
 }

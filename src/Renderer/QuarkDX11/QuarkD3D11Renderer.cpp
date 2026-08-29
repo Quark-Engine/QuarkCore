@@ -281,6 +281,18 @@ void QuarkD3D11Renderer::SetTextureFilterMode(TextureFilterMode mode)
     m_pipeline.SetTextureFilterMode(mode);
 }
 
+void QuarkD3D11Renderer::Set3DLightEnabled(int index, bool enabled)
+{
+    if (index < 0 || static_cast<std::size_t>(index) >= m_lights.size())
+    {
+        return;
+    }
+
+    m_lights[static_cast<std::size_t>(index)].enabled = enabled;
+    TraceLog(LogLevel::Trace, "D3D11",
+             TextFormat("3D light %d %s.", index, enabled ? "enabled" : "disabled"));
+}
+
 void QuarkD3D11Renderer::RefreshViewport()
 {
     if (m_window)
@@ -309,6 +321,33 @@ void QuarkD3D11Renderer::BeginDrawing()
     m_lastFrame = now;
     m_drawing = true;
     m_commands.BeginDrawing();
+
+    D3D11LightConstantData lightData{};
+    const float ambient[3] = {0.1f, 0.1f, 0.1f};
+    lightData.SetAmbient(ambient);
+    lightData.viewPosition[0] = m_viewPos.x;
+    lightData.viewPosition[1] = m_viewPos.y;
+    lightData.viewPosition[2] = m_viewPos.z;
+    lightData.viewPosition[3] = 1.0f;
+
+    for (std::size_t i = 0; i < m_lights.size(); ++i)
+    {
+        const Light3D &light = m_lights[i];
+        lightData.lightPositions[i][0] = light.position.x;
+        lightData.lightPositions[i][1] = light.position.y;
+        lightData.lightPositions[i][2] = light.position.z;
+        lightData.lightPositions[i][3] = 1.0f;
+        lightData.lightColors[i][0] = light.color.x;
+        lightData.lightColors[i][1] = light.color.y;
+        lightData.lightColors[i][2] = light.color.z;
+        lightData.lightColors[i][3] = 1.0f;
+        lightData.lightParams[i][0] = light.attenuation;
+        lightData.lightParams[i][1] = light.enabled ? 1.0f : 0.0f;
+        lightData.lightParams[i][2] = static_cast<float>(light.type);
+        lightData.lightParams[i][3] = 0.0f;
+    }
+
+    m_pipeline.UpdateLights(m_device.Context(), lightData);
 }
 
 void QuarkD3D11Renderer::EndDrawing()
@@ -529,6 +568,7 @@ void QuarkD3D11Renderer::DrawPoly(Vec2 center,
 void QuarkD3D11Renderer::BeginMode3D(const Camera3D &camera)
 {
     m_viewMatrix = Mat4::lookAt(camera.position, camera.target, camera.up);
+    m_viewPos = camera.position;
 
     if (camera.projection == CAMERA_PERSPECTIVE)
     {
@@ -646,15 +686,29 @@ Mat4 QuarkD3D11Renderer::CurrentMVP() const
     return m_projectionMatrix * m_viewMatrix * m_currentMatrix;
 }
 
-void QuarkD3D11Renderer::DrawTris3D(const Vec3 *positions, size_t vertexCount,
-                                    const Mat4 &mvp, Color color)
+namespace {
+
+Vec3 SafeNormalized(const Vec3 &value, const Vec3 &fallback)
+{
+    const float length = value.length();
+    if (length <= 1e-6f)
+    {
+        return fallback;
+    }
+    return value.normalized();
+}
+
+} // namespace
+
+void QuarkD3D11Renderer::DrawTris3D(const Vec3 *positions, const Vec3 *normals,
+                                    size_t vertexCount, const Mat4 &mvp, Color color)
 {
     if (!positions || vertexCount == 0 || vertexCount % 3 != 0)
     {
         return;
     }
 
-    std::vector<float> vertices(vertexCount * 8);
+    std::vector<float> vertices(vertexCount * 16);
     const float r = color.r / 255.0f;
     const float g = color.g / 255.0f;
     const float b = color.b / 255.0f;
@@ -664,7 +718,7 @@ void QuarkD3D11Renderer::DrawTris3D(const Vec3 *positions, size_t vertexCount,
     {
         const Vec4 clip = mvp * Vec4{positions[index].x, positions[index].y,
                                      positions[index].z, 1.0f};
-        float *vertex = vertices.data() + index * 8;
+        float *vertex = vertices.data() + index * 16;
         vertex[0] = clip.x;
         vertex[1] = clip.y;
         vertex[2] = clip.z;
@@ -673,6 +727,25 @@ void QuarkD3D11Renderer::DrawTris3D(const Vec3 *positions, size_t vertexCount,
         vertex[5] = g;
         vertex[6] = b;
         vertex[7] = a;
+        vertex[8] = positions[index].x;
+        vertex[9] = positions[index].y;
+        vertex[10] = positions[index].z;
+        vertex[11] = 1.0f;
+
+        if (normals)
+        {
+            vertex[12] = normals[index].x;
+            vertex[13] = normals[index].y;
+            vertex[14] = normals[index].z;
+            vertex[15] = 1.0f;
+        }
+        else
+        {
+            vertex[12] = 0.0f;
+            vertex[13] = 0.0f;
+            vertex[14] = 0.0f;
+            vertex[15] = 0.0f;
+        }
     }
 
     m_commands.Draw3D(vertices.data(), static_cast<UINT>(vertexCount),
@@ -687,7 +760,7 @@ void QuarkD3D11Renderer::DrawLines3D(const Vec3 *positions, size_t vertexCount,
         return;
     }
 
-    std::vector<float> vertices(vertexCount * 8);
+    std::vector<float> vertices(vertexCount * 16);
     const float r = color.r / 255.0f;
     const float g = color.g / 255.0f;
     const float b = color.b / 255.0f;
@@ -697,7 +770,7 @@ void QuarkD3D11Renderer::DrawLines3D(const Vec3 *positions, size_t vertexCount,
     {
         const Vec4 clip = mvp * Vec4{positions[index].x, positions[index].y,
                                      positions[index].z, 1.0f};
-        float *vertex = vertices.data() + index * 8;
+        float *vertex = vertices.data() + index * 16;
         vertex[0] = clip.x;
         vertex[1] = clip.y;
         vertex[2] = clip.z;
@@ -706,6 +779,14 @@ void QuarkD3D11Renderer::DrawLines3D(const Vec3 *positions, size_t vertexCount,
         vertex[5] = g;
         vertex[6] = b;
         vertex[7] = a;
+        vertex[8] = 0.0f;
+        vertex[9] = 0.0f;
+        vertex[10] = 0.0f;
+        vertex[11] = 0.0f;
+        vertex[12] = 0.0f;
+        vertex[13] = 0.0f;
+        vertex[14] = 0.0f;
+        vertex[15] = 0.0f;
     }
 
     m_commands.Draw3D(vertices.data(), static_cast<UINT>(vertexCount),
@@ -735,7 +816,12 @@ void QuarkD3D11Renderer::DrawPlane(Vec3 center, Vec2 size, Color color)
         center + Vec3{-size.x * 0.5f, 0.0f,  size.y * 0.5f}
     };
 
-    DrawTris3D(positions, 6, CurrentMVP(), color);
+    const Vec3 normal{0.0f, 1.0f, 0.0f};
+    const Vec3 normals[6] = {
+        normal, normal, normal, normal, normal, normal
+    };
+
+    DrawTris3D(positions, normals, 6, CurrentMVP(), color);
 }
 
 void QuarkD3D11Renderer::DrawCube(Vec3 position, float width, float height, float length,
@@ -776,7 +862,34 @@ void QuarkD3D11Renderer::DrawCube(Vec3 position, float width, float height, floa
         v[4], v[3], v[7]
     };
 
-    DrawTris3D(positions, 36, CurrentMVP(), color);
+    const Vec3 nZ{0.0f, 0.0f, -1.0f};
+    const Vec3 pZ{0.0f, 0.0f, 1.0f};
+    const Vec3 nX{-1.0f, 0.0f, 0.0f};
+    const Vec3 pX{1.0f, 0.0f, 0.0f};
+    const Vec3 pY{0.0f, 1.0f, 0.0f};
+    const Vec3 nY{0.0f, -1.0f, 0.0f};
+
+    const Vec3 normals[36] = {
+        nZ, nZ, nZ,
+        nZ, nZ, nZ,
+
+        pZ, pZ, pZ,
+        pZ, pZ, pZ,
+
+        nX, nX, nX,
+        nX, nX, nX,
+
+        pX, pX, pX,
+        pX, pX, pX,
+
+        pY, pY, pY,
+        pY, pY, pY,
+
+        nY, nY, nY,
+        nY, nY, nY
+    };
+
+    DrawTris3D(positions, normals, 36, CurrentMVP(), color);
 }
 
 void QuarkD3D11Renderer::DrawCubeV(Vec3 position, Vec3 size, Color color)
@@ -841,7 +954,9 @@ void QuarkD3D11Renderer::DrawSphereEx(Vec3 centerPos, float radius, int rings, i
     }
 
     std::vector<Vec3> positions;
+    std::vector<Vec3> normals;
     positions.reserve(static_cast<size_t>(rings) * slices * 6);
+    normals.reserve(static_cast<size_t>(rings) * slices * 6);
 
     for (int ri = 0; ri < rings; ++ri)
     {
@@ -879,10 +994,17 @@ void QuarkD3D11Renderer::DrawSphereEx(Vec3 centerPos, float radius, int rings, i
             positions.push_back(centerPos + a);
             positions.push_back(centerPos + e);
             positions.push_back(centerPos + d);
+
+            normals.push_back(a.normalized());
+            normals.push_back(b.normalized());
+            normals.push_back(e.normalized());
+            normals.push_back(a.normalized());
+            normals.push_back(e.normalized());
+            normals.push_back(d.normalized());
         }
     }
 
-    DrawTris3D(positions.data(), positions.size(), CurrentMVP(), color);
+    DrawTris3D(positions.data(), normals.data(), positions.size(), CurrentMVP(), color);
 }
 
 void QuarkD3D11Renderer::DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices,
@@ -969,7 +1091,9 @@ void QuarkD3D11Renderer::DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startR
     const Vec3 yDir = dir.cross(xDir).normalized();
 
     std::vector<Vec3> positions;
+    std::vector<Vec3> normals;
     positions.reserve(static_cast<size_t>(sides) * 6);
+    normals.reserve(static_cast<size_t>(sides) * 6);
 
     for (int i = 0; i < sides; ++i)
     {
@@ -985,12 +1109,24 @@ void QuarkD3D11Renderer::DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startR
         const Vec3 p4 = endPos + xDir * std::cos(a1) * endRadius +
                         yDir * std::sin(a1) * endRadius;
 
+        const Vec3 n1 = SafeNormalized(p1 - startPos, xDir);
+        const Vec3 n2 = SafeNormalized(p2 - startPos, xDir);
+        const Vec3 n3 = SafeNormalized(p3 - endPos, xDir);
+        const Vec3 n4 = SafeNormalized(p4 - endPos, xDir);
+
         positions.push_back(p1);
         positions.push_back(p2);
         positions.push_back(p3);
         positions.push_back(p1);
         positions.push_back(p3);
         positions.push_back(p4);
+
+        normals.push_back(n1);
+        normals.push_back(n2);
+        normals.push_back(n3);
+        normals.push_back(n1);
+        normals.push_back(n3);
+        normals.push_back(n4);
 
         positions.push_back(startPos);
         positions.push_back(p2);
@@ -998,9 +1134,16 @@ void QuarkD3D11Renderer::DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startR
         positions.push_back(endPos);
         positions.push_back(p3);
         positions.push_back(p4);
+
+        normals.push_back(Vec3{-dir.x, -dir.y, -dir.z});
+        normals.push_back(Vec3{-dir.x, -dir.y, -dir.z});
+        normals.push_back(Vec3{-dir.x, -dir.y, -dir.z});
+        normals.push_back(dir);
+        normals.push_back(dir);
+        normals.push_back(dir);
     }
 
-    DrawTris3D(positions.data(), positions.size(), CurrentMVP(), color);
+    DrawTris3D(positions.data(), normals.data(), positions.size(), CurrentMVP(), color);
 }
 
 void QuarkD3D11Renderer::DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom,
@@ -1501,110 +1644,173 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
 
     const Mat4 finalTransform = m_currentMatrix * transform;
     const Color baseColor = albedoMap ? albedoMap->color : WHITE;
+    const bool textured = textureResource != nullptr;
+    const std::size_t floatsPerVertex = textured ? 18u : 16u;
 
-    std::vector<float> vertices;
-    vertices.reserve(static_cast<std::size_t>(mesh.vertexCount) * 10u);
+    const auto transformNormal = [&](const Vec3 &normal) -> Vec3 {
+        const Vec3 rotated{
+            finalTransform.m[0] * normal.x + finalTransform.m[4] * normal.y +
+                finalTransform.m[8] * normal.z,
+            finalTransform.m[1] * normal.x + finalTransform.m[5] * normal.y +
+                finalTransform.m[9] * normal.z,
+            finalTransform.m[2] * normal.x + finalTransform.m[6] * normal.y +
+                finalTransform.m[10] * normal.z
+        };
+        return SafeNormalized(rotated, Vec3{0.0f, 1.0f, 0.0f});
+    };
 
-    auto appendVertex = [&](int vertexIndex, Color color, float u, float v)
+    const auto meshNormalAt = [&](int vertexIndex) -> Vec3 {
+        if (mesh.normals && vertexIndex >= 0 && vertexIndex < mesh.vertexCount)
+        {
+            return transformNormal(Vec3{mesh.normals[vertexIndex * 3 + 0],
+                                        mesh.normals[vertexIndex * 3 + 1],
+                                        mesh.normals[vertexIndex * 3 + 2]});
+        }
+        return Vec3{0.0f, 1.0f, 0.0f};
+    };
+
+    const auto appendVertex = [&](std::vector<float> &out, const Vec4 &world, const Vec3 &normal,
+                                  Color color, float u, float v)
     {
-        const Vec4 world = finalTransform * Vec4{
+        const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
+        out.push_back(clip.x);
+        out.push_back(clip.y);
+        out.push_back(clip.z);
+        out.push_back(clip.w);
+
+        if (textured)
+        {
+            out.push_back(u);
+            out.push_back(v);
+        }
+
+        out.push_back(color.r / 255.0f);
+        out.push_back(color.g / 255.0f);
+        out.push_back(color.b / 255.0f);
+        out.push_back(color.a / 255.0f);
+
+        out.push_back(world.x);
+        out.push_back(world.y);
+        out.push_back(world.z);
+        out.push_back(1.0f);
+
+        out.push_back(normal.x);
+        out.push_back(normal.y);
+        out.push_back(normal.z);
+        out.push_back(1.0f);
+    };
+
+    const auto worldPosAt = [&](int vertexIndex) -> Vec4 {
+        return finalTransform * Vec4{
             mesh.vertices[vertexIndex * 3 + 0],
             mesh.vertices[vertexIndex * 3 + 1],
             mesh.vertices[vertexIndex * 3 + 2],
             1.0f
         };
-
-        const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
-
-        vertices.push_back(clip.x);
-        vertices.push_back(clip.y);
-        vertices.push_back(clip.z);
-        vertices.push_back(clip.w);
-        vertices.push_back(u);
-        vertices.push_back(v);
-        vertices.push_back(color.r / 255.0f);
-        vertices.push_back(color.g / 255.0f);
-        vertices.push_back(color.b / 255.0f);
-        vertices.push_back(color.a / 255.0f);
     };
-
-    for (int vertexIndex = 0; vertexIndex < mesh.vertexCount; ++vertexIndex)
-    {
-        const Color vertexColor = MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vertexIndex, WHITE));
-        const float u = mesh.texcoords ? mesh.texcoords[vertexIndex * 2 + 0] : 0.0f;
-        const float v = mesh.texcoords ? mesh.texcoords[vertexIndex * 2 + 1] : 0.0f;
-        appendVertex(vertexIndex, vertexColor, u, v);
-    }
 
     if (mesh.indices && mesh.triangleCount > 0)
     {
         std::vector<float> indexedVertices;
-        indexedVertices.reserve(static_cast<std::size_t>(mesh.triangleCount) * 3u * 10u);
+        indexedVertices.reserve(static_cast<std::size_t>(mesh.triangleCount) * 3u * floatsPerVertex);
 
         for (int triangleIndex = 0; triangleIndex < mesh.triangleCount; ++triangleIndex)
         {
+            int vertexIndex[3] = {-1, -1, -1};
             for (int localIndex = 0; localIndex < 3; ++localIndex)
             {
-                const int vertexIndex = mesh.indices[triangleIndex * 3 + localIndex];
-                if (vertexIndex < 0 || vertexIndex >= mesh.vertexCount)
+                const int index = mesh.indices[triangleIndex * 3 + localIndex];
+                if (index >= 0 && index < mesh.vertexCount)
                 {
-                    continue;
+                    vertexIndex[localIndex] = index;
                 }
+            }
+            if (vertexIndex[0] < 0 || vertexIndex[1] < 0 || vertexIndex[2] < 0)
+            {
+                continue;
+            }
 
-                const float u = mesh.texcoords ? mesh.texcoords[vertexIndex * 2 + 0] : 0.0f;
-                const float v = mesh.texcoords ? mesh.texcoords[vertexIndex * 2 + 1] : 0.0f;
-                const Color vertexColor = MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vertexIndex, WHITE));
-                const Vec4 world = finalTransform * Vec4{
-                    mesh.vertices[vertexIndex * 3 + 0],
-                    mesh.vertices[vertexIndex * 3 + 1],
-                    mesh.vertices[vertexIndex * 3 + 2],
-                    1.0f
-                };
-                const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
+            const Vec4 worldA = worldPosAt(vertexIndex[0]);
+            const Vec4 worldB = worldPosAt(vertexIndex[1]);
+            const Vec4 worldC = worldPosAt(vertexIndex[2]);
+            const Vec3 faceNormal = SafeNormalized(
+                (Vec3{worldB.x, worldB.y, worldB.z} - Vec3{worldA.x, worldA.y, worldA.z})
+                    .cross(Vec3{worldC.x, worldC.y, worldC.z} - Vec3{worldA.x, worldA.y, worldA.z}),
+                Vec3{0.0f, 1.0f, 0.0f});
 
-                indexedVertices.push_back(clip.x);
-                indexedVertices.push_back(clip.y);
-                indexedVertices.push_back(clip.z);
-                indexedVertices.push_back(clip.w);
-                indexedVertices.push_back(u);
-                indexedVertices.push_back(v);
-                indexedVertices.push_back(vertexColor.r / 255.0f);
-                indexedVertices.push_back(vertexColor.g / 255.0f);
-                indexedVertices.push_back(vertexColor.b / 255.0f);
-                indexedVertices.push_back(vertexColor.a / 255.0f);
+            for (int localIndex = 0; localIndex < 3; ++localIndex)
+            {
+                const int vi = vertexIndex[localIndex];
+                const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
+                const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
+                const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
+                const Color vertexColor =
+                    MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
+                appendVertex(indexedVertices, worldPosAt(vi), normal, vertexColor, u, v);
             }
         }
 
         if (!indexedVertices.empty())
         {
-            if (textureResource)
+            if (textured)
             {
                 m_commands.Draw3DTextured(indexedVertices.data(),
-                                         static_cast<UINT>(indexedVertices.size() / 10),
+                                         static_cast<UINT>(indexedVertices.size() / 18),
                                          const_cast<ID3D11ShaderResourceView *>(textureResource));
             }
             else
             {
                 m_commands.Draw3D(indexedVertices.data(),
-                                  static_cast<UINT>(indexedVertices.size() / 8),
+                                  static_cast<UINT>(indexedVertices.size() / 16),
                                   D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             }
         }
         return;
     }
 
+    std::vector<float> vertices;
+    vertices.reserve(static_cast<std::size_t>(mesh.vertexCount) * floatsPerVertex);
+
+    const int triangleCount = mesh.triangleCount > 0 ? mesh.triangleCount : mesh.vertexCount / 3;
+    for (int i = 0; i < triangleCount; ++i)
+    {
+        const int viBase = i * 3;
+        if (viBase + 2 >= mesh.vertexCount)
+        {
+            break;
+        }
+
+        const Vec4 worldA = worldPosAt(viBase + 0);
+        const Vec4 worldB = worldPosAt(viBase + 1);
+        const Vec4 worldC = worldPosAt(viBase + 2);
+        const Vec3 faceNormal = SafeNormalized(
+            (Vec3{worldB.x, worldB.y, worldB.z} - Vec3{worldA.x, worldA.y, worldA.z})
+                .cross(Vec3{worldC.x, worldC.y, worldC.z} - Vec3{worldA.x, worldA.y, worldA.z}),
+            Vec3{0.0f, 1.0f, 0.0f});
+
+        for (int localIndex = 0; localIndex < 3; ++localIndex)
+        {
+            const int vi = viBase + localIndex;
+            const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
+            const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
+            const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
+            const Color vertexColor = MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
+            appendVertex(vertices, worldPosAt(vi), normal, vertexColor, u, v);
+        }
+    }
+
     if (!vertices.empty())
     {
-        if (textureResource)
+        if (textured)
         {
             m_commands.Draw3DTextured(vertices.data(),
-                                     static_cast<UINT>(vertices.size() / 10),
+                                     static_cast<UINT>(vertices.size() / 18),
                                      const_cast<ID3D11ShaderResourceView *>(textureResource));
         }
         else
         {
             m_commands.Draw3D(vertices.data(),
-                              static_cast<UINT>(vertices.size() / 8),
+                              static_cast<UINT>(vertices.size() / 16),
                               D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         }
     }

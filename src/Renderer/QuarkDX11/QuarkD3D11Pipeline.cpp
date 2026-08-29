@@ -52,12 +52,16 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
             float4 position : POSITION;
             float2 texCoord : TEXCOORD0;
             float4 color : COLOR;
+            float4 worldPosition : WORLD_POSITION;
+            float4 normal : NORMAL;
         };
 
         struct VSOutput {
             float4 position : SV_POSITION;
             float2 texCoord : TEXCOORD0;
             float4 color : COLOR;
+            float4 worldPosition : WORLD_POSITION;
+            float4 normal : NORMAL;
         };
 
         VSOutput main(VSInput input) {
@@ -65,6 +69,8 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
             output.position = input.position;
             output.texCoord = input.texCoord;
             output.color = input.color;
+            output.worldPosition = input.worldPosition;
+            output.normal = input.normal;
             return output;
         }
     )";
@@ -73,14 +79,51 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         Texture2D textureMap : register(t0);
         SamplerState textureSampler : register(s0);
 
+        cbuffer LightData : register(b1) {
+            float4 uAmbientColor;
+            float4 uViewPosition;
+            float4 uLightPositions[4];
+            float4 uLightColors[4];
+            float4 uLightParams[4];
+        };
+
         struct PSInput {
             float4 position : SV_POSITION;
             float2 texCoord : TEXCOORD0;
             float4 color : COLOR;
+            float4 worldPosition : WORLD_POSITION;
+            float4 normal : NORMAL;
         };
 
+        float3 ApplyLights(float3 worldPos, float3 normal, float3 baseColor) {
+            float3 result = baseColor * uAmbientColor.rgb;
+            float3 n = normalize(normal);
+            int enabled = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (uLightParams[i].y < 0.5) { continue; }
+                enabled = 1;
+                float dist = length(uLightPositions[i].xyz - worldPos);
+                if (dist < 0.0001) { dist = 0.0001; }
+                float3 toLight = (uLightPositions[i].xyz - worldPos) / dist;
+                if (uLightParams[i].z < 0.5) {
+                    toLight = -normalize(uLightPositions[i].xyz);
+                }
+                float diff = saturate(dot(n, toLight));
+                float attenuation = 1.0 / (1.0 + uLightParams[i].x * dist * dist);
+                result += baseColor * uLightColors[i].rgb * diff * attenuation;
+            }
+            if (enabled == 0) { return baseColor; }
+            return saturate(result);
+        }
+
         float4 main(PSInput input) : SV_TARGET {
-            return textureMap.Sample(textureSampler, input.texCoord) * input.color;
+            float4 texel = textureMap.Sample(textureSampler, input.texCoord);
+            float3 baseColor = texel.rgb * input.color.rgb;
+            float3 lit = baseColor;
+            if (input.normal.w > 0.5) {
+                lit = ApplyLights(input.worldPosition.xyz, input.normal.xyz, baseColor);
+            }
+            return float4(lit, texel.a * input.color.a);
         }
     )";
 
@@ -88,29 +131,71 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         struct VSInput {
             float4 position : POSITION;
             float4 color : COLOR;
+            float4 worldPosition : WORLD_POSITION;
+            float4 normal : NORMAL;
         };
 
         struct VSOutput {
             float4 position : SV_POSITION;
             float4 color : COLOR;
+            float4 worldPosition : WORLD_POSITION;
+            float4 normal : NORMAL;
         };
 
         VSOutput main(VSInput input) {
             VSOutput output;
             output.position = input.position;
             output.color = input.color;
+            output.worldPosition = input.worldPosition;
+            output.normal = input.normal;
             return output;
         }
     )";
 
     static constexpr char pixelSource3D[] = R"(
+        cbuffer LightData : register(b1) {
+            float4 uAmbientColor;
+            float4 uViewPosition;
+            float4 uLightPositions[4];
+            float4 uLightColors[4];
+            float4 uLightParams[4];
+        };
+
         struct PSInput {
             float4 position : SV_POSITION;
             float4 color : COLOR;
+            float4 worldPosition : WORLD_POSITION;
+            float4 normal : NORMAL;
         };
 
+        float3 ApplyLights(float3 worldPos, float3 normal, float3 baseColor) {
+            float3 result = baseColor * uAmbientColor.rgb;
+            float3 n = normalize(normal);
+            int enabled = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (uLightParams[i].y < 0.5) { continue; }
+                enabled = 1;
+                float dist = length(uLightPositions[i].xyz - worldPos);
+                if (dist < 0.0001) { dist = 0.0001; }
+                float3 toLight = (uLightPositions[i].xyz - worldPos) / dist;
+                if (uLightParams[i].z < 0.5) {
+                    toLight = -normalize(uLightPositions[i].xyz);
+                }
+                float diff = saturate(dot(n, toLight));
+                float attenuation = 1.0 / (1.0 + uLightParams[i].x * dist * dist);
+                result += baseColor * uLightColors[i].rgb * diff * attenuation;
+            }
+            if (enabled == 0) { return baseColor; }
+            return saturate(result);
+        }
+
         float4 main(PSInput input) : SV_TARGET {
-            return input.color;
+            float3 baseColor = input.color.rgb;
+            float3 lit = baseColor;
+            if (input.normal.w > 0.5) {
+                lit = ApplyLights(input.worldPosition.xyz, input.normal.xyz, baseColor);
+            }
+            return float4(lit, input.color.a);
         }
     )";
 
@@ -177,6 +262,10 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 16,
          D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"WORLD_POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 40,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"NORMAL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 56,
          D3D11_INPUT_PER_VERTEX_DATA, 0}
     };
 
@@ -192,6 +281,10 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0,
          D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"WORLD_POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 32,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"NORMAL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 48,
          D3D11_INPUT_PER_VERTEX_DATA, 0}
     };
 
@@ -255,6 +348,16 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         device->CreateBlendState(&blendDescription, &m_blendState),
         "ID3D11Device::CreateBlendState");
 
+    D3D11_BUFFER_DESC lightBufferDescription{};
+    lightBufferDescription.ByteWidth = sizeof(D3D11LightConstantData);
+    lightBufferDescription.Usage = D3D11_USAGE_DEFAULT;
+    lightBufferDescription.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    lightBufferDescription.CPUAccessFlags = 0;
+
+    d3d11::ThrowIfFailed(device->CreateBuffer(&lightBufferDescription, nullptr,
+                                              &m_lightConstantBuffer),
+                         "ID3D11Device::CreateBuffer light constants");
+
     m_vertexBuffer = resources.VertexBuffer();
     m_vertexBuffer3D = resources.VertexBuffer3D();
 
@@ -265,7 +368,7 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
 void D3D11Pipeline::BindTexture3D(ID3D11DeviceContext *context,
                                  ID3D11ShaderResourceView *shaderResource) const
 {
-    const UINT stride = sizeof(float) * 10;
+    const UINT stride = sizeof(float) * 18;
     const UINT offset = 0;
     ID3D11Buffer *vertexBuffer = m_vertexBuffer3D;
 
@@ -276,6 +379,7 @@ void D3D11Pipeline::BindTexture3D(ID3D11DeviceContext *context,
                                                  : m_rasterizerState.Get());
     context->VSSetShader(m_texturedVertexShader3D.Get(), nullptr, 0);
     context->PSSetShader(m_texturedPixelShader3D.Get(), nullptr, 0);
+    context->PSSetConstantBuffers(1, 1, m_lightConstantBuffer.GetAddressOf());
     context->PSSetShaderResources(0, 1, &shaderResource);
     context->PSSetSamplers(0, 1, m_textureSampler.GetAddressOf());
     const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -305,7 +409,7 @@ void D3D11Pipeline::BindBatch(ID3D11DeviceContext *context,
 
 void D3D11Pipeline::Bind3D(ID3D11DeviceContext *context) const
 {
-    const UINT stride = sizeof(float) * 8;
+    const UINT stride = sizeof(float) * 16;
     const UINT offset = 0;
     ID3D11ShaderResourceView *nullResource = nullptr;
     context->IASetInputLayout(m_inputLayout3D.Get());
@@ -314,11 +418,23 @@ void D3D11Pipeline::Bind3D(ID3D11DeviceContext *context) const
                                                  : m_rasterizerState.Get());
     context->VSSetShader(m_vertexShader3D.Get(), nullptr, 0);
     context->PSSetShader(m_pixelShader3D.Get(), nullptr, 0);
+    context->PSSetConstantBuffers(1, 1, m_lightConstantBuffer.GetAddressOf());
     context->PSSetShaderResources(0, 1, &nullResource);
     context->PSSetSamplers(0, 1, m_textureSampler.GetAddressOf());
     context->OMSetDepthStencilState(m_depthStencilState.Get(), 0);
     const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
     context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
+}
+
+void D3D11Pipeline::UpdateLights(ID3D11DeviceContext *context,
+                                 const D3D11LightConstantData &lights)
+{
+    if (!context || !m_lightConstantBuffer)
+    {
+        return;
+    }
+
+    context->UpdateSubresource(m_lightConstantBuffer.Get(), 0, nullptr, &lights, 0, 0);
 }
 
 void D3D11Pipeline::CreateSamplerState(TextureFilterMode mode)
@@ -378,6 +494,7 @@ void D3D11Pipeline::Shutdown()
     m_depthStencilState.Reset();
     m_depthStencilDisabledState.Reset();
     m_rasterizerStateCull.Reset();
+    m_lightConstantBuffer.Reset();
     m_backfaceCullingEnabled = false;
     m_textureFilterMode = TextureFilterMode::Linear;
     m_device = nullptr;
