@@ -765,12 +765,25 @@ void QuarkVkRenderer::Write3DShaderUniform(uint32_t shaderId, int locIndex, cons
         return;
     }
 
+    if (name == "ambient" && bytes >= sizeof(float) * 4) {
+        const float* f = static_cast<const float*>(data);
+        float* lightData = static_cast<float*>(static_cast<void*>(static_cast<char*>(m_3DDummyMapped) + 1024));
+        std::memcpy(lightData + 0, f, sizeof(float) * 4);
+        return;
+    }
+    if (name == "colDiffuse" && bytes >= sizeof(float) * 4) {
+        const float* f = static_cast<const float*>(data);
+        float* lightData = static_cast<float*>(static_cast<void*>(static_cast<char*>(m_3DDummyMapped) + 1024));
+        std::memcpy(lightData + 4, f, sizeof(float) * 4);
+        return;
+    }
     if (name == "viewPos" && bytes >= sizeof(float) * 3) {
         const float* f = static_cast<const float*>(data);
         float* lightData = static_cast<float*>(static_cast<void*>(static_cast<char*>(m_3DDummyMapped) + 1024));
         lightData[8] = f[0];
         lightData[9] = f[1];
         lightData[10] = f[2];
+        lightData[11] = 1.0f;
         m_viewPos = Vec3{ f[0], f[1], f[2] };
         return;
     }
@@ -784,15 +797,15 @@ void QuarkVkRenderer::Write3DShaderUniform(uint32_t shaderId, int locIndex, cons
 
         if (field == "position") {
             const float* f = static_cast<const float*>(data);
-            slot[0] = f[0]; slot[1] = f[1]; slot[2] = f[2];
+            slot[0] = f[0]; slot[1] = f[1]; slot[2] = f[2]; slot[3] = 1.0f;
             m_lights[static_cast<size_t>(index)].position = Vec3{ f[0], f[1], f[2] };
         } else if (field == "target") {
             const float* f = static_cast<const float*>(data);
-            slot[4] = f[0]; slot[5] = f[1]; slot[6] = f[2];
+            slot[4] = f[0]; slot[5] = f[1]; slot[6] = f[2]; slot[7] = 1.0f;
             m_lights[static_cast<size_t>(index)].target = Vec3{ f[0], f[1], f[2] };
         } else if (field == "color") {
             const float* f = static_cast<const float*>(data);
-            slot[8] = f[0]; slot[9] = f[1]; slot[10] = f[2];
+            slot[8] = f[0]; slot[9] = f[1]; slot[10] = f[2]; slot[11] = 1.0f;
             m_lights[static_cast<size_t>(index)].color = Vec3{ f[0], f[1], f[2] };
         } else if (field == "attenuation") {
             slot[12] = *static_cast<const float*>(data);

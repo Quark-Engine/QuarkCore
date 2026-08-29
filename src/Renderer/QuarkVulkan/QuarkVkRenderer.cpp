@@ -391,6 +391,8 @@ void QuarkVkRenderer::Shutdown() {
         frame.vertexCapacity3D = 0;
     }
 
+    ClearMaterialDescriptorCache();
+
     for (VkDescriptorPool pool : m_descriptorPools) {
         if (pool != VK_NULL_HANDLE) {
             vkDestroyDescriptorPool(m_device, pool, nullptr);
@@ -1274,6 +1276,7 @@ bool QuarkVkRenderer::CreateDescriptorPoolSlab(uint32_t maxSets, VkDescriptorPoo
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.maxSets       = maxSets;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes    = poolSizes.data();
@@ -1300,12 +1303,55 @@ bool QuarkVkRenderer::Allocate3DDescriptorSet(VkDescriptorSet& outSet) {
     return vkAllocateDescriptorSets(m_device, &allocInfo, &outSet) == VK_SUCCESS;
 }
 
+uint64_t QuarkVkRenderer::ComputeMaterialCacheKey(const Material& material) const {
+    uint64_t hash = 14695981039346656037ull;
+    const auto mix = [&](uint64_t value) {
+        hash ^= value + 0x9e3779b97f4a7c15ull + (hash << 6) + (hash >> 2);
+    };
+
+    const auto mixColor = [&](const Color& color) {
+        mix(static_cast<uint64_t>(color.r));
+        mix(static_cast<uint64_t>(color.g));
+        mix(static_cast<uint64_t>(color.b));
+        mix(static_cast<uint64_t>(color.a));
+    };
+
+    const auto mixTextureId = [&](uint32_t textureId) {
+        mix(static_cast<uint64_t>(textureId));
+    };
+
+    if (material.maps) {
+        for (int i = 0; i <= MATERIAL_MAP_BRDF; ++i) {
+            const MaterialMap& map = material.maps[i];
+            mixColor(map.color);
+            mix(static_cast<uint64_t>(map.texture.valid ? 1u : 0u));
+            mixTextureId(map.texture.id);
+            mix(static_cast<uint64_t>(std::lround(map.value * 1000.0f)));
+        }
+    } else {
+        mix(0ull);
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        mix(static_cast<uint64_t>(std::lround(material.params[i] * 1000.0f)));
+    }
+
+    return hash;
+}
+
 VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& material) {
+    const uint64_t cacheKey = ComputeMaterialCacheKey(material);
+    auto it = m_materialCache.find(cacheKey);
+    if (it != m_materialCache.end() && it->second.descriptorSet != VK_NULL_HANDLE) {
+        return it->second.descriptorSet;
+    }
+
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     if (!Allocate3DDescriptorSet(descriptorSet)) return VK_NULL_HANDLE;
 
     const auto whiteIt = m_textures.find(m_whiteTextureId);
     if (whiteIt == m_textures.end()) {
+        vkFreeDescriptorSets(m_device, m_descriptorPools.back(), 1, &descriptorSet);
         return VK_NULL_HANDLE;
     }
 
@@ -1379,7 +1425,26 @@ VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& mat
                           VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &images[i + 1], nullptr, nullptr };
     }
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+    VkMaterialCacheEntry entry{};
+    entry.descriptorSet = descriptorSet;
+    entry.key = cacheKey;
+    if (material.maps) {
+        for (int i = 0; i <= MATERIAL_MAP_BRDF; ++i) {
+            entry.textureIds.push_back(material.maps[i].texture.id);
+        }
+    }
+    m_materialCache[cacheKey] = entry;
     return descriptorSet;
+}
+
+void QuarkVkRenderer::ClearMaterialDescriptorCache() {
+    for (auto& [key, entry] : m_materialCache) {
+        if (entry.descriptorSet != VK_NULL_HANDLE && m_device != VK_NULL_HANDLE) {
+            vkFreeDescriptorSets(m_device, entry.descriptorPool != VK_NULL_HANDLE ? entry.descriptorPool : m_descriptorPools.back(), 1, &entry.descriptorSet);
+        }
+    }
+    m_materialCache.clear();
 }
 
 bool QuarkVkRenderer::AllocateTextureDescriptorSet(VkDescriptorSet& outSet) {
@@ -3556,12 +3621,15 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                 lightData[0] = 0.1f;
                 lightData[1] = 0.1f;
                 lightData[2] = 0.1f;
+                lightData[3] = 1.0f;
                 lightData[4] = 1.0f;
                 lightData[5] = 1.0f;
                 lightData[6] = 1.0f;
+                lightData[7] = 1.0f;
                 lightData[8] = m_viewPos.x;
                 lightData[9] = m_viewPos.y;
                 lightData[10] = m_viewPos.z;
+                lightData[11] = 1.0f;
                 for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
                     const VkLight3D& light = m_lights[static_cast<size_t>(lightIndex)];
                     const size_t base = 12 + static_cast<size_t>(lightIndex) * 16;

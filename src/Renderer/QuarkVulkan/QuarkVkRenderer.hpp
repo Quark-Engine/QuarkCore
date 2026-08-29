@@ -222,6 +222,13 @@ struct VkShaderProgramData {
     std::unordered_map<int, std::string> uniformNames;
 };
 
+struct VkMaterialCacheEntry {
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    uint64_t key = 0;
+    std::vector<uint32_t> textureIds;
+};
+
 class QuarkVkRenderer final : public IRenderer {
 public:
     QuarkVkRenderer() = default;
@@ -399,7 +406,9 @@ private:
     bool CreateDescriptorPoolSlab(uint32_t maxSets, VkDescriptorPool& outPool);
     bool AllocateTextureDescriptorSet(VkDescriptorSet& outSet);
     bool Allocate3DDescriptorSet(VkDescriptorSet& outSet);
-        VkDescriptorSet CreateMaterialDescriptorSet(const Material& material);
+    uint64_t ComputeMaterialCacheKey(const Material& material) const;
+    VkDescriptorSet CreateMaterialDescriptorSet(const Material& material);
+    void ClearMaterialDescriptorCache();
     void Update3DDescriptorSet(VkShaderProgramData& program);
     void Write3DShaderUniform(uint32_t shaderId, int locIndex, float value);
     void Write3DShaderUniform(uint32_t shaderId, int locIndex, int value);
@@ -626,6 +635,7 @@ private:
         { { 3.0f, 3.0f, -3.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, 0.08f, 1, true }
     }};
     std::unordered_map<uint32_t, VkShaderProgramData> m_shaderPrograms;
+    std::unordered_map<uint64_t, VkMaterialCacheEntry> m_materialCache;
 
     uint32_t                                   m_nextTextureId = 1;
     std::unordered_map<uint32_t, VkTextureData> m_textures;
