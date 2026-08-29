@@ -105,15 +105,12 @@ void D3D11CommandContext::BeginDrawing()
     RefreshViewport(m_activeWidth, m_activeHeight);
 }
 
-void D3D11CommandContext::EndDrawing(bool vsync)
+void D3D11CommandContext::Present(bool vsync)
 {
-    FlushBatch();
-
     if (m_swapChain)
     {
         m_swapChain->Present(vsync);
     }
-
 }
 
 void D3D11CommandContext::Clear(Color color)

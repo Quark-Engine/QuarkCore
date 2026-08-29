@@ -17,6 +17,9 @@
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 #endif
+#if defined(QC_ENABLE_D3D11)
+#include <d3d11.h>
+#endif
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -446,18 +449,49 @@ VkDescriptorSet GetVulkanTextureDescriptorSet(uint32_t textureId) {
     }
     return VK_NULL_HANDLE;
 }
-#else
-VkInstance GetVulkanInstance() { return VK_NULL_HANDLE; }
-VkPhysicalDevice GetVulkanPhysicalDevice() { return VK_NULL_HANDLE; }
-VkDevice GetVulkanDevice() { return VK_NULL_HANDLE; }
-uint32_t GetVulkanGraphicsQueueFamily() { return UINT32_MAX; }
-VkQueue GetVulkanGraphicsQueue() { return VK_NULL_HANDLE; }
-VkDescriptorPool GetVulkanDescriptorPool() { return VK_NULL_HANDLE; }
-VkRenderPass GetVulkanMainRenderPass() { return VK_NULL_HANDLE; }
-uint32_t GetVulkanMinImageCount() { return 0; }
-uint32_t GetVulkanImageCount() { return 0; }
-VkSampleCountFlagBits GetVulkanMSAASamples() { return VK_SAMPLE_COUNT_1_BIT; }
-VkDescriptorSet GetVulkanTextureDescriptorSet(uint32_t) { return VK_NULL_HANDLE; }
+
+static VulkanRenderCallback gVulkanRenderCallback = nullptr;
+
+void SetVulkanRenderCallback(VulkanRenderCallback callback) {
+    gVulkanRenderCallback = callback;
+}
+
+VulkanRenderCallback GetVulkanRenderCallback() {
+    return gVulkanRenderCallback;
+}
+#endif
+
+#if defined(QC_ENABLE_D3D11)
+static QuarkD3D11Renderer* GetD3D11Renderer() {
+    if (!gRendererPtr || gRendererPtr->GetType() != RendererType::D3D11) {
+        return nullptr;
+    }
+    return &gD3D11Renderer;
+}
+
+ID3D11Device* GetD3D11Device() {
+    if (QuarkD3D11Renderer* renderer = GetD3D11Renderer()) {
+        return renderer->GetD3D11Device();
+    }
+    return nullptr;
+}
+
+ID3D11DeviceContext* GetD3D11ImmediateContext() {
+    if (QuarkD3D11Renderer* renderer = GetD3D11Renderer()) {
+        return renderer->GetD3D11ImmediateContext();
+    }
+    return nullptr;
+}
+
+static D3D11RenderCallback gD3D11RenderCallback = nullptr;
+
+void SetD3D11RenderCallback(D3D11RenderCallback callback) {
+    gD3D11RenderCallback = callback;
+}
+
+D3D11RenderCallback GetD3D11RenderCallback() {
+    return gD3D11RenderCallback;
+}
 #endif
 
 bool WindowShouldClose() {

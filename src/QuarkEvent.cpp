@@ -34,7 +34,6 @@ extern KeyboardKey gExitKey;
 namespace {
 
 NativeEventCallback gNativeEventCallback = nullptr;
-VulkanRenderCallback gVulkanRenderCallback = nullptr;
 
 } // namespace
 
@@ -628,14 +627,6 @@ bool WaitEvent(Event& event, int timeoutMs) {
 
 void SetNativeEventCallback(NativeEventCallback callback) {
     gNativeEventCallback = callback;
-}
-
-void SetVulkanRenderCallback(VulkanRenderCallback callback) {
-    gVulkanRenderCallback = callback;
-}
-
-VulkanRenderCallback GetVulkanRenderCallback() {
-    return gVulkanRenderCallback;
 }
 
 const char* GetEventTypeName(EventType type) {

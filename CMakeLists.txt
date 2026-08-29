@@ -422,6 +422,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
         find_package(OpenGL REQUIRED)
         target_sources(${TARGET_NAME} PRIVATE src/Renderer/QuarkGL/QuarkGLRenderer.cpp)
         target_compile_definitions(${TARGET_NAME} PRIVATE QC_ENABLE_OPENGL)
+        target_compile_definitions(${TARGET_NAME} INTERFACE QC_ENABLE_OPENGL)
         target_link_libraries(${TARGET_NAME} PUBLIC
             SDL3::SDL3
             glad
@@ -466,6 +467,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
         target_compile_definitions(${TARGET_NAME} PRIVATE
             QC_ENABLE_VULKAN
         )
+        target_compile_definitions(${TARGET_NAME} INTERFACE QC_ENABLE_VULKAN)
         if(WIN32)
             target_link_libraries(${TARGET_NAME} PUBLIC
                 SDL3::SDL3
@@ -500,6 +502,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
             src/Renderer/QuarkDX11/QuarkD3D11ShaderCompiler.cpp
         )
         target_compile_definitions(${TARGET_NAME} PRIVATE QC_ENABLE_D3D11)
+        target_compile_definitions(${TARGET_NAME} INTERFACE QC_ENABLE_D3D11)
         target_link_libraries(${TARGET_NAME} PUBLIC
             SDL3::SDL3
             d3d11

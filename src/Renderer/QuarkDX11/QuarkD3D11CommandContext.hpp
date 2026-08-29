@@ -32,7 +32,8 @@ public:
     void RefreshViewport(int width, int height);
     void SetDefaultViewportSize(int width, int height);
     void BeginDrawing();
-    void EndDrawing(bool vsync);
+    void FlushBatch();
+    void Present(bool vsync);
     void Clear(Color color);
     void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, int width, int height);
     void DrawTextureQuad(const ITexture& texture,
@@ -71,7 +72,6 @@ private:
     };
 
     void BindOverride(ID3D11ShaderResourceView *drawnResource);
-    void FlushBatch();
     void BatchTriangle(const BatchVertex v[3]);
     void BatchQuad(const BatchVertex v[4], ID3D11ShaderResourceView *shaderResource);
 

@@ -292,7 +292,32 @@ void QuarkD3D11Renderer::BeginDrawing()
 
 void QuarkD3D11Renderer::EndDrawing()
 {
-    m_commands.EndDrawing(m_vsync);
+    m_commands.FlushBatch();
+
+    if (const D3D11RenderCallback callback = GetD3D11RenderCallback()) {
+        callback(m_device.Context());
+    }
+
+    const bool vsync = m_vsyncExplicitlySet ? m_vsync : (m_targetFps != 0);
+    m_commands.Present(vsync);
+
+    const std::uint64_t freq = SDL_GetPerformanceFrequency();
+    if (m_targetFps > 0) {
+        const std::uint64_t targetTicks = freq / static_cast<std::uint64_t>(m_targetFps);
+        while (true) {
+            const std::uint64_t now = SDL_GetPerformanceCounter();
+            const std::uint64_t elapsed = now - m_lastFrameCounter;
+            if (elapsed >= targetTicks) {
+                break;
+            }
+            const std::uint64_t remaining = targetTicks - elapsed;
+            if (remaining > freq / 500) {
+                SDL_Delay(1);
+            }
+        }
+    }
+
+    m_lastFrameCounter = SDL_GetPerformanceCounter();
     m_drawing = false;
 }
 

@@ -194,11 +194,14 @@ public:
     void SetTargetFPS(int fps) override { m_targetFps = fps; }
     bool SetVSync(bool enabled) override {
         m_vsync = enabled;
+        m_vsyncExplicitlySet = true;
         return true;
     }
     float GetFrameTime() const override { return m_frameTime; }
     int GetScreenWidth() const override { return m_width; }
     int GetScreenHeight() const override { return m_height; }
+    ID3D11Device *GetD3D11Device() const { return m_device.Get(); }
+    ID3D11DeviceContext *GetD3D11ImmediateContext() const { return m_device.Context(); }
 
 private:
     struct GlyphData {
@@ -279,6 +282,8 @@ private:
     int m_height = 0;
     int m_targetFps = 60;
     bool m_vsync = true;
+    bool m_vsyncExplicitlySet = false;
+    std::uint64_t m_lastFrameCounter = 0;
     bool m_shouldClose = false;
     float m_frameTime = 0.0f;
     bool m_drawing = false;

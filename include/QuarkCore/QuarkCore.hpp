@@ -42,7 +42,13 @@
 
 #include <SDL3/SDL.h>
 #include <cstdint>
+#if defined(QC_ENABLE_VULKAN)
 #include <vulkan/vulkan.h>
+#endif
+#if defined(QC_ENABLE_D3D11)
+struct ID3D11Device;
+struct ID3D11DeviceContext;
+#endif
 
 namespace qc {
 
@@ -674,6 +680,7 @@ QCAPI bool WindowShouldClose();
  */
 QCAPI void CloseWindow();
 
+#if defined(QC_ENABLE_VULKAN)
 /**
  * @brief Get the active Vulkan instance.
  * @return Vulkan instance, or VK_NULL_HANDLE if unavailable.
@@ -742,6 +749,32 @@ QCAPI void SetVulkanRenderCallback(VulkanRenderCallback callback);
  * @return Registered callback, or nullptr if none is set.
  */
 QCAPI VulkanRenderCallback GetVulkanRenderCallback();
+#endif
+
+#if defined(QC_ENABLE_D3D11)
+/**
+ * @brief Get the active D3D11 device.
+ * @return D3D11 device, or nullptr if unavailable.
+ */
+QCAPI ID3D11Device *GetD3D11Device();
+/**
+ * @brief Get the active D3D11 immediate context.
+ * @return D3D11 immediate context, or nullptr if unavailable.
+ */
+QCAPI ID3D11DeviceContext *GetD3D11ImmediateContext();
+
+using D3D11RenderCallback = void(*)(ID3D11DeviceContext *deviceContext);
+/**
+ * @brief Set a callback invoked before the D3D11 frame is presented.
+ * @param callback Callback function, or nullptr to clear it.
+ */
+QCAPI void SetD3D11RenderCallback(D3D11RenderCallback callback);
+/**
+ * @brief Get the currently registered D3D11 render callback.
+ * @return Registered callback, or nullptr if none is set.
+ */
+QCAPI D3D11RenderCallback GetD3D11RenderCallback();
+#endif
 
 /**
  * @brief Poll the next available event.
