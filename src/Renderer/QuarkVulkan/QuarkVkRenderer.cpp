@@ -2004,8 +2004,6 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     return vkEndCommandBuffer(cmd) == VK_SUCCESS;
 }
 
-void QuarkVkRenderer::FlushBatch() {}
-
 void QuarkVkRenderer::PushQuad(float x, float y, float w, float h, Color color,
                                 float u0, float v0, float u1, float v1) {
     VkDescriptorSet ds = m_vkResources.DescriptorSet(m_whiteTextureId);

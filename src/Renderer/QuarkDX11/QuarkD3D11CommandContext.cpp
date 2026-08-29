@@ -155,8 +155,6 @@ void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
         return;
     }
 
-    FlushBatch();
-
     ID3D11DepthStencilView *depthStencil = m_swapChain->DepthStencilView();
     if (!depthStencil)
     {
@@ -184,8 +182,6 @@ void D3D11CommandContext::Draw3DTextured(const float *vertices, UINT vertexCount
     {
         return;
     }
-
-    FlushBatch();
 
     constexpr UINT kMaxVertices = 32768;
     if (vertexCount > kMaxVertices)

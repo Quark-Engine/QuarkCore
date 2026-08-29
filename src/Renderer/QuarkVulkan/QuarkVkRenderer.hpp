@@ -407,7 +407,6 @@ private:
 
     bool RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex);
 
-    void FlushBatch();
     void PushQuad(float x, float y, float w, float h, Color color,
                   float u0 = 0.f, float v0 = 0.f,
                   float u1 = 1.f, float v1 = 1.f);

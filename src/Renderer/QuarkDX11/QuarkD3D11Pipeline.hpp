@@ -13,13 +13,10 @@ class D3D11Pipeline {
 public:
     void Initialize(ID3D11Device *device, D3D11ShaderCompiler &compiler, D3D11Resources &resources);
     void Shutdown();
-    void Bind(ID3D11DeviceContext *context) const;
     void Bind3D(ID3D11DeviceContext *context) const;
-    void BindTexture(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource) const;
     void BindTexture3D(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource) const;
     void BindBatch(ID3D11DeviceContext *context, ID3D11Buffer *vertexBuffer,
                    ID3D11Buffer *indexBuffer) const;
-    void BindDepthDisabled(ID3D11DeviceContext *context) const;
     void SetBackfaceCulling(bool enabled) { m_backfaceCullingEnabled = enabled; }
     bool BackfaceCulling() const { return m_backfaceCullingEnabled; }
     ID3D11Buffer *VertexBuffer() const { return m_vertexBuffer; }
@@ -35,9 +32,6 @@ public:
 private:
     ID3D11Buffer *m_vertexBuffer = nullptr;
     ID3D11Buffer *m_vertexBuffer3D = nullptr;
-    Microsoft::WRL::ComPtr<ID3D11VertexShader> m_vertexShader;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> m_pixelShader;
-    Microsoft::WRL::ComPtr<ID3D11InputLayout> m_inputLayout;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> m_texturedVertexShader;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> m_texturedPixelShader;
     Microsoft::WRL::ComPtr<ID3D11InputLayout> m_texturedInputLayout;
