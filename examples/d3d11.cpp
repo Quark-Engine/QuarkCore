@@ -58,6 +58,13 @@ int main() {
             qc::DrawCircle(160, 120, 40, qc::BLUE);
         qc::EndTextureMode();
 
+        qc::BeginMode2D(camera2d);
+            qc::DrawGrid(100, 64);
+            qc::DrawRectangleV(camera2d.target, { 50, 50 }, qc::RED);
+            qc::DrawCircle(600, 400, 40, qc::BLUE);
+            qc::DrawRectangle(800, 200, 120, 80, qc::GREEN);
+        qc::EndMode2D();
+
         qc::BeginMode3D(camera3d);
             qc::DrawPlane({ 0, 0, 0 }, { 32, 32 }, qc::LIGHTGRAY);
             qc::DrawCube({ 0, 1, 0 }, 2, 2, 2, qc::RED);
@@ -65,13 +72,6 @@ int main() {
             qc::DrawModelEx(model, qc::Mat4::rotationZ(qc::GetTime()));
             qc::DrawModel(model, { 3, 0, 0 }, 1.0f, qc::GREEN);
         qc::EndMode3D();
-
-        qc::BeginMode2D(camera2d);
-            qc::DrawGrid(100, 64);
-            qc::DrawRectangleV(camera2d.target, { 50, 50 }, qc::RED);
-            qc::DrawCircle(600, 400, 40, qc::BLUE);
-            qc::DrawRectangle(800, 200, 120, 80, qc::GREEN);
-        qc::EndMode2D();
 
         constexpr float directx11Scale = 0.25f;
         constexpr float directx11TopMargin = 20.0f;

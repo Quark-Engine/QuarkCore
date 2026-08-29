@@ -4,6 +4,8 @@
 #if defined(_WIN32)
 #include "QuarkD3D11Pipeline.hpp"
 #include "QuarkD3D11SwapChain.hpp"
+#include <cstdint>
+#include <vector>
 
 namespace qc {
 
@@ -54,7 +56,24 @@ public:
     const ShaderOverride &GetShaderOverride() const { return m_shaderOverride; }
 
 private:
+    static constexpr UINT kBatchMaxVertices = 8192 * 4;
+
+    struct BatchVertex {
+        float x, y;
+        float u, v;
+        float r, g, b, a;
+    };
+
+    struct DrawItem {
+        UINT indexStart = 0;
+        UINT indexCount = 0;
+        ID3D11ShaderResourceView *shaderResource = nullptr;
+    };
+
     void BindOverride(ID3D11ShaderResourceView *drawnResource);
+    void FlushBatch();
+    void BatchTriangle(const BatchVertex v[3]);
+    void BatchQuad(const BatchVertex v[4], ID3D11ShaderResourceView *shaderResource);
 
     ID3D11DeviceContext *m_context = nullptr;
     D3D11SwapChain *m_swapChain = nullptr;
@@ -68,6 +87,14 @@ private:
     Camera2D m_camera2D{};
     bool m_camera2DActive = false;
     ShaderOverride m_shaderOverride{};
+
+    Microsoft::WRL::ComPtr<ID3D11Buffer> m_batchVertexBuffer;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> m_batchIndexBuffer;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> m_whiteTexture;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_whiteShaderResource;
+    std::vector<BatchVertex> m_batchVertices;
+    std::vector<uint32_t> m_batchIndices;
+    std::vector<DrawItem> m_batchDrawItems;
 };
 
 } // namespace qc

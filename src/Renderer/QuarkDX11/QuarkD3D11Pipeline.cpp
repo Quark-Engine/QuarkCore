@@ -362,6 +362,26 @@ void D3D11Pipeline::BindTexture3D(ID3D11DeviceContext *context,
     context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
 }
 
+void D3D11Pipeline::BindBatch(ID3D11DeviceContext *context,
+                              ID3D11Buffer *vertexBuffer,
+                              ID3D11Buffer *indexBuffer) const
+{
+    const UINT stride = sizeof(float) * 8;
+    const UINT offset = 0;
+
+    context->IASetInputLayout(m_texturedInputLayout.Get());
+    context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+    context->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
+    context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    context->RSSetState(m_rasterizerState.Get());
+    context->VSSetShader(m_texturedVertexShader.Get(), nullptr, 0);
+    context->PSSetShader(m_texturedPixelShader.Get(), nullptr, 0);
+    context->PSSetSamplers(0, 1, m_textureSampler.GetAddressOf());
+    const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    context->OMSetDepthStencilState(m_depthStencilDisabledState.Get(), 0);
+    context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);
+}
+
 void D3D11Pipeline::BindDepthDisabled(ID3D11DeviceContext *context) const
 {
     if (!context)

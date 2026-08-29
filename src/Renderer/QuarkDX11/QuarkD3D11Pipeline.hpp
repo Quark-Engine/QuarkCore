@@ -17,6 +17,8 @@ public:
     void Bind3D(ID3D11DeviceContext *context) const;
     void BindTexture(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource) const;
     void BindTexture3D(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource) const;
+    void BindBatch(ID3D11DeviceContext *context, ID3D11Buffer *vertexBuffer,
+                   ID3D11Buffer *indexBuffer) const;
     void BindDepthDisabled(ID3D11DeviceContext *context) const;
     void SetBackfaceCulling(bool enabled) { m_backfaceCullingEnabled = enabled; }
     bool BackfaceCulling() const { return m_backfaceCullingEnabled; }

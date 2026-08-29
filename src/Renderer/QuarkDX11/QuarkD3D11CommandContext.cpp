@@ -21,6 +21,53 @@ void D3D11CommandContext::Initialize(const D3D11Device &device, D3D11SwapChain &
     m_activeWidth = width;
     m_activeHeight = height;
 
+    ID3D11Device *nativeDevice = device.Get();
+    {
+        D3D11_BUFFER_DESC description{};
+        description.ByteWidth = kBatchMaxVertices * sizeof(BatchVertex);
+        description.Usage = D3D11_USAGE_DYNAMIC;
+        description.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        description.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        d3d11::ThrowIfFailed(nativeDevice->CreateBuffer(&description, nullptr, &m_batchVertexBuffer),
+                             "ID3D11Device::CreateBuffer batch vertices");
+    }
+    {
+        D3D11_BUFFER_DESC description{};
+        description.ByteWidth = kBatchMaxVertices * 3 / 2 * sizeof(uint32_t);
+        description.Usage = D3D11_USAGE_DYNAMIC;
+        description.BindFlags = D3D11_BIND_INDEX_BUFFER;
+        description.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        d3d11::ThrowIfFailed(nativeDevice->CreateBuffer(&description, nullptr, &m_batchIndexBuffer),
+                             "ID3D11Device::CreateBuffer batch indices");
+    }
+    {
+        static constexpr uint8_t whitePixel[4] = {255, 255, 255, 255};
+        D3D11_TEXTURE2D_DESC description{};
+        description.Width = 1;
+        description.Height = 1;
+        description.MipLevels = 1;
+        description.ArraySize = 1;
+        description.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        description.SampleDesc.Count = 1;
+        description.Usage = D3D11_USAGE_IMMUTABLE;
+        description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        D3D11_SUBRESOURCE_DATA initialData{};
+        initialData.pSysMem = whitePixel;
+        initialData.SysMemPitch = sizeof(whitePixel);
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> whiteTexture;
+        d3d11::ThrowIfFailed(nativeDevice->CreateTexture2D(&description, &initialData, &whiteTexture),
+                             "ID3D11Device::CreateTexture2D batch white");
+        m_whiteTexture = whiteTexture;
+        d3d11::ThrowIfFailed(
+            nativeDevice->CreateShaderResourceView(m_whiteTexture.Get(), nullptr,
+                                                   &m_whiteShaderResource),
+            "ID3D11Device::CreateShaderResourceView batch white");
+    }
+
+    m_batchVertices.reserve(kBatchMaxVertices);
+    m_batchIndices.reserve(kBatchMaxVertices);
+    m_batchDrawItems.reserve(kBatchMaxVertices);
+
     TraceLog(LogLevel::Trace, "D3D11", "Immediate command context initialized.");
 }
 
@@ -60,6 +107,8 @@ void D3D11CommandContext::BeginDrawing()
 
 void D3D11CommandContext::EndDrawing(bool vsync)
 {
+    FlushBatch();
+
     if (m_swapChain)
     {
         m_swapChain->Present(vsync);
@@ -106,6 +155,8 @@ void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
         return;
     }
 
+    FlushBatch();
+
     ID3D11DepthStencilView *depthStencil = m_swapChain->DepthStencilView();
     if (!depthStencil)
     {
@@ -134,6 +185,8 @@ void D3D11CommandContext::Draw3DTextured(const float *vertices, UINT vertexCount
         return;
     }
 
+    FlushBatch();
+
     constexpr UINT kMaxVertices = 32768;
     if (vertexCount > kMaxVertices)
     {
@@ -153,9 +206,7 @@ void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, i
         return;
     }
 
-    const float colorValues[] = {color.r / 255.0f, color.g / 255.0f, color.b / 255.0f,
-                                 color.a / 255.0f};
-    const Vec2 points[] = {
+    const Vec2 points[3] = {
         m_camera2DActive ? GetWorldToScreen2D(v1, m_camera2D) : v1,
         m_camera2DActive ? GetWorldToScreen2D(v2, m_camera2D) : v2,
         m_camera2DActive ? GetWorldToScreen2D(v3, m_camera2D) : v3
@@ -163,6 +214,10 @@ void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, i
 
     if (m_shaderOverride.Active())
     {
+        FlushBatch();
+
+        const float colorValues[] = {color.r / 255.0f, color.g / 255.0f, color.b / 255.0f,
+                                     color.a / 255.0f};
         const UINT floatsPerVertex = m_shaderOverride.strideBytes / sizeof(float);
         std::vector<float> vertices(static_cast<size_t>(floatsPerVertex) * 3, 0.0f);
 
@@ -194,21 +249,21 @@ void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, i
         return;
     }
 
-    float vertices[18]{};
-
-    for (int index = 0; index < 3; ++index)
+    if (m_batchVertices.size() + 3 > kBatchMaxVertices)
     {
-        vertices[index * 6] = points[index].x / m_activeWidth * 2.0f - 1.0f;
-        vertices[index * 6 + 1] = 1.0f - points[index].y / m_activeHeight * 2.0f;
-        std::memcpy(vertices + index * 6 + 2, colorValues, sizeof(colorValues));
+        FlushBatch();
     }
 
-    m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer(), vertices,
-                                     sizeof(vertices));
-
-    m_pipeline->Bind(m_context);
-    m_context->Draw(3, 0);
-
+    const float colorValues[] = {color.r / 255.0f, color.g / 255.0f, color.b / 255.0f,
+                                 color.a / 255.0f};
+    BatchVertex batch[3]{};
+    for (int index = 0; index < 3; ++index)
+    {
+        batch[index].x = points[index].x;
+        batch[index].y = points[index].y;
+        std::memcpy(&batch[index].r, colorValues, sizeof(colorValues));
+    }
+    BatchTriangle(batch);
 }
 
 void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
@@ -249,7 +304,6 @@ void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
         {-origin.x, destination.height - origin.y}
     };
     const Vec2 uv[] = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
-    const int indices[] = {0, 1, 2, 0, 2, 3};
     const float color[] = {
         tint.r / 255.0f,
         tint.g / 255.0f,
@@ -259,9 +313,12 @@ void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
 
     if (m_shaderOverride.Active())
     {
+        FlushBatch();
+
         const UINT floatsPerVertex = m_shaderOverride.strideBytes / sizeof(float);
         std::vector<float> vertices(static_cast<size_t>(floatsPerVertex) * 6, 0.0f);
 
+        const int indices[] = {0, 1, 2, 0, 2, 3};
         for (int index = 0; index < 6; ++index)
         {
             const int vertexIndex = indices[index];
@@ -299,32 +356,122 @@ void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
         return;
     }
 
-    float vertices[6 * 8]{};
+    if (m_batchVertices.size() + 4 > kBatchMaxVertices)
+    {
+        FlushBatch();
+    }
 
-    for (int index = 0; index < 6; ++index) {
-        const int vertexIndex = indices[index];
-        const float rotatedX = local[vertexIndex].x * cosine - local[vertexIndex].y * sine;
-        const float rotatedY = local[vertexIndex].x * sine + local[vertexIndex].y * cosine;
+    BatchVertex batch[4]{};
+    for (int index = 0; index < 4; ++index)
+    {
+        const float rotatedX = local[index].x * cosine - local[index].y * sine;
+        const float rotatedY = local[index].x * sine + local[index].y * cosine;
         Vec2 position{destination.x + rotatedX, destination.y + rotatedY};
         if (m_camera2DActive) {
             position = GetWorldToScreen2D(position, m_camera2D);
         }
 
-        float* vertex = vertices + index * 8;
-        vertex[0] = position.x / m_activeWidth * 2.0f - 1.0f;
-        vertex[1] = 1.0f - position.y / m_activeHeight * 2.0f;
-        vertex[2] = uv[vertexIndex].x;
-        vertex[3] = uv[vertexIndex].y;
-        std::memcpy(vertex + 4, color, sizeof(color));
+        batch[index].x = position.x;
+        batch[index].y = position.y;
+        batch[index].u = uv[index].x;
+        batch[index].v = uv[index].y;
+        std::memcpy(&batch[index].r, color, sizeof(color));
+    }
+    BatchQuad(batch, shaderResource);
+}
+
+void D3D11CommandContext::BatchTriangle(const BatchVertex v[3])
+{
+    const uint32_t baseVertex = static_cast<uint32_t>(m_batchVertices.size());
+    const UINT indexStart = static_cast<UINT>(m_batchIndices.size());
+
+    m_batchVertices.insert(m_batchVertices.end(), v, v + 3);
+    m_batchIndices.push_back(baseVertex);
+    m_batchIndices.push_back(baseVertex + 1);
+    m_batchIndices.push_back(baseVertex + 2);
+    m_batchDrawItems.push_back(DrawItem{indexStart, 3, nullptr});
+}
+
+void D3D11CommandContext::BatchQuad(const BatchVertex v[4], ID3D11ShaderResourceView *shaderResource)
+{
+    const uint32_t baseVertex = static_cast<uint32_t>(m_batchVertices.size());
+    const UINT indexStart = static_cast<UINT>(m_batchIndices.size());
+
+    m_batchVertices.insert(m_batchVertices.end(), v, v + 4);
+    m_batchIndices.push_back(baseVertex);
+    m_batchIndices.push_back(baseVertex + 1);
+    m_batchIndices.push_back(baseVertex + 2);
+    m_batchIndices.push_back(baseVertex);
+    m_batchIndices.push_back(baseVertex + 2);
+    m_batchIndices.push_back(baseVertex + 3);
+    m_batchDrawItems.push_back(DrawItem{indexStart, 6, shaderResource});
+}
+
+void D3D11CommandContext::FlushBatch()
+{
+    if (!m_context || !m_pipeline || !m_batchVertexBuffer || !m_batchIndexBuffer ||
+        m_batchVertices.empty())
+    {
+        return;
     }
 
-    m_resources->UpdateDynamicBuffer(
-        m_context,
-        m_pipeline->VertexBuffer(),
-        vertices,
-        sizeof(vertices));
-    m_pipeline->BindTexture(m_context, shaderResource);
-    m_context->Draw(6, 0);
+    if (m_activeWidth <= 0 || m_activeHeight <= 0)
+    {
+        m_batchVertices.clear();
+        m_batchIndices.clear();
+        m_batchDrawItems.clear();
+        return;
+    }
+
+    for (BatchVertex &vertex : m_batchVertices)
+    {
+        vertex.x = vertex.x / m_activeWidth * 2.0f - 1.0f;
+        vertex.y = 1.0f - vertex.y / m_activeHeight * 2.0f;
+    }
+
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    HRESULT result = m_context->Map(m_batchVertexBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0,
+                                    &mapped);
+    if (FAILED(result))
+    {
+        m_batchVertices.clear();
+        m_batchIndices.clear();
+        m_batchDrawItems.clear();
+        return;
+    }
+    std::memcpy(mapped.pData, m_batchVertices.data(), m_batchVertices.size() * sizeof(BatchVertex));
+    m_context->Unmap(m_batchVertexBuffer.Get(), 0);
+
+    result = m_context->Map(m_batchIndexBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    if (FAILED(result))
+    {
+        m_context->Unmap(m_batchVertexBuffer.Get(), 0);
+        m_batchVertices.clear();
+        m_batchIndices.clear();
+        m_batchDrawItems.clear();
+        return;
+    }
+    std::memcpy(mapped.pData, m_batchIndices.data(), m_batchIndices.size() * sizeof(uint32_t));
+    m_context->Unmap(m_batchIndexBuffer.Get(), 0);
+
+    m_pipeline->BindBatch(m_context, m_batchVertexBuffer.Get(), m_batchIndexBuffer.Get());
+
+    ID3D11ShaderResourceView *boundSRV = nullptr;
+    for (const DrawItem &item : m_batchDrawItems)
+    {
+        ID3D11ShaderResourceView *srv = item.shaderResource ? item.shaderResource
+                                                            : m_whiteShaderResource.Get();
+        if (srv != boundSRV)
+        {
+            m_context->PSSetShaderResources(0, 1, &srv);
+            boundSRV = srv;
+        }
+        m_context->DrawIndexed(item.indexCount, item.indexStart, 0);
+    }
+
+    m_batchVertices.clear();
+    m_batchIndices.clear();
+    m_batchDrawItems.clear();
 }
 
 void D3D11CommandContext::BindOverride(ID3D11ShaderResourceView *drawnResource)
@@ -383,6 +530,8 @@ void D3D11CommandContext::BeginTextureMode(const IRenderTexture& target)
         return;
     }
 
+    FlushBatch();
+
     m_context->OMSetRenderTargets(1, &renderTarget, nullptr);
     m_activeRenderTarget = renderTarget;
     m_activeWidth = target.texture.width;
@@ -392,6 +541,7 @@ void D3D11CommandContext::BeginTextureMode(const IRenderTexture& target)
 
 void D3D11CommandContext::EndTextureMode(int width, int height)
 {
+    FlushBatch();
     BeginDrawing();
     const int restoreWidth = width > 0 ? width : m_defaultWidth;
     const int restoreHeight = height > 0 ? height : m_defaultHeight;
@@ -427,6 +577,13 @@ void D3D11CommandContext::Shutdown()
     m_camera2D = {};
     m_camera2DActive = false;
     m_shaderOverride = {};
+    m_batchVertexBuffer.Reset();
+    m_batchIndexBuffer.Reset();
+    m_whiteTexture.Reset();
+    m_whiteShaderResource.Reset();
+    m_batchVertices.clear();
+    m_batchIndices.clear();
+    m_batchDrawItems.clear();
 }
 
 } // namespace qc

@@ -293,7 +293,7 @@ public:
     RendererType GetType() const override { return RendererType::Vulkan; }
 
     VkInstance            GetVulkanInstance() const { return m_instance; }
-    VkPhysicalDevice       GetVulkanPhysicalDevice() const { return m_physicalDevice; }
+    VkPhysicalDevice      GetVulkanPhysicalDevice() const { return m_physicalDevice; }
     VkDevice              GetVulkanDevice() const { return m_device; }
     uint32_t              GetVulkanGraphicsQueueFamily() const { return m_graphicsQueueFamily; }
     VkQueue               GetVulkanGraphicsQueue() const { return m_graphicsQueue; }
@@ -336,17 +336,17 @@ private:
     VkSwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device) const;
     bool                      IsDeviceSuitable(VkPhysicalDevice device) const;
 
-    QuarkVkDevice m_vkDevice;
-    QuarkVkSwapChain m_vkSwapChain;
-    QuarkVkPipeline m_vkPipeline;
-    QuarkVkRenderTarget m_vkRenderTarget;
-    QuarkVkResources m_vkResources;
-    QuarkVkCommandContext m_vkCommandContext;
-    QuarkVkFrameManager m_vkFrameManager;
-    QuarkVkFramebufferManager m_vkFramebufferManager;
-    QuarkVkDescriptorSetManager m_vkDescriptorSetManager;
-    QuarkVkRenderPass m_vkRenderPass;
-    QuarkVkShaderCompiler m_vkShaderCompiler;
+    QuarkVkDevice                   m_vkDevice;
+    QuarkVkSwapChain                m_vkSwapChain;
+    QuarkVkPipeline                 m_vkPipeline;
+    QuarkVkRenderTarget             m_vkRenderTarget;
+    QuarkVkResources                m_vkResources;
+    QuarkVkCommandContext           m_vkCommandContext;
+    QuarkVkFrameManager             m_vkFrameManager;
+    QuarkVkFramebufferManager       m_vkFramebufferManager;
+    QuarkVkDescriptorSetManager     m_vkDescriptorSetManager;
+    QuarkVkRenderPass               m_vkRenderPass;
+    QuarkVkShaderCompiler           m_vkShaderCompiler;
 
     VkSurfaceFormatKHR        ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats) const;
     VkPresentModeKHR          ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& modes) const;
@@ -512,10 +512,10 @@ private:
     std::unordered_map<uint64_t, VkMaterialCacheEntry> m_materialCache;
 
     std::unordered_map<std::string, VkCachedTexture> m_textureCache;
-    std::unordered_map<uint32_t, std::string> m_textureCacheKeys;
+    std::unordered_map<uint32_t, std::string>        m_textureCacheKeys;
     std::unordered_map<uint32_t, FontData>      m_fonts;
-    uint32_t                                   m_nextFontId = 1;
-    uint32_t                                   m_defaultFontId = 0;
+    uint32_t                                    m_nextFontId = 1;
+    uint32_t                                    m_defaultFontId = 0;
 
     uint32_t                                         m_nextRenderTargetId = 1;
     std::unordered_map<uint32_t, VkRenderTargetData> m_renderTargets;
@@ -526,14 +526,14 @@ private:
     std::vector<VkDrawItem>    m_batchDrawItems;
     Vk3DGeometryBatch          m_main3DBatch;
 
-    std::vector<VkBatchVertex> m_frameVertices;
-    std::vector<uint32_t>      m_frameIndices;
-    std::vector<VkDrawItem>    m_frameDrawItems;
-    std::vector<VkFramePass>   m_framePasses;
-    std::vector<Vk3DVertex>    m_frameTriangleVertices3D;
-    std::vector<Vk3DVertex>    m_frameLineVertices3D;
-        std::vector<Vk3DDrawItem>  m_frame3DDrawItems;
-    uint32_t                   m_frame3DShaderProgramId = 0;
+    std::vector<VkBatchVertex>      m_frameVertices;
+    std::vector<uint32_t>           m_frameIndices;
+    std::vector<VkDrawItem>         m_frameDrawItems;
+    std::vector<VkFramePass>        m_framePasses;
+    std::vector<Vk3DVertex>         m_frameTriangleVertices3D;
+    std::vector<Vk3DVertex>         m_frameLineVertices3D;
+        std::vector<Vk3DDrawItem>   m_frame3DDrawItems;
+    uint32_t                        m_frame3DShaderProgramId = 0;
 
     VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;
     Color           m_clearColor           = {0, 0, 0, 255};
