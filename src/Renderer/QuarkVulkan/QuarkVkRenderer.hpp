@@ -42,6 +42,7 @@
 #include "../QuarkIRenderer.hpp"
 #include "../QuarkFont.hpp"
 #include "QuarkCore/QuarkCore.hpp"
+#include "QuarkVkGpuAllocator.hpp"
 
 #include <vulkan/vulkan.h>
 #include <SDL3/SDL_vulkan.h>
@@ -114,16 +115,19 @@ struct VkFrameData {
 
     VkBuffer       vertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory vertexMemory = VK_NULL_HANDLE;
+    VmaAllocation  vertexAllocation = VK_NULL_HANDLE;
     void*          vertexMapped = nullptr;
     VkDeviceSize   vertexCapacity = 0;
 
     VkBuffer       indexBuffer  = VK_NULL_HANDLE;
     VkDeviceMemory indexMemory  = VK_NULL_HANDLE;
+    VmaAllocation  indexAllocation = VK_NULL_HANDLE;
     void*          indexMapped  = nullptr;
     VkDeviceSize   indexCapacity = 0;
 
     VkBuffer       vertexBuffer3D = VK_NULL_HANDLE;
     VkDeviceMemory vertexMemory3D = VK_NULL_HANDLE;
+    VmaAllocation  vertex3DAllocation = VK_NULL_HANDLE;
     void*          vertexMapped3D = nullptr;
     VkDeviceSize   vertexCapacity3D = 0;
 };
@@ -131,6 +135,7 @@ struct VkFrameData {
 struct VkTextureData {
     VkImage         image         = VK_NULL_HANDLE;
     VkDeviceMemory  memory        = VK_NULL_HANDLE;
+    VmaAllocation   allocation    = VK_NULL_HANDLE;
     VkImageView     view          = VK_NULL_HANDLE;
     VkSampler       sampler       = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
@@ -191,6 +196,7 @@ struct VkRenderTargetData {
     Color         clearColor  = {0, 0, 0, 255};
     VkImage       depthImage  = VK_NULL_HANDLE;
     VkDeviceMemory depthMemory = VK_NULL_HANDLE;
+    VmaAllocation depthAllocation = VK_NULL_HANDLE;
     VkImageView   depthView    = VK_NULL_HANDLE;
 
     std::vector<VkBatchVertex> vertices;
@@ -418,7 +424,16 @@ private:
     bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                       VkMemoryPropertyFlags props,
                       VkBuffer& outBuffer, VkDeviceMemory& outMemory);
+    bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                      VmaMemoryUsage memoryUsage,
+                      VkBuffer& outBuffer, VmaAllocation& outAllocation,
+                      VkDeviceMemory& outMemory,
+                      VmaAllocationCreateFlags flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                          VMA_ALLOCATION_CREATE_MAPPED_BIT);
     bool EnsureMappedBufferCapacity(VkBuffer& buffer, VkDeviceMemory& memory, void*& mapped,
+                                    VkDeviceSize& capacity, VkDeviceSize required,
+                                    VkBufferUsageFlags usage);
+    bool EnsureMappedBufferCapacity(VkBuffer& buffer, VkDeviceMemory& memory, VmaAllocation& allocation, void*& mapped,
                                     VkDeviceSize& capacity, VkDeviceSize required,
                                     VkBufferUsageFlags usage);
 
@@ -439,8 +454,10 @@ private:
     VkSampleCountFlagBits GetSampleCountForSamples(int samples) const;
     bool     CreateDepthResources(uint32_t width, uint32_t height,
                                   VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView,
-                                  VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
-    void     DestroyDepthResources(VkImage& image, VkDeviceMemory& memory, VkImageView& view);
+                                  VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
+                                  VmaAllocation* outAllocation = nullptr);
+    void     DestroyDepthResources(VkImage& image, VkDeviceMemory& memory, VkImageView& view,
+                                  VmaAllocation allocation = VK_NULL_HANDLE);
 
     IRenderTexture CreateRenderTargetInternal(int width, int height);
     void           DestroyRenderTargetInternal(uint32_t renderTargetId);
@@ -550,6 +567,7 @@ private:
     std::vector<VkImageView> m_swapChainImageViews;
     std::vector<VkImage>     m_swapChainDepthImages;
     std::vector<VkDeviceMemory> m_swapChainDepthMemories;
+    std::vector<VmaAllocation>  m_swapChainDepthAllocations;
     std::vector<VkImageView> m_swapChainDepthImageViews;
     VkFormat                 m_swapChainImageFormat = VK_FORMAT_UNDEFINED;
     VkFormat                 m_depthFormat          = VK_FORMAT_UNDEFINED;
@@ -564,8 +582,10 @@ private:
     std::vector<VkDescriptorPool> m_descriptorPools;
     VkDescriptorPool              m_imguiDescriptorPool = VK_NULL_HANDLE;
     VkBuffer                      m_3DDummyBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory                 m_3DDummyMemory = VK_NULL_HANDLE;
-    void*                          m_3DDummyMapped = nullptr;
+    VkDeviceMemory                m_3DDummyMemory = VK_NULL_HANDLE;
+    VmaAllocation                 m_3DDummyAllocation = VK_NULL_HANDLE;
+    void*                         m_3DDummyMapped = nullptr;
+    QuarkVkGpuAllocator           m_gpuAllocator;
 
     VkPipelineLayout m_pipelineLayout      = VK_NULL_HANDLE;
     VkPipelineLayout m_pipelineLayout3D    = VK_NULL_HANDLE;
@@ -586,6 +606,7 @@ private:
     uint32_t m_swapChainMinImageCount = 0;
     VkImage               m_msaaColorImage       = VK_NULL_HANDLE;
     VkDeviceMemory        m_msaaColorMemory      = VK_NULL_HANDLE;
+    VmaAllocation         m_msaaColorAllocation   = VK_NULL_HANDLE;
     VkImageView           m_msaaColorImageView   = VK_NULL_HANDLE;
     int                   m_requestedMsaaSamples = 1;
     VkSampleCountFlagBits m_msaaSamples          = VK_SAMPLE_COUNT_1_BIT;

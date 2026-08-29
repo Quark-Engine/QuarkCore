@@ -8,6 +8,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(QuarkCore VERSION 0.1.0 LANGUAGES CXX C)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -436,6 +438,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
             src/Renderer/QuarkVulkan/QuarkVkTexture.cpp
             src/Renderer/QuarkVulkan/QuarkVkModel.cpp
             src/Renderer/QuarkVulkan/QuarkVkFont.cpp
+            src/Renderer/QuarkVulkan/QuarkVkGpuAllocator.cpp
         )
         target_compile_definitions(${TARGET_NAME} PRIVATE
             QC_ENABLE_VULKAN
@@ -514,6 +517,28 @@ add_library(QuarkCore::OpenGL ALIAS QuarkCore-OpenGL)
 add_library(QuarkCore::Vulkan ALIAS QuarkCore-Vulkan)
 if(WIN32)
     add_library(QuarkCore::D3D11 ALIAS QuarkCore-D3D11)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(quark_vulkan_validation_tests
+        tests/QuarkVulkanValidationTests.cpp
+    )
+    target_include_directories(quark_vulkan_validation_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/Vulkan/include
+    )
+    target_compile_definitions(quark_vulkan_validation_tests PRIVATE
+        VMA_STATIC_VULKAN_FUNCTIONS=1
+    )
+    if(WIN32)
+        target_link_libraries(quark_vulkan_validation_tests PRIVATE
+            Vulkan::Vulkan
+        )
+    else()
+        target_link_libraries(quark_vulkan_validation_tests PRIVATE
+            Vulkan::Vulkan
+        )
+    endif()
+    add_test(NAME QuarkVulkanValidation COMMAND quark_vulkan_validation_tests)
 endif()
 
 if(QC_BUILD_EXAMPLES)

@@ -344,42 +344,48 @@ void QuarkVkRenderer::Shutdown() {
             frame.inFlightFence = VK_NULL_HANDLE;
         }
 
-        if (frame.vertexMapped && frame.vertexMemory != VK_NULL_HANDLE) {
-            vkUnmapMemory(m_device, frame.vertexMemory);
+        if (frame.vertexMapped && frame.vertexAllocation != VK_NULL_HANDLE) {
+            vmaUnmapMemory(m_gpuAllocator.GetAllocator(), frame.vertexAllocation);
             frame.vertexMapped = nullptr;
         }
         if (frame.vertexBuffer != VK_NULL_HANDLE) {
-            vkDestroyBuffer(m_device, frame.vertexBuffer, nullptr);
+            m_gpuAllocator.DestroyBuffer(frame.vertexBuffer, frame.vertexAllocation);
             frame.vertexBuffer = VK_NULL_HANDLE;
         }
+        if (frame.vertexAllocation != VK_NULL_HANDLE) {
+            frame.vertexAllocation = VK_NULL_HANDLE;
+        }
         if (frame.vertexMemory != VK_NULL_HANDLE) {
-            vkFreeMemory(m_device, frame.vertexMemory, nullptr);
             frame.vertexMemory = VK_NULL_HANDLE;
         }
         frame.vertexCapacity = 0;
-        if (frame.indexMapped && frame.indexMemory != VK_NULL_HANDLE) {
-            vkUnmapMemory(m_device, frame.indexMemory);
+        if (frame.indexMapped && frame.indexAllocation != VK_NULL_HANDLE) {
+            vmaUnmapMemory(m_gpuAllocator.GetAllocator(), frame.indexAllocation);
             frame.indexMapped = nullptr;
         }
         if (frame.indexBuffer != VK_NULL_HANDLE) {
-            vkDestroyBuffer(m_device, frame.indexBuffer, nullptr);
+            m_gpuAllocator.DestroyBuffer(frame.indexBuffer, frame.indexAllocation);
             frame.indexBuffer = VK_NULL_HANDLE;
         }
+        if (frame.indexAllocation != VK_NULL_HANDLE) {
+            frame.indexAllocation = VK_NULL_HANDLE;
+        }
         if (frame.indexMemory != VK_NULL_HANDLE) {
-            vkFreeMemory(m_device, frame.indexMemory, nullptr);
             frame.indexMemory = VK_NULL_HANDLE;
         }
         frame.indexCapacity = 0;
-        if (frame.vertexMapped3D && frame.vertexMemory3D != VK_NULL_HANDLE) {
-            vkUnmapMemory(m_device, frame.vertexMemory3D);
+        if (frame.vertexMapped3D && frame.vertex3DAllocation != VK_NULL_HANDLE) {
+            vmaUnmapMemory(m_gpuAllocator.GetAllocator(), frame.vertex3DAllocation);
             frame.vertexMapped3D = nullptr;
         }
         if (frame.vertexBuffer3D != VK_NULL_HANDLE) {
-            vkDestroyBuffer(m_device, frame.vertexBuffer3D, nullptr);
+            m_gpuAllocator.DestroyBuffer(frame.vertexBuffer3D, frame.vertex3DAllocation);
             frame.vertexBuffer3D = VK_NULL_HANDLE;
         }
+        if (frame.vertex3DAllocation != VK_NULL_HANDLE) {
+            frame.vertex3DAllocation = VK_NULL_HANDLE;
+        }
         if (frame.vertexMemory3D != VK_NULL_HANDLE) {
-            vkFreeMemory(m_device, frame.vertexMemory3D, nullptr);
             frame.vertexMemory3D = VK_NULL_HANDLE;
         }
         frame.vertexCapacity3D = 0;
@@ -394,14 +400,16 @@ void QuarkVkRenderer::Shutdown() {
 
     if (m_3DDummyBuffer != VK_NULL_HANDLE) {
         if (m_3DDummyMapped != nullptr) {
-            vkUnmapMemory(m_device, m_3DDummyMemory);
+            vmaUnmapMemory(m_gpuAllocator.GetAllocator(), m_3DDummyAllocation);
             m_3DDummyMapped = nullptr;
         }
-        vkDestroyBuffer(m_device, m_3DDummyBuffer, nullptr);
+        m_gpuAllocator.DestroyBuffer(m_3DDummyBuffer, m_3DDummyAllocation);
         m_3DDummyBuffer = VK_NULL_HANDLE;
     }
+    if (m_3DDummyAllocation != VK_NULL_HANDLE) {
+        m_3DDummyAllocation = VK_NULL_HANDLE;
+    }
     if (m_3DDummyMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(m_device, m_3DDummyMemory, nullptr);
         m_3DDummyMemory = VK_NULL_HANDLE;
     }
 
@@ -423,6 +431,8 @@ void QuarkVkRenderer::Shutdown() {
         vkDestroyCommandPool(m_device, m_commandPool, nullptr);
         m_commandPool = VK_NULL_HANDLE;
     }
+
+    m_gpuAllocator.Shutdown();
 
     if (m_device != VK_NULL_HANDLE) {
         vkDestroyDevice(m_device, nullptr);
@@ -857,6 +867,11 @@ void QuarkVkRenderer::CreateLogicalDevice() {
     }
     vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
     vkGetDeviceQueue(m_device, indices.presentFamily.value(),  0, &m_presentQueue);
+
+    if (!m_gpuAllocator.Initialize(m_instance, m_physicalDevice, m_device)) {
+        throw std::runtime_error("Failed to initialize Vulkan GPU allocator.");
+    }
+
     TraceLog(LogLevel::Info, "VULKAN", TextFormat("Logical device created successfully (Graphics Queue: #%u, Present Queue: #%u, Extensions: %zu).",
         indices.graphicsFamily.value(), indices.presentFamily.value(), kDeviceExtensions.size()));
 }
@@ -1226,13 +1241,21 @@ void QuarkVkRenderer::CreateDescriptorSetLayout() {
         throw std::runtime_error("Failed to create initial Vulkan descriptor pool.");
     }
     m_descriptorPools.push_back(firstSlab);
-    if (!CreateBuffer(4096,
-                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                      m_3DDummyBuffer, m_3DDummyMemory)) {
-        throw std::runtime_error("Failed to create Vulkan 3D uniform buffer.");
+    {
+        VkDeviceMemory dummyMemory = VK_NULL_HANDLE;
+        if (!CreateBuffer(4096,
+                          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                          VMA_MEMORY_USAGE_AUTO,
+                          m_3DDummyBuffer, m_3DDummyAllocation, dummyMemory,
+                          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                          VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
+            throw std::runtime_error("Failed to create Vulkan 3D uniform buffer.");
+        }
     }
-    if (vkMapMemory(m_device, m_3DDummyMemory, 0, 4096, 0, &m_3DDummyMapped) != VK_SUCCESS) {
+    VmaAllocationInfo allocInfo{};
+    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), m_3DDummyAllocation, &allocInfo);
+    m_3DDummyMemory = allocInfo.deviceMemory;
+    if (vmaMapMemory(m_gpuAllocator.GetAllocator(), m_3DDummyAllocation, &m_3DDummyMapped) != VK_SUCCESS) {
         throw std::runtime_error("Failed to map Vulkan 3D uniform buffer.");
     }
     std::memset(m_3DDummyMapped, 0, 4096);
@@ -1389,6 +1412,7 @@ void QuarkVkRenderer::CreateFramebuffers() {
 
     m_swapChainDepthImages.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
     m_swapChainDepthMemories.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
+    m_swapChainDepthAllocations.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
     m_swapChainDepthImageViews.resize(m_swapChainImageViews.size(), VK_NULL_HANDLE);
 
     for (size_t i = 0; i < m_swapChainImageViews.size(); ++i) {
@@ -1396,7 +1420,8 @@ void QuarkVkRenderer::CreateFramebuffers() {
                                   m_swapChainDepthImages[i],
                                   m_swapChainDepthMemories[i],
                                   m_swapChainDepthImageViews[i],
-                                  m_msaaSamples)) {
+                                  m_msaaSamples,
+                                  &m_swapChainDepthAllocations[i])) {
             throw std::runtime_error("Failed to create Vulkan depth resources.");
         }
     }
@@ -1446,7 +1471,7 @@ bool QuarkVkRenderer::RecreateRenderTargetFramebuffers() {
         }
 
         if (rt.depthView == VK_NULL_HANDLE) {
-            if (!CreateDepthResources(rt.width, rt.height, rt.depthImage, rt.depthMemory, rt.depthView)) {
+            if (!CreateDepthResources(rt.width, rt.height, rt.depthImage, rt.depthMemory, rt.depthView, VK_SAMPLE_COUNT_1_BIT, &rt.depthAllocation)) {
                 return false;
             }
         }
@@ -1461,7 +1486,8 @@ bool QuarkVkRenderer::RecreateRenderTargetFramebuffers() {
         fbInfo.height          = rt.height;
         fbInfo.layers          = 1;
         if (vkCreateFramebuffer(m_device, &fbInfo, nullptr, &rt.framebuffer) != VK_SUCCESS) {
-            DestroyDepthResources(rt.depthImage, rt.depthMemory, rt.depthView);
+            DestroyDepthResources(rt.depthImage, rt.depthMemory, rt.depthView, rt.depthAllocation);
+            rt.depthAllocation = VK_NULL_HANDLE;
             return false;
         }
     }
@@ -1505,31 +1531,61 @@ void QuarkVkRenderer::CreateFrameVertexIndexBuffers() {
     const VkDeviceSize vertexBufSize3D = sizeof(Vk3DVertex)  * kVkMaxVerticesPerFrame;
 
     for (auto& frame : m_frames) {
-        if (!CreateBuffer(vertexBufSize,
-                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                          frame.vertexBuffer, frame.vertexMemory)) {
-            throw std::runtime_error("Failed to create per-frame Vulkan vertex buffer.");
+        {
+            VkDeviceMemory dummyMemory = VK_NULL_HANDLE;
+            if (!CreateBuffer(vertexBufSize,
+                              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                              VMA_MEMORY_USAGE_AUTO,
+                              frame.vertexBuffer, frame.vertexAllocation, dummyMemory,
+                              VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                              VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
+                throw std::runtime_error("Failed to create per-frame Vulkan vertex buffer.");
+            }
         }
-        vkMapMemory(m_device, frame.vertexMemory, 0, vertexBufSize, 0, &frame.vertexMapped);
+        VmaAllocationInfo vertexInfo{};
+        vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), frame.vertexAllocation, &vertexInfo);
+        frame.vertexMemory = vertexInfo.deviceMemory;
+        if (vmaMapMemory(m_gpuAllocator.GetAllocator(), frame.vertexAllocation, &frame.vertexMapped) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to map per-frame Vulkan vertex buffer.");
+        }
         frame.vertexCapacity = vertexBufSize;
 
-        if (!CreateBuffer(indexBufSize,
-                          VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                          frame.indexBuffer, frame.indexMemory)) {
-            throw std::runtime_error("Failed to create per-frame Vulkan index buffer.");
+        {
+            VkDeviceMemory dummyMemory = VK_NULL_HANDLE;
+            if (!CreateBuffer(indexBufSize,
+                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                              VMA_MEMORY_USAGE_AUTO,
+                              frame.indexBuffer, frame.indexAllocation, dummyMemory,
+                              VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                              VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
+                throw std::runtime_error("Failed to create per-frame Vulkan index buffer.");
+            }
         }
-        vkMapMemory(m_device, frame.indexMemory, 0, indexBufSize, 0, &frame.indexMapped);
+        VmaAllocationInfo indexInfo{};
+        vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), frame.indexAllocation, &indexInfo);
+        frame.indexMemory = indexInfo.deviceMemory;
+        if (vmaMapMemory(m_gpuAllocator.GetAllocator(), frame.indexAllocation, &frame.indexMapped) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to map per-frame Vulkan index buffer.");
+        }
         frame.indexCapacity = indexBufSize;
 
-        if (!CreateBuffer(vertexBufSize3D,
-                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                          frame.vertexBuffer3D, frame.vertexMemory3D)) {
-            throw std::runtime_error("Failed to create per-frame Vulkan 3D vertex buffer.");
+        {
+            VkDeviceMemory dummyMemory = VK_NULL_HANDLE;
+            if (!CreateBuffer(vertexBufSize3D,
+                              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                              VMA_MEMORY_USAGE_AUTO,
+                              frame.vertexBuffer3D, frame.vertex3DAllocation, dummyMemory,
+                              VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                              VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
+                throw std::runtime_error("Failed to create per-frame Vulkan 3D vertex buffer.");
+            }
         }
-        vkMapMemory(m_device, frame.vertexMemory3D, 0, vertexBufSize3D, 0, &frame.vertexMapped3D);
+        VmaAllocationInfo vertex3DInfo{};
+        vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), frame.vertex3DAllocation, &vertex3DInfo);
+        frame.vertexMemory3D = vertex3DInfo.deviceMemory;
+        if (vmaMapMemory(m_gpuAllocator.GetAllocator(), frame.vertex3DAllocation, &frame.vertexMapped3D) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to map per-frame Vulkan 3D vertex buffer.");
+        }
         frame.vertexCapacity3D = vertexBufSize3D;
     }
     TraceLog(LogLevel::Trace, "VULKAN", "Per-frame vertex/index buffers created.");
@@ -2039,17 +2095,25 @@ void QuarkVkRenderer::CleanupSwapChain() {
     for (size_t i = 0; i < m_swapChainDepthImageViews.size(); ++i) {
         if (m_swapChainDepthImageViews[i] != VK_NULL_HANDLE) {
             vkDestroyImageView(m_device, m_swapChainDepthImageViews[i], nullptr);
+            m_swapChainDepthImageViews[i] = VK_NULL_HANDLE;
         }
         if (m_swapChainDepthImages.size() > i && m_swapChainDepthImages[i] != VK_NULL_HANDLE) {
-            vkDestroyImage(m_device, m_swapChainDepthImages[i], nullptr);
+            if (m_swapChainDepthAllocations.size() > i && m_swapChainDepthAllocations[i] != VK_NULL_HANDLE) {
+                m_gpuAllocator.DestroyImage(m_swapChainDepthImages[i], m_swapChainDepthAllocations[i]);
+                m_swapChainDepthAllocations[i] = VK_NULL_HANDLE;
+            } else {
+                vkDestroyImage(m_device, m_swapChainDepthImages[i], nullptr);
+            }
+            m_swapChainDepthImages[i] = VK_NULL_HANDLE;
         }
-        if (m_swapChainDepthMemories.size() > i && m_swapChainDepthMemories[i] != VK_NULL_HANDLE) {
-            vkFreeMemory(m_device, m_swapChainDepthMemories[i], nullptr);
+        if (m_swapChainDepthMemories.size() > i) {
+            m_swapChainDepthMemories[i] = VK_NULL_HANDLE;
         }
     }
     m_swapChainDepthImageViews.clear();
     m_swapChainDepthImages.clear();
     m_swapChainDepthMemories.clear();
+    m_swapChainDepthAllocations.clear();
 
     if (m_offscreenPipeline2D != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_device, m_offscreenPipeline2D, nullptr);
@@ -2263,34 +2327,49 @@ VkFormat QuarkVkRenderer::FindDepthFormat() const {
 bool QuarkVkRenderer::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                                     VkMemoryPropertyFlags props,
                                     VkBuffer& outBuffer, VkDeviceMemory& outMemory) {
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size        = size;
-    bufferInfo.usage       = usage;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_AUTO;
+    VmaAllocationCreateFlags flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+        VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &outBuffer) != VK_SUCCESS) {
+    if ((props & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0) {
+        memoryUsage = VMA_MEMORY_USAGE_GPU_ONLY;
+        flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    }
+
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    if (!CreateBuffer(size, usage, memoryUsage, outBuffer, allocation, outMemory, flags)) {
+        return false;
+    }
+    return true;
+}
+
+bool QuarkVkRenderer::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                                    VmaMemoryUsage memoryUsage,
+                                    VkBuffer& outBuffer, VmaAllocation& outAllocation,
+                                    VkDeviceMemory& outMemory,
+                                    VmaAllocationCreateFlags flags) {
+    outBuffer = VK_NULL_HANDLE;
+    outAllocation = VK_NULL_HANDLE;
+    outMemory = VK_NULL_HANDLE;
+
+    if (!m_gpuAllocator.CreateBuffer(size, usage, memoryUsage, outBuffer, outAllocation, flags)) {
         return false;
     }
 
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(m_device, outBuffer, &memRequirements);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize  = memRequirements.size;
-    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, props);
-
-    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &outMemory) != VK_SUCCESS) {
-        vkDestroyBuffer(m_device, outBuffer, nullptr);
-        outBuffer = VK_NULL_HANDLE;
-        return false;
-    }
-    vkBindBufferMemory(m_device, outBuffer, outMemory, 0);
+    VmaAllocationInfo allocationInfo{};
+    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), outAllocation, &allocationInfo);
+    outMemory = allocationInfo.deviceMemory;
     return true;
 }
 
 bool QuarkVkRenderer::EnsureMappedBufferCapacity(VkBuffer& buffer, VkDeviceMemory& memory, void*& mapped,
+                                                 VkDeviceSize& capacity, VkDeviceSize required,
+                                                 VkBufferUsageFlags usage) {
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    return EnsureMappedBufferCapacity(buffer, memory, allocation, mapped, capacity, required, usage);
+}
+
+bool QuarkVkRenderer::EnsureMappedBufferCapacity(VkBuffer& buffer, VkDeviceMemory& memory, VmaAllocation& allocation, void*& mapped,
                                                  VkDeviceSize& capacity, VkDeviceSize required,
                                                  VkBufferUsageFlags usage) {
     if (required <= capacity) {
@@ -2303,34 +2382,35 @@ bool QuarkVkRenderer::EnsureMappedBufferCapacity(VkBuffer& buffer, VkDeviceMemor
     }
 
     VkBuffer newBuffer = VK_NULL_HANDLE;
+    VmaAllocation newAllocation = VK_NULL_HANDLE;
     VkDeviceMemory newMemory = VK_NULL_HANDLE;
     if (!CreateBuffer(newCapacity,
                       usage,
-                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      VMA_MEMORY_USAGE_AUTO,
                       newBuffer,
-                      newMemory)) {
+                      newAllocation,
+                      newMemory,
+                      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                      VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
         return false;
     }
 
     void* newMapped = nullptr;
-    if (vkMapMemory(m_device, newMemory, 0, newCapacity, 0, &newMapped) != VK_SUCCESS) {
-        vkDestroyBuffer(m_device, newBuffer, nullptr);
-        vkFreeMemory(m_device, newMemory, nullptr);
+    if (vmaMapMemory(m_gpuAllocator.GetAllocator(), newAllocation, &newMapped) != VK_SUCCESS) {
+        m_gpuAllocator.DestroyBuffer(newBuffer, newAllocation);
         return false;
     }
 
     vkDeviceWaitIdle(m_device);
-    if (mapped != nullptr && memory != VK_NULL_HANDLE) {
-        vkUnmapMemory(m_device, memory);
+    if (mapped != nullptr && allocation != VK_NULL_HANDLE && memory != VK_NULL_HANDLE) {
+        vmaUnmapMemory(m_gpuAllocator.GetAllocator(), allocation);
     }
-    if (buffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(m_device, buffer, nullptr);
-    }
-    if (memory != VK_NULL_HANDLE) {
-        vkFreeMemory(m_device, memory, nullptr);
+    if (buffer != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE) {
+        m_gpuAllocator.DestroyBuffer(buffer, allocation);
     }
 
     buffer = newBuffer;
+    allocation = newAllocation;
     memory = newMemory;
     mapped = newMapped;
     capacity = newCapacity;
@@ -2339,10 +2419,14 @@ bool QuarkVkRenderer::EnsureMappedBufferCapacity(VkBuffer& buffer, VkDeviceMemor
 
 bool QuarkVkRenderer::CreateDepthResources(uint32_t width, uint32_t height,
                                            VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView,
-                                           VkSampleCountFlagBits samples) {
+                                           VkSampleCountFlagBits samples,
+                                           VmaAllocation* outAllocation) {
     outImage = VK_NULL_HANDLE;
     outMemory = VK_NULL_HANDLE;
     outView = VK_NULL_HANDLE;
+    if (outAllocation != nullptr) {
+        *outAllocation = VK_NULL_HANDLE;
+    }
 
     VkImageCreateInfo imageInfo{};
     imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -2359,25 +2443,21 @@ bool QuarkVkRenderer::CreateDepthResources(uint32_t width, uint32_t height,
     imageInfo.samples       = samples;
     imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
 
-    if (vkCreateImage(m_device, &imageInfo, nullptr, &outImage) != VK_SUCCESS) {
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    if (!m_gpuAllocator.CreateImage(imageInfo,
+                                    VMA_MEMORY_USAGE_AUTO,
+                                    outImage,
+                                    allocation,
+                                    VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)) {
         return false;
     }
 
-    VkMemoryRequirements memReq{};
-    vkGetImageMemoryRequirements(m_device, outImage, &memReq);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize  = memReq.size;
-    allocInfo.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &outMemory) != VK_SUCCESS) {
-        vkDestroyImage(m_device, outImage, nullptr);
-        outImage = VK_NULL_HANDLE;
-        return false;
+    VmaAllocationInfo allocInfo{};
+    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), allocation, &allocInfo);
+    outMemory = allocInfo.deviceMemory;
+    if (outAllocation != nullptr) {
+        *outAllocation = allocation;
     }
-
-    vkBindImageMemory(m_device, outImage, outMemory, 0);
 
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -2394,8 +2474,12 @@ bool QuarkVkRenderer::CreateDepthResources(uint32_t width, uint32_t height,
     viewInfo.subresourceRange.layerCount     = 1;
 
     if (vkCreateImageView(m_device, &viewInfo, nullptr, &outView) != VK_SUCCESS) {
-        vkFreeMemory(m_device, outMemory, nullptr);
-        vkDestroyImage(m_device, outImage, nullptr);
+        if (outAllocation != nullptr && *outAllocation != VK_NULL_HANDLE) {
+            m_gpuAllocator.DestroyImage(outImage, *outAllocation);
+            *outAllocation = VK_NULL_HANDLE;
+        } else if (outImage != VK_NULL_HANDLE) {
+            vkDestroyImage(m_device, outImage, nullptr);
+        }
         outImage = VK_NULL_HANDLE;
         outMemory = VK_NULL_HANDLE;
         return false;
@@ -2404,17 +2488,21 @@ bool QuarkVkRenderer::CreateDepthResources(uint32_t width, uint32_t height,
     return true;
 }
 
-void QuarkVkRenderer::DestroyDepthResources(VkImage& image, VkDeviceMemory& memory, VkImageView& view) {
+void QuarkVkRenderer::DestroyDepthResources(VkImage& image, VkDeviceMemory& memory, VkImageView& view,
+                                            VmaAllocation allocation) {
     if (view != VK_NULL_HANDLE) {
         vkDestroyImageView(m_device, view, nullptr);
         view = VK_NULL_HANDLE;
     }
     if (image != VK_NULL_HANDLE) {
-        vkDestroyImage(m_device, image, nullptr);
+        if (allocation != VK_NULL_HANDLE) {
+            m_gpuAllocator.DestroyImage(image, allocation);
+        } else {
+            vkDestroyImage(m_device, image, nullptr);
+        }
         image = VK_NULL_HANDLE;
     }
     if (memory != VK_NULL_HANDLE) {
-        vkFreeMemory(m_device, memory, nullptr);
         memory = VK_NULL_HANDLE;
     }
 }
@@ -2471,25 +2559,18 @@ void QuarkVkRenderer::CreateMSAAColorResources() {
     imageInfo.samples       = m_msaaSamples;
     imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
 
-    if (vkCreateImage(m_device, &imageInfo, nullptr, &m_msaaColorImage) != VK_SUCCESS) {
+    m_msaaColorAllocation = VK_NULL_HANDLE;
+    if (!m_gpuAllocator.CreateImage(imageInfo,
+                                    VMA_MEMORY_USAGE_AUTO,
+                                    m_msaaColorImage,
+                                    m_msaaColorAllocation,
+                                    VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)) {
         throw std::runtime_error("Failed to create MSAA color image.");
     }
 
-    VkMemoryRequirements memReq{};
-    vkGetImageMemoryRequirements(m_device, m_msaaColorImage, &memReq);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize  = memReq.size;
-    allocInfo.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &m_msaaColorMemory) != VK_SUCCESS) {
-        vkDestroyImage(m_device, m_msaaColorImage, nullptr);
-        m_msaaColorImage = VK_NULL_HANDLE;
-        throw std::runtime_error("Failed to allocate MSAA color image memory.");
-    }
-
-    vkBindImageMemory(m_device, m_msaaColorImage, m_msaaColorMemory, 0);
+    VmaAllocationInfo allocInfo{};
+    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), m_msaaColorAllocation, &allocInfo);
+    m_msaaColorMemory = allocInfo.deviceMemory;
 
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -2503,9 +2584,13 @@ void QuarkVkRenderer::CreateMSAAColorResources() {
     viewInfo.subresourceRange.layerCount     = 1;
 
     if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_msaaColorImageView) != VK_SUCCESS) {
-        vkFreeMemory(m_device, m_msaaColorMemory, nullptr);
+        if (m_msaaColorAllocation != VK_NULL_HANDLE) {
+            m_gpuAllocator.DestroyImage(m_msaaColorImage, m_msaaColorAllocation);
+            m_msaaColorAllocation = VK_NULL_HANDLE;
+        } else if (m_msaaColorImage != VK_NULL_HANDLE) {
+            vkDestroyImage(m_device, m_msaaColorImage, nullptr);
+        }
         m_msaaColorMemory = VK_NULL_HANDLE;
-        vkDestroyImage(m_device, m_msaaColorImage, nullptr);
         m_msaaColorImage = VK_NULL_HANDLE;
         throw std::runtime_error("Failed to create MSAA color image view.");
     }
@@ -2517,13 +2602,17 @@ void QuarkVkRenderer::DestroyMSAAColorResources() {
         m_msaaColorImageView = VK_NULL_HANDLE;
     }
     if (m_msaaColorImage != VK_NULL_HANDLE) {
-        vkDestroyImage(m_device, m_msaaColorImage, nullptr);
+        if (m_msaaColorAllocation != VK_NULL_HANDLE) {
+            m_gpuAllocator.DestroyImage(m_msaaColorImage, m_msaaColorAllocation);
+        } else {
+            vkDestroyImage(m_device, m_msaaColorImage, nullptr);
+        }
         m_msaaColorImage = VK_NULL_HANDLE;
     }
     if (m_msaaColorMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(m_device, m_msaaColorMemory, nullptr);
         m_msaaColorMemory = VK_NULL_HANDLE;
     }
+    m_msaaColorAllocation = VK_NULL_HANDLE;
 }
 
 VkCommandBuffer QuarkVkRenderer::BeginSingleTimeCommands() {
@@ -2673,20 +2762,28 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
     TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Creating GPU texture: %ux%u (%llu bytes RGBA8)",
         width, height, static_cast<unsigned long long>(imageSize)));
 
-    VkBuffer       stagingBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+    VkBuffer        stagingBuffer = VK_NULL_HANDLE;
+    VmaAllocation   stagingAllocation = VK_NULL_HANDLE;
+    VkDeviceMemory  stagingMemory = VK_NULL_HANDLE;
     if (!CreateBuffer(imageSize,
                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                      stagingBuffer, stagingMemory)) {
+                      VMA_MEMORY_USAGE_AUTO,
+                      stagingBuffer,
+                      stagingAllocation,
+                      stagingMemory,
+                      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                      VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
         TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to allocate staging buffer for texture upload");
         return false;
     }
 
     void* mapped = nullptr;
-    vkMapMemory(m_device, stagingMemory, 0, imageSize, 0, &mapped);
+    if (vmaMapMemory(m_gpuAllocator.GetAllocator(), stagingAllocation, &mapped) != VK_SUCCESS) {
+        m_gpuAllocator.DestroyBuffer(stagingBuffer, stagingAllocation);
+        return false;
+    }
     std::memcpy(mapped, rgba, static_cast<size_t>(imageSize));
-    vkUnmapMemory(m_device, stagingMemory);
+    vmaUnmapMemory(m_gpuAllocator.GetAllocator(), stagingAllocation);
 
     VkTextureData tex{};
     tex.width  = width;
@@ -2707,29 +2804,20 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
     imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
 
-    if (vkCreateImage(m_device, &imageInfo, nullptr, &tex.image) != VK_SUCCESS) {
-        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkImage");
-        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-        vkFreeMemory(m_device, stagingMemory, nullptr);
+    tex.allocation = VK_NULL_HANDLE;
+    if (!m_gpuAllocator.CreateImage(imageInfo,
+                                    VMA_MEMORY_USAGE_AUTO,
+                                    tex.image,
+                                    tex.allocation,
+                                    VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkImage with VMA");
+        m_gpuAllocator.DestroyBuffer(stagingBuffer, stagingAllocation);
         return false;
     }
 
-    VkMemoryRequirements memReq;
-    vkGetImageMemoryRequirements(m_device, tex.image, &memReq);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize  = memReq.size;
-    allocInfo.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &tex.memory) != VK_SUCCESS) {
-        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to allocate device memory for texture");
-        vkDestroyImage(m_device, tex.image, nullptr);
-        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-        vkFreeMemory(m_device, stagingMemory, nullptr);
-        return false;
-    }
-    vkBindImageMemory(m_device, tex.image, tex.memory, 0);
+    VmaAllocationInfo imageAllocInfo{};
+    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), tex.allocation, &imageAllocInfo);
+    tex.memory = imageAllocInfo.deviceMemory;
 
     if (!TransitionImageLayout(tex.image, imageInfo.format,
                                VK_IMAGE_LAYOUT_UNDEFINED,
@@ -2739,15 +2827,15 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
         TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed image transitions or buffer copy for texture");
-        vkFreeMemory(m_device, tex.memory, nullptr);
-        vkDestroyImage(m_device, tex.image, nullptr);
-        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-        vkFreeMemory(m_device, stagingMemory, nullptr);
+        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
+        tex.image = VK_NULL_HANDLE;
+        tex.allocation = VK_NULL_HANDLE;
+        tex.memory = VK_NULL_HANDLE;
+        m_gpuAllocator.DestroyBuffer(stagingBuffer, stagingAllocation);
         return false;
     }
 
-    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-    vkFreeMemory(m_device, stagingMemory, nullptr);
+    m_gpuAllocator.DestroyBuffer(stagingBuffer, stagingAllocation);
 
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -2762,8 +2850,10 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
 
     if (vkCreateImageView(m_device, &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
         TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkImageView");
-        vkFreeMemory(m_device, tex.memory, nullptr);
-        vkDestroyImage(m_device, tex.image, nullptr);
+        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
+        tex.image = VK_NULL_HANDLE;
+        tex.allocation = VK_NULL_HANDLE;
+        tex.memory = VK_NULL_HANDLE;
         return false;
     }
 
@@ -2780,8 +2870,10 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
     if (vkCreateSampler(m_device, &samplerInfo, nullptr, &tex.sampler) != VK_SUCCESS) {
         TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkSampler");
         vkDestroyImageView(m_device, tex.view, nullptr);
-        vkFreeMemory(m_device, tex.memory, nullptr);
-        vkDestroyImage(m_device, tex.image, nullptr);
+        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
+        tex.image = VK_NULL_HANDLE;
+        tex.allocation = VK_NULL_HANDLE;
+        tex.memory = VK_NULL_HANDLE;
         return false;
     }
 
@@ -2789,8 +2881,10 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
         TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to allocate texture descriptor set");
         vkDestroySampler(m_device, tex.sampler, nullptr);
         vkDestroyImageView(m_device, tex.view, nullptr);
-        vkFreeMemory(m_device, tex.memory, nullptr);
-        vkDestroyImage(m_device, tex.image, nullptr);
+        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
+        tex.image = VK_NULL_HANDLE;
+        tex.allocation = VK_NULL_HANDLE;
+        tex.memory = VK_NULL_HANDLE;
         return false;
     }
 
@@ -2812,7 +2906,7 @@ bool QuarkVkRenderer::CreateTextureFromRGBA(const unsigned char* rgba,
     m_textures[outId] = tex;
 
     TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Texture uploaded to GPU (ID: %u, %ux%u, Mem: %llu bytes, DS: %p)",
-        outId, width, height, static_cast<unsigned long long>(memReq.size), (void*)tex.descriptorSet));
+        outId, width, height, static_cast<unsigned long long>(imageSize), (void*)tex.descriptorSet));
     return true;
 }
 
@@ -2825,8 +2919,16 @@ void QuarkVkRenderer::DestroyTexture(uint32_t textureId) {
 
     if (tex.sampler  != VK_NULL_HANDLE) vkDestroySampler   (m_device, tex.sampler,  nullptr);
     if (tex.view     != VK_NULL_HANDLE) vkDestroyImageView (m_device, tex.view,     nullptr);
-    if (tex.image    != VK_NULL_HANDLE) vkDestroyImage     (m_device, tex.image,    nullptr);
-    if (tex.memory   != VK_NULL_HANDLE) vkFreeMemory       (m_device, tex.memory,   nullptr);
+    if (tex.image    != VK_NULL_HANDLE) {
+        if (tex.allocation != VK_NULL_HANDLE) {
+            m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
+        } else {
+            vkDestroyImage(m_device, tex.image, nullptr);
+        }
+        tex.image = VK_NULL_HANDLE;
+    }
+    tex.memory = VK_NULL_HANDLE;
+    tex.allocation = VK_NULL_HANDLE;
     m_textures.erase(it);
 }
 
@@ -2855,29 +2957,26 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
 
-    if (vkCreateImage(m_device, &imageInfo, nullptr, &tex.image) != VK_SUCCESS) {
+    tex.allocation = VK_NULL_HANDLE;
+    if (!m_gpuAllocator.CreateImage(imageInfo,
+                                    VMA_MEMORY_USAGE_AUTO,
+                                    tex.image,
+                                    tex.allocation,
+                                    VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)) {
         return IRenderTexture{};
     }
 
-    VkMemoryRequirements memReq;
-    vkGetImageMemoryRequirements(m_device, tex.image, &memReq);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize  = memReq.size;
-    allocInfo.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &tex.memory) != VK_SUCCESS) {
-        vkDestroyImage(m_device, tex.image, nullptr);
-        return IRenderTexture{};
-    }
-    vkBindImageMemory(m_device, tex.image, tex.memory, 0);
+    VmaAllocationInfo rtAllocInfo{};
+    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), tex.allocation, &rtAllocInfo);
+    tex.memory = rtAllocInfo.deviceMemory;
 
     if (!TransitionImageLayout(tex.image, imageInfo.format,
                                VK_IMAGE_LAYOUT_UNDEFINED,
                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
-        vkFreeMemory(m_device, tex.memory, nullptr);
-        vkDestroyImage(m_device, tex.image, nullptr);
+        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
+        tex.image = VK_NULL_HANDLE;
+        tex.allocation = VK_NULL_HANDLE;
+        tex.memory = VK_NULL_HANDLE;
         return IRenderTexture{};
     }
 
@@ -2890,8 +2989,10 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     viewInfo.subresourceRange.levelCount     = 1;
     viewInfo.subresourceRange.layerCount     = 1;
     if (vkCreateImageView(m_device, &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
-        vkFreeMemory(m_device, tex.memory, nullptr);
-        vkDestroyImage(m_device, tex.image, nullptr);
+        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
+        tex.image = VK_NULL_HANDLE;
+        tex.allocation = VK_NULL_HANDLE;
+        tex.memory = VK_NULL_HANDLE;
         return IRenderTexture{};
     }
 
@@ -2906,16 +3007,20 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     samplerInfo.maxLod       = 1.0f;
     if (vkCreateSampler(m_device, &samplerInfo, nullptr, &tex.sampler) != VK_SUCCESS) {
         vkDestroyImageView(m_device, tex.view, nullptr);
-        vkFreeMemory(m_device, tex.memory, nullptr);
-        vkDestroyImage(m_device, tex.image, nullptr);
+        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
+        tex.image = VK_NULL_HANDLE;
+        tex.allocation = VK_NULL_HANDLE;
+        tex.memory = VK_NULL_HANDLE;
         return IRenderTexture{};
     }
 
     if (!AllocateTextureDescriptorSet(tex.descriptorSet)) {
         vkDestroySampler(m_device, tex.sampler, nullptr);
         vkDestroyImageView(m_device, tex.view, nullptr);
-        vkFreeMemory(m_device, tex.memory, nullptr);
-        vkDestroyImage(m_device, tex.image, nullptr);
+        m_gpuAllocator.DestroyImage(tex.image, tex.allocation);
+        tex.image = VK_NULL_HANDLE;
+        tex.allocation = VK_NULL_HANDLE;
+        tex.memory = VK_NULL_HANDLE;
         return IRenderTexture{};
     }
 
@@ -2939,7 +3044,8 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     VkImage depthImage = VK_NULL_HANDLE;
     VkDeviceMemory depthMemory = VK_NULL_HANDLE;
     VkImageView depthView = VK_NULL_HANDLE;
-    if (!CreateDepthResources(tex.width, tex.height, depthImage, depthMemory, depthView)) {
+    VmaAllocation depthAllocation = VK_NULL_HANDLE;
+    if (!CreateDepthResources(tex.width, tex.height, depthImage, depthMemory, depthView, VK_SAMPLE_COUNT_1_BIT, &depthAllocation)) {
         DestroyTexture(textureId);
         return IRenderTexture{};
     }
@@ -2956,7 +3062,7 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     fbInfo.height          = tex.height;
     fbInfo.layers          = 1;
     if (vkCreateFramebuffer(m_device, &fbInfo, nullptr, &framebuffer) != VK_SUCCESS) {
-        DestroyDepthResources(depthImage, depthMemory, depthView);
+        DestroyDepthResources(depthImage, depthMemory, depthView, depthAllocation);
         DestroyTexture(textureId);
         return IRenderTexture{};
     }
@@ -2970,6 +3076,7 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
     rt.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     rt.depthImage  = depthImage;
     rt.depthMemory = depthMemory;
+    rt.depthAllocation = depthAllocation;
     rt.depthView   = depthView;
     m_renderTargets[rtId] = rt;
 
@@ -2990,7 +3097,8 @@ void QuarkVkRenderer::DestroyRenderTargetInternal(uint32_t renderTargetId) {
         vkDestroyFramebuffer(m_device, it->second.framebuffer, nullptr);
     }
     if (m_device != VK_NULL_HANDLE) {
-        DestroyDepthResources(it->second.depthImage, it->second.depthMemory, it->second.depthView);
+        DestroyDepthResources(it->second.depthImage, it->second.depthMemory, it->second.depthView, it->second.depthAllocation);
+        it->second.depthAllocation = VK_NULL_HANDLE;
     }
     m_renderTargets.erase(it);
 
