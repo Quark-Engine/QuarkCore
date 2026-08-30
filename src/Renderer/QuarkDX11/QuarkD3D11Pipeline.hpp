@@ -40,6 +40,9 @@ public:
     ID3D11Buffer *VertexBuffer() const { return m_vertexBuffer; }
     ID3D11Buffer *VertexBuffer3D() const { return m_vertexBuffer3D; }
     ID3D11RasterizerState *Rasterizer() const { return m_rasterizerState.Get(); }
+    ID3D11RasterizerState *RasterizerCull() const { return m_rasterizerStateCull.Get(); }
+    ID3D11DepthStencilState *DepthStencilState() const { return m_depthStencilState.Get(); }
+    ID3D11Buffer *const *LightConstantBuffer() const { return m_lightConstantBuffer.GetAddressOf(); }
     ID3D11BlendState *Blend() const { return m_blendState.Get(); }
     ID3D11SamplerState *Sampler() const { return m_textureSampler.Get(); }
     ID3D11DepthStencilState *DepthStencilDisabledState() const

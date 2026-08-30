@@ -1639,6 +1639,13 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
         return;
     }
 
+    ShaderProgramData *customProgram = Resolve3DShaderProgram(material);
+    if (customProgram != nullptr)
+    {
+        DrawMeshWithShader(mesh, material, transform, *customProgram);
+        return;
+    }
+
     const ID3D11ShaderResourceView *textureResource = nullptr;
     const MaterialMap* albedoMap = nullptr;
     if (material.maps)
@@ -1822,6 +1829,217 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
                               D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         }
     }
+}
+
+QuarkD3D11Renderer::ShaderProgramData *QuarkD3D11Renderer::Resolve3DShaderProgram(
+    const Material &material)
+{
+    uint32_t shaderId = (material.shader && material.shader->id != 0) ? material.shader->id
+                                                                      : m_currentShaderId;
+    if (shaderId == 0) {
+        return nullptr;
+    }
+
+    ShaderProgramData *program = GetShaderProgram(shaderId);
+    if (!program || !program->vertexShader || !program->pixelShader || !program->inputLayout) {
+        return nullptr;
+    }
+
+    if (!program->hasPosition || program->worldPositionOffset == 0xFFFFFFFFu) {
+        return nullptr;
+    }
+
+    return program;
+}
+
+void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &material,
+                                            const Mat4 &transform, ShaderProgramData &program)
+{
+    ID3D11ShaderResourceView *albedoResource = nullptr;
+    const MaterialMap *albedoMap = nullptr;
+    if (material.maps) {
+        albedoMap = &material.maps[MATERIAL_MAP_ALBEDO];
+        if (albedoMap->texture.valid) {
+            albedoResource = m_resources.ShaderResource(albedoMap->texture.id);
+        }
+    }
+
+    const uint32_t shaderId = (material.shader && material.shader->id != 0)
+                                  ? material.shader->id
+                                  : m_currentShaderId;
+    D3D11CommandContext::ShaderOverride shaderOverride = BuildShaderOverride(shaderId,
+                                                                            albedoResource);
+    if (!shaderOverride.Active()) {
+        return;
+    }
+
+    const UINT floatsPerVertex = program.strideBytes / sizeof(float);
+    const auto offsetInFloats = [](UINT byteOffset) -> UINT {
+        return byteOffset == 0xFFFFFFFFu ? 0xFFFFFFFFu : byteOffset / sizeof(float);
+    };
+    const UINT positionOffset = offsetInFloats(program.positionOffset);
+    const UINT texCoordOffset = offsetInFloats(program.texCoordOffset);
+    const UINT colorOffset = offsetInFloats(program.colorOffset);
+    const UINT normalOffset = offsetInFloats(program.normalOffset);
+    const UINT worldPositionOffset = offsetInFloats(program.worldPositionOffset);
+
+    const Mat4 finalTransform = m_currentMatrix * transform;
+    const Color baseColor = albedoMap ? albedoMap->color : WHITE;
+
+    const auto transformNormal = [&](const Vec3 &normal) -> Vec3 {
+        const Vec3 rotated{
+            finalTransform.m[0] * normal.x + finalTransform.m[4] * normal.y +
+                finalTransform.m[8] * normal.z,
+            finalTransform.m[1] * normal.x + finalTransform.m[5] * normal.y +
+                finalTransform.m[9] * normal.z,
+            finalTransform.m[2] * normal.x + finalTransform.m[6] * normal.y +
+                finalTransform.m[10] * normal.z
+        };
+        return SafeNormalized(rotated, Vec3{0.0f, 1.0f, 0.0f});
+    };
+
+    const auto meshNormalAt = [&](int vertexIndex) -> Vec3 {
+        if (mesh.normals && vertexIndex >= 0 && vertexIndex < mesh.vertexCount) {
+            return transformNormal(Vec3{mesh.normals[vertexIndex * 3 + 0],
+                                        mesh.normals[vertexIndex * 3 + 1],
+                                        mesh.normals[vertexIndex * 3 + 2]});
+        }
+        return Vec3{0.0f, 1.0f, 0.0f};
+    };
+
+    const auto appendVertex = [&](std::vector<float> &out, const Vec4 &world, const Vec3 &normal,
+                                  Color color, float u, float v)
+    {
+        const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
+        const size_t base = out.size();
+        out.resize(base + floatsPerVertex, 0.0f);
+        float *vertex = out.data() + base;
+
+        if (positionOffset != 0xFFFFFFFFu) {
+            vertex[positionOffset + 0] = clip.x;
+            vertex[positionOffset + 1] = clip.y;
+            vertex[positionOffset + 2] = clip.z;
+            vertex[positionOffset + 3] = clip.w;
+        }
+        if (texCoordOffset != 0xFFFFFFFFu) {
+            vertex[texCoordOffset + 0] = u;
+            vertex[texCoordOffset + 1] = v;
+        }
+        if (colorOffset != 0xFFFFFFFFu) {
+            vertex[colorOffset + 0] = color.r / 255.0f;
+            vertex[colorOffset + 1] = color.g / 255.0f;
+            vertex[colorOffset + 2] = color.b / 255.0f;
+            vertex[colorOffset + 3] = color.a / 255.0f;
+        }
+        if (normalOffset != 0xFFFFFFFFu) {
+            vertex[normalOffset + 0] = normal.x;
+            vertex[normalOffset + 1] = normal.y;
+            vertex[normalOffset + 2] = normal.z;
+            vertex[normalOffset + 3] = 1.0f;
+        }
+        if (worldPositionOffset != 0xFFFFFFFFu) {
+            vertex[worldPositionOffset + 0] = world.x;
+            vertex[worldPositionOffset + 1] = world.y;
+            vertex[worldPositionOffset + 2] = world.z;
+            vertex[worldPositionOffset + 3] = 1.0f;
+        }
+    };
+
+    const auto worldPosAt = [&](int vertexIndex) -> Vec4 {
+        return finalTransform * Vec4{
+            mesh.vertices[vertexIndex * 3 + 0],
+            mesh.vertices[vertexIndex * 3 + 1],
+            mesh.vertices[vertexIndex * 3 + 2],
+            1.0f
+        };
+    };
+
+    const auto drawFilled = [&](const std::vector<float> &builtVertices) {
+        if (!builtVertices.empty()) {
+            m_commands.Draw3DShader(builtVertices.data(),
+                                    static_cast<UINT>(builtVertices.size() / floatsPerVertex),
+                                    shaderOverride);
+        }
+    };
+
+    if (mesh.indices && mesh.triangleCount > 0)
+    {
+        std::vector<float> indexedVertices;
+        indexedVertices.reserve(static_cast<std::size_t>(mesh.triangleCount) * 3u *
+                                floatsPerVertex);
+
+        for (int triangleIndex = 0; triangleIndex < mesh.triangleCount; ++triangleIndex)
+        {
+            int vertexIndex[3] = {-1, -1, -1};
+            for (int localIndex = 0; localIndex < 3; ++localIndex)
+            {
+                const int index = mesh.indices[triangleIndex * 3 + localIndex];
+                if (index >= 0 && index < mesh.vertexCount)
+                {
+                    vertexIndex[localIndex] = index;
+                }
+            }
+            if (vertexIndex[0] < 0 || vertexIndex[1] < 0 || vertexIndex[2] < 0)
+            {
+                continue;
+            }
+
+            const Vec4 worldA = worldPosAt(vertexIndex[0]);
+            const Vec4 worldB = worldPosAt(vertexIndex[1]);
+            const Vec4 worldC = worldPosAt(vertexIndex[2]);
+            const Vec3 faceNormal = SafeNormalized(
+                (Vec3{worldB.x, worldB.y, worldB.z} - Vec3{worldA.x, worldA.y, worldA.z})
+                    .cross(Vec3{worldC.x, worldC.y, worldC.z} - Vec3{worldA.x, worldA.y, worldA.z}),
+                Vec3{0.0f, 1.0f, 0.0f});
+
+            for (int localIndex = 0; localIndex < 3; ++localIndex)
+            {
+                const int vi = vertexIndex[localIndex];
+                const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
+                const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
+                const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
+                const Color vertexColor =
+                    MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
+                appendVertex(indexedVertices, worldPosAt(vi), normal, vertexColor, u, v);
+            }
+        }
+
+        drawFilled(indexedVertices);
+        return;
+    }
+
+    std::vector<float> vertices;
+    vertices.reserve(static_cast<std::size_t>(mesh.vertexCount) * floatsPerVertex);
+
+    const int triangleCount = mesh.triangleCount > 0 ? mesh.triangleCount : mesh.vertexCount / 3;
+    for (int i = 0; i < triangleCount; ++i)
+    {
+        const int viBase = i * 3;
+        if (viBase + 2 >= mesh.vertexCount)
+        {
+            break;
+        }
+
+        const Vec4 worldA = worldPosAt(viBase + 0);
+        const Vec4 worldB = worldPosAt(viBase + 1);
+        const Vec4 worldC = worldPosAt(viBase + 2);
+        const Vec3 faceNormal = SafeNormalized(
+            (Vec3{worldB.x, worldB.y, worldB.z} - Vec3{worldA.x, worldA.y, worldA.z})
+                .cross(Vec3{worldC.x, worldC.y, worldC.z} - Vec3{worldA.x, worldA.y, worldA.z}),
+            Vec3{0.0f, 1.0f, 0.0f});
+
+        for (int localIndex = 0; localIndex < 3; ++localIndex)
+        {
+            const int vi = viBase + localIndex;
+            const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
+            const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
+            const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
+            const Color vertexColor = MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
+            appendVertex(vertices, worldPosAt(vi), normal, vertexColor, u, v);
+        }
+    }
+
+    drawFilled(vertices);
 }
 
 void QuarkD3D11Renderer::DrawMeshInstanced(const Mesh& mesh,
@@ -2526,6 +2744,10 @@ void QuarkD3D11Renderer::BuildShaderProgram(ShaderProgramData &program,
             program.texCoordOffset = byteOffset;
         } else if (SemanticEquals(signature.SemanticName, "COLOR")) {
             program.colorOffset = byteOffset;
+        } else if (SemanticEquals(signature.SemanticName, "NORMAL")) {
+            program.normalOffset = byteOffset;
+        } else if (SemanticEquals(signature.SemanticName, "WORLD_POSITION")) {
+            program.worldPositionOffset = byteOffset;
         }
 
         byteOffset += components * sizeof(float);
@@ -2707,7 +2929,8 @@ void QuarkD3D11Renderer::RegisterShaderTexture(ShaderProgramData &program, int l
     program.dirty = true;
 }
 
-D3D11CommandContext::ShaderOverride QuarkD3D11Renderer::BuildShaderOverride(uint32_t shaderId)
+D3D11CommandContext::ShaderOverride QuarkD3D11Renderer::BuildShaderOverride(
+    uint32_t shaderId, ID3D11ShaderResourceView *slot0Fallback)
 {
     D3D11CommandContext::ShaderOverride shaderOverride{};
 
@@ -2749,8 +2972,12 @@ D3D11CommandContext::ShaderOverride QuarkD3D11Renderer::BuildShaderOverride(uint
         }
     }
 
-    if (!shaderOverride.shaderResources[0] && m_whiteShaderTexture.IsValid()) {
-        shaderOverride.shaderResources[0] = m_resources.ShaderResource(m_whiteShaderTexture.id);
+    if (!shaderOverride.shaderResources[0]) {
+        if (slot0Fallback) {
+            shaderOverride.shaderResources[0] = slot0Fallback;
+        } else if (m_whiteShaderTexture.IsValid()) {
+            shaderOverride.shaderResources[0] = m_resources.ShaderResource(m_whiteShaderTexture.id);
+        }
     }
 
     return shaderOverride;

@@ -194,6 +194,65 @@ void D3D11CommandContext::Draw3DTextured(const float *vertices, UINT vertexCount
     m_context->Draw(vertexCount, 0);
 }
 
+void D3D11CommandContext::Draw3DShader(const float *vertices, UINT vertexCount,
+                                       const ShaderOverride &shaderOverride)
+{
+    if (!m_context || !m_pipeline || !m_resources || !m_swapChain || !shaderOverride.Active() ||
+        vertices == nullptr || vertexCount == 0)
+    {
+        return;
+    }
+
+    ID3D11DepthStencilView *depthStencil = m_activeDepthStencil;
+    if (!depthStencil)
+    {
+        return;
+    }
+
+    constexpr UINT kMaxVertices = 32768;
+    if (vertexCount > kMaxVertices)
+    {
+        return;
+    }
+
+    m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), vertices,
+                                     static_cast<size_t>(vertexCount) * shaderOverride.strideBytes);
+
+    const UINT stride = shaderOverride.strideBytes;
+    const UINT offset = 0;
+    ID3D11Buffer *vertexBuffer = m_pipeline->VertexBuffer3D();
+    m_context->IASetInputLayout(shaderOverride.inputLayout);
+    m_context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+    m_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    m_context->RSSetState(m_pipeline->BackfaceCulling() ? m_pipeline->RasterizerCull()
+                                                        : m_pipeline->Rasterizer());
+    m_context->VSSetShader(shaderOverride.vertexShader, nullptr, 0);
+    m_context->PSSetShader(shaderOverride.pixelShader, nullptr, 0);
+
+    if (shaderOverride.constantBuffer)
+    {
+        ID3D11Buffer *constantBuffer = shaderOverride.constantBuffer;
+        m_context->VSSetConstantBuffers(0, 1, &constantBuffer);
+        m_context->PSSetConstantBuffers(0, 1, &constantBuffer);
+    }
+    m_context->PSSetConstantBuffers(1, 1, m_pipeline->LightConstantBuffer());
+
+    ID3D11ShaderResourceView *resources[8] = {};
+    for (size_t index = 0; index < 8; ++index)
+    {
+        resources[index] = shaderOverride.shaderResources[index];
+    }
+    m_context->PSSetShaderResources(0, 8, resources);
+
+    ID3D11SamplerState *sampler = m_pipeline->Sampler();
+    m_context->PSSetSamplers(0, 1, &sampler);
+
+    const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    m_context->OMSetDepthStencilState(m_pipeline->DepthStencilState(), 0);
+    m_context->OMSetBlendState(m_pipeline->Blend(), blendFactor, 0xFFFFFFFF);
+    m_context->Draw(vertexCount, 0);
+}
+
 void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, int, int)
 {
     if (!m_context || !m_pipeline || !m_resources || m_activeWidth <= 0 || m_activeHeight <= 0)

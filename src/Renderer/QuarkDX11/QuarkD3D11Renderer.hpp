@@ -257,6 +257,8 @@ private:
         UINT positionOffset = 0;
         UINT texCoordOffset = 0xFFFFFFFFu;
         UINT colorOffset = 0xFFFFFFFFu;
+        UINT normalOffset = 0xFFFFFFFFu;
+        UINT worldPositionOffset = 0xFFFFFFFFu;
         bool hasPosition = false;
         std::vector<uint8_t> constantStaging;
         UINT constantBufferSize = 0;
@@ -268,7 +270,8 @@ private:
         int references = 0;
     };
 
-    D3D11CommandContext::ShaderOverride BuildShaderOverride(uint32_t shaderId);
+    D3D11CommandContext::ShaderOverride BuildShaderOverride(
+        uint32_t shaderId, ID3D11ShaderResourceView *slot0Fallback = nullptr);
     void BuildShaderProgram(ShaderProgramData &program, const char *vsSource, const char *fsSource);
     void RegisterShaderTexture(ShaderProgramData &program, int locIndex, uint32_t textureId);
     void UploadConstantBuffer(ShaderProgramData &program);
@@ -276,6 +279,9 @@ private:
     void StoreUniformValue(ShaderProgramData &program, int locIndex, int uniformType,
                            const void *value, size_t elementBytes, int count);
     ShaderProgramData *GetShaderProgram(uint32_t shaderId);
+    ShaderProgramData *Resolve3DShaderProgram(const Material &material);
+    void DrawMeshWithShader(const Mesh &mesh, const Material &material, const Mat4 &transform,
+                            ShaderProgramData &program);
 
     bool LoadFontData(const char *filePath, int fontSize, FontData &fontData);
     const FontData *GetFontData(IFont font) const;
