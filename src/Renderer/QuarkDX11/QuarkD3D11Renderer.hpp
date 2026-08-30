@@ -263,6 +263,11 @@ private:
         bool dirty = false;
     };
 
+    struct CachedTexture {
+        ITexture texture{};
+        int references = 0;
+    };
+
     D3D11CommandContext::ShaderOverride BuildShaderOverride(uint32_t shaderId);
     void BuildShaderProgram(ShaderProgramData &program, const char *vsSource, const char *fsSource);
     void RegisterShaderTexture(ShaderProgramData &program, int locIndex, uint32_t textureId);
@@ -310,6 +315,8 @@ private:
     uint32_t m_nextShaderId = 1;
     uint32_t m_currentShaderId = 0;
     ITexture m_whiteShaderTexture{};
+    std::unordered_map<std::string, CachedTexture> m_textureCache;
+    std::unordered_map<uint32_t, std::string> m_textureCacheKeys;
     Mat4 m_viewMatrix{};
     Mat4 m_projectionMatrix{};
     Mat4 m_currentMatrix{};

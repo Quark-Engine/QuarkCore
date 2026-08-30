@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <utility>
@@ -255,6 +256,13 @@ void QuarkD3D11Renderer::Shutdown()
         m_resources.DestroyTexture(m_whiteShaderTexture.id);
         m_whiteShaderTexture = {};
     }
+    for (const auto& [_, cachedTexture] : m_textureCache) {
+        if (cachedTexture.texture.IsValid()) {
+            m_resources.DestroyTexture(cachedTexture.texture.id);
+        }
+    }
+    m_textureCache.clear();
+    m_textureCacheKeys.clear();
     m_commands.Shutdown();
     m_pipeline.Shutdown();
     m_resources.Shutdown();
@@ -2170,6 +2178,25 @@ ITexture QuarkD3D11Renderer::LoadTexture(const char *filePath)
     TraceLog(LogLevel::Trace, "TEXTURE",
              TextFormat("[D3D11] Loading texture from: %s", filePath ? filePath : "<null>"));
 
+    if (!filePath) {
+        return ITexture{};
+    }
+
+    std::error_code pathError;
+    std::string cacheKey = std::filesystem::weakly_canonical(filePath, pathError).string();
+    if (pathError || cacheKey.empty()) {
+        cacheKey = std::filesystem::path(filePath).lexically_normal().string();
+    }
+
+    const auto cached = m_textureCache.find(cacheKey);
+    if (cached != m_textureCache.end()) {
+        cached->second.references++;
+        TraceLog(LogLevel::Trace, "TEXTURE",
+                 TextFormat("[D3D11] Reusing cached texture: %s (ID: %u, References: %d)",
+                            filePath, cached->second.texture.id, cached->second.references));
+        return cached->second.texture;
+    }
+
     ImageFileData image;
     ITexture texture{};
 
@@ -2183,6 +2210,8 @@ ITexture QuarkD3D11Renderer::LoadTexture(const char *filePath)
         m_device.Get(), image.pixels.data(), image.width, image.height);
 
     if (texture.IsValid()) {
+        m_textureCache.emplace(cacheKey, CachedTexture{texture, 1});
+        m_textureCacheKeys.emplace(texture.id, cacheKey);
         TraceLog(LogLevel::Info, "TEXTURE",
                  TextFormat("[D3D11] Texture loaded successfully: %s (%dx%d, %zu bytes, ID: %u)",
                             filePath ? filePath : "<null>",
@@ -2207,6 +2236,23 @@ ITexture QuarkD3D11Renderer::GetRenderTextureTexture(IRenderTexture target)
 void QuarkD3D11Renderer::UnloadTexture(ITexture &texture)
 {
     if (texture.id != 0) {
+        const auto cacheKey = m_textureCacheKeys.find(texture.id);
+        if (cacheKey != m_textureCacheKeys.end()) {
+            const auto cached = m_textureCache.find(cacheKey->second);
+            if (cached != m_textureCache.end()) {
+                cached->second.references--;
+                if (cached->second.references > 0) {
+                    TraceLog(LogLevel::Trace, "TEXTURE",
+                             TextFormat("[D3D11] Released cached texture (ID: %u, References: %d)",
+                                        texture.id, cached->second.references));
+                    texture = {};
+                    return;
+                }
+                m_textureCache.erase(cached);
+            }
+            m_textureCacheKeys.erase(cacheKey);
+        }
+
         TraceLog(LogLevel::Info, "TEXTURE",
                  TextFormat("[D3D11] Texture unloaded (ID: %u, %dx%d)",
                             texture.id,
