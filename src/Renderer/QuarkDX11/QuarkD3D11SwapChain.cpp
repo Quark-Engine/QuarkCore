@@ -1,5 +1,7 @@
 #include "QuarkD3D11SwapChain.hpp"
 
+#include <cstring>
+
 #if defined(_WIN32)
 namespace qc {
 
@@ -200,6 +202,42 @@ void D3D11SwapChain::Resolve()
 
     m_context->ResolveSubresource(m_backBuffer.Get(), 0, m_msaaColorTexture.Get(), 0,
                                   DXGI_FORMAT_R8G8B8A8_UNORM);
+}
+
+bool D3D11SwapChain::ReadBackBufferPixels(void *outPixels)
+{
+    if (!m_device || !m_context || !m_backBuffer || !outPixels || m_width == 0 || m_height == 0)
+    {
+        return false;
+    }
+
+    Resolve();
+
+    D3D11_TEXTURE2D_DESC description{};
+    m_backBuffer->GetDesc(&description);
+    description.Usage = D3D11_USAGE_STAGING;
+    description.BindFlags = 0;
+    description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    description.MiscFlags = 0;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+    if (FAILED(m_device->CreateTexture2D(&description, nullptr, &staging))) return false;
+
+    m_context->CopyResource(staging.Get(), m_backBuffer.Get());
+
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(m_context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+
+    const size_t rowBytes = static_cast<size_t>(m_width) * 4;
+    const uint8_t *src = static_cast<const uint8_t *>(mapped.pData);
+    uint8_t *dst = static_cast<uint8_t *>(outPixels);
+    for (UINT y = 0; y < m_height; ++y)
+    {
+        std::memcpy(dst + static_cast<size_t>(y) * rowBytes, src + static_cast<size_t>(y) * mapped.RowPitch, rowBytes);
+    }
+
+    m_context->Unmap(staging.Get(), 0);
+    return true;
 }
 
 void D3D11SwapChain::Resize(const D3D11Device &device, int width, int height)

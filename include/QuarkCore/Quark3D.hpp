@@ -32,6 +32,7 @@ struct Shader;
 struct Camera3D;
 struct Mesh;
 struct Model;
+struct Image;
 
 /**
  * @brief Vertex data for 3D meshes.
@@ -55,16 +56,6 @@ struct RayCollision {
     float distance = 0.0f;
     Vec3 point{0.0f, 0.0f, 0.0f};
     Vec3 normal{0.0f, 0.0f, 0.0f};
-};
-
-/**
- * @brief Image data.
- */
-struct Image {
-    int width = 0;
-    int height = 0;
-    int channels = 4;
-    unsigned char* data = nullptr;
 };
 
 /**

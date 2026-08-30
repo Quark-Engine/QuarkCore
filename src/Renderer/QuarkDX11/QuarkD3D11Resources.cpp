@@ -177,5 +177,59 @@ void D3D11Resources::DestroyTexture(uint32_t id) { m_textures.erase(id); }
 
 void D3D11Resources::DestroyRenderTexture(uint32_t id) { m_renderTextures.erase(id); }
 
+bool D3D11Resources::ReadPixels(ID3D11DeviceContext *context, uint32_t id, void *outPixels,
+                                int width, int height) const
+{
+    if (!context || !outPixels || width <= 0 || height <= 0) return false;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
+    const auto texture = m_textures.find(id);
+    if (texture != m_textures.end())
+    {
+        source = texture->second.texture;
+    }
+    else
+    {
+        const auto renderTexture = m_renderTextures.find(id);
+        if (renderTexture != m_renderTextures.end())
+        {
+            source = renderTexture->second.texture;
+        }
+    }
+    if (!source) return false;
+
+    D3D11_TEXTURE2D_DESC description{};
+    source->GetDesc(&description);
+    description.Usage = D3D11_USAGE_STAGING;
+    description.BindFlags = 0;
+    description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    description.MiscFlags = 0;
+
+    ID3D11Device *device = nullptr;
+    context->GetDevice(&device);
+    if (!device) return false;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+    const HRESULT hr = device->CreateTexture2D(&description, nullptr, &staging);
+    device->Release();
+    if (FAILED(hr)) return false;
+
+    context->CopyResource(staging.Get(), source.Get());
+
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+
+    const size_t rowBytes = static_cast<size_t>(width) * 4;
+    const uint8_t *src = static_cast<const uint8_t *>(mapped.pData);
+    uint8_t *dst = static_cast<uint8_t *>(outPixels);
+    for (int y = 0; y < height; ++y)
+    {
+        std::memcpy(dst + static_cast<size_t>(y) * rowBytes, src + static_cast<size_t>(y) * mapped.RowPitch, rowBytes);
+    }
+
+    context->Unmap(staging.Get(), 0);
+    return true;
+}
+
 } // namespace qc
 #endif

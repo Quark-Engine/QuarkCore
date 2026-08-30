@@ -965,6 +965,78 @@ bool QuarkGLRenderer::isRenderTextureValid(IRenderTexture& rt) {
     return rt.id && rt.texture.valid;
 }
 
+namespace {
+void FlipRowsRgba(void* data, int width, int height) {
+    const int rowBytes = width * 4;
+    std::vector<uint8_t> tmp(rowBytes);
+    uint8_t* pixels = static_cast<uint8_t*>(data);
+    for (int y = 0; y < height / 2; ++y) {
+        uint8_t* top = pixels + static_cast<size_t>(y) * rowBytes;
+        uint8_t* bottom = pixels + static_cast<size_t>(height - 1 - y) * rowBytes;
+        std::memcpy(tmp.data(), top, rowBytes);
+        std::memcpy(top, bottom, rowBytes);
+        std::memcpy(bottom, tmp.data(), rowBytes);
+    }
+}
+} // namespace
+
+Image QuarkGLRenderer::ReadTextureImage(const ITexture& t) {
+    if (!t.valid || t.id == 0 || t.width <= 0 || t.height <= 0) return Image{};
+
+    FlushBatch();
+
+    const size_t bytes = static_cast<size_t>(t.width) * t.height * 4;
+    void* buf = MemAlloc(bytes);
+    if (!buf) return Image{};
+
+    glBindTexture(GL_TEXTURE_2D, t.id);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    FlipRowsRgba(buf, t.width, t.height);
+
+    Image img{};
+    img.data = buf;
+    img.width = t.width;
+    img.height = t.height;
+    img.mipmaps = 1;
+    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    TraceLog(LogLevel::Info, "IMAGE", TextFormat("[OpenGL] Read texture pixels back to CPU: %ux%u (ID: %u)", t.width, t.height, t.id));
+    return img;
+}
+
+Image QuarkGLRenderer::ReadScreenImage() {
+    if (m_width <= 0 || m_height <= 0) return Image{};
+
+    FlushBatch();
+
+    const int w = m_width;
+    const int h = m_height;
+    const size_t bytes = static_cast<size_t>(w) * h * 4;
+    void* buf = MemAlloc(bytes);
+    if (!buf) return Image{};
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_currentFbo);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    if (m_currentFbo != 0) {
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+    } else {
+        glReadBuffer(GL_BACK);
+    }
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+
+    FlipRowsRgba(buf, w, h);
+
+    Image img{};
+    img.data = buf;
+    img.width = w;
+    img.height = h;
+    img.mipmaps = 1;
+    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    TraceLog(LogLevel::Info, "IMAGE", TextFormat("[OpenGL] Read backbuffer pixels to CPU: %dx%d", w, h));
+    return img;
+}
+
 ITexture QuarkGLRenderer::GenCheckerTexture(int w, int h, int cell, Color ca, Color cb) {
     std::vector<uint8_t> px((size_t) w * h * 4);
 

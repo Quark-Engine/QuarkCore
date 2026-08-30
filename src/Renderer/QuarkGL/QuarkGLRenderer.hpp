@@ -112,6 +112,8 @@ public:
     IRenderTexture LoadRenderTexture(int width, int height) override;
     void           UnloadRenderTexture(IRenderTexture target) override;
     bool           isRenderTextureValid(IRenderTexture& target) override;
+    Image          ReadTextureImage(const ITexture& texture) override;
+    Image          ReadScreenImage() override;
     ITexture       GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB) override;
 
     void BeginTextureMode(IRenderTexture target) override;

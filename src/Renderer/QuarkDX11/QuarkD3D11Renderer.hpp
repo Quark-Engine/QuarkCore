@@ -122,6 +122,8 @@ public:
     ITexture GenCheckerTexture(int, int, int, Color, Color) override;
     bool isTextureValid(ITexture &) override;
     bool isRenderTextureValid(IRenderTexture &) override;
+    Image ReadTextureImage(const ITexture &texture) override;
+    Image ReadScreenImage() override;
 
     void DrawText(const char *text, int x, int y, int fontSize, Color color) override;
     void DrawTextEx(IFont font, const char *text, Vec2 position, float fontSize,

@@ -41,6 +41,8 @@ public:
     uint32_t Import(VkTextureData tex);
     bool     TransitionImageLayout(VkImage image, VkFormat format,
                                    VkImageLayout oldLayout, VkImageLayout newLayout);
+    bool     ReadImageToRGBA(VkImage image, VkFormat format, uint32_t width, uint32_t height,
+                             VkImageLayout sourceLayout, void* outPixels);
 
 private:
     bool AllocateDescriptorSet(VkDescriptorSet& outSet);

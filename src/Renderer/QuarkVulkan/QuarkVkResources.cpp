@@ -382,4 +382,121 @@ bool QuarkVkResources::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_
     return true;
 }
 
+bool QuarkVkResources::ReadImageToRGBA(VkImage image, VkFormat format, uint32_t width,
+                                       uint32_t height, VkImageLayout sourceLayout, void* outPixels) {
+    if (image == VK_NULL_HANDLE || !outPixels || width == 0 || height == 0 ||
+        m_device == VK_NULL_HANDLE || m_allocator == nullptr || m_commandPool == VK_NULL_HANDLE) {
+        return false;
+    }
+
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4u;
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+    if (!m_allocator->CreateBuffer(imageSize,
+                                   VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                   VMA_MEMORY_USAGE_AUTO,
+                                   stagingBuffer,
+                                   stagingAllocation,
+                                   VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+                                   VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
+        TraceLog(LogLevel::Error, "IMAGE", "[Vulkan] Failed to allocate readback staging buffer");
+        return false;
+    }
+
+    VkCommandBuffer cmd = BeginSingleTimeCommands();
+    if (cmd == VK_NULL_HANDLE) {
+        m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+        return false;
+    }
+
+    VkImageSubresourceRange subresource{};
+    subresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    subresource.baseMipLevel   = 0;
+    subresource.levelCount     = 1;
+    subresource.baseArrayLayer = 0;
+    subresource.layerCount     = 1;
+
+    VkImageMemoryBarrier toTransfer{};
+    toTransfer.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toTransfer.oldLayout           = sourceLayout;
+    toTransfer.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.image               = image;
+    toTransfer.subresourceRange    = subresource;
+
+    VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    toTransfer.srcAccessMask      = 0;
+    if (sourceLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        toTransfer.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        srcStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    } else if (sourceLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+        toTransfer.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        srcStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+    toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &toTransfer);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset                    = 0;
+    region.bufferRowLength                 = 0;
+    region.bufferImageHeight               = 0;
+    region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel       = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount     = 1;
+    region.imageOffset                     = {0, 0, 0};
+    region.imageExtent                     = {width, height, 1};
+    vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
+
+    VkImageMemoryBarrier back{};
+    back.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    back.oldLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    back.newLayout           = sourceLayout;
+    back.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    back.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    back.image               = image;
+    back.subresourceRange    = subresource;
+    back.srcAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
+    back.dstAccessMask       = 0;
+    VkPipelineStageFlags backDstStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    if (sourceLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        back.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        backDstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    } else if (sourceLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+        back.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        backDstStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, backDstStage, 0, 0, nullptr, 0, nullptr, 1, &back);
+
+    EndSingleTimeCommands(cmd);
+
+    void* mapped = nullptr;
+    if (vmaMapMemory(m_allocator->GetAllocator(), stagingAllocation, &mapped) != VK_SUCCESS) {
+        TraceLog(LogLevel::Error, "IMAGE", "[Vulkan] Failed to map readback staging buffer");
+        m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+        return false;
+    }
+
+    const bool bgra = (format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB);
+    const uint8_t* src = static_cast<const uint8_t*>(mapped);
+    uint8_t* dst = static_cast<uint8_t*>(outPixels);
+    const size_t pixelCount = static_cast<size_t>(width) * height;
+    if (bgra) {
+        for (size_t i = 0; i < pixelCount; ++i) {
+            dst[i * 4 + 0] = src[i * 4 + 2];
+            dst[i * 4 + 1] = src[i * 4 + 1];
+            dst[i * 4 + 2] = src[i * 4 + 0];
+            dst[i * 4 + 3] = src[i * 4 + 3];
+        }
+    } else {
+        std::memcpy(dst, src, static_cast<size_t>(width) * height * 4u);
+    }
+    vmaUnmapMemory(m_allocator->GetAllocator(), stagingAllocation);
+    m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+    return true;
+}
+
 } // namespace qc

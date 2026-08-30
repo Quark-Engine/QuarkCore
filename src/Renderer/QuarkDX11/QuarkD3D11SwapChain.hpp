@@ -19,6 +19,7 @@ public:
     void SetMSAASamples(UINT samples);
     UINT MSAASamples() const { return m_msaaSamples; }
     void Resolve();
+    bool ReadBackBufferPixels(void *outPixels);
 
     ID3D11RenderTargetView *RenderTarget() const {
         return (m_msaaSamples > 1 && m_msaaColorRenderTarget) ? m_msaaColorRenderTarget.Get()

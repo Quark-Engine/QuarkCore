@@ -1033,6 +1033,26 @@ Texture2D GetRenderTextureTexture(RenderTexture2D target) {
     return Texture2D{ it.id, it.width, it.height, it.valid };
 }
 
+Image LoadImageFromTexture(Texture2D texture) {
+    EnsureInitialized();
+    if (!IsTextureValid(texture)) return Image{};
+    ITexture it{ texture.id, texture.width, texture.height, texture.valid };
+    Image image = gRenderer.ReadTextureImage(it);
+    if (!IsImageValid(image)) {
+        TraceLog(LogLevel::Error, "IMAGE", "LoadImageFromTexture: failed to read texture pixels back to CPU");
+    }
+    return image;
+}
+
+Image LoadImageFromScreen(void) {
+    EnsureInitialized();
+    Image image = gRenderer.ReadScreenImage();
+    if (!IsImageValid(image)) {
+        TraceLog(LogLevel::Error, "IMAGE", "LoadImageFromScreen: failed to read backbuffer pixels to CPU");
+    }
+    return image;
+}
+
 void BeginTextureMode(RenderTexture2D target) {
     EnsureInitialized();
     IRenderTexture ir;
@@ -1806,9 +1826,7 @@ static Vec3 CalculateTriangleTangent(const Vec3& p0, const Vec3& p1, const Vec3&
 
 static Vec3 GetHeightSample(const Image& heightmap, int x, int y) {
     if (!heightmap.data || x < 0 || y < 0 || x >= heightmap.width || y >= heightmap.height) return Vec3{0,0,0};
-    int stride = heightmap.channels > 0 ? heightmap.channels : 1;
-    int idx = (y * heightmap.width + x) * stride;
-    float value = static_cast<float>(heightmap.data[idx]) / 255.0f;
+    float value = GetImageColor(heightmap, x, y).r / 255.0f;
     return Vec3{value, value, value};
 }
 
@@ -2553,17 +2571,10 @@ Mesh GenMeshCubicmap(Image cubicmap, Vec3 cubeSize) {
     int width = cubicmap.width;
     int height = cubicmap.height;
     std::vector<Mesh> cubes;
-    int channels = cubicmap.channels > 0 ? cubicmap.channels : 1;
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
-            int idx = (y * width + x) * channels;
-            unsigned char alpha = 0;
-            if (channels >= 4) {
-                alpha = cubicmap.data[idx + 3];
-            } else if (channels >= 1) {
-                alpha = cubicmap.data[idx];
-            }
-            if (alpha == 0) continue;
+            Color pixel = GetImageColor(cubicmap, x, y);
+            if (pixel.a == 0) continue;
             Mesh cube = GenMeshCube(cubeSize.x, cubeSize.y, cubeSize.z);
             float px = ((float)x - width * 0.5f + 0.5f) * cubeSize.x;
             float pz = ((float)y - height * 0.5f + 0.5f) * cubeSize.z;

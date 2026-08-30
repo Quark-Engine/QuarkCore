@@ -101,6 +101,8 @@ struct RenderTexture2D {
     unsigned int depthId = 0;          // Depth buffer ID
 };
 
+using RenderTexture = RenderTexture2D;
+
 /**
  * @brief Font glyph metrics.
  */
@@ -127,6 +129,8 @@ struct Font {
     FontGlyph glyphs[95];
     uint32_t _rendererFontId = 0;
 };
+
+#include "QuarkImage.hpp"
 
 /**
  * @brief Shader uniform data type enumeration.
@@ -654,6 +658,28 @@ enum class TextureFilterMode {
     Nearest,
     Linear
 };
+
+/**
+ * @brief Allocate a block of memory on the heap.
+ * @param size Number of bytes to allocate.
+ * @return Pointer to the allocated memory block.
+ */
+QCAPI void*           MemAlloc(size_t size);
+
+/**
+ * @brief Resize a previously allocated block of memory.
+ * @param ptr Pointer to the memory block to resize.
+ * @param oldSize Previous size of the memory block, in bytes.
+ * @param newSize New desired size of the memory block, in bytes.
+ * @return Pointer to the resized memory block.
+ */
+QCAPI void*           MemRealloc(void* ptr, size_t oldSize, size_t newSize);
+
+/**
+ * @brief Free a block of memory previously allocated with MemAlloc/MemRealloc.
+ * @param ptr Pointer to the memory block to free.
+ */
+QCAPI void            MemFree(void* ptr);
 
 /**
  * @brief Set the requested multisample anti-aliasing sample count.

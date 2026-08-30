@@ -118,6 +118,8 @@ public:
     virtual ITexture GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB) = 0;
     virtual bool isTextureValid(ITexture& texture)                                                      = 0;
     virtual bool isRenderTextureValid(IRenderTexture& target)                                           = 0;
+    virtual Image ReadTextureImage(const ITexture& texture)                                             = 0;
+    virtual Image ReadScreenImage()                                                                     = 0;
 
     // Font
     virtual IFont LoadFont(const char* filePath, int fontSize) = 0;

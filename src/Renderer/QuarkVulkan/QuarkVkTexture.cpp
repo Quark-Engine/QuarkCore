@@ -341,4 +341,63 @@ void QuarkVkRenderer::EndTextureMode() {
     m_activeRenderTargetId = 0;
 }
 
+Image QuarkVkRenderer::ReadTextureImage(const ITexture& texture) {
+    if (!texture.valid || texture.id == 0) return Image{};
+
+    const VkTextureData* tex = m_vkResources.Get(texture.id);
+    if (tex == nullptr || tex->image == VK_NULL_HANDLE) return Image{};
+
+    const size_t bytes = static_cast<size_t>(tex->width) * static_cast<size_t>(tex->height) * 4u;
+    void* buf = MemAlloc(bytes);
+    if (!buf) return Image{};
+
+    const VkFormat format = tex->isRenderTarget ? m_swapChainImageFormat : VK_FORMAT_R8G8B8A8_UNORM;
+    if (!m_vkResources.ReadImageToRGBA(tex->image, format, tex->width, tex->height,
+                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, buf)) {
+        MemFree(buf);
+        return Image{};
+    }
+
+    Image img{};
+    img.data = buf;
+    img.width = static_cast<int>(tex->width);
+    img.height = static_cast<int>(tex->height);
+    img.mipmaps = 1;
+    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    TraceLog(LogLevel::Info, "IMAGE", TextFormat("[Vulkan] Read texture pixels back to CPU: %ux%u (ID: %u)",
+        tex->width, tex->height, texture.id));
+    return img;
+}
+
+Image QuarkVkRenderer::ReadScreenImage() {
+    if (m_vkSwapChain.Images().empty() || m_imageIndex >= m_vkSwapChain.Images().size() ||
+        m_swapChainImageFormat == VK_FORMAT_UNDEFINED) {
+        return Image{};
+    }
+
+    const uint32_t w = m_swapChainExtent.width;
+    const uint32_t h = m_swapChainExtent.height;
+    if (w == 0 || h == 0) return Image{};
+
+    const size_t bytes = static_cast<size_t>(w) * static_cast<size_t>(h) * 4u;
+    void* buf = MemAlloc(bytes);
+    if (!buf) return Image{};
+
+    const VkImage image = m_vkSwapChain.Images()[m_imageIndex];
+    if (!m_vkResources.ReadImageToRGBA(image, m_swapChainImageFormat, w, h,
+                                       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, buf)) {
+        MemFree(buf);
+        return Image{};
+    }
+
+    Image img{};
+    img.data = buf;
+    img.width = static_cast<int>(w);
+    img.height = static_cast<int>(h);
+    img.mipmaps = 1;
+    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    TraceLog(LogLevel::Info, "IMAGE", TextFormat("[Vulkan] Read backbuffer pixels to CPU: %ux%u", w, h));
+    return img;
+}
+
 }; // namespace qc

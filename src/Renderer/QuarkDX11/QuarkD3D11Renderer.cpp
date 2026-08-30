@@ -2731,6 +2731,59 @@ bool QuarkD3D11Renderer::isRenderTextureValid(IRenderTexture &target)
            m_resources.RenderTarget(target.id) != nullptr;
 }
 
+Image QuarkD3D11Renderer::ReadTextureImage(const ITexture &texture)
+{
+    if (!texture.IsValid() || texture.id == 0) return Image{};
+
+    m_commands.FlushBatch();
+
+    const size_t bytes = static_cast<size_t>(texture.width) * texture.height * 4;
+    void *buf = MemAlloc(bytes);
+    if (!buf) return Image{};
+
+    if (!m_resources.ReadPixels(m_device.Context(), texture.id, buf, texture.width, texture.height))
+    {
+        MemFree(buf);
+        return Image{};
+    }
+
+    Image img{};
+    img.data = buf;
+    img.width = texture.width;
+    img.height = texture.height;
+    img.mipmaps = 1;
+    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    TraceLog(LogLevel::Info, "IMAGE", TextFormat("[D3D11] Read texture pixels back to CPU: %dx%d (ID: %u)",
+        texture.width, texture.height, texture.id));
+    return img;
+}
+
+Image QuarkD3D11Renderer::ReadScreenImage()
+{
+    if (m_width <= 0 || m_height <= 0) return Image{};
+
+    m_commands.FlushBatch();
+
+    const size_t bytes = static_cast<size_t>(m_width) * m_height * 4;
+    void *buf = MemAlloc(bytes);
+    if (!buf) return Image{};
+
+    if (!m_swapChain.ReadBackBufferPixels(buf))
+    {
+        MemFree(buf);
+        return Image{};
+    }
+
+    Image img{};
+    img.data = buf;
+    img.width = m_width;
+    img.height = m_height;
+    img.mipmaps = 1;
+    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    TraceLog(LogLevel::Info, "IMAGE", TextFormat("[D3D11] Read backbuffer pixels to CPU: %dx%d", m_width, m_height));
+    return img;
+}
+
 void QuarkD3D11Renderer::DrawTexture(const ITexture &texture,
                                       float x,
                                       float y,

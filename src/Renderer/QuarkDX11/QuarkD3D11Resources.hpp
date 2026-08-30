@@ -26,6 +26,8 @@ public:
     bool IsRenderTexture(uint32_t id) const;
     void DestroyTexture(uint32_t id);
     void DestroyRenderTexture(uint32_t id);
+    bool ReadPixels(ID3D11DeviceContext *context, uint32_t id, void *outPixels,
+                    int width, int height) const;
 
 private:
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_triangleVertexBuffer;
