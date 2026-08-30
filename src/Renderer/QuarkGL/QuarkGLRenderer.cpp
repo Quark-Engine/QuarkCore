@@ -9,6 +9,7 @@
 #include FT_FREETYPE_H
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
@@ -332,6 +333,16 @@ void QuarkGLRenderer::Shutdown() {
     if (m_3d.whiteTexture) {
         glDeleteTextures(1, &m_3d.whiteTexture);
         m_3d.whiteTexture = 0;
+    }
+
+    if (m_3d.blackTexture) {
+        glDeleteTextures(1, &m_3d.blackTexture);
+        m_3d.blackTexture = 0;
+    }
+
+    if (m_3d.flatNormalTexture) {
+        glDeleteTextures(1, &m_3d.flatNormalTexture);
+        m_3d.flatNormalTexture = 0;
     }
 
     for (const auto& [_, cachedTexture] : m_textureCache) {
@@ -1647,6 +1658,24 @@ void QuarkGLRenderer::Init3DState() {
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    const uint8_t black[4] = {0, 0, 0, 255};
+    glGenTextures(1, &m_3d.blackTexture);
+
+    glBindTexture(GL_TEXTURE_2D, m_3d.blackTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, black);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    const uint8_t flatNormal[4] = {128, 128, 255, 255};
+    glGenTextures(1, &m_3d.flatNormalTexture);
+
+    glBindTexture(GL_TEXTURE_2D, m_3d.flatNormalTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, flatNormal);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 }
 
 GLuint QuarkGLRenderer::Compile3DShader() {
@@ -2331,22 +2360,36 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
         }
 
         aiString path;
-        if (AI_SUCCESS == material->GetTexture(aiTextureType_DIFFUSE, 0, &path)) {
-            std::string texturePath = filePath ? filePath : "";
-            size_t lastSlash = texturePath.find_last_of("/\\");
-            if (lastSlash != std::string::npos) {
-                texturePath = texturePath.substr(0, lastSlash + 1);
-            } else {
-                texturePath = "";
-            }
-            texturePath += path.C_Str();
-            TraceLog(LogLevel::Trace, "MODEL", TextFormat("[OpenGL] Model material #%u loading diffuse texture: %s", i, texturePath.c_str()));
+        std::string materialDirectory = filePath ? filePath : "";
+        const size_t lastSlash = materialDirectory.find_last_of("/\\");
+        if (lastSlash != std::string::npos) {
+            materialDirectory = materialDirectory.substr(0, lastSlash + 1);
+        } else {
+            materialDirectory = "";
+        }
+
+        const std::array<std::pair<int, aiTextureType>, 7> textureTypes = {{
+            { MATERIAL_MAP_ALBEDO, aiTextureType_BASE_COLOR },
+            { MATERIAL_MAP_ALBEDO, aiTextureType_DIFFUSE },
+            { MATERIAL_MAP_METALNESS, aiTextureType_METALNESS },
+            { MATERIAL_MAP_NORMAL, aiTextureType_NORMALS },
+            { MATERIAL_MAP_ROUGHNESS, aiTextureType_DIFFUSE_ROUGHNESS },
+            { MATERIAL_MAP_OCCLUSION, aiTextureType_AMBIENT_OCCLUSION },
+            { MATERIAL_MAP_EMISSION, aiTextureType_EMISSION_COLOR }
+        }};
+        for (const auto& [mapIndex, textureType] : textureTypes) {
+            if (mat.maps[mapIndex].texture.valid) continue;
+            if (AI_SUCCESS != material->GetTexture(textureType, 0, &path)) continue;
+
+            std::string texturePath = materialDirectory + path.C_Str();
+            TraceLog(LogLevel::Trace, "MODEL",
+                     TextFormat("[OpenGL] Model material #%u loading map %d texture: %s",
+                                i, mapIndex, texturePath.c_str()));
             ITexture loadedTex = this->LoadTexture(texturePath.c_str());
-            mat.maps[MATERIAL_MAP_ALBEDO].texture.id = loadedTex.id;
-            mat.maps[MATERIAL_MAP_ALBEDO].texture.width = loadedTex.width;
-            mat.maps[MATERIAL_MAP_ALBEDO].texture.height = loadedTex.height;
-            mat.maps[MATERIAL_MAP_ALBEDO].texture.valid = loadedTex.valid;
-            mat.maps[MATERIAL_MAP_DIFFUSE].texture = mat.maps[MATERIAL_MAP_ALBEDO].texture;
+            mat.maps[mapIndex].texture.id = loadedTex.id;
+            mat.maps[mapIndex].texture.width = loadedTex.width;
+            mat.maps[mapIndex].texture.height = loadedTex.height;
+            mat.maps[mapIndex].texture.valid = loadedTex.valid;
         }
     }
 
@@ -2643,6 +2686,47 @@ void QuarkGLRenderer::UnloadMesh(Mesh& mesh) {
     mesh.triangleCount = 0;
 }
 
+void QuarkGLRenderer::BindMaterialMaps(const Material& material, GLuint shaderProgram) {
+    if (!material.maps) return;
+
+    for (int shadowIndex = 0; shadowIndex < 4; ++shadowIndex) {
+        const int mapIndex = MATERIAL_MAP_HEIGHT + shadowIndex;
+        const GLint shadowMapLoc = glGetUniformLocation(
+            shaderProgram, TextFormat("shadowMaps[%i]", shadowIndex));
+        if (shadowMapLoc < 0) continue;
+
+        glActiveTexture(GL_TEXTURE1 + shadowIndex);
+        glBindTexture(GL_TEXTURE_2D, material.maps[mapIndex].texture.valid
+                                         ? material.maps[mapIndex].texture.id
+                                         : m_3d.whiteTexture);
+        glUniform1i(shadowMapLoc, 1 + shadowIndex);
+    }
+
+    const struct {
+        int slot;
+        int mapIndex;
+        const char* name;
+        GLuint fallback;
+    } pbrMaps[] = {
+        { 5, MATERIAL_MAP_METALNESS, "metalnessMap", m_3d.whiteTexture },
+        { 6, MATERIAL_MAP_NORMAL,    "normalMap",    m_3d.flatNormalTexture },
+        { 7, MATERIAL_MAP_ROUGHNESS, "roughnessMap", m_3d.whiteTexture },
+        { 8, MATERIAL_MAP_OCCLUSION, "occlusionMap", m_3d.whiteTexture },
+        { 9, MATERIAL_MAP_EMISSION,  "emissionMap",  m_3d.blackTexture },
+    };
+    for (const auto& mapBind : pbrMaps) {
+        const MaterialMap& map = material.maps[mapBind.mapIndex];
+        const GLint location = glGetUniformLocation(shaderProgram, mapBind.name);
+        if (location < 0) continue;
+
+        glActiveTexture(GL_TEXTURE0 + mapBind.slot);
+        glBindTexture(GL_TEXTURE_2D, map.texture.valid ? map.texture.id : mapBind.fallback);
+        glUniform1i(location, mapBind.slot);
+    }
+
+    glActiveTexture(GL_TEXTURE0);
+}
+
 void QuarkGLRenderer::DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) {
     if (!mesh.vaoId) return;
     if (!m_3d.initialized) Init3DState();
@@ -2666,19 +2750,7 @@ void QuarkGLRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texId);
     if (customShader && material.maps) {
-        for (int shadowIndex = 0; shadowIndex < 4; ++shadowIndex) {
-            const int mapIndex = MATERIAL_MAP_HEIGHT + shadowIndex;
-            if (!material.maps[mapIndex].texture.valid) continue;
-
-            const char* uniformName = TextFormat("shadowMaps[%i]", shadowIndex);
-            const GLint shadowMapLoc = glGetUniformLocation(customShader->id, uniformName);
-            if (shadowMapLoc >= 0) {
-                glActiveTexture(GL_TEXTURE1 + shadowIndex);
-                glBindTexture(GL_TEXTURE_2D, material.maps[mapIndex].texture.id);
-                glUniform1i(shadowMapLoc, 1 + shadowIndex);
-            }
-        }
-        glActiveTexture(GL_TEXTURE0);
+        BindMaterialMaps(material, customShader->id);
     }
     glBindVertexArray(mesh.vaoId);
 
@@ -2741,19 +2813,7 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
 
         glBindTexture(GL_TEXTURE_2D, texId);
         if (customShader && material && material->maps) {
-            for (int shadowIndex = 0; shadowIndex < 4; ++shadowIndex) {
-                const int mapIndex = MATERIAL_MAP_HEIGHT + shadowIndex;
-                if (!material->maps[mapIndex].texture.valid) continue;
-
-                const GLint shadowMapLoc = glGetUniformLocation(
-                    customShader->id, TextFormat("shadowMaps[%i]", shadowIndex));
-                if (shadowMapLoc >= 0) {
-                    glActiveTexture(GL_TEXTURE1 + shadowIndex);
-                    glBindTexture(GL_TEXTURE_2D, material->maps[mapIndex].texture.id);
-                    glUniform1i(shadowMapLoc, 1 + shadowIndex);
-                }
-            }
-            glActiveTexture(GL_TEXTURE0);
+            BindMaterialMaps(*material, customShader->id);
         }
         glBindVertexArray(mesh.vaoId);
 
@@ -2800,19 +2860,7 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Col
 
         glBindTexture(GL_TEXTURE_2D, texId);
         if (customShader && material && material->maps) {
-            for (int shadowIndex = 0; shadowIndex < 4; ++shadowIndex) {
-                const int mapIndex = MATERIAL_MAP_HEIGHT + shadowIndex;
-                if (!material->maps[mapIndex].texture.valid) continue;
-
-                const GLint shadowMapLoc = glGetUniformLocation(
-                    customShader->id, TextFormat("shadowMaps[%i]", shadowIndex));
-                if (shadowMapLoc >= 0) {
-                    glActiveTexture(GL_TEXTURE1 + shadowIndex);
-                    glBindTexture(GL_TEXTURE_2D, material->maps[mapIndex].texture.id);
-                    glUniform1i(shadowMapLoc, 1 + shadowIndex);
-                }
-            }
-            glActiveTexture(GL_TEXTURE0);
+            BindMaterialMaps(*material, customShader->id);
         }
         glBindVertexArray(mesh.vaoId);
 

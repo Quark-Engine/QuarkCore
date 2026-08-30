@@ -16,7 +16,7 @@ public:
         ID3D11PixelShader *pixelShader = nullptr;
         ID3D11InputLayout *inputLayout = nullptr;
         ID3D11Buffer *constantBuffer = nullptr;
-        ID3D11ShaderResourceView *shaderResources[8] = {};
+        ID3D11ShaderResourceView *shaderResources[10] = {};
         UINT strideBytes = 0;
         UINT positionOffset = 0;
         UINT texCoordOffset = 0xFFFFFFFFu;
@@ -50,6 +50,7 @@ public:
     void Draw3DShader(const float *vertices, UINT vertexCount,
                       const ShaderOverride &shaderOverride);
     void ClearDepthStencil();
+    void ReleaseRenderTargets();
     void BeginTextureMode(const IRenderTexture& target);
     void EndTextureMode(int width, int height);
     void BeginMode2D(const Camera2D& camera);
@@ -60,6 +61,7 @@ public:
 
 private:
     static constexpr UINT kBatchMaxVertices = 8192 * 4;
+    static constexpr size_t kMax3DBufferBytes = 8 * 1024 * 1024;
 
     struct BatchVertex {
         float x, y;

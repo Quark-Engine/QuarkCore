@@ -226,7 +226,9 @@ private:
         GLuint shader3D       = 0;
         GLint  modelLoc       = -1, viewLoc    = -1, projLoc = -1;
         GLint  samplerLoc     = -1, lightPosLoc = -1, colorLoc = -1;
-        GLuint whiteTexture   = 0;
+        GLuint whiteTexture      = 0;
+        GLuint blackTexture      = 0;
+        GLuint flatNormalTexture = 0;
 
         GLuint planeVAO  = 0, planeVBO  = 0, planeEBO  = 0; int planeIndexCount  = 0;
         GLuint cubeVAO   = 0, cubeVBO   = 0, cubeEBO   = 0; int cubeIndexCount   = 0;
@@ -272,6 +274,7 @@ private:
     void   FlushLines3D();
     void   FlushTriangles3D();
     void   DrawTriangle3DImpl(Vertex3D v1, Vertex3D v2, Vertex3D v3, Color color);
+    void   BindMaterialMaps(const Material& material, GLuint shaderProgram);
     Vec3   TransformPoint(const Mat4& m, const Vec3& p) const;
     Mat4   ApplyCurrentMatrix(const Mat4& t) const;
 

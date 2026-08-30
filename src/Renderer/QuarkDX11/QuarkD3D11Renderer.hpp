@@ -191,6 +191,7 @@ public:
     void EndTextureMode() override;
     RendererType GetType() const override { return RendererType::D3D11; }
     bool ShouldClose() const override { return m_shouldClose; }
+    void SetShouldClose(bool v) { m_shouldClose = v; }
     void SetTargetFPS(int fps) override { m_targetFps = fps; }
     void SetMSAASamples(int samples);
     void SetTextureFilterMode(TextureFilterMode mode);
@@ -259,6 +260,11 @@ private:
         UINT colorOffset = 0xFFFFFFFFu;
         UINT normalOffset = 0xFFFFFFFFu;
         UINT worldPositionOffset = 0xFFFFFFFFu;
+        UINT positionComponents = 0;
+        UINT texCoordComponents = 0;
+        UINT colorComponents = 0;
+        UINT normalComponents = 0;
+        UINT worldPositionComponents = 0;
         bool hasPosition = false;
         std::vector<uint8_t> constantStaging;
         UINT constantBufferSize = 0;
@@ -282,6 +288,7 @@ private:
     ShaderProgramData *Resolve3DShaderProgram(const Material &material);
     void DrawMeshWithShader(const Mesh &mesh, const Material &material, const Mat4 &transform,
                             ShaderProgramData &program);
+    void ResizeSwapChain();
 
     bool LoadFontData(const char *filePath, int fontSize, FontData &fontData);
     const FontData *GetFontData(IFont font) const;
@@ -311,6 +318,7 @@ private:
     bool m_vsyncExplicitlySet = false;
     std::uint64_t m_lastFrameCounter = 0;
     bool m_shouldClose = false;
+    bool m_windowResized = false;
     float m_frameTime = 0.0f;
     bool m_drawing = false;
     std::chrono::steady_clock::time_point m_lastFrame{};
@@ -321,6 +329,8 @@ private:
     uint32_t m_nextShaderId = 1;
     uint32_t m_currentShaderId = 0;
     ITexture m_whiteShaderTexture{};
+    ITexture m_blackShaderTexture{};
+    ITexture m_flatNormalShaderTexture{};
     std::unordered_map<std::string, CachedTexture> m_textureCache;
     std::unordered_map<uint32_t, std::string> m_textureCacheKeys;
     Mat4 m_viewMatrix{};

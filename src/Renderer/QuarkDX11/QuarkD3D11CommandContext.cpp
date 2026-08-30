@@ -1,5 +1,6 @@
 #include "QuarkD3D11CommandContext.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <cmath>
 #include <vector>
@@ -145,6 +146,20 @@ void D3D11CommandContext::ClearDepthStencil()
     }
 }
 
+void D3D11CommandContext::ReleaseRenderTargets()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    ID3D11RenderTargetView *nullRenderTarget = nullptr;
+    ID3D11DepthStencilView *nullDepthStencil = nullptr;
+    m_context->OMSetRenderTargets(1, &nullRenderTarget, nullDepthStencil);
+    m_activeRenderTarget = nullptr;
+    m_activeDepthStencil = nullptr;
+}
+
 void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
                                  D3D_PRIMITIVE_TOPOLOGY topology)
 {
@@ -160,18 +175,25 @@ void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
         return;
     }
 
-    constexpr UINT kMaxVertices = 32768;
-    if (vertexCount > kMaxVertices)
-    {
-        return;
-    }
-
-    m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), vertices,
-                                     static_cast<size_t>(vertexCount) * sizeof(float) * 16);
+    constexpr UINT kStrideFloats = 16;
+    const size_t strideBytes = sizeof(float) * kStrideFloats;
+    const UINT maxChunkVertices = static_cast<UINT>(kMax3DBufferBytes / strideBytes);
 
     m_pipeline->Bind3D(m_context);
     m_context->IASetPrimitiveTopology(topology);
-    m_context->Draw(vertexCount, 0);
+
+    const float *cursor = vertices;
+    UINT remaining = vertexCount;
+    while (remaining > 0)
+    {
+        const UINT chunk = std::min(remaining, maxChunkVertices);
+        m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), cursor,
+                                         static_cast<size_t>(chunk) * strideBytes);
+        m_context->Draw(chunk, 0);
+
+        remaining -= chunk;
+        cursor += static_cast<size_t>(chunk) * kStrideFloats;
+    }
 }
 
 void D3D11CommandContext::Draw3DTextured(const float *vertices, UINT vertexCount,
@@ -182,16 +204,24 @@ void D3D11CommandContext::Draw3DTextured(const float *vertices, UINT vertexCount
         return;
     }
 
-    constexpr UINT kMaxVertices = 32768;
-    if (vertexCount > kMaxVertices)
-    {
-        return;
-    }
+    constexpr UINT kStrideFloats = 18;
+    const size_t strideBytes = sizeof(float) * kStrideFloats;
+    const UINT maxChunkVertices = static_cast<UINT>(kMax3DBufferBytes / strideBytes);
 
-    m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), vertices,
-                                     static_cast<size_t>(vertexCount) * sizeof(float) * 18);
     m_pipeline->BindTexture3D(m_context, shaderResource);
-    m_context->Draw(vertexCount, 0);
+
+    const float *cursor = vertices;
+    UINT remaining = vertexCount;
+    while (remaining > 0)
+    {
+        const UINT chunk = std::min(remaining, maxChunkVertices);
+        m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), cursor,
+                                         static_cast<size_t>(chunk) * strideBytes);
+        m_context->Draw(chunk, 0);
+
+        remaining -= chunk;
+        cursor += static_cast<size_t>(chunk) * kStrideFloats;
+    }
 }
 
 void D3D11CommandContext::Draw3DShader(const float *vertices, UINT vertexCount,
@@ -209,14 +239,8 @@ void D3D11CommandContext::Draw3DShader(const float *vertices, UINT vertexCount,
         return;
     }
 
-    constexpr UINT kMaxVertices = 32768;
-    if (vertexCount > kMaxVertices)
-    {
-        return;
-    }
-
-    m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), vertices,
-                                     static_cast<size_t>(vertexCount) * shaderOverride.strideBytes);
+    const UINT maxChunkVertices =
+        static_cast<UINT>(kMax3DBufferBytes / shaderOverride.strideBytes);
 
     const UINT stride = shaderOverride.strideBytes;
     const UINT offset = 0;
@@ -237,12 +261,12 @@ void D3D11CommandContext::Draw3DShader(const float *vertices, UINT vertexCount,
     }
     m_context->PSSetConstantBuffers(1, 1, m_pipeline->LightConstantBuffer());
 
-    ID3D11ShaderResourceView *resources[8] = {};
-    for (size_t index = 0; index < 8; ++index)
+    ID3D11ShaderResourceView *resources[10] = {};
+    for (size_t index = 0; index < 10; ++index)
     {
         resources[index] = shaderOverride.shaderResources[index];
     }
-    m_context->PSSetShaderResources(0, 8, resources);
+    m_context->PSSetShaderResources(0, 10, resources);
 
     ID3D11SamplerState *sampler = m_pipeline->Sampler();
     m_context->PSSetSamplers(0, 1, &sampler);
@@ -250,7 +274,19 @@ void D3D11CommandContext::Draw3DShader(const float *vertices, UINT vertexCount,
     const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
     m_context->OMSetDepthStencilState(m_pipeline->DepthStencilState(), 0);
     m_context->OMSetBlendState(m_pipeline->Blend(), blendFactor, 0xFFFFFFFF);
-    m_context->Draw(vertexCount, 0);
+
+    const float *cursor = vertices;
+    UINT remaining = vertexCount;
+    while (remaining > 0)
+    {
+        const UINT chunk = std::min(remaining, maxChunkVertices);
+        m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), cursor,
+                                         static_cast<size_t>(chunk) * shaderOverride.strideBytes);
+        m_context->Draw(chunk, 0);
+
+        remaining -= chunk;
+        cursor += static_cast<size_t>(chunk) * (shaderOverride.strideBytes / sizeof(float));
+    }
 }
 
 void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, int, int)
@@ -554,8 +590,8 @@ void D3D11CommandContext::BindOverride(ID3D11ShaderResourceView *drawnResource)
         m_context->PSSetConstantBuffers(0, 1, &constantBuffer);
     }
 
-    ID3D11ShaderResourceView *resources[8] = {};
-    for (size_t index = 0; index < 8; ++index)
+    ID3D11ShaderResourceView *resources[10] = {};
+    for (size_t index = 0; index < 10; ++index)
     {
         resources[index] = shaderOverride.shaderResources[index];
     }
@@ -563,7 +599,7 @@ void D3D11CommandContext::BindOverride(ID3D11ShaderResourceView *drawnResource)
     {
         resources[0] = drawnResource;
     }
-    m_context->PSSetShaderResources(0, 8, resources);
+    m_context->PSSetShaderResources(0, 10, resources);
 
     ID3D11SamplerState *sampler = m_pipeline->Sampler();
     m_context->PSSetSamplers(0, 1, &sampler);

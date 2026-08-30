@@ -33,6 +33,17 @@ static Color MultiplyColor(Color lhs, Color rhs)
     };
 }
 
+static Mat4 TransposeMat4(const Mat4& matrix)
+{
+    Mat4 result{};
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            result.m[row * 4 + col] = matrix.m[col * 4 + row];
+        }
+    }
+    return result;
+}
+
 const char* ShaderLocationNames[SHADER_LOC_COUNT] = {
     "POSITION",
     "TEXCOORD0",
@@ -236,6 +247,14 @@ void QuarkD3D11Renderer::Init(SDL_Window *window, int width, int height)
         const uint8_t white[4] = {255, 255, 255, 255};
         m_whiteShaderTexture = m_resources.CreateTexture(m_device.Get(), white, 1, 1);
     }
+    {
+        const uint8_t black[4] = {0, 0, 0, 255};
+        m_blackShaderTexture = m_resources.CreateTexture(m_device.Get(), black, 1, 1);
+    }
+    {
+        const uint8_t flatNormal[4] = {128, 128, 255, 255};
+        m_flatNormalShaderTexture = m_resources.CreateTexture(m_device.Get(), flatNormal, 1, 1);
+    }
     if (m_requestedMsaaSamples > 1)
     {
         m_swapChain.SetMSAASamples(static_cast<UINT>(m_requestedMsaaSamples));
@@ -255,6 +274,14 @@ void QuarkD3D11Renderer::Shutdown()
     if (m_whiteShaderTexture.IsValid()) {
         m_resources.DestroyTexture(m_whiteShaderTexture.id);
         m_whiteShaderTexture = {};
+    }
+    if (m_blackShaderTexture.IsValid()) {
+        m_resources.DestroyTexture(m_blackShaderTexture.id);
+        m_blackShaderTexture = {};
+    }
+    if (m_flatNormalShaderTexture.IsValid()) {
+        m_resources.DestroyTexture(m_flatNormalShaderTexture.id);
+        m_flatNormalShaderTexture = {};
     }
     for (const auto& [_, cachedTexture] : m_textureCache) {
         if (cachedTexture.texture.IsValid()) {
@@ -312,12 +339,34 @@ void QuarkD3D11Renderer::RefreshViewport()
         if (pixelWidth > 0 && pixelHeight > 0 &&
             (pixelWidth != m_width || pixelHeight != m_height))
         {
-            m_swapChain.Resize(m_device, pixelWidth, pixelHeight);
-            m_width = pixelWidth;
-            m_height = pixelHeight;
+            m_windowResized = true;
         }
     }
 
+    m_commands.SetDefaultViewportSize(m_width, m_height);
+    m_commands.RefreshViewport(m_width, m_height);
+}
+
+void QuarkD3D11Renderer::ResizeSwapChain()
+{
+    if (!m_window)
+    {
+        return;
+    }
+
+    int pixelWidth = 0;
+    int pixelHeight = 0;
+    SDL_GetWindowSizeInPixels(m_window, &pixelWidth, &pixelHeight);
+
+    if (pixelWidth <= 0 || pixelHeight <= 0)
+    {
+        return;
+    }
+
+    m_commands.ReleaseRenderTargets();
+    m_swapChain.Resize(m_device, pixelWidth, pixelHeight);
+    m_width = pixelWidth;
+    m_height = pixelHeight;
     m_commands.SetDefaultViewportSize(m_width, m_height);
     m_commands.RefreshViewport(m_width, m_height);
 }
@@ -368,6 +417,12 @@ void QuarkD3D11Renderer::EndDrawing()
 
     const bool vsync = m_vsyncExplicitlySet ? m_vsync : (m_targetFps != 0);
     m_commands.Present(vsync);
+
+    if (m_windowResized)
+    {
+        m_windowResized = false;
+        ResizeSwapChain();
+    }
 
     const std::uint64_t freq = SDL_GetPerformanceFrequency();
     if (m_targetFps > 0) {
@@ -1324,18 +1379,37 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
             };
         }
 
-        aiString texturePath{};
-        if (AI_SUCCESS == sourceMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath))
+        const std::array<std::pair<int, aiTextureType>, 7> textureTypes = {{
+            { MATERIAL_MAP_ALBEDO, aiTextureType_BASE_COLOR },
+            { MATERIAL_MAP_ALBEDO, aiTextureType_DIFFUSE },
+            { MATERIAL_MAP_METALNESS, aiTextureType_METALNESS },
+            { MATERIAL_MAP_NORMAL, aiTextureType_NORMALS },
+            { MATERIAL_MAP_ROUGHNESS, aiTextureType_DIFFUSE_ROUGHNESS },
+            { MATERIAL_MAP_OCCLUSION, aiTextureType_AMBIENT_OCCLUSION },
+            { MATERIAL_MAP_EMISSION, aiTextureType_EMISSION_COLOR }
+        }};
+
+        for (const auto& [mapIndex, textureType] : textureTypes)
         {
+            if (material.maps[mapIndex].texture.valid)
+            {
+                continue;
+            }
+
+            aiString texturePath{};
+            if (AI_SUCCESS != sourceMaterial->GetTexture(textureType, 0, &texturePath))
+            {
+                continue;
+            }
+
             const std::string fullTexturePath = model.directory + texturePath.C_Str();
             const ITexture loadedTexture = LoadTexture(fullTexturePath.c_str());
-            material.maps[MATERIAL_MAP_ALBEDO].texture = Texture2D{
+            material.maps[mapIndex].texture = Texture2D{
                 loadedTexture.id,
                 loadedTexture.width,
                 loadedTexture.height,
                 loadedTexture.valid
             };
-            material.maps[MATERIAL_MAP_DIFFUSE].texture = material.maps[MATERIAL_MAP_ALBEDO].texture;
         }
     }
 
@@ -1845,7 +1919,7 @@ QuarkD3D11Renderer::ShaderProgramData *QuarkD3D11Renderer::Resolve3DShaderProgra
         return nullptr;
     }
 
-    if (!program->hasPosition || program->worldPositionOffset == 0xFFFFFFFFu) {
+    if (!program->hasPosition) {
         return nullptr;
     }
 
@@ -1867,11 +1941,6 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
     const uint32_t shaderId = (material.shader && material.shader->id != 0)
                                   ? material.shader->id
                                   : m_currentShaderId;
-    D3D11CommandContext::ShaderOverride shaderOverride = BuildShaderOverride(shaderId,
-                                                                            albedoResource);
-    if (!shaderOverride.Active()) {
-        return;
-    }
 
     const UINT floatsPerVertex = program.strideBytes / sizeof(float);
     const auto offsetInFloats = [](UINT byteOffset) -> UINT {
@@ -1882,11 +1951,96 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
     const UINT colorOffset = offsetInFloats(program.colorOffset);
     const UINT normalOffset = offsetInFloats(program.normalOffset);
     const UINT worldPositionOffset = offsetInFloats(program.worldPositionOffset);
+    const bool standardConvention = program.worldPositionOffset == 0xFFFFFFFFu;
 
     const Mat4 finalTransform = m_currentMatrix * transform;
     const Color baseColor = albedoMap ? albedoMap->color : WHITE;
 
+    if (standardConvention) {
+        const Mat4 normalMatrix = TransposeMat4(finalTransform.inverted());
+        const Mat4 mvp = m_projectionMatrix * (m_viewMatrix * finalTransform);
+
+        const auto setMatrixUniform = [&](const char *names[3], const Mat4 &value) {
+            for (int aliasIndex = 0; aliasIndex < 3; ++aliasIndex) {
+                const auto iterator = program.uniforms.find(names[aliasIndex]);
+                if (iterator == program.uniforms.end()) {
+                    continue;
+                }
+                StoreUniformValue(program, iterator->second, 0, value.m,
+                                  sizeof(float) * 16, 1);
+                break;
+            }
+        };
+
+        const char *modelNames[3] = {"uModel", "model", "MATRIX_MODEL"};
+        setMatrixUniform(modelNames, finalTransform);
+
+        const char *viewNames[3] = {"uView", "view", "MATRIX_VIEW"};
+        setMatrixUniform(viewNames, m_viewMatrix);
+
+        const char *projectionNames[3] = {"uProjection", "projection", "MATRIX_PROJECTION"};
+        setMatrixUniform(projectionNames, m_projectionMatrix);
+
+        const char *mvpNames[3] = {"uMvp", "mvp", "MATRIX_MVP"};
+        setMatrixUniform(mvpNames, mvp);
+
+        const char *normalNames[3] = {"uNormal", "normalMatrix", "MATRIX_NORMAL"};
+        setMatrixUniform(normalNames, normalMatrix);
+
+        const float whiteColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+        for (const char *name : {"uColor", "colDiffuse", "COLOR_DIFFUSE"}) {
+            const auto iterator = program.uniforms.find(name);
+            if (iterator == program.uniforms.end()) {
+                continue;
+            }
+            StoreUniformValue(program, iterator->second, 0, whiteColor,
+                              sizeof(float) * 4, 1);
+            break;
+        }
+    }
+
+    D3D11CommandContext::ShaderOverride shaderOverride = BuildShaderOverride(shaderId,
+                                                                            albedoResource);
+    if (!shaderOverride.Active()) {
+        return;
+    }
+
+    if (material.maps)
+    {
+        ID3D11ShaderResourceView *whiteFallback =
+            m_whiteShaderTexture.IsValid() ? m_resources.ShaderResource(m_whiteShaderTexture.id) : nullptr;
+        ID3D11ShaderResourceView *blackFallback =
+            m_blackShaderTexture.IsValid() ? m_resources.ShaderResource(m_blackShaderTexture.id) : nullptr;
+        ID3D11ShaderResourceView *flatNormalFallback =
+            m_flatNormalShaderTexture.IsValid() ? m_resources.ShaderResource(m_flatNormalShaderTexture.id) : nullptr;
+
+        const auto fillMapSlot = [&](UINT slot, int mapIndex, ID3D11ShaderResourceView *fallback) {
+            if (shaderOverride.shaderResources[slot] != nullptr) {
+                return;
+            }
+            const MaterialMap &map = material.maps[mapIndex];
+            if (map.texture.valid) {
+                shaderOverride.shaderResources[slot] = m_resources.ShaderResource(map.texture.id);
+            } else if (fallback) {
+                shaderOverride.shaderResources[slot] = fallback;
+            }
+        };
+
+        fillMapSlot(1, MATERIAL_MAP_HEIGHT, whiteFallback);
+        fillMapSlot(2, MATERIAL_MAP_IRRADIANCE, whiteFallback);
+        fillMapSlot(3, MATERIAL_MAP_PREFILTER, whiteFallback);
+        fillMapSlot(4, MATERIAL_MAP_BRDF, whiteFallback);
+        fillMapSlot(5, MATERIAL_MAP_METALNESS, whiteFallback);
+        fillMapSlot(6, MATERIAL_MAP_NORMAL, flatNormalFallback);
+        fillMapSlot(7, MATERIAL_MAP_ROUGHNESS, whiteFallback);
+        fillMapSlot(8, MATERIAL_MAP_OCCLUSION, whiteFallback);
+        fillMapSlot(9, MATERIAL_MAP_EMISSION, blackFallback);
+    }
+
     const auto transformNormal = [&](const Vec3 &normal) -> Vec3 {
+        if (standardConvention) {
+            return normal;
+        }
         const Vec3 rotated{
             finalTransform.m[0] * normal.x + finalTransform.m[4] * normal.y +
                 finalTransform.m[8] * normal.z,
@@ -1907,51 +2061,82 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
         return Vec3{0.0f, 1.0f, 0.0f};
     };
 
-    const auto appendVertex = [&](std::vector<float> &out, const Vec4 &world, const Vec3 &normal,
-                                  Color color, float u, float v)
+    const auto localPosAt = [&](int vertexIndex) -> Vec4 {
+        return Vec4{mesh.vertices[vertexIndex * 3 + 0],
+                    mesh.vertices[vertexIndex * 3 + 1],
+                    mesh.vertices[vertexIndex * 3 + 2],
+                    1.0f};
+    };
+
+    const auto faceNormalOf = [&](int indexA, int indexB, int indexC) -> Vec3 {
+        if (!standardConvention) {
+            const Vec4 worldA = finalTransform * localPosAt(indexA);
+            const Vec4 worldB = finalTransform * localPosAt(indexB);
+            const Vec4 worldC = finalTransform * localPosAt(indexC);
+            return SafeNormalized(
+                (Vec3{worldB.x - worldA.x, worldB.y - worldA.y, worldB.z - worldA.z})
+                    .cross(Vec3{worldC.x - worldA.x, worldC.y - worldA.y,
+                                worldC.z - worldA.z}),
+                Vec3{0.0f, 1.0f, 0.0f});
+        }
+        const Vec4 localA = localPosAt(indexA);
+        const Vec4 localB = localPosAt(indexB);
+        const Vec4 localC = localPosAt(indexC);
+        return SafeNormalized(
+            (Vec3{localB.x - localA.x, localB.y - localA.y, localB.z - localA.z})
+                .cross(Vec3{localC.x - localA.x, localC.y - localA.y, localC.z - localA.z}),
+            Vec3{0.0f, 1.0f, 0.0f});
+    };
+
+    const auto writeVec = [](float *vertex, UINT offset, const float *values, int count) {
+        for (int index = 0; index < count; ++index) {
+            vertex[offset + index] = values[index];
+        }
+    };
+
+    const auto appendVertex = [&](std::vector<float> &out, int vertexIndex,
+                                  const Vec3 &normal, Color color, float u, float v)
     {
-        const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
         const size_t base = out.size();
         out.resize(base + floatsPerVertex, 0.0f);
         float *vertex = out.data() + base;
 
+        const Vec4 localPos = localPosAt(vertexIndex);
         if (positionOffset != 0xFFFFFFFFu) {
-            vertex[positionOffset + 0] = clip.x;
-            vertex[positionOffset + 1] = clip.y;
-            vertex[positionOffset + 2] = clip.z;
-            vertex[positionOffset + 3] = clip.w;
+            if (standardConvention) {
+                const float position[4] = {localPos.x, localPos.y, localPos.z, localPos.w};
+                writeVec(vertex, positionOffset, position,
+                         std::min<int>(program.positionComponents, 4));
+            } else {
+                const Vec4 world = finalTransform * localPos;
+                const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
+                const float position[4] = {clip.x, clip.y, clip.z, clip.w};
+                writeVec(vertex, positionOffset, position,
+                         std::min<int>(program.positionComponents, 4));
+            }
         }
         if (texCoordOffset != 0xFFFFFFFFu) {
-            vertex[texCoordOffset + 0] = u;
-            vertex[texCoordOffset + 1] = v;
+            const float texCoord[2] = {u, v};
+            writeVec(vertex, texCoordOffset, texCoord,
+                     std::min<int>(program.texCoordComponents, 2));
         }
         if (colorOffset != 0xFFFFFFFFu) {
-            vertex[colorOffset + 0] = color.r / 255.0f;
-            vertex[colorOffset + 1] = color.g / 255.0f;
-            vertex[colorOffset + 2] = color.b / 255.0f;
-            vertex[colorOffset + 3] = color.a / 255.0f;
+            const float vertexColor[4] = {color.r / 255.0f, color.g / 255.0f,
+                                          color.b / 255.0f, color.a / 255.0f};
+            writeVec(vertex, colorOffset, vertexColor,
+                     std::min<int>(program.colorComponents, 4));
         }
         if (normalOffset != 0xFFFFFFFFu) {
-            vertex[normalOffset + 0] = normal.x;
-            vertex[normalOffset + 1] = normal.y;
-            vertex[normalOffset + 2] = normal.z;
-            vertex[normalOffset + 3] = 1.0f;
+            const float normalData[4] = {normal.x, normal.y, normal.z, 1.0f};
+            writeVec(vertex, normalOffset, normalData,
+                     std::min<int>(program.normalComponents, 4));
         }
         if (worldPositionOffset != 0xFFFFFFFFu) {
-            vertex[worldPositionOffset + 0] = world.x;
-            vertex[worldPositionOffset + 1] = world.y;
-            vertex[worldPositionOffset + 2] = world.z;
-            vertex[worldPositionOffset + 3] = 1.0f;
+            const Vec4 world = finalTransform * localPos;
+            const float worldData[4] = {world.x, world.y, world.z, world.w};
+            writeVec(vertex, worldPositionOffset, worldData,
+                     std::min<int>(program.worldPositionComponents, 4));
         }
-    };
-
-    const auto worldPosAt = [&](int vertexIndex) -> Vec4 {
-        return finalTransform * Vec4{
-            mesh.vertices[vertexIndex * 3 + 0],
-            mesh.vertices[vertexIndex * 3 + 1],
-            mesh.vertices[vertexIndex * 3 + 2],
-            1.0f
-        };
     };
 
     const auto drawFilled = [&](const std::vector<float> &builtVertices) {
@@ -1984,14 +2169,8 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
                 continue;
             }
 
-            const Vec4 worldA = worldPosAt(vertexIndex[0]);
-            const Vec4 worldB = worldPosAt(vertexIndex[1]);
-            const Vec4 worldC = worldPosAt(vertexIndex[2]);
-            const Vec3 faceNormal = SafeNormalized(
-                (Vec3{worldB.x, worldB.y, worldB.z} - Vec3{worldA.x, worldA.y, worldA.z})
-                    .cross(Vec3{worldC.x, worldC.y, worldC.z} - Vec3{worldA.x, worldA.y, worldA.z}),
-                Vec3{0.0f, 1.0f, 0.0f});
-
+            const Vec3 faceNormal = faceNormalOf(vertexIndex[0], vertexIndex[1],
+                                                 vertexIndex[2]);
             for (int localIndex = 0; localIndex < 3; ++localIndex)
             {
                 const int vi = vertexIndex[localIndex];
@@ -2000,7 +2179,7 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
                 const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
                 const Color vertexColor =
                     MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
-                appendVertex(indexedVertices, worldPosAt(vi), normal, vertexColor, u, v);
+                appendVertex(indexedVertices, vi, normal, vertexColor, u, v);
             }
         }
 
@@ -2020,22 +2199,16 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
             break;
         }
 
-        const Vec4 worldA = worldPosAt(viBase + 0);
-        const Vec4 worldB = worldPosAt(viBase + 1);
-        const Vec4 worldC = worldPosAt(viBase + 2);
-        const Vec3 faceNormal = SafeNormalized(
-            (Vec3{worldB.x, worldB.y, worldB.z} - Vec3{worldA.x, worldA.y, worldA.z})
-                .cross(Vec3{worldC.x, worldC.y, worldC.z} - Vec3{worldA.x, worldA.y, worldA.z}),
-            Vec3{0.0f, 1.0f, 0.0f});
-
+        const Vec3 faceNormal = faceNormalOf(viBase + 0, viBase + 1, viBase + 2);
         for (int localIndex = 0; localIndex < 3; ++localIndex)
         {
             const int vi = viBase + localIndex;
             const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
             const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
             const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
-            const Color vertexColor = MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
-            appendVertex(vertices, worldPosAt(vi), normal, vertexColor, u, v);
+            const Color vertexColor =
+                MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
+            appendVertex(vertices, vi, normal, vertexColor, u, v);
         }
     }
 
@@ -2738,16 +2911,21 @@ void QuarkD3D11Renderer::BuildShaderProgram(ShaderProgramData &program,
 
         if (SemanticEquals(signature.SemanticName, "POSITION")) {
             program.positionOffset = byteOffset;
+            program.positionComponents = components;
             program.hasPosition = true;
         } else if (SemanticEquals(signature.SemanticName, "TEXCOORD") &&
                    program.texCoordOffset == 0xFFFFFFFFu) {
             program.texCoordOffset = byteOffset;
+            program.texCoordComponents = components;
         } else if (SemanticEquals(signature.SemanticName, "COLOR")) {
             program.colorOffset = byteOffset;
+            program.colorComponents = components;
         } else if (SemanticEquals(signature.SemanticName, "NORMAL")) {
             program.normalOffset = byteOffset;
+            program.normalComponents = components;
         } else if (SemanticEquals(signature.SemanticName, "WORLD_POSITION")) {
             program.worldPositionOffset = byteOffset;
+            program.worldPositionComponents = components;
         }
 
         byteOffset += components * sizeof(float);
