@@ -62,6 +62,7 @@ public:
     virtual void DrawTextEx(IFont font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) = 0;
     virtual Vec2 MeasureTextEx(IFont font, const char* text, float fontSize, float spacing)                         = 0;
     virtual int MeasureText(const char* text, int fontSize)                                                         = 0;
+    virtual void FillFont(IFont font, Font& out)                                                                   = 0;
 
     virtual void DrawTexture(const ITexture& texture, float x, float y, Color tint)                                             = 0;
     virtual void DrawTextureV(const ITexture& texture, Vec2 position, Color tint)                                               = 0;
@@ -111,6 +112,7 @@ public:
     virtual void BeginTextureMode(IRenderTexture target)                                                = 0;
     virtual void EndTextureMode()                                                                       = 0;
     virtual ITexture LoadTexture(const char* filePath)                                                  = 0;
+    virtual ITexture LoadTextureFromImage(const Image& image)                                            = 0;
     virtual ITexture GetRenderTextureTexture(IRenderTexture target)                                     = 0;
     virtual void UnloadTexture(ITexture& texture)                                                       = 0;
     virtual IRenderTexture LoadRenderTexture(int width, int height)                                     = 0;
@@ -122,7 +124,10 @@ public:
     virtual Image ReadScreenImage()                                                                     = 0;
 
     // Font
-    virtual IFont LoadFont(const char* filePath, int fontSize) = 0;
+    virtual IFont LoadFont(const char* filePath, int fontSize,
+                           const int* codepoints, int codepointCount) = 0;
+    virtual IFont LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int dataSize,
+                                     int fontSize, const int* codepoints, int codepointCount) = 0;
     virtual void UnloadFont(IFont& font)                       = 0;
 
 

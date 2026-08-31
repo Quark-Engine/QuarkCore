@@ -235,7 +235,7 @@ endif()
 
 set(ZLIB_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
 add_library(ZLIB::ZLIB STATIC IMPORTED GLOBAL)
-target_include_directories(ZLIB::ZLIB INTERFACE "${ZLIB_EXTERNAL_DIR}/include")
+target_include_directories(ZLIB::ZLIB INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 if(MSVC)
     set_target_properties(ZLIB::ZLIB PROPERTIES
@@ -345,6 +345,7 @@ add_library(QuarkCore STATIC
     src/QuarkLights.cpp
     src/QuarkWindow.cpp
     src/QuarkImage.cpp
+    src/QuarkUtils.cpp
 )
 
 if(WIN32)
@@ -376,6 +377,7 @@ if(WIN32)
             SDL3::SDL3
             assimp::assimp
             freetype
+            ZLIB::ZLIB
     )
 else()
     target_link_libraries(QuarkCore
@@ -383,6 +385,7 @@ else()
             SDL3::SDL3
             assimp::assimp
             freetype
+            ZLIB::ZLIB
     )
 endif()
 
@@ -663,6 +666,21 @@ if(QC_BUILD_EXAMPLES)
                 )
             endif()
 
+            if(_target STREQUAL "quarkcore_opengl")
+                add_custom_command(TARGET ${_target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E make_directory
+                        $<TARGET_FILE_DIR:${_target}>/resources
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/opengl.png
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/lantern.mtl
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/lantern.obj
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/light.png
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/prison.png
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/rustymetal.png
+                        $<TARGET_FILE_DIR:${_target}>/resources
+                )
+            endif()
+
             if(_target STREQUAL "quarkcore_vulkan_3d_lights")
                 add_custom_command(TARGET ${_target} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -672,6 +690,36 @@ if(QC_BUILD_EXAMPLES)
                         ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/vulkan_lighting.fs
                         ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/vulkan_shadow_depth.vs
                         ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/vulkan_shadow_depth.fs
+                        $<TARGET_FILE_DIR:${_target}>/resources
+                )
+            endif()
+
+            if(_target STREQUAL "quarkcore_vulkan")
+                add_custom_command(TARGET ${_target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E make_directory
+                        $<TARGET_FILE_DIR:${_target}>/resources
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/vulkan.png
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/lantern.mtl
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/lantern.obj
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/light.png
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/prison.png
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/rustymetal.png
+                        $<TARGET_FILE_DIR:${_target}>/resources
+                )
+            endif()
+
+            if(_target STREQUAL "quarkcore_d3d11")
+                add_custom_command(TARGET ${_target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E make_directory
+                        $<TARGET_FILE_DIR:${_target}>/resources
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/directx11.png
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/lantern.mtl
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/lantern.obj
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/light.png
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/prison.png
+                        ${CMAKE_CURRENT_SOURCE_DIR}/examples/resources/rustymetal.png
                         $<TARGET_FILE_DIR:${_target}>/resources
                 )
             endif()

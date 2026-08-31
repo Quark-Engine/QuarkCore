@@ -797,14 +797,14 @@ QCAPI void            ImageDrawImage(Image* dst, Image src, int posX, int posY, 
 QCAPI void            ImageDrawImageEx(Image* dst, Image src, Vec2 position, float rotation, float scale, Color tint);
 
 /**
- * @brief Draw a source image onto a destination image, with region selection.
+ * @brief Draw a source image region onto a destination image.
  * @param dst Pointer to the destination image.
  * @param src Source image to draw.
  * @param srcRec Source rectangle to draw from, in pixels.
- * @param dstRec Destination rectangle to draw into, in pixels.
+ * @param position Position (top-left) where to draw the region, in pixels.
  * @param tint Tint color applied to the source image.
  */
-QCAPI void            ImageDrawImageRec(Image* dst, Image src, Rectangle srcRec, Rectangle dstRec, Color tint);
+QCAPI void            ImageDrawImageRec(Image* dst, Image src, Rectangle srcRec, Vec2 position, Color tint);
 
 /**
  * @brief Load all pixel colors of an image into an array.
@@ -850,5 +850,30 @@ QCAPI Rectangle       GetImageAlphaBorder(Image image, float threshold);
  * @return Color of the pixel at the given coordinates.
  */
 QCAPI Color           GetImageColor(Image image, int x, int y);
+
+/**
+ * @brief Get the size in bytes of an image's pixel data for the given dimensions and format.
+ * @param width Image width, in pixels.
+ * @param height Image height, in pixels.
+ * @param format Pixel format (see PixelFormat).
+ * @return Size in bytes (0 for compressed formats).
+ */
+QCAPI int             GetPixelDataSize(int width, int height, int format);
+
+/**
+ * @brief Read the color of a single pixel from raw pixel data.
+ * @param srcPtr Pointer to the raw pixel data.
+ * @param format Pixel format (see PixelFormat).
+ * @return Color value of the decoded pixel.
+ */
+QCAPI Color           GetPixelColor(const void* srcPtr, int format);
+
+/**
+ * @brief Write a color into raw pixel data at the given location.
+ * @param dstPtr Pointer to the raw pixel data destination.
+ * @param color Color value to encode.
+ * @param format Pixel format (see PixelFormat).
+ */
+QCAPI void            SetPixelColor(void* dstPtr, Color color, int format);
 
 #endif // __QUARK_IMAGE__

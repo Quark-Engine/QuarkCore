@@ -115,6 +115,7 @@ public:
     void DrawTextureTiled(ITexture, float, Vec2, Color) override;
     void DrawTextureNPatch(ITexture, NPatchInfo, Rectangle, Vec2, float, Color) override;
     ITexture LoadTexture(const char *) override;
+    ITexture LoadTextureFromImage(const Image& image) override;
     ITexture GetRenderTextureTexture(IRenderTexture) override;
     void UnloadTexture(ITexture &) override;
     IRenderTexture LoadRenderTexture(int, int) override;
@@ -130,8 +131,12 @@ public:
                     float spacing, Color tint) override;
     Vec2 MeasureTextEx(IFont font, const char *text, float fontSize, float spacing) override;
     int MeasureText(const char *text, int fontSize) override;
+    void FillFont(IFont font, Font &out) override;
 
-    IFont LoadFont(const char *filePath, int fontSize) override;
+    IFont LoadFont(const char *filePath, int fontSize,
+                   const int *codepoints, int codepointCount) override;
+    IFont LoadFontFromMemory(const char *fileType, const unsigned char *fileData, int dataSize,
+                             int fontSize, const int *codepoints, int codepointCount) override;
     void UnloadFont(IFont &font) override;
 
     void BeginShaderMode(const Shader &shader) override;
@@ -210,14 +215,17 @@ public:
     ID3D11DeviceContext *GetD3D11ImmediateContext() const { return m_device.Context(); }
 
 private:
-    struct GlyphData {
-        Rectangle uv{};
-        float advanceX = 0.0f;
-        float offsetX = 0.0f;
-        float offsetY = 0.0f;
-        int width = 0;
-        int height = 0;
-    };
+      struct GlyphData {
+          int value = 0;
+          Rectangle uv{};
+          Rectangle rec{};
+          Image image{};
+          float advanceX = 0.0f;
+          float offsetX = 0.0f;
+          float offsetY = 0.0f;
+          int width = 0;
+          int height = 0;
+      };
 
     struct Light3D {
         Vec3 position{};
@@ -228,14 +236,15 @@ private:
         bool enabled = true;
     };
 
-    struct FontData {
-        ITexture atlasTexture{};
-        int baseSize = 0;
-        int ascent = 0;
-        int descent = 0;
-        int lineHeight = 0;
-        std::array<GlyphData, 95> glyphs{};
-    };
+      struct FontData {
+          ITexture atlasTexture{};
+          int baseSize = 0;
+          int ascent = 0;
+          int descent = 0;
+          int lineHeight = 0;
+          int glyphCount = 0;
+          std::vector<GlyphData> glyphs;
+      };
 
     struct ShaderUniformInfo {
         std::string name;
@@ -292,7 +301,9 @@ private:
                             ShaderProgramData &program);
     void ResizeSwapChain();
 
-    bool LoadFontData(const char *filePath, int fontSize, FontData &fontData);
+    bool LoadFontData(const char *filePath, const unsigned char *fileData, int dataSize,
+                      int fontSize, const int *codepoints, int codepointCount, FontData &fontData);
+    static int FindGlyph(const FontData &fontData, int codepoint);
     const FontData *GetFontData(IFont font) const;
     void DrawTextWithFontData(const FontData &fontData, const char *text,
                               Vec2 position, float fontSize, float spacing, Color tint);

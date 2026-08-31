@@ -1,5 +1,7 @@
 #include "QuarkVkRenderer.hpp"
 
+#include "../../QuarkModelAnim.hpp"
+
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -252,6 +254,8 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
 
     TraceLog(LogLevel::Info, "MODEL", TextFormat("[Vulkan] Model loaded successfully: %s (%d meshes, %d materials, %d total vertices, %d total triangles)",
         filePath ? filePath : "<null>", model.meshCount, model.materialCount, totalVertices, totalTriangles));
+
+    qcPopulateModelSkeleton(scene, model);
     return model;
 }
 
@@ -287,14 +291,7 @@ void QuarkVkRenderer::UnloadModel(Model& model) {
     delete[] model.meshMaterial;
     model.meshMaterial = nullptr;
 
-    delete[] model.skeleton.bones;
-    model.skeleton.bones = nullptr;
-    delete[] model.skeleton.bindPose.transform;
-    model.skeleton.bindPose.transform = nullptr;
-    delete[] model.currentPose.transform;
-    model.currentPose.transform = nullptr;
-    delete[] model.boneMatrices;
-    model.boneMatrices = nullptr;
+    qcFreeModelSkeleton(model);
 
     TraceLog(LogLevel::Info, "MODEL", TextFormat("[Vulkan] Model unloaded (%d meshes, %d materials)", model.meshCount, model.materialCount));
 

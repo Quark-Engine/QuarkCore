@@ -1,5 +1,6 @@
 #include "QuarkGLRenderer.hpp"
 #include "../../QuarkInternal.hpp"
+#include "../../QuarkModelAnim.hpp"
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
@@ -939,6 +941,29 @@ ITexture QuarkGLRenderer::LoadTexture(const char* path) {
     return t;
 }
 
+ITexture QuarkGLRenderer::LoadTextureFromImage(const Image& image) {
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Uploading texture from Image (%dx%d, format %d)", image.width, image.height, image.format));
+    if (!image.data || image.width <= 0 || image.height <= 0 || image.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[OpenGL] LoadTextureFromImage: unsupported or invalid image (requires UNCOMPRESSED_R8G8B8A8)");
+        return ITexture{};
+    }
+
+    ITexture t{};
+    t.id = CreateTextureFromRgba(static_cast<const uint8_t*>(image.data), image.width, image.height);
+    if (t.id == 0) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[OpenGL] LoadTextureFromImage: upload failed");
+        return t;
+    }
+    t.width = image.width;
+    t.height = image.height;
+    t.mipmaps = 1;
+    t.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    t.valid = true;
+
+    TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[OpenGL] Texture uploaded from Image (%dx%d, ID: %u)", image.width, image.height, t.id));
+    return t;
+}
+
 void QuarkGLRenderer::UnloadTexture(ITexture& t) {
     if(t.id) {
         const auto cacheKey = m_textureCacheKeys.find(t.id);
@@ -1140,8 +1165,34 @@ void QuarkGLRenderer::EndTextureMode() {
     RefreshViewport();
 }
 
-bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, FontData& out) {
-    TraceLog(LogLevel::Trace, "FONT", TextFormat("[OpenGL] FreeType initializing font: %s (size: %d pt)", filePath ? filePath : "<null>", pointSize));
+// Builds the default character set (ASCII 32..126 plus a couple of extras) when
+// the caller did not supply a codepoints array.
+static std::vector<int> DefaultCodepoints() {
+    std::vector<int> cps;
+    cps.reserve(96);
+    for (int c = 32; c <= 126; ++c) cps.push_back(c);
+    return cps;
+}
+
+// Decodes a single UTF-8 codepoint starting at p. Returns the codepoint and
+// advances the pointer by the sequence length (in bytes).
+static int DecodeUTF8(const char*& p) {
+    const unsigned char lead = static_cast<unsigned char>(*p);
+    int cp = 0, seq = 0;
+    if ((lead & 0x80) == 0)      { cp = lead; seq = 1; }
+    else if ((lead & 0xE0) == 0xC0) { cp = lead & 0x1F; seq = 2; }
+    else if ((lead & 0xF0) == 0xE0) { cp = lead & 0x0F; seq = 3; }
+    else if ((lead & 0xF8) == 0xF0) { cp = lead & 0x07; seq = 4; }
+    else                        { cp = lead; seq = 1; }
+    for (int k = 1; k < seq && p[k] != '\0'; ++k)
+        cp = (cp << 6) | (static_cast<unsigned char>(p[k]) & 0x3F);
+    p += seq;
+    return cp;
+}
+
+bool QuarkGLRenderer::LoadFontInternal(const char* filePath, const unsigned char* fileData, int dataSize,
+                                       int pointSize, const int* codepoints, int codepointCount, FontData& out) {
+    TraceLog(LogLevel::Trace, "FONT", TextFormat("[OpenGL] FreeType initializing font: %s (size: %d pt)", filePath ? filePath : "<memory>", pointSize));
     FT_Library ft = nullptr;
     if (FT_Init_FreeType(&ft) != 0) {
         TraceLog(LogLevel::Error, "FONT", "[OpenGL] Failed to initialize FreeType library");
@@ -1149,7 +1200,13 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
     }
 
     FT_Face face = nullptr;
-    if (FT_New_Face(ft, filePath, 0, &face) != 0) {
+    if (fileData != nullptr) {
+        if (FT_New_Memory_Face(ft, fileData, (FT_Long)dataSize, 0, &face) != 0) {
+            TraceLog(LogLevel::Error, "FONT", "[OpenGL] FreeType failed to open font from memory");
+            FT_Done_FreeType(ft);
+            return false;
+        }
+    } else if (FT_New_Face(ft, filePath, 0, &face) != 0) {
         TraceLog(LogLevel::Error, "FONT", TextFormat("[OpenGL] FreeType failed to open font file: %s", filePath ? filePath : "<null>"));
         FT_Done_FreeType(ft);
         return false;
@@ -1158,13 +1215,26 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
     FT_Select_Charmap(face, FT_ENCODING_UNICODE);
     FT_Set_Pixel_Sizes(face, 0, (FT_UInt)pointSize);
 
+    // Determine the set of codepoints to rasterize.
+    std::vector<int> cps;
+    const int* cpsPtr = codepoints;
+    int cpsCount = codepointCount;
+    if (cpsPtr == nullptr || cpsCount <= 0) {
+        cps = DefaultCodepoints();
+        cpsPtr = cps.data();
+        cpsCount = (int)cps.size();
+    }
+
     constexpr int AW = 1024, AH = 1024;
     std::vector<uint8_t> atlas((size_t)AW * AH * 4, 0);
     int penX = 1, penY = 1, rowH = 0;
     int renderedGlyphs = 0;
+    out.glyphs.clear();
+    out.glyphs.reserve((size_t)cpsCount);
 
-    for (unsigned char c = 32; c < 127; ++c) {
-        if (FT_Load_Char(face, c, FT_LOAD_RENDER|FT_LOAD_TARGET_NORMAL) != 0) continue;
+    for (int i = 0; i < cpsCount; ++i) {
+        const int cp = cpsPtr[i];
+        if (FT_Load_Char(face, cp, FT_LOAD_RENDER|FT_LOAD_TARGET_NORMAL) != 0) continue;
 
         FT_GlyphSlot slot = face->glyph;
         int gw = (int)slot->bitmap.width;
@@ -1177,7 +1247,7 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
         }
 
         if (penY + gh + 1 > AH) {
-            TraceLog(LogLevel::Warn, "FONT", TextFormat("[OpenGL] Font atlas overflow (%dx%d) for font: %s", AW, AH, filePath ? filePath : "<null>"));
+            TraceLog(LogLevel::Warn, "FONT", TextFormat("[OpenGL] Font atlas overflow (%dx%d) for font: %s", AW, AH, filePath ? filePath : "<memory>"));
             FT_Done_Face(face);
             FT_Done_FreeType(ft);
             return false;
@@ -1192,21 +1262,44 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
             atlas[dst + 2] = 255;
             atlas[dst + 3] = alpha;
         }
-        GlyphData& g = out.glyphs[c - 32];
+
+        GlyphData g;
+        g.value    = cp;
         g.uv = Rectangle{(float)penX / AW, (float)penY / AH,
                                gw > 0 ? (float)gw / AW : 0.f, gh > 0 ? (float)gh / AH : 0.f};
+        g.rec = Rectangle{(float)penX, (float)penY, gw > 0 ? (float)gw : 0.f, gh > 0 ? (float)gh : 0.f};
         g.advanceX = (float)slot->advance.x / 64.f;
         g.offsetX = (float)slot->bitmap_left;
         g.offsetY = (float)slot->bitmap_top;
         g.width = gw;
         g.height = gh;
+
+        if (gw > 0 && gh > 0) {
+            unsigned char* gdata = static_cast<unsigned char*>(std::malloc((size_t)gw * gh * 4));
+            if (gdata) {
+                for (int row = 0; row < gh; ++row) {
+                    for (int col = 0; col < gw; ++col) {
+                        unsigned char alpha = slot->bitmap.buffer[row * slot->bitmap.pitch + col];
+                        gdata[((size_t)row * gw + col) * 4 + 0] = 255;
+                        gdata[((size_t)row * gw + col) * 4 + 1] = 255;
+                        gdata[((size_t)row * gw + col) * 4 + 2] = 255;
+                        gdata[((size_t)row * gw + col) * 4 + 3] = alpha;
+                    }
+                }
+                g.image = Image{ gdata, gw, gh, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
+            }
+        }
         penX += gw + 1;
         rowH  = std::max(rowH, gh);
         renderedGlyphs++;
+        out.glyphs.push_back(g);
     }
 
     out.atlasTexture = CreateTextureFromRgba(atlas.data(), AW, AH);
+    out.atlasWidth   = AW;
+    out.atlasHeight  = AH;
     out.baseSize     = pointSize;
+    out.glyphCount   = renderedGlyphs;
     out.ascent       = (int)(face->size->metrics.ascender  / 64);
     out.descent      = (int)(face->size->metrics.descender / 64);
     out.lineHeight   = (int)(face->size->metrics.height    / 64);
@@ -1222,6 +1315,17 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, int pointSize, Font
     return true;
 }
 
+int QuarkGLRenderer::FindGlyph(const FontData& fd, int codepoint) {
+    for (int i = 0; i < (int)fd.glyphs.size(); ++i) {
+        if (fd.glyphs[i].value == codepoint) return i;
+    }
+    // Fallback to '?' (63)
+    for (int i = 0; i < (int)fd.glyphs.size(); ++i) {
+        if (fd.glyphs[i].value == 63) return i;
+    }
+    return -1;
+}
+
 uint32_t QuarkGLRenderer::EnsureDefaultFont() {
     if (m_defaultFontId != 0) return m_defaultFontId;
 
@@ -1229,7 +1333,7 @@ uint32_t QuarkGLRenderer::EnsureDefaultFont() {
     if (!path) return 0;
 
     FontData fd{};
-    if (!LoadFontInternal(path, 32, fd)) return 0;
+    if (!LoadFontInternal(path, nullptr, 0, 32, nullptr, 0, fd)) return 0;
 
     uint32_t id = m_nextFontId++;
     m_fonts[id]  = std::move(fd);
@@ -1253,18 +1357,22 @@ void QuarkGLRenderer::DrawTextWithFontData(const FontData& fd, const char* text,
 
     bool first = true;
 
-    for (const char* c = text; *c; ++c) {
+    for (const char* c = text; *c; ) {
         if (*c == '\n') {
             x = pos.x;
             y += lineHeight;
             first = true;
+            ++c;
             continue;
         }
 
-        unsigned char uc = (unsigned char) * c;
-        if (uc < 32 || uc >= 127) continue;
+        const int cp = DecodeUTF8(c);
+        const int idx = FindGlyph(fd, cp);
+        if (idx < 0) {
+            continue;
+        }
 
-        const GlyphData& g = fd.glyphs[uc - 32];
+        const GlyphData& g = fd.glyphs[(size_t)idx];
 
         if (!first) x += spacing;
         first = false;
@@ -1282,33 +1390,37 @@ void QuarkGLRenderer::DrawTextWithFontData(const FontData& fd, const char* text,
 Vec2 QuarkGLRenderer::MeasureTextWithFontData(const FontData& fd, const char* text, float fontSize, float spacing) const {
     if (!text) return {};
 
-    float scale = (float)fontSize/fd.baseSize;
+    float scale = (float)fontSize/(float)fd.baseSize;
     float lh = (float)fd.lineHeight * scale;
 
     float x = 0, maxW = 0;
     bool first = true;
+    int lines = 1;
 
-    for (const char* c = text; *c; ++c) {
+    for (const char* c = text; *c; ) {
         if(*c == '\n') {
             maxW = std::max(maxW, x);
             x = 0;
             first = true;
+            ++lines;
+            ++c;
             continue;
         }
 
-        unsigned char uc = (unsigned char)*c;
-        if(uc < 32 || uc >= 127) continue;
+        const int cp = DecodeUTF8(c);
+        const int idx = FindGlyph(fd, cp);
+        if (idx < 0) continue;
 
         if(!first) x += spacing;
         first = false;
-        x += fd.glyphs[uc - 32].advanceX * scale;
+        x += fd.glyphs[(size_t)idx].advanceX * scale;
     }
 
-    int newlines = (int)std::count(text, text + strlen(text), '\n');
-    return {std::max(maxW, x), lh * (1 + newlines)};
+    return {std::max(maxW, x), lh * (float)lines};
 }
 
-IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize) {
+IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize,
+                                const int* codepoints, int codepointCount) {
     if (filePath == nullptr) {
         TraceLog(LogLevel::Info, "FONT", "[OpenGL] Loading default system font...");
 
@@ -1319,10 +1431,10 @@ IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize) {
         return handle;
     }
 
-    TraceLog(LogLevel::Trace, "FONT", TextFormat("[OpenGL] Loading font file: %s (size: %d pt)", filePath, fontSize));
+    TraceLog(LogLevel::Trace, "FONT", TextFormat("[OpenGL] Loading font file: %s (size: %d pt, codepoints: %d)", filePath, fontSize, codepointCount));
 
     FontData fd{};
-    if (!LoadFontInternal(filePath, fontSize, fd)) {
+    if (!LoadFontInternal(filePath, nullptr, 0, fontSize, codepoints, codepointCount, fd)) {
         TraceLog(LogLevel::Error, "FONT", TextFormat("[OpenGL] Failed to load font: %s", filePath));
         return IFont{};
     }
@@ -1338,12 +1450,43 @@ IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize) {
     return handle;
 }
 
+IFont QuarkGLRenderer::LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int dataSize,
+                                          int fontSize, const int* codepoints, int codepointCount) {
+    if (fileData == nullptr || dataSize <= 0) {
+        TraceLog(LogLevel::Error, "FONT", "[OpenGL] LoadFontFromMemory: invalid memory buffer");
+        return IFont{};
+    }
+
+    TraceLog(LogLevel::Trace, "FONT", TextFormat("[OpenGL] Loading font from memory (type: %s, size: %d pt, %d bytes)", fileType ? fileType : ".ttf", fontSize, dataSize));
+
+    FontData fd{};
+    if (!LoadFontInternal(nullptr, fileData, dataSize, fontSize, codepoints, codepointCount, fd)) {
+        TraceLog(LogLevel::Error, "FONT", "[OpenGL] Failed to load font from memory");
+        return IFont{};
+    }
+
+    uint32_t id = m_nextFontId++;
+    m_fonts[id] = std::move(fd);
+
+    IFont handle{};
+    handle.id = id;
+
+    TraceLog(LogLevel::Info, "FONT", TextFormat("[OpenGL] Font loaded from memory (BaseSize: %d, Atlas ID: %u, Font ID: %u)",
+        fd.baseSize, fd.atlasTexture, id));
+    return handle;
+}
+
 void QuarkGLRenderer::UnloadFont(IFont& font) {
     auto it = m_fonts.find(font.id);
     if (it != m_fonts.end()) {
         GLuint atlasId = it->second.atlasTexture;
         if (it->second.atlasTexture)
             glDeleteTextures(1, &it->second.atlasTexture);
+
+        for (GlyphData& g : it->second.glyphs) {
+            std::free(g.image.data);
+            g.image = Image{};
+        }
 
         if (font.id == m_defaultFontId) m_defaultFontId = 0;
 
@@ -1352,6 +1495,41 @@ void QuarkGLRenderer::UnloadFont(IFont& font) {
     }
 
     font.id = 0;
+}
+
+void QuarkGLRenderer::FillFont(IFont font, Font& out) {
+    const FontData* fd = GetFontData(font);
+    if (!fd) {
+        uint32_t id = EnsureDefaultFont();
+        fd = (id != 0) ? GetFontData(IFont{ id }) : nullptr;
+    }
+    if (!fd) {
+        out.valid = false;
+        return;
+    }
+
+    out.baseSize     = fd->baseSize;
+    out.glyphCount   = fd->glyphCount;
+    out.glyphPadding = 2;
+    out.valid        = true;
+    out._rendererFontId = font.id;
+    out.texture = Texture2D{ fd->atlasTexture, fd->atlasWidth, fd->atlasHeight, 1,
+                             PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true };
+
+    delete[] out.recs;
+    delete[] out.glyphs;
+    out.recs   = new Rectangle[fd->glyphCount];
+    out.glyphs = new GlyphInfo[fd->glyphCount];
+
+    for (int i = 0; i < fd->glyphCount; ++i) {
+        const GlyphData& g = fd->glyphs[(size_t)i];
+        out.recs[i] = g.rec;
+        out.glyphs[i].value     = g.value;
+        out.glyphs[i].offsetX   = (int)g.offsetX;
+        out.glyphs[i].offsetY   = (int)g.offsetY;
+        out.glyphs[i].advanceX  = (int)g.advanceX;
+        out.glyphs[i].image     = g.image;
+    }
 }
 
 void QuarkGLRenderer::DrawText(const char* text, int x, int y, int fontSize, Color color) {
@@ -2624,6 +2802,7 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
 
     TraceLog(LogLevel::Info, "MODEL", TextFormat("[OpenGL] Model loaded successfully: %s (%d meshes, %d materials, %d total vertices, %d total triangles)",
         filePath ? filePath : "<null>", model.meshCount, model.materialCount, totalVertices, totalTriangles));
+    qcPopulateModelSkeleton(scene, model);
     return model;
 }
 
@@ -2678,6 +2857,7 @@ void  QuarkGLRenderer::UnloadModel(Model& model) {
     model.meshMaterial = nullptr;
 
     TraceLog(LogLevel::Info, "MODEL", TextFormat("[OpenGL] Model unloaded (%d meshes, %d materials)", model.meshCount, model.materialCount));
+    qcFreeModelSkeleton(model);
     model = {};
 }
 

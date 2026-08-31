@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cctype>
 #include <cstdarg>
 #include <cmath>
 #include <cstddef>
@@ -39,7 +40,18 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
+#include <cstdint>
+
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
+#include <unordered_map>
 
 namespace qc {
 
@@ -60,6 +72,8 @@ TextureFilterMode gTextureFilterMode = TextureFilterMode::Linear;
 std::array<std::array<float, SDL_GAMEPAD_AXIS_COUNT>, 16> gGamepadDeadZones{};
 
 #define gRenderer (*gRendererPtr)
+
+int gTextLineSpacing = 0;
 
 WindowState gWin;
 int   gLastKeyPressed   = 0;
@@ -557,6 +571,415 @@ const char* TextFormat(const char* fmt, ...) {
     return buf;
 }
 
+int TextCopy(char* dst, const char* src) {
+    if (dst == nullptr || src == nullptr) return 0;
+    int i = 0;
+    for (; src[i] != '\0'; ++i) dst[i] = src[i];
+    dst[i] = '\0';
+    return i;
+}
+
+bool TextIsEqual(const char* text1, const char* text2) {
+    if (text1 == nullptr || text2 == nullptr) return text1 == text2;
+    return std::strcmp(text1, text2) == 0;
+}
+
+unsigned int TextLength(const char* text) {
+    return text ? static_cast<unsigned int>(std::strlen(text)) : 0u;
+}
+
+static thread_local char g_textBuffer[1024];
+
+const char* TextSubtext(const char* text, int position, int length) {
+    g_textBuffer[0] = '\0';
+    if (text == nullptr) return g_textBuffer;
+
+    const int textLength = static_cast<int>(std::strlen(text));
+    if (position >= textLength) return g_textBuffer;
+    if (length >= textLength) length = textLength;
+
+    int index = 0;
+    for (int i = position; (i < textLength) && (index < length); ++i) g_textBuffer[index++] = text[i];
+    g_textBuffer[index] = '\0';
+    return g_textBuffer;
+}
+
+const char* TextRemoveSpaces(const char* text) {
+    g_textBuffer[0] = '\0';
+    if (text == nullptr) return g_textBuffer;
+    int index = 0;
+    for (int i = 0; (i < 1024) && (text[i] != '\0'); ++i) {
+        if (text[i] != ' ') g_textBuffer[index++] = text[i];
+    }
+    g_textBuffer[index] = '\0';
+    return g_textBuffer;
+}
+
+char* GetTextBetween(const char* text, const char* begin, const char* end) {
+    if (text == nullptr || begin == nullptr || end == nullptr) return nullptr;
+    const char* start = std::strstr(text, begin);
+    if (start == nullptr) return nullptr;
+    start += std::strlen(begin);
+    const char* stop = std::strstr(start, end);
+    if (stop == nullptr) return nullptr;
+
+    const int length = static_cast<int>(stop - start);
+    char* result = static_cast<char*>(MemAlloc(static_cast<size_t>(length) + 1));
+    if (result == nullptr) return nullptr;
+    std::memcpy(result, start, static_cast<size_t>(length));
+    result[length] = '\0';
+    return result;
+}
+
+char* TextReplace(const char* text, const char* search, const char* replacement) {
+    if (text == nullptr || search == nullptr || replacement == nullptr) return nullptr;
+
+    const int textLen = static_cast<int>(std::strlen(text));
+    const int searchLen = static_cast<int>(std::strlen(search));
+    const int byLen = static_cast<int>(std::strlen(replacement));
+    if (searchLen == 0) return nullptr;
+
+    int count = 0;
+    const char* ptr = std::strstr(text, search);
+    while (ptr != nullptr) { ++count; ptr = std::strstr(ptr + searchLen, search); }
+    if (count == 0) return nullptr;
+
+    const int resultLen = textLen + (byLen - searchLen) * count + 1;
+    char* result = static_cast<char*>(MemAlloc(static_cast<size_t>(resultLen)));
+    if (result == nullptr) return nullptr;
+
+    int pos = 0;
+    const char* last = text;
+    ptr = std::strstr(last, search);
+    while (ptr != nullptr) {
+        const int len = static_cast<int>(ptr - last);
+        std::memcpy(result + pos, last, static_cast<size_t>(len));
+        pos += len;
+        std::memcpy(result + pos, replacement, static_cast<size_t>(byLen));
+        pos += byLen;
+        last = ptr + searchLen;
+        ptr = std::strstr(last, search);
+    }
+    std::memcpy(result + pos, last, std::strlen(last) + 1);
+    return result;
+}
+
+char* TextReplaceAlloc(const char* text, const char* search, const char* replacement) {
+    if (text == nullptr) return nullptr;
+    char* result = TextReplace(text, search, replacement);
+    if (result != nullptr) return result;
+    const size_t len = std::strlen(text);
+    result = static_cast<char*>(MemAlloc(len + 1));
+    if (result != nullptr) std::memcpy(result, text, len + 1);
+    return result;
+}
+
+char* TextReplaceBetween(const char* text, const char* begin, const char* end, const char* replacement) {
+    if (text == nullptr || begin == nullptr || end == nullptr || replacement == nullptr) return nullptr;
+
+    const char* start = std::strstr(text, begin);
+    if (start == nullptr) return nullptr;
+    const char* stop = std::strstr(start + std::strlen(begin), end);
+    if (stop == nullptr) return nullptr;
+    stop += std::strlen(end);
+
+    const int part1Len = static_cast<int>(start - text);
+    const int part2Len = static_cast<int>((text + std::strlen(text)) - stop);
+    const int replacementLen = static_cast<int>(std::strlen(replacement));
+    const int resultLen = part1Len + replacementLen + part2Len + 1;
+
+    char* result = static_cast<char*>(MemAlloc(static_cast<size_t>(resultLen)));
+    if (result == nullptr) return nullptr;
+    std::memcpy(result, text, static_cast<size_t>(part1Len));
+    std::memcpy(result + part1Len, replacement, static_cast<size_t>(replacementLen));
+    std::memcpy(result + part1Len + replacementLen, stop, static_cast<size_t>(part2Len));
+    result[resultLen - 1] = '\0';
+    return result;
+}
+
+char* TextReplaceBetweenAlloc(const char* text, const char* begin, const char* end, const char* replacement) {
+    if (text == nullptr) return nullptr;
+    char* result = TextReplaceBetween(text, begin, end, replacement);
+    if (result != nullptr) return result;
+    const size_t len = std::strlen(text);
+    result = static_cast<char*>(MemAlloc(len + 1));
+    if (result != nullptr) std::memcpy(result, text, len + 1);
+    return result;
+}
+
+char* TextInsert(const char* text, const char* insert, int position) {
+    if (text == nullptr || insert == nullptr) return nullptr;
+    const int textLen = static_cast<int>(std::strlen(text));
+    const int insertLen = static_cast<int>(std::strlen(insert));
+    if (position < 0 || position > textLen) return nullptr;
+
+    char* result = static_cast<char*>(MemAlloc(static_cast<size_t>(textLen + insertLen + 1)));
+    if (result == nullptr) return nullptr;
+    if (position > 0) std::memcpy(result, text, static_cast<size_t>(position));
+    std::memcpy(result + position, insert, static_cast<size_t>(insertLen));
+    std::memcpy(result + position + insertLen, text + position, static_cast<size_t>(textLen - position) + 1);
+    return result;
+}
+
+char* TextInsertAlloc(const char* text, const char* insert, int position) {
+    if (text == nullptr) return nullptr;
+    char* result = TextInsert(text, insert, position);
+    if (result != nullptr) return result;
+    const size_t len = std::strlen(text);
+    result = static_cast<char*>(MemAlloc(len + 1));
+    if (result != nullptr) std::memcpy(result, text, len + 1);
+    return result;
+}
+
+char* TextJoin(char** textList, int count, const char* delimiter) {
+    if (textList == nullptr || count <= 0) return nullptr;
+
+    int totalLength = 0;
+    const int delimiterLength = delimiter ? static_cast<int>(std::strlen(delimiter)) : 0;
+    for (int i = 0; i < count; ++i) {
+        if (textList[i] != nullptr) totalLength += static_cast<int>(std::strlen(textList[i]));
+        if (i < count - 1) totalLength += delimiterLength;
+    }
+
+    char* result = static_cast<char*>(MemAlloc(static_cast<size_t>(totalLength) + 1));
+    if (result == nullptr) return nullptr;
+    int pos = 0;
+    for (int i = 0; i < count; ++i) {
+        if (textList[i] != nullptr) {
+            const int len = static_cast<int>(std::strlen(textList[i]));
+            std::memcpy(result + pos, textList[i], static_cast<size_t>(len));
+            pos += len;
+        }
+        if (i < count - 1 && delimiter != nullptr) {
+            const int dlen = static_cast<int>(std::strlen(delimiter));
+            std::memcpy(result + pos, delimiter, static_cast<size_t>(dlen));
+            pos += dlen;
+        }
+    }
+    result[pos] = '\0';
+    return result;
+}
+
+char** TextSplit(const char* text, char delimiter, int* count) {
+    if (count != nullptr) *count = 0;
+    if (text == nullptr) return nullptr;
+
+    int ncount = 1;
+    const char* ptr = text;
+    while (*ptr != '\0') { if (*ptr == delimiter) ++ncount; ++ptr; }
+
+    char** result = static_cast<char**>(MemAlloc(static_cast<size_t>(ncount) * sizeof(char*)));
+    if (result == nullptr) return nullptr;
+
+    int index = 0;
+    int length = 0;
+    ptr = text;
+    while (*ptr != '\0') {
+        if (*ptr != delimiter) {
+            ++length;
+        } else {
+            result[index] = static_cast<char*>(MemAlloc(static_cast<size_t>(length) + 1));
+            if (length > 0) std::memcpy(result[index], ptr - length, static_cast<size_t>(length));
+            result[index][length] = '\0';
+            length = 0;
+            ++index;
+        }
+        ++ptr;
+    }
+    result[index] = static_cast<char*>(MemAlloc(static_cast<size_t>(length) + 1));
+    if (length > 0) std::memcpy(result[index], ptr - length, static_cast<size_t>(length));
+    result[index][length] = '\0';
+    ++index;
+
+    if (count != nullptr) *count = index;
+    return result;
+}
+
+void TextAppend(char* text, const char* append, int* position) {
+    if (text == nullptr || append == nullptr || position == nullptr) return;
+    int textLen = static_cast<int>(std::strlen(text));
+    int pos = *position;
+    if (pos > textLen) pos = textLen;
+    if (pos < 0) pos = 0;
+    const int appendLen = static_cast<int>(std::strlen(append));
+    for (int i = 0; i < appendLen; ++i) text[pos + i] = append[i];
+    text[pos + appendLen] = '\0';
+    *position = pos + appendLen;
+}
+
+int TextFindIndex(const char* text, const char* search) {
+    if (text == nullptr || search == nullptr) return -1;
+    const char* found = std::strstr(text, search);
+    if (found == nullptr) return -1;
+    return static_cast<int>(found - text);
+}
+
+const char* TextToUpper(const char* text) {
+    g_textBuffer[0] = '\0';
+    if (text == nullptr) return g_textBuffer;
+    int i = 0;
+    for (; (i < 1023) && (text[i] != '\0'); ++i) g_textBuffer[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(text[i])));
+    g_textBuffer[i] = '\0';
+    return g_textBuffer;
+}
+
+const char* TextToLower(const char* text) {
+    g_textBuffer[0] = '\0';
+    if (text == nullptr) return g_textBuffer;
+    int i = 0;
+    for (; (i < 1023) && (text[i] != '\0'); ++i) g_textBuffer[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(text[i])));
+    g_textBuffer[i] = '\0';
+    return g_textBuffer;
+}
+
+const char* TextToPascal(const char* text) {
+    g_textBuffer[0] = '\0';
+    if (text == nullptr) return g_textBuffer;
+
+    int j = 0;
+    int i = 0;
+    if (text[i] != '\0') {
+        g_textBuffer[j++] = static_cast<char>(std::toupper(static_cast<unsigned char>(text[i])));
+        ++i;
+    }
+    for (; (i < 1023) && (text[i] != '\0'); ++i) {
+        if (text[i] == ' ' || text[i] == '_' || text[i] == '-') {
+            ++i;
+            if (text[i] != '\0') g_textBuffer[j] = static_cast<char>(std::toupper(static_cast<unsigned char>(text[i])));
+        } else {
+            g_textBuffer[j] = text[i];
+        }
+        ++j;
+    }
+    g_textBuffer[j] = '\0';
+    return g_textBuffer;
+}
+
+const char* TextToSnake(const char* text) {
+    g_textBuffer[0] = '\0';
+    if (text == nullptr) return g_textBuffer;
+    int j = 0;
+    for (int i = 0; (i < 1023) && (text[i] != '\0'); ++i) {
+        if (text[i] == ' ' || text[i] == '-' || ((text[i] >= 'A') && (text[i] <= 'Z'))) {
+            if ((j > 0) && (g_textBuffer[j - 1] != '_')) g_textBuffer[j++] = '_';
+            if ((text[i] >= 'A') && (text[i] <= 'Z')) g_textBuffer[j++] = static_cast<char>(std::tolower(static_cast<unsigned char>(text[i])));
+        } else {
+            g_textBuffer[j++] = text[i];
+        }
+    }
+    g_textBuffer[j] = '\0';
+    return g_textBuffer;
+}
+
+const char* TextToCamel(const char* text) {
+    g_textBuffer[0] = '\0';
+    if (text == nullptr) return g_textBuffer;
+
+    int j = 0;
+    int i = 0;
+    if (text[i] != '\0') {
+        g_textBuffer[j++] = static_cast<char>(std::tolower(static_cast<unsigned char>(text[i])));
+        ++i;
+    }
+    for (; (i < 1023) && (text[i] != '\0'); ++i) {
+        if (text[i] == ' ' || text[i] == '_' || text[i] == '-') {
+            ++i;
+            if (text[i] != '\0') g_textBuffer[j] = static_cast<char>(std::toupper(static_cast<unsigned char>(text[i])));
+        } else {
+            g_textBuffer[j] = static_cast<char>(std::tolower(static_cast<unsigned char>(text[i])));
+        }
+        ++j;
+    }
+    g_textBuffer[j] = '\0';
+    return g_textBuffer;
+}
+
+int TextToInteger(const char* text) {
+    if (text == nullptr) return 0;
+    int value = 0;
+    int sign = 1;
+    if ((text[0] == '-') || (text[0] == '+')) {
+        if (text[0] == '-') sign = -1;
+        ++text;
+    }
+    for (int i = 0; (text[i] >= '0') && (text[i] <= '9'); ++i) value = value * 10 + (text[i] - '0');
+    return value * sign;
+}
+
+float TextToFloat(const char* text) {
+    if (text == nullptr) return 0.0f;
+    float value = 0.0f;
+    float sign = 1.0f;
+    if ((text[0] == '-') || (text[0] == '+')) {
+        if (text[0] == '-') sign = -1.0f;
+        ++text;
+    }
+    for (int i = 0; (text[i] >= '0') && (text[i] <= '9'); ++i) value = value * 10.0f + static_cast<float>(text[i] - '0');
+    if (text[0] == '.') {
+        float decimal = 0.1f;
+        for (int i = 1; (text[i] >= '0') && (text[i] <= '9'); ++i) {
+            value += static_cast<float>(text[i] - '0') * decimal;
+            decimal *= 0.1f;
+        }
+    }
+    return value * sign;
+}
+
+char** LoadTextLines(const char* text, int* count) {
+    if (count != nullptr) *count = 0;
+    if (text == nullptr) return nullptr;
+
+    int ncount = 1;
+    for (int i = 0; text[i] != '\0'; ++i) if (text[i] == '\n') ++ncount;
+
+    char** lines = static_cast<char**>(MemAlloc(static_cast<size_t>(ncount) * sizeof(char*)));
+    if (lines == nullptr) return nullptr;
+
+    int index = 0;
+    int length = 0;
+    int start = 0;
+    for (int i = 0; ; ++i) {
+        const char c = text[i];
+        if (c == '\0') {
+            if (length > 0) {
+                lines[index] = static_cast<char*>(MemAlloc(static_cast<size_t>(length) + 1));
+                if (length > 0) std::memcpy(lines[index], text + start, static_cast<size_t>(length));
+                lines[index][length] = '\0';
+                ++index;
+            }
+            break;
+        }
+        if (c == '\n') {
+            lines[index] = static_cast<char*>(MemAlloc(static_cast<size_t>(length) + 1));
+            if (length > 0) std::memcpy(lines[index], text + start, static_cast<size_t>(length));
+            lines[index][length] = '\0';
+            ++index;
+            ++i;
+            length = 0;
+            start = i;
+            if (text[i] == '\0') {
+                lines[index] = static_cast<char*>(MemAlloc(1));
+                lines[index][0] = '\0';
+                ++index;
+                break;
+            }
+        } else {
+            ++length;
+        }
+    }
+
+    if (count != nullptr) *count = index;
+    return lines;
+}
+
+void UnloadTextLines(char** text, int lineCount) {
+    if (text == nullptr) return;
+    for (int i = 0; i < lineCount; ++i) {
+        if (text[i] != nullptr) MemFree(text[i]);
+    }
+    MemFree(text);
+}
+
 SDL_GLContext GetNativeContext() {
     EnsureInitialized();
     return SDL_GL_GetCurrentContext();
@@ -640,6 +1063,19 @@ void SetMousePosition(int x, int y) {
 void DisableCursor()  { if (gWin.window) { SDL_HideCursor(); gCursorHidden = true;  } }
 void EnableCursor()   { if (gWin.window) { SDL_ShowCursor(); gCursorHidden = false; } }
 bool IsCursorHidden() { return gCursorHidden; }
+
+void ShowCursor() { if (gWin.window) { SDL_ShowCursor(); gCursorHidden = false; } }
+void HideCursor() { if (gWin.window) { SDL_HideCursor(); gCursorHidden = true;  } }
+
+bool IsCursorOnScreen() {
+    if (!gWin.window) return false;
+    float mx = 0.0f, my = 0.0f;
+    SDL_GetGlobalMouseState(&mx, &my);
+    int wx = 0, wy = 0, ww = 0, wh = 0;
+    SDL_GetWindowPosition(gWin.window, &wx, &wy);
+    SDL_GetWindowSize(gWin.window, &ww, &wh);
+    return (mx >= wx && mx <= (wx + ww) && my >= wy && my <= (wy + wh));
+}
 
 void SetMouseCursor(MouseCursor cursor) {
     if (!gWin.window) return;
@@ -920,7 +1356,7 @@ void ClearBackground(Color color) { EnsureInitialized(); gRenderer.ClearBackgrou
 void DrawRectangle(float x, float y, float w, float h, Color c)    { gRenderer.DrawRectangle(x, y, w, h, c); }
 void DrawRectangle(const Rectangle& r, Color c)                     { gRenderer.DrawRectangle(r, c);          }
 void DrawRectangleV(Vec2 pos, Vec2 size, Color c)                   { gRenderer.DrawRectangleV(pos, size, c); }
-void DrawRectangleLines(Rectangle r, float lw, Color c)             { gRenderer.DrawRectangleLines(r, lw, c); }
+void DrawRectangleLines(int x, int y, int w, int h, Color c)        { gRenderer.DrawRectangleLines(Rectangle{(float)x, (float)y, (float)w, (float)h}, 1.0f, c); }
 void DrawRectangleRounded(Rectangle r, float rn, int seg, Color c)  { gRenderer.DrawRectangleRounded(r, rn, seg, c); }
 
 void DrawCircle(float cx, float cy, float radius, Color c)          { gRenderer.DrawCircle(cx, cy, radius, c);      }
@@ -946,10 +1382,9 @@ Texture2D LoadTexture(const char* filePath) {
     return t;
 }
 
-void UnloadTexture(Texture2D& texture) {
+void UnloadTexture(Texture2D texture) {
     ITexture it{ texture.id, texture.width, texture.height, texture.mipmaps, texture.format, texture.valid };
     gRenderer.UnloadTexture(it);
-    texture = {};
 }
 
 bool IsTextureValid(Texture2D texture) {
@@ -1069,33 +1504,452 @@ void EndTextureMode() {
     gRenderer.EndTextureMode();
 }
 
-Font LoadFont(const char* filePath, int fontSize) {
+Font LoadFont(const char* fileName) {
     EnsureInitialized();
-    IFont iFont = gRenderer.LoadFont(filePath, fontSize);
+    const int defaultFontSize = 32;
+    IFont iFont = gRenderer.LoadFont(fileName, defaultFontSize, nullptr, 0);
     Font f;
-    f.baseSize   = fontSize;
-    f.glyphCount = 95;
-    f.valid      = iFont.id != 0;
-    static_assert(sizeof(f._rendererFontId) >= sizeof(uint32_t), "Font needs _rendererFontId field");
-    f._rendererFontId = iFont.id;
+    gRenderer.FillFont(iFont, f);
     return f;
 }
 
-void UnloadFont(Font& font) {
-    IFont iFont{ font._rendererFontId };
-    gRenderer.UnloadFont(iFont);
-    font = {};
+void UnloadFont(Font font) {
+    if (font._rendererFontId != 0) {
+        IFont iFont{ font._rendererFontId };
+        gRenderer.UnloadFont(iFont);
+    }
+    delete[] font.glyphs;
+    delete[] font.recs;
+    font.glyphs = nullptr;
+    font.recs   = nullptr;
 }
 
 Font GetDefaultFont() {
     EnsureInitialized();
-    IFont iFont = gRenderer.LoadFont(nullptr, 32);
+    IFont iFont = gRenderer.LoadFont(nullptr, 32, nullptr, 0);
     Font f;
-    f.valid           = iFont.id != 0;
-    f._rendererFontId = iFont.id;
-    f.baseSize        = 32;
-    f.glyphCount      = 95;
+    gRenderer.FillFont(iFont, f);
     return f;
+}
+
+static std::vector<int> DefaultCodepointsAPI()
+{
+    std::vector<int> cps;
+    cps.reserve(95);
+    for (int c = 32; c <= 126; ++c) cps.push_back(c);
+    return cps;
+}
+
+Font LoadFontEx(const char* fileName, int fontSize, const int* codepoints, int codepointCount)
+{
+    EnsureInitialized();
+    IFont iFont = gRenderer.LoadFont(fileName, fontSize, codepoints, codepointCount);
+    Font f;
+    gRenderer.FillFont(iFont, f);
+    return f;
+}
+
+Font LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int dataSize,
+                        int fontSize, const int* codepoints, int codepointCount)
+{
+    EnsureInitialized();
+    IFont iFont = gRenderer.LoadFontFromMemory(fileType, fileData, dataSize, fontSize, codepoints, codepointCount);
+    Font f;
+    gRenderer.FillFont(iFont, f);
+    return f;
+}
+
+bool IsFontValid(Font font)
+{
+    return font.valid && font.texture.id != 0 && font.glyphs != nullptr && font.recs != nullptr;
+}
+
+GlyphInfo* LoadFontData(const unsigned char* fileData, int dataSize, int fontSize,
+                        const int* codepoints, int codepointCount, int type, int* glyphCount)
+{
+    if (glyphCount) *glyphCount = 0;
+    (void)type;
+    if (!fileData || dataSize <= 0 || fontSize <= 0) return nullptr;
+
+    std::vector<int> cps;
+    const int* cpsPtr = codepoints;
+    int cpsCount = codepointCount;
+    if (cpsPtr == nullptr || cpsCount <= 0) {
+        cps = DefaultCodepointsAPI();
+        cpsPtr = cps.data();
+        cpsCount = static_cast<int>(cps.size());
+    }
+
+    FT_Library library = nullptr;
+    if (FT_Init_FreeType(&library) != 0) return nullptr;
+
+    FT_Face face = nullptr;
+    if (FT_New_Memory_Face(library, fileData, static_cast<FT_Long>(dataSize), 0, &face) != 0) {
+        FT_Done_FreeType(library);
+        return nullptr;
+    }
+    FT_Select_Charmap(face, FT_ENCODING_UNICODE);
+    FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(fontSize));
+
+    GlyphInfo* glyphs = static_cast<GlyphInfo*>(MemAlloc(sizeof(GlyphInfo) * static_cast<size_t>(cpsCount)));
+    if (!glyphs) {
+        FT_Done_Face(face);
+        FT_Done_FreeType(library);
+        return nullptr;
+    }
+
+    int n = 0;
+    for (int i = 0; i < cpsCount; ++i) {
+        const int cp = cpsPtr[i];
+        if (FT_Load_Char(face, cp, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0) continue;
+
+        FT_GlyphSlot slot = face->glyph;
+        const int gw = static_cast<int>(slot->bitmap.width);
+        const int gh = static_cast<int>(slot->bitmap.rows);
+
+        GlyphInfo& g = glyphs[n];
+        g.value = cp;
+        g.offsetX = slot->bitmap_left;
+        g.offsetY = slot->bitmap_top;
+        g.advanceX = static_cast<int>(slot->advance.x / 64.0f);
+
+        if (gw > 0 && gh > 0 && slot->bitmap.buffer != nullptr) {
+            unsigned char* gdata = static_cast<unsigned char*>(MemAlloc(static_cast<size_t>(gw) * gh * 4));
+            if (gdata) {
+                for (int y = 0; y < gh; ++y) {
+                    for (int x = 0; x < gw; ++x) {
+                        const unsigned char a = slot->bitmap.buffer[y * slot->bitmap.pitch + x];
+                        size_t o = (static_cast<size_t>(y) * gw + x) * 4;
+                        gdata[o + 0] = 255;
+                        gdata[o + 1] = 255;
+                        gdata[o + 2] = 255;
+                        gdata[o + 3] = a;
+                    }
+                }
+                g.image = Image{ gdata, gw, gh, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
+            }
+        }
+        ++n;
+    }
+
+    FT_Done_Face(face);
+    FT_Done_FreeType(library);
+
+    if (n == 0) {
+        MemFree(glyphs);
+        return nullptr;
+    }
+    if (glyphCount) *glyphCount = n;
+    return glyphs;
+}
+
+void UnloadFontData(GlyphInfo* glyphs, int glyphCount)
+{
+    if (!glyphs) return;
+    for (int i = 0; i < glyphCount; ++i) MemFree(glyphs[i].image.data);
+    MemFree(glyphs);
+}
+
+Image GenImageFontAtlas(const GlyphInfo* glyphs, Rectangle** glyphRecs, int glyphCount,
+                        int fontSize, int padding, int packMethod)
+{
+    if (glyphRecs) *glyphRecs = nullptr;
+    (void)fontSize;
+    (void)packMethod;
+    if (!glyphs || glyphCount <= 0) return Image{};
+
+    if (glyphRecs) *glyphRecs = new Rectangle[glyphCount]();
+
+    int maxW = 1, maxH = 1;
+    size_t totalArea = 0;
+    for (int i = 0; i < glyphCount; ++i) {
+        if (glyphs[i].image.data && glyphs[i].image.width > 0 && glyphs[i].image.height > 0) {
+            const int w = glyphs[i].image.width, h = glyphs[i].image.height;
+            maxW = std::max(maxW, w);
+            maxH = std::max(maxH, h);
+            totalArea += static_cast<size_t>(w + padding) * (h + padding);
+        }
+    }
+
+    int atlasW = std::max(maxW + padding * 2, 16);
+    int atlasH = std::max(maxH + padding * 2, 16);
+
+    auto resize = [](std::vector<uint8_t>& px, int oldW, int newW, int oldH, int newH) {
+        std::vector<uint8_t> np(static_cast<size_t>(newW) * newH * 4, 0);
+        const int cw = std::min(oldW, newW), ch = std::min(oldH, newH);
+        for (int y = 0; y < ch; ++y)
+            std::memcpy(&np[static_cast<size_t>(y) * newW * 4],
+                        &px[static_cast<size_t>(y) * oldW * 4],
+                        static_cast<size_t>(cw) * 4);
+        px.swap(np);
+    };
+
+    std::vector<uint8_t> px(static_cast<size_t>(atlasW) * atlasH * 4, 0);
+    int penX = padding, penY = padding, rowHeight = 0;
+
+    for (int i = 0; i < glyphCount; ++i) {
+        const Image& gi = glyphs[i].image;
+        if (!gi.data || gi.width <= 0 || gi.height <= 0) {
+            if (glyphRecs) (*glyphRecs)[i] = Rectangle{};
+            continue;
+        }
+        const int gw = gi.width, gh = gi.height;
+
+        if (gw + padding * 2 > atlasW) {
+            int nw = atlasW;
+            while (nw < gw + padding * 2) nw *= 2;
+            resize(px, atlasW, nw, atlasH, atlasH);
+            atlasW = nw;
+        }
+
+        if (penX + gw + padding > atlasW) {
+            penX = padding;
+            penY += rowHeight + padding;
+            rowHeight = 0;
+        }
+
+        if (penY + gh + padding > atlasH) {
+            int nh = atlasH;
+            while (nh < penY + gh + padding) nh *= 2;
+            resize(px, atlasW, atlasW, atlasH, nh);
+            atlasH = nh;
+        }
+
+        const unsigned char* src = static_cast<const unsigned char*>(gi.data);
+        for (int y = 0; y < gh; ++y) {
+            std::memcpy(&px[(static_cast<size_t>(penY + y) * atlasW + penX) * 4],
+                        &src[static_cast<size_t>(y) * gw * 4],
+                        static_cast<size_t>(gw) * 4);
+        }
+
+        if (glyphRecs) (*glyphRecs)[i] = Rectangle{ static_cast<float>(penX), static_cast<float>(penY),
+                                                    static_cast<float>(gw), static_cast<float>(gh) };
+
+        penX += gw + padding;
+        rowHeight = std::max(rowHeight, gh);
+    }
+
+    Image atlas;
+    atlas.data = MemAlloc(static_cast<size_t>(atlasW) * atlasH * 4);
+    if (!atlas.data) {
+        if (glyphRecs) {
+            delete[] *glyphRecs;
+            *glyphRecs = nullptr;
+        }
+        return Image{};
+    }
+    std::memcpy(atlas.data, px.data(), static_cast<size_t>(atlasW) * atlasH * 4);
+    atlas.width = atlasW;
+    atlas.height = atlasH;
+    atlas.mipmaps = 1;
+    atlas.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    return atlas;
+}
+
+Font LoadFontFromImage(Image image, Color key, int firstChar)
+{
+    EnsureInitialized();
+
+    Font result{};
+    if (!IsImageValid(image) || image.width <= 0 || image.height <= 0) return result;
+
+    const int W = image.width, H = image.height;
+    Color* colors = LoadImageColors(image);
+    if (!colors) return result;
+
+    std::vector<uint8_t> visited(static_cast<size_t>(W) * H, 0);
+    struct Comp { int minX, minY, maxX, maxY; };
+    std::vector<Comp> comps;
+    std::vector<std::pair<int, int>> stack;
+
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            const size_t idx = static_cast<size_t>(y) * W + x;
+            if (visited[idx]) continue;
+            visited[idx] = 1;
+            const Color c = colors[idx];
+            const bool isKey = (c.r == key.r && c.g == key.g && c.b == key.b);
+            if (isKey) continue;
+
+            Comp comp{ x, y, x, y };
+            stack.clear();
+            stack.emplace_back(x, y);
+            while (!stack.empty()) {
+                const auto [cx, cy] = stack.back();
+                stack.pop_back();
+                const size_t ci = static_cast<size_t>(cy) * W + cx;
+                if (visited[ci]) continue;
+                visited[ci] = 1;
+                const Color cc = colors[ci];
+                if (cc.r == key.r && cc.g == key.g && cc.b == key.b) continue;
+                comp.minX = std::min(comp.minX, cx); comp.maxX = std::max(comp.maxX, cx);
+                comp.minY = std::min(comp.minY, cy); comp.maxY = std::max(comp.maxY, cy);
+                if (cx > 0)     stack.emplace_back(cx - 1, cy);
+                if (cx < W - 1) stack.emplace_back(cx + 1, cy);
+                if (cy > 0)     stack.emplace_back(cx, cy - 1);
+                if (cy < H - 1) stack.emplace_back(cx, cy + 1);
+            }
+            comps.push_back(comp);
+        }
+    }
+
+    UnloadImageColors(colors);
+    if (comps.empty()) return result;
+
+    std::sort(comps.begin(), comps.end(), [](const Comp& a, const Comp& b) {
+        const int ay = (a.minY + a.maxY) / 2, by = (b.minY + b.maxY) / 2;
+        if (ay != by) return ay < by;
+        return (a.minX + a.maxX) < (b.minX + b.maxX);
+    });
+
+    const int glyphCount = static_cast<int>(comps.size());
+    int nominalW = 0, nominalH = 0;
+    for (const Comp& c : comps) {
+        nominalW = std::max(nominalW, c.maxX - c.minX + 1);
+        nominalH = std::max(nominalH, c.maxY - c.minY + 1);
+    }
+
+    Color* cols2 = LoadImageColors(image);
+    unsigned char* rgba = static_cast<unsigned char*>(MemAlloc(static_cast<size_t>(W) * H * 4));
+    if (!rgba) {
+        UnloadImageColors(cols2);
+        return result;
+    }
+    for (int yy = 0; yy < H; ++yy) {
+        for (int xx = 0; xx < W; ++xx) {
+            const size_t o = static_cast<size_t>(yy) * W + xx;
+            const Color c = cols2[o];
+            const bool kk = (c.r == key.r && c.g == key.g && c.b == key.b);
+            rgba[o * 4 + 0] = c.r;
+            rgba[o * 4 + 1] = c.g;
+            rgba[o * 4 + 2] = c.b;
+            rgba[o * 4 + 3] = kk ? 0 : 255;
+        }
+    }
+    UnloadImageColors(cols2);
+
+    GlyphInfo* glyphs = static_cast<GlyphInfo*>(MemAlloc(sizeof(GlyphInfo) * static_cast<size_t>(glyphCount)));
+    Rectangle* recs = new Rectangle[glyphCount];
+    for (int i = 0; i < glyphCount; ++i) {
+        const Comp& c = comps[i];
+        const int w = c.maxX - c.minX + 1, h = c.maxY - c.minY + 1;
+        recs[i] = Rectangle{ static_cast<float>(c.minX), static_cast<float>(c.minY),
+                             static_cast<float>(w), static_cast<float>(h) };
+        glyphs[i].value = firstChar + i;
+        glyphs[i].offsetX = 0;
+        glyphs[i].offsetY = nominalH;
+        glyphs[i].advanceX = nominalW;
+        unsigned char* gd = static_cast<unsigned char*>(MemAlloc(static_cast<size_t>(w) * h * 4));
+        if (gd) {
+            for (int y = 0; y < h; ++y) {
+                for (int x = 0; x < w; ++x) {
+                    const size_t src = (static_cast<size_t>(c.minY + y) * W + (c.minX + x)) * 4;
+                    const size_t dst = (static_cast<size_t>(y) * w + x) * 4;
+                    gd[dst + 0] = rgba[src + 0];
+                    gd[dst + 1] = rgba[src + 1];
+                    gd[dst + 2] = rgba[src + 2];
+                    gd[dst + 3] = rgba[src + 3];
+                }
+            }
+        }
+        glyphs[i].image = Image{ gd, w, h, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
+    }
+
+    Image atlas;
+    atlas.data = rgba;
+    atlas.width = W;
+    atlas.height = H;
+    atlas.mipmaps = 1;
+    atlas.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+
+    const ITexture it = gRenderer.LoadTextureFromImage(atlas);
+    MemFree(atlas.data);
+
+    if (!it.valid || it.id == 0) {
+        for (int i = 0; i < glyphCount; ++i) MemFree(glyphs[i].image.data);
+        MemFree(glyphs);
+        delete[] recs;
+        return result;
+    }
+
+    result.baseSize = (nominalH > 0) ? nominalH : image.height;
+    result.glyphCount = glyphCount;
+    result.glyphPadding = 0;
+    result.valid = true;
+    result._rendererFontId = 0;
+    result.texture = Texture2D{ it.id, it.width, it.height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true };
+    result.recs = recs;
+    result.glyphs = glyphs;
+    return result;
+}
+
+bool ExportFontAsCode(Font font, const char* fileName)
+{
+    if (!font.valid || !font.glyphs || !font.recs || !fileName) return false;
+
+    Image atlas = LoadImageFromTexture(font.texture);
+
+    std::ofstream out(fileName, std::ios::out | std::ios::trunc);
+    if (!out) {
+        if (IsImageValid(atlas)) UnloadImage(atlas);
+        return false;
+    }
+
+    out << "// Font exported by Quark Core\n";
+    out << "// baseSize: " << font.baseSize << "\n";
+    out << "// glyphCount: " << font.glyphCount << "\n\n";
+    out << "#include <stddef.h>\n\n";
+    out << "typedef struct ExportGlyph {\n"
+        << "    int value;\n"
+        << "    int offsetX;\n"
+        << "    int offsetY;\n"
+        << "    int advanceX;\n"
+        << "} ExportGlyph;\n\n";
+    out << "typedef struct ExportRect {\n"
+        << "    float x;\n"
+        << "    float y;\n"
+        << "    float width;\n"
+        << "    float height;\n"
+        << "} ExportRect;\n\n";
+
+    out << "static const ExportGlyph exportedGlyphs[" << font.glyphCount << "] = {\n";
+    for (int i = 0; i < font.glyphCount; ++i) {
+        const GlyphInfo& g = font.glyphs[i];
+        out << "    {" << g.value << ", " << g.offsetX << ", " << g.offsetY << ", " << g.advanceX << "}";
+        if (i < font.glyphCount - 1) out << ",";
+        out << "\n";
+    }
+    out << "};\n\n";
+
+    out << "static const ExportRect exportedRecs[" << font.glyphCount << "] = {\n";
+    for (int i = 0; i < font.glyphCount; ++i) {
+        const Rectangle& r = font.recs[i];
+        out << "    {" << r.x << "f, " << r.y << "f, " << r.width << "f, " << r.height << "f}";
+        if (i < font.glyphCount - 1) out << ",";
+        out << "\n";
+    }
+    out << "};\n\n";
+
+    if (IsImageValid(atlas) && atlas.data && atlas.format == PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
+        out << "static const unsigned char exportedAtlasRGBA[" << (size_t)atlas.width * atlas.height * 4 << "] = {\n";
+        const unsigned char* p = static_cast<const unsigned char*>(atlas.data);
+        const size_t total = static_cast<size_t>(atlas.width) * atlas.height * 4;
+        for (size_t i = 0; i < total; ++i) {
+            out << static_cast<unsigned int>(p[i]);
+            if (i < total - 1) out << ",";
+            if ((i + 1) % 24 == 0) out << "\n";
+            else out << " ";
+        }
+        out << "\n};\n";
+        out << "static const int exportedAtlasWidth = " << atlas.width << ";\n";
+        out << "static const int exportedAtlasHeight = " << atlas.height << ";\n";
+    } else {
+        out << "// (atlas pixels unavailable: texture could not be read back)\n";
+    }
+
+    out.close();
+    if (IsImageValid(atlas)) UnloadImage(atlas);
+    return true;
 }
 
 void DrawText(const char* text, int x, int y, int fontSize, Color color) {
@@ -1133,7 +1987,7 @@ void Set3DLightEnabled(int index, bool enabled) {
     gRenderer.Set3DLightEnabled(index, enabled);
 }
 
-void UnloadShader(Shader& shader)                                    { gRenderer.UnloadShader(shader); }
+void UnloadShader(Shader shader)                                     { gRenderer.UnloadShader(shader); }
 bool IsShaderValid(const Shader& shader)                             { return gRenderer.isShaderValid(const_cast<Shader&>(shader)); }
 bool IsShaderReady(Shader shader)                                    { return IsShaderValid(shader); }
 
@@ -1499,13 +2353,13 @@ int MakeDirectory(const char* dirPath) {
     }
 }
 
-bool ChangeDirectory(const char* dirPath) {
-    if (!dirPath) return false;
+int ChangeDirectory(const char* dirPath) {
+    if (!dirPath) return -1;
     try {
         std::filesystem::current_path(dirPath);
-        return true;
+        return 0;
     } catch (...) {
-        return false;
+        return -1;
     }
 }
 
@@ -1513,6 +2367,24 @@ bool IsPathFile(const char* path) {
     if (!path) return false;
     try {
         return std::filesystem::exists(path) && std::filesystem::is_regular_file(path);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool IsPathDirectory(const char* path) {
+    if (!path) return false;
+    try {
+        return std::filesystem::exists(path) && std::filesystem::is_directory(path);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool IsPathAbsolute(const char* path) {
+    if (!path) return false;
+    try {
+        return std::filesystem::path(path).is_absolute();
     } catch (...) {
         return false;
     }
@@ -1746,7 +2618,7 @@ Model LoadModel(const char* filePath) {
     return gRenderer.LoadModel(filePath);
 }
 
-void UnloadModel(Model& model)  { gRenderer.UnloadModel(model); }
+void UnloadModel(Model model)  { gRenderer.UnloadModel(model); }
 
 void DrawModel(Model model, Vec3 position, float scale, Color tint) {
     Mat4 transform = BuildTransform(position, Vec3{0.0f, 1.0f, 0.0f}, 0.0f, Vec3{scale, scale, scale});
@@ -2727,14 +3599,20 @@ Vec3 GetWorldToScreen(Vec3 position, Camera3D camera) {
 }
 
 Ray GetScreenToWorldRay(Vec2 mouse, Camera3D camera) {
+    return GetScreenToWorldRayEx(mouse, camera, GetScreenWidth(), GetScreenHeight());
+}
+
+Ray GetScreenToWorldRayEx(Vec2 mouse, Camera3D camera, int width, int height) {
     Ray ray;
     ray.position = camera.position;
     Vec3 forward = (camera.target - camera.position).normalized();
     Vec3 right   = forward.cross(camera.up).normalized();
     Vec3 up      = right.cross(forward);
 
-    float sw = static_cast<float>(GetScreenWidth());
-    float sh = static_cast<float>(GetScreenHeight());
+    float sw = static_cast<float>(width);
+    float sh = static_cast<float>(height);
+    if (sw <= 0.f || sh <= 0.f) return ray;
+
     float aspect  = sw / sh;
     float fovRad  = camera.fovy * 3.14159265359f / 180.f;
     float fovH    = 2.f * std::tan(fovRad / 2.f);
@@ -2748,6 +3626,35 @@ Ray GetScreenToWorldRay(Vec2 mouse, Camera3D camera) {
         forward.z + right.z * x + up.z * y
     }.normalized();
     return ray;
+}
+
+Vec2 GetWorldToScreenEx(Vec3 position, Camera3D camera, int width, int height) {
+    Vec3 forward = (camera.target - camera.position).normalized();
+    Vec3 right   = forward.cross(camera.up).normalized();
+    Vec3 up      = right.cross(forward);
+    Vec3 rel     = position - camera.position;
+    float cX = rel.dot(right), cY = rel.dot(up), cZ = rel.dot(forward);
+
+    float sw = static_cast<float>(width);
+    float sh = static_cast<float>(height);
+    if (sw <= 0.f || sh <= 0.f) return Vec2{};
+
+    float aspect    = sw / sh;
+    float fovRad    = camera.fovy * 3.14159265359f / 180.f;
+    float halfH     = std::tan(fovRad * .5f);
+    float halfW     = halfH * aspect;
+
+    float ndcX, ndcY;
+    if (camera.projection == CAMERA_ORTHOGRAPHIC) {
+        float os = camera.fovy > 0.f ? camera.fovy : 1.f;
+        ndcX = cX / (os * aspect);
+        ndcY = cY / os;
+    } else {
+        if (cZ == 0.f) cZ = 1e-6f;
+        ndcX = cX / (cZ * halfW);
+        ndcY = cY / (cZ * halfH);
+    }
+    return Vec2{ (ndcX * .5f + .5f) * sw, (.5f - ndcY * .5f) * sh };
 }
 
 bool CheckCollisionRecs(Rectangle a, Rectangle b) {
@@ -2768,6 +3675,191 @@ bool CheckCollisionPointRec(Vec2 point, Rectangle rect) {
 bool CheckCollisionPointCircle(Vec2 point, Vec2 center, float radius) {
     float dx = point.x - center.x, dy = point.y - center.y;
     return std::sqrt(dx*dx + dy*dy) <= radius;
+}
+
+bool CheckCollisionCircleRec(Vec2 center, float radius, Rectangle rec) {
+    const float closestX = std::clamp(center.x, rec.x, rec.x + rec.width);
+    const float closestY = std::clamp(center.y, rec.y, rec.y + rec.height);
+    const float dx = center.x - closestX, dy = center.y - closestY;
+    return (dx * dx + dy * dy) <= (radius * radius);
+}
+
+bool CheckCollisionCircleLine(Vec2 center, float radius, Vec2 p1, Vec2 p2) {
+    const float ldx = p2.x - p1.x, ldy = p2.y - p1.y;
+    const float len2 = ldx * ldx + ldy * ldy;
+    if (len2 <= 1e-9f) {
+        const float ddx = center.x - p1.x, ddy = center.y - p1.y;
+        return (ddx * ddx + ddy * ddy) <= (radius * radius);
+    }
+    float t = ((center.x - p1.x) * ldx + (center.y - p1.y) * ldy) / len2;
+    t = std::clamp(t, 0.0f, 1.0f);
+    const float px = p1.x + t * ldx, py = p1.y + t * ldy;
+    const float distX = center.x - px, distY = center.y - py;
+    return (distX * distX + distY * distY) <= (radius * radius);
+}
+
+bool CheckCollisionPointTriangle(Vec2 point, Vec2 p1, Vec2 p2, Vec2 p3) {
+    auto sign = [](Vec2 a, Vec2 b, Vec2 c) {
+        return (a.x - c.x) * (b.y - c.y) - (b.x - c.x) * (a.y - c.y);
+    };
+    const float d1 = sign(point, p1, p2);
+    const float d2 = sign(point, p2, p3);
+    const float d3 = sign(point, p3, p1);
+    const bool hasNeg = (d1 < 0.0f) || (d2 < 0.0f) || (d3 < 0.0f);
+    const bool hasPos = (d1 > 0.0f) || (d2 > 0.0f) || (d3 > 0.0f);
+    return !(hasNeg && hasPos);
+}
+
+bool CheckCollisionPointLine(Vec2 point, Vec2 p1, Vec2 p2, int threshold) {
+    const float ldx = p2.x - p1.x, ldy = p2.y - p1.y;
+    const float len2 = ldx * ldx + ldy * ldy;
+    if (len2 <= 1e-9f) {
+        const float ddx = p1.x - point.x, ddy = p1.y - point.y;
+        return std::sqrt(ddx * ddx + ddy * ddy) <= static_cast<float>(threshold);
+    }
+    float t = ((point.x - p1.x) * ldx + (point.y - p1.y) * ldy) / len2;
+    t = std::clamp(t, 0.0f, 1.0f);
+    const float px = p1.x + t * ldx, py = p1.y + t * ldy;
+    const float ddx = px - point.x, ddy = py - point.y;
+    return std::sqrt(ddx * ddx + ddy * ddy) <= static_cast<float>(threshold);
+}
+
+bool CheckCollisionPointPoly(Vec2 point, const Vec2* points, int pointCount) {
+    if (!points || pointCount < 3) return false;
+    bool inside = false;
+    int j = pointCount - 1;
+    for (int i = 0; i < pointCount; ++i) {
+        const Vec2 vi = points[i];
+        const Vec2 vj = points[j];
+        if (((vi.y > point.y) != (vj.y > point.y)) &&
+            (point.x < (vj.x - vi.x) * (point.y - vi.y) / (vj.y - vi.y) + vi.x)) {
+            inside = !inside;
+        }
+        j = i;
+    }
+    return inside;
+}
+
+bool CheckCollisionLines(Vec2 startPos1, Vec2 endPos1, Vec2 startPos2, Vec2 endPos2, Vec2* collisionPoint) {
+    const float d1x = endPos1.x - startPos1.x, d1y = endPos1.y - startPos1.y;
+    const float d2x = endPos2.x - startPos2.x, d2y = endPos2.y - startPos2.y;
+    const float denom = d1x * d2y - d1y * d2x;
+    if (std::fabs(denom) <= 1e-9f) return false;
+
+    const float rx = startPos2.x - startPos1.x, ry = startPos2.y - startPos1.y;
+    const float t = (rx * d2y - ry * d2x) / denom;
+    const float u = (rx * d1y - ry * d1x) / denom;
+    if (t < 0.0f || t > 1.0f || u < 0.0f || u > 1.0f) return false;
+
+    if (collisionPoint) *collisionPoint = Vec2{ startPos1.x + d1x * t, startPos1.y + d1y * t };
+    return true;
+}
+
+Rectangle GetCollisionRec(Rectangle rec1, Rectangle rec2) {
+    Rectangle out{};
+    const float x1 = std::max(rec1.x, rec2.x);
+    const float y1 = std::max(rec1.y, rec2.y);
+    const float x2 = std::min(rec1.x + rec1.width, rec2.x + rec2.width);
+    const float y2 = std::min(rec1.y + rec1.height, rec2.y + rec2.height);
+    if (x2 < x1 || y2 < y1) return out;
+    out.x = x1;
+    out.y = y1;
+    out.width = x2 - x1;
+    out.height = y2 - y1;
+    return out;
+}
+
+bool CheckCollisionSpheres(Vec3 center1, float radius1, Vec3 center2, float radius2) {
+    const float dx = center2.x - center1.x;
+    const float dy = center2.y - center1.y;
+    const float dz = center2.z - center1.z;
+    const float dist2 = dx * dx + dy * dy + dz * dz;
+    const float r = radius1 + radius2;
+    return dist2 <= (r * r);
+}
+
+bool CheckCollisionBoxes(BoundingBox box1, BoundingBox box2) {
+    return (box1.max.x >= box2.min.x && box2.max.x >= box1.min.x) &&
+           (box1.max.y >= box2.min.y && box2.max.y >= box1.min.y) &&
+           (box1.max.z >= box2.min.z && box2.max.z >= box1.min.z);
+}
+
+bool CheckCollisionBoxSphere(BoundingBox box, Vec3 center, float radius) {
+    const float closestX = std::clamp(center.x, box.min.x, box.max.x);
+    const float closestY = std::clamp(center.y, box.min.y, box.max.y);
+    const float closestZ = std::clamp(center.z, box.min.z, box.max.z);
+    const float dx = center.x - closestX;
+    const float dy = center.y - closestY;
+    const float dz = center.z - closestZ;
+    return (dx * dx + dy * dy + dz * dz) <= (radius * radius);
+}
+
+RayCollision GetRayCollisionSphere(Ray ray, Vec3 center, float radius) {
+    RayCollision result{};
+    const Vec3 dir = ray.direction;
+    const float a = dir.dot(dir);
+    if (a <= 0.0f) return result;
+
+    const Vec3 oc = ray.position - center;
+    const float b = 2.0f * dir.dot(oc);
+    const float c = oc.dot(oc) - radius * radius;
+    const float discriminant = b * b - 4.0f * a * c;
+    if (discriminant < 0.0f) return result;
+
+    const float t = (-b - std::sqrt(discriminant)) / (2.0f * a);
+    if (t < 0.0f) return result;
+
+    result.hit = true;
+    result.distance = t;
+    result.point = ray.position + dir * t;
+    result.normal = (result.point - center).normalized();
+    return result;
+}
+
+RayCollision GetRayCollisionMesh(Ray ray, Mesh mesh, Matrix transform) {
+    RayCollision result{};
+    if (!mesh.vertices || mesh.vertexCount <= 0) return result;
+
+    bool hitAny = false;
+    float bestDistance = INFINITY;
+    const bool indexed = (mesh.indices != nullptr) && (mesh.triangleCount > 0);
+
+    const int triangleCount = mesh.triangleCount > 0 ? mesh.triangleCount : mesh.vertexCount / 3;
+    for (int i = 0; i < triangleCount; ++i) {
+        int v0, v1, v2;
+        if (indexed) {
+            v0 = mesh.indices[i * 3 + 0];
+            v1 = mesh.indices[i * 3 + 1];
+            v2 = mesh.indices[i * 3 + 2];
+        } else {
+            v0 = i * 3 + 0;
+            v1 = i * 3 + 1;
+            v2 = i * 3 + 2;
+        }
+        if (v0 < 0 || v1 < 0 || v2 < 0 || v0 >= mesh.vertexCount ||
+            v1 >= mesh.vertexCount || v2 >= mesh.vertexCount) continue;
+
+        const Vec3 a = transform * Vec3{ mesh.vertices[v0 * 3 + 0], mesh.vertices[v0 * 3 + 1], mesh.vertices[v0 * 3 + 2] };
+        const Vec3 b = transform * Vec3{ mesh.vertices[v1 * 3 + 0], mesh.vertices[v1 * 3 + 1], mesh.vertices[v1 * 3 + 2] };
+        const Vec3 c = transform * Vec3{ mesh.vertices[v2 * 3 + 0], mesh.vertices[v2 * 3 + 1], mesh.vertices[v2 * 3 + 2] };
+
+        const RayCollision tri = GetRayCollisionTriangle(ray, a, b, c);
+        if (tri.hit && tri.distance < bestDistance) {
+            bestDistance = tri.distance;
+            result = tri;
+            hitAny = true;
+        }
+    }
+
+    return hitAny ? result : RayCollision{};
+}
+
+RayCollision GetRayCollisionQuad(Ray ray, Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4) {
+    RayCollision result{};
+    const RayCollision tri1 = GetRayCollisionTriangle(ray, p1, p2, p3);
+    const RayCollision tri2 = GetRayCollisionTriangle(ray, p1, p3, p4);
+    if (tri1.hit && tri2.hit) return (tri1.distance < tri2.distance) ? tri1 : tri2;
+    return tri1.hit ? tri1 : tri2;
 }
 
 Color Fade(Color color, float alpha)           { color.a = static_cast<unsigned char>(color.a * alpha); return color; }
@@ -2817,6 +3909,107 @@ Color ColorFromNormalized(float r, float g, float b, float a) {
     };
 }
 
+bool ColorIsEqual(Color col1, Color col2) {
+    return (col1.r == col2.r) && (col1.g == col2.g) &&
+           (col1.b == col2.b) && (col1.a == col2.a);
+}
+
+int ColorToInt(Color color) {
+    return (static_cast<int>(color.a) << 24) |
+           (static_cast<int>(color.r) << 16) |
+           (static_cast<int>(color.g) << 8)  |
+           static_cast<int>(color.b);
+}
+
+Vec4 ColorNormalize(Color color) {
+    return Vec4{
+        color.r / 255.0f,
+        color.g / 255.0f,
+        color.b / 255.0f,
+        color.a / 255.0f
+    };
+}
+
+Vec3 ColorToHSV(Color color) {
+    float r = color.r / 255.0f;
+    float g = color.g / 255.0f;
+    float b = color.b / 255.0f;
+
+    float max = std::max(std::max(r, g), b);
+    float min = std::min(std::min(r, g), b);
+    float delta = max - min;
+
+    float hue = 0.0f;
+    float saturation = (max > 0.0001f) ? (delta / max) : 0.0f;
+    float value = max;
+
+    if (delta > 0.0001f) {
+        if (max == r) hue = (g - b) / delta + ((g < b) ? 6.0f : 0.0f);
+        else if (max == g) hue = (b - r) / delta + 2.0f;
+        else hue = (r - g) / delta + 4.0f;
+        hue *= 60.0f;
+    }
+    return Vec3{hue, saturation, value};
+}
+
+Color ColorFromHSV(float hue, float saturation, float value) {
+    float h = hue;
+    while (h < 0.0f) h += 360.0f;
+    h = std::fmod(h, 360.0f) / 60.0f;
+    int sector = static_cast<int>(h);
+    float f = h - sector;
+    float p = value * (1.0f - saturation);
+    float q = value * (1.0f - saturation * f);
+    float t = value * (1.0f - saturation * (1.0f - f));
+
+    float r = 0.0f, g = 0.0f, b = 0.0f;
+    switch (sector) {
+        case 0: r = value; g = t; b = p; break;
+        case 1: r = q; g = value; b = p; break;
+        case 2: r = p; g = value; b = t; break;
+        case 3: r = p; g = q; b = value; break;
+        case 4: r = t; g = p; b = value; break;
+        default: r = value; g = p; b = q; break;
+    }
+    return Color{
+        static_cast<unsigned char>(std::clamp(r, 0.0f, 1.0f) * 255.0f),
+        static_cast<unsigned char>(std::clamp(g, 0.0f, 1.0f) * 255.0f),
+        static_cast<unsigned char>(std::clamp(b, 0.0f, 1.0f) * 255.0f),
+        255
+    };
+}
+
+Color ColorAlphaBlend(Color dst, Color src, Color tint) {
+    Color srcTint{
+        static_cast<unsigned char>(static_cast<int>(src.r) * static_cast<int>(tint.r) / 255),
+        static_cast<unsigned char>(static_cast<int>(src.g) * static_cast<int>(tint.g) / 255),
+        static_cast<unsigned char>(static_cast<int>(src.b) * static_cast<int>(tint.b) / 255),
+        static_cast<unsigned char>(static_cast<int>(src.a) * static_cast<int>(tint.a) / 255)
+    };
+    float alpha = static_cast<float>(
+        static_cast<int>(srcTint.a) + static_cast<int>(dst.a) * (255 - static_cast<int>(srcTint.a)) / 255) / 255.0f;
+    float multiplier = (alpha <= 0.0f) ? 0.0f : (static_cast<float>(srcTint.a) / 255.0f / alpha);
+    auto chan = [&](unsigned char d, unsigned char s) -> unsigned char {
+        return static_cast<unsigned char>(std::clamp(
+            static_cast<float>(d) * (1.0f - multiplier) + static_cast<float>(s) * multiplier, 0.0f, 255.0f));
+    };
+    return Color{
+        chan(dst.r, srcTint.r),
+        chan(dst.g, srcTint.g),
+        chan(dst.b, srcTint.b),
+        static_cast<unsigned char>(std::clamp(alpha * 255.0f, 0.0f, 255.0f))
+    };
+}
+
+Color ColorLerp(Color color1, Color color2, float factor) {
+    return Color{
+        static_cast<unsigned char>(std::clamp(color1.r + (color2.r - color1.r) * factor, 0.0f, 255.0f)),
+        static_cast<unsigned char>(std::clamp(color1.g + (color2.g - color1.g) * factor, 0.0f, 255.0f)),
+        static_cast<unsigned char>(std::clamp(color1.b + (color2.b - color1.b) * factor, 0.0f, 255.0f)),
+        static_cast<unsigned char>(std::clamp(color1.a + (color2.a - color1.a) * factor, 0.0f, 255.0f))
+    };
+}
+
 void WaitTime(double seconds) {
     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(seconds * 1000.0)));
 }
@@ -2827,5 +4020,689 @@ int  GetRandomValue(int min, int max) {
 }
 
 void SetRandomSeed(unsigned int seed) { std::srand(seed); }
+
+int GetGlyphIndex(Font font, int codepoint) {
+    if (!font.valid || !font.glyphs || font.glyphCount <= 0) return 0;
+    for (int i = 0; i < font.glyphCount; ++i) {
+        if (font.glyphs[i].value == codepoint) return i;
+    }
+    for (int i = 0; i < font.glyphCount; ++i) {
+        if (font.glyphs[i].value == 63) return i;
+    }
+    return 0;
+}
+
+GlyphInfo GetGlyphInfo(Font font, int codepoint) {
+    if (!font.valid || !font.glyphs) return GlyphInfo{};
+    return font.glyphs[GetGlyphIndex(font, codepoint)];
+}
+
+Rectangle GetGlyphAtlasRec(Font font, int codepoint) {
+    if (!font.valid || !font.recs) return Rectangle{};
+    return font.recs[GetGlyphIndex(font, codepoint)];
+}
+
+Vec2 MeasureTextCodepoints(Font font, const int* codepoints, int length, float fontSize, float spacing) {
+    if (!codepoints || !font.valid || !font.glyphs || font.baseSize <= 0) return {};
+    const float scale = fontSize / static_cast<float>(font.baseSize);
+    const float lineHeight = static_cast<float>(std::max(gTextLineSpacing > 0 ? gTextLineSpacing : font.baseSize, 1)) * scale;
+    float maxW = 0.0f, x = 0.0f;
+    int lines = 1;
+    for (int i = 0; i < length; ++i) {
+        const int cp = codepoints[i];
+        if (cp == '\n') {
+            maxW = std::max(maxW, x);
+            x = 0.0f;
+            ++lines;
+            continue;
+        }
+        const int index = GetGlyphIndex(font, cp);
+        x += font.glyphs[index].advanceX * scale + spacing;
+    }
+    maxW = std::max(maxW, x);
+    return Vec2{ maxW, lineHeight * static_cast<float>(lines) };
+}
+
+void DrawTextCodepoint(Font font, int codepoint, Vec2 position, float fontSize, Color tint) {
+    if (!font.valid || !font.glyphs || !font.recs || font.texture.id == 0 || font.baseSize <= 0) return;
+    const int index = GetGlyphIndex(font, codepoint);
+    if (font.glyphs[index].image.data == nullptr) return;
+    const float scale = fontSize / static_cast<float>(font.baseSize);
+    const float w = static_cast<float>(font.glyphs[index].image.width) * scale;
+    const float h = static_cast<float>(font.glyphs[index].image.height) * scale;
+    ITexture it{ font.texture.id, font.texture.width, font.texture.height, font.texture.mipmaps, font.texture.format, font.texture.valid };
+    gRenderer.DrawTexturePro(it, font.recs[index], Rectangle{ position.x, position.y, w, h }, Vec2{}, 0.0f, tint);
+}
+
+void DrawTextCodepoints(Font font, const int* codepoints, int codepointCount, Vec2 position, float fontSize, float spacing, Color tint) {
+    if (!codepoints || !font.valid || !font.glyphs || !font.recs || font.texture.id == 0 || font.baseSize <= 0) return;
+    const float scale = fontSize / static_cast<float>(font.baseSize);
+    const float lineHeight = static_cast<float>(std::max(gTextLineSpacing > 0 ? gTextLineSpacing : font.baseSize, 1)) * scale;
+    ITexture it{ font.texture.id, font.texture.width, font.texture.height, font.texture.mipmaps, font.texture.format, font.texture.valid };
+    float x = 0.0f, y = 0.0f;
+    for (int i = 0; i < codepointCount; ++i) {
+        const int cp = codepoints[i];
+        if (cp == '\n') {
+            x = 0.0f;
+            y += lineHeight;
+            continue;
+        }
+        const int index = GetGlyphIndex(font, cp);
+        if (font.glyphs[index].image.data != nullptr) {
+            const float w = static_cast<float>(font.glyphs[index].image.width) * scale;
+            const float h = static_cast<float>(font.glyphs[index].image.height) * scale;
+            gRenderer.DrawTexturePro(it, font.recs[index], Rectangle{ position.x + x, position.y + y, w, h }, Vec2{}, 0.0f, tint);
+        }
+        x += font.glyphs[index].advanceX * scale + spacing;
+    }
+}
+
+void DrawTextPro(Font font, const char* text, Vec2 position, Vec2 origin, float rotation, float fontSize, float spacing, Color tint) {
+    if (!text || !font.valid || !font.glyphs || !font.recs || font.texture.id == 0 || font.baseSize <= 0) return;
+    const float scale = fontSize / static_cast<float>(font.baseSize);
+    const float cosR = std::cos(rotation * DEG2RAD);
+    const float sinR = std::sin(rotation * DEG2RAD);
+    ITexture it{ font.texture.id, font.texture.width, font.texture.height, font.texture.mipmaps, font.texture.format, font.texture.valid };
+    Vec2 textOffset{0, 0};
+
+    const char* p = text;
+    while (*p != '\0') {
+        const unsigned char lead = static_cast<unsigned char>(*p);
+        int cp = 0, seq = 0;
+        if ((lead & 0x80) == 0) { cp = lead; seq = 1; }
+        else if ((lead & 0xE0) == 0xC0) { cp = lead & 0x1F; seq = 2; }
+        else if ((lead & 0xF0) == 0xE0) { cp = lead & 0x0F; seq = 3; }
+        else if ((lead & 0xF8) == 0xF0) { cp = lead & 0x07; seq = 4; }
+        else { cp = lead; seq = 1; }
+        for (int k = 1; k < seq && p[k] != '\0'; ++k) cp = (cp << 6) | (static_cast<unsigned char>(p[k]) & 0x3F);
+
+        const int index = GetGlyphIndex(font, cp);
+        if (font.glyphs[index].image.data != nullptr) {
+            Vec2 charPos{ position.x + textOffset.x, position.y + textOffset.y };
+            charPos.x -= origin.x * cosR - origin.y * sinR;
+            charPos.y -= origin.x * sinR + origin.y * cosR;
+            const float w = static_cast<float>(font.glyphs[index].image.width) * scale;
+            const float h = static_cast<float>(font.glyphs[index].image.height) * scale;
+            gRenderer.DrawTexturePro(it, font.recs[index],
+                                     Rectangle{ charPos.x - w / 2.0f, charPos.y - h / 2.0f, w, h },
+                                     Vec2{ w / 2.0f, h / 2.0f }, rotation, tint);
+        }
+        textOffset.x += font.glyphs[index].advanceX * scale + spacing;
+        p += seq;
+    }
+}
+
+void SetTextLineSpacing(int spacing) {
+    gTextLineSpacing = spacing;
+}
+
+void DrawFPS(int posX, int posY) {
+    const int fps = GetFPS();
+    Color color = LIME;
+    if (fps < 30)      color = Color{230, 41, 55, 255};   // RED
+    else if (fps < 50) color = Color{190, 33, 55, 255};   // MAROON
+    else               color = LIME;
+    DrawText(TextFormat("%d FPS", fps), posX, posY, 20, color);
+}
+
+int GetCodepoint(const char* text, int* codepointSize) {
+    if (text == nullptr) return 0x3f;
+
+    int cp = 0x3f;
+    int size = 1;
+    const unsigned char firstByte = static_cast<unsigned char>(*text);
+
+    int extra = 0;
+    if ((firstByte & 0x80) == 0) {
+        cp = firstByte;
+    } else if ((firstByte & 0xE0) == 0xC0) {
+        cp = firstByte & 0x1F;
+        extra = 1;
+    } else if ((firstByte & 0xF0) == 0xE0) {
+        cp = firstByte & 0x0F;
+        extra = 2;
+    } else if ((firstByte & 0xF8) == 0xF0) {
+        cp = firstByte & 0x07;
+        extra = 3;
+    }
+
+    for (int i = 0; i < extra; ++i) {
+        const unsigned char nextByte = static_cast<unsigned char>(text[1 + i]);
+        if ((nextByte & 0xC0) == 0x80) {
+            cp = (cp << 6) + (nextByte & 0x3F);
+            ++size;
+        } else {
+            cp = 0x3f;
+            break;
+        }
+    }
+
+    if (codepointSize != nullptr) *codepointSize = size;
+    return cp;
+}
+
+int GetCodepointNext(const char* text, int* codepointSize) {
+    if (text == nullptr) return 0x3f;
+
+    const unsigned char b0 = static_cast<unsigned char>(text[0]);
+    if ((b0 == 0xEF) && (static_cast<unsigned char>(text[1]) == 0xBB) &&
+        (static_cast<unsigned char>(text[2]) == 0xBF)) text += 3;
+
+    const unsigned char firstByte = static_cast<unsigned char>(*text);
+    int cp = 0x3f;
+    int size = 0;
+    int extra = 0;
+
+    if ((firstByte & 0x80) == 0) {
+        cp = firstByte;
+        size = 1;
+    } else if ((firstByte & 0xE0) == 0xC0) {
+        cp = firstByte & 0x1F;
+        size = 2;
+        extra = 1;
+    } else if ((firstByte & 0xF0) == 0xE0) {
+        cp = firstByte & 0x0F;
+        size = 3;
+        extra = 2;
+    } else if ((firstByte & 0xF8) == 0xF0) {
+        cp = firstByte & 0x07;
+        size = 4;
+        extra = 3;
+    } else {
+        size = 1;
+    }
+
+    for (int i = 0; i < extra; ++i) {
+        const unsigned char nextByte = static_cast<unsigned char>(text[1 + i]);
+        if ((nextByte & 0xC0) == 0x80) {
+            cp = (cp << 6) + (nextByte & 0x3F);
+        } else {
+            cp = 0x3f;
+            size = 1;
+            break;
+        }
+    }
+
+    if (codepointSize != nullptr) *codepointSize = size;
+    return cp;
+}
+
+int GetCodepointPrevious(const char* text, int* codepointSize) {
+    if (text == nullptr) return 0x3f;
+
+    int count = 1;
+    while ((static_cast<unsigned char>(text[-count]) & 0xC0) == 0x80) ++count;
+
+    const char* start = text - count;
+    const unsigned char firstByte = static_cast<unsigned char>(*start);
+
+    int charBytes = 0;
+    if ((firstByte & 0x80) == 0)           charBytes = 1;
+    else if ((firstByte & 0xE0) == 0xC0)   charBytes = 2;
+    else if ((firstByte & 0xF0) == 0xE0)   charBytes = 3;
+    else if ((firstByte & 0xF8) == 0xF0)   charBytes = 4;
+
+    if (charBytes == count) {
+        int cp = firstByte & (0xFF >> (charBytes + 1));
+        bool valid = true;
+        for (int i = 1; i < charBytes; ++i) {
+            const unsigned char nextByte = static_cast<unsigned char>(start[i]);
+            if ((nextByte & 0xC0) == 0x80) {
+                cp = (cp << 6) + (nextByte & 0x3F);
+            } else {
+                valid = false;
+                cp = 0x3f;
+                break;
+            }
+        }
+        if (codepointSize != nullptr) *codepointSize = valid ? charBytes : 1;
+        return cp;
+    }
+
+    if (codepointSize != nullptr) *codepointSize = 1;
+    return 0x3f;
+}
+
+const char* CodepointToUTF8(int codepoint, int* utf8Size) {
+    static thread_local char utf8[5] = {0};
+    int size = 0;
+
+    if (codepoint <= 0x7F) {
+        utf8[0] = static_cast<char>(codepoint);
+        size = 1;
+    } else if (codepoint <= 0x7FF) {
+        utf8[0] = static_cast<char>(0xC0 | (codepoint >> 6));
+        utf8[1] = static_cast<char>(0x80 | (codepoint & 0x3F));
+        size = 2;
+    } else if (codepoint <= 0xFFFF) {
+        utf8[0] = static_cast<char>(0xE0 | (codepoint >> 12));
+        utf8[1] = static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        utf8[2] = static_cast<char>(0x80 | (codepoint & 0x3F));
+        size = 3;
+    } else if (codepoint <= 0x10FFFF) {
+        utf8[0] = static_cast<char>(0xF0 | (codepoint >> 18));
+        utf8[1] = static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+        utf8[2] = static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        utf8[3] = static_cast<char>(0x80 | (codepoint & 0x3F));
+        size = 4;
+    } else {
+        utf8[0] = '?';
+        size = 1;
+    }
+
+    if (utf8Size != nullptr) *utf8Size = size;
+    utf8[size] = 0;
+    return utf8;
+}
+
+int GetCodepointCount(const char* text) {
+    if (text == nullptr) return 0;
+    int length = 0;
+    const char* ptr = text;
+    while (*ptr != '\0') {
+        int size = 0;
+        GetCodepoint(ptr, &size);
+        ptr += size;
+        ++length;
+    }
+    return length;
+}
+
+int* LoadCodepoints(const char* text, int* count) {
+    if (count != nullptr) *count = 0;
+    if (text == nullptr) return nullptr;
+
+    int length = 0;
+    const char* ptr = text;
+    while (*ptr != '\0') {
+        int size = 0;
+        GetCodepoint(ptr, &size);
+        ptr += size;
+        ++length;
+    }
+
+    int* codepoints = static_cast<int*>(MemAlloc(static_cast<size_t>(length + 1) * sizeof(int)));
+    if (codepoints == nullptr) return nullptr;
+
+    int index = 0;
+    ptr = text;
+    while (*ptr != '\0') {
+        int size = 0;
+        codepoints[index] = GetCodepoint(ptr, &size);
+        ptr += size;
+        ++index;
+    }
+    codepoints[length] = 0;
+
+    if (count != nullptr) *count = length;
+    return codepoints;
+}
+
+void UnloadCodepoints(int* codepoints) {
+    if (codepoints != nullptr) MemFree(codepoints);
+}
+
+char* LoadUTF8(const int* codepoints, int length) {
+    if (codepoints == nullptr || length <= 0) return nullptr;
+
+    int total = 0;
+    for (int i = 0; i < length; ++i) {
+        int utf8Size = 0;
+        CodepointToUTF8(codepoints[i], &utf8Size);
+        total += utf8Size;
+    }
+
+    char* text = static_cast<char*>(MemAlloc(static_cast<size_t>(total + 1)));
+    if (text == nullptr) return nullptr;
+
+    int index = 0;
+    for (int i = 0; i < length; ++i) {
+        int utf8Size = 0;
+        const char* utf8 = CodepointToUTF8(codepoints[i], &utf8Size);
+        for (int j = 0; j < utf8Size; ++j) text[index++] = utf8[j];
+    }
+    text[index] = '\0';
+    return text;
+}
+
+void UnloadUTF8(char* text) {
+    if (text != nullptr) MemFree(text);
+}
+
+namespace {
+
+Transform AiMatrixToTransform(const aiMatrix4x4& m) {
+    Transform result;
+    aiVector3D t, s;
+    aiQuaternion r;
+    m.Decompose(s, r, t);
+    result.translation = Vec3{t.x, t.y, t.z};
+    result.rotation = Quaternion{r.x, r.y, r.z, r.w};
+    result.scale = Vec3{s.x, s.y, s.z};
+    return result;
+}
+
+Transform TransformLerp(const Transform& a, const Transform& b, float amount) {
+    Transform result;
+    result.translation.x = Lerp(a.translation.x, b.translation.x, amount);
+    result.translation.y = Lerp(a.translation.y, b.translation.y, amount);
+    result.translation.z = Lerp(a.translation.z, b.translation.z, amount);
+    result.rotation = QuaternionSlerp(a.rotation, b.rotation, amount);
+    result.scale.x = Lerp(a.scale.x, b.scale.x, amount);
+    result.scale.y = Lerp(a.scale.y, b.scale.y, amount);
+    result.scale.z = Lerp(a.scale.z, b.scale.z, amount);
+    return result;
+}
+
+unsigned int CountSceneNodes(aiNode* node) {
+    if (node == nullptr) return 0;
+    unsigned int count = 1;
+    for (unsigned int c = 0; c < node->mNumChildren; ++c) {
+        count += CountSceneNodes(node->mChildren[c]);
+    }
+    return count;
+}
+
+void BuildSkeletonFromHierarchy(aiNode* node, ModelSkeleton& skeleton, int parent) {
+    if (node == nullptr) return;
+
+    const unsigned int id = skeleton.boneCount;
+    const std::string nodeName = node->mName.length > 0 ? node->mName.C_Str() : "node";
+    skeleton.bones[id].parent = parent;
+    strncpy_s(skeleton.bones[id].name, sizeof(skeleton.bones[id].name), nodeName.c_str(), _TRUNCATE);
+    skeleton.bindPose[id] = AiMatrixToTransform(node->mTransformation);
+    skeleton.boneCount++;
+
+    for (unsigned int c = 0; c < node->mNumChildren; ++c) {
+        BuildSkeletonFromHierarchy(node->mChildren[c], skeleton, static_cast<int>(id));
+    }
+}
+
+std::vector<Transform> EvaluateAnimationPose(const ModelAnimation& anim, float frame) {
+    std::vector<Transform> locals(anim.boneCount);
+    if (anim.boneCount == 0 || anim.keyframeCount <= 0 || anim.keyframePoses == nullptr) {
+        return locals;
+    }
+    const int frameCount = anim.keyframeCount;
+    int f0 = static_cast<int>(frame) % frameCount;
+    if (f0 < 0) f0 += frameCount;
+    const int f1 = (f0 + 1) % frameCount;
+    const float amount = Clamp(frame - std::floor(frame), 0.0f, 1.0f);
+    for (unsigned int b = 0; b < anim.boneCount; ++b) {
+        locals[b] = TransformLerp(anim.keyframePoses[f0][b], anim.keyframePoses[f1][b], amount);
+    }
+    return locals;
+}
+
+std::vector<Mat4> GlobalBindTransforms(const ModelSkeleton& skel) {
+    std::vector<Mat4> globals(skel.boneCount, Mat4::identity());
+    for (unsigned int b = 0; b < skel.boneCount; ++b) {
+        const Transform& bp = skel.bindPose[b];
+        Mat4 local = TransformToMatrix(bp.translation, bp.rotation, bp.scale);
+        if (skel.bones[b].parent >= 0) {
+            globals[b] = globals[static_cast<size_t>(skel.bones[b].parent)] * local;
+        } else {
+            globals[b] = local;
+        }
+    }
+    return globals;
+}
+
+void ApplyPoseToModel(Model model, const ModelSkeleton& skel,
+                      const std::vector<Transform>& locals,
+                      const ModelAnimation& anim, int f0) {
+    const unsigned int boneCount = static_cast<unsigned int>(locals.size());
+    if (boneCount == 0) return;
+
+    std::vector<Mat4> globals(boneCount, Mat4::identity());
+    for (unsigned int b = 0; b < boneCount; ++b) {
+        Mat4 local = TransformToMatrix(locals[b].translation, locals[b].rotation, locals[b].scale);
+        if (skel.bones != nullptr && skel.bones[b].parent >= 0) {
+            globals[b] = globals[static_cast<size_t>(skel.bones[b].parent)] * local;
+        } else {
+            globals[b] = local;
+        }
+    }
+
+    const bool haveSkeleton = (skel.bones != nullptr && skel.bindPose != nullptr);
+    std::vector<Mat4> bindInv(boneCount, Mat4::identity());
+    if (haveSkeleton) {
+        std::vector<Mat4> bindGlobal = GlobalBindTransforms(skel);
+        for (unsigned int b = 0; b < boneCount; ++b) bindInv[b] = bindGlobal[b].inverted();
+    }
+
+    if (model.boneMatrices != nullptr) {
+        for (unsigned int b = 0; b < boneCount; ++b) {
+            model.boneMatrices[b] = globals[b] * bindInv[b];
+        }
+    }
+
+    model.currentPose = (anim.keyframePoses != nullptr) ? anim.keyframePoses[f0] : nullptr;
+}
+
+} // namespace
+
+void qcPopulateModelSkeleton(const aiScene* scene, Model& model) {
+    if (scene == nullptr || scene->mRootNode == nullptr) return;
+    const unsigned int nodeCount = CountSceneNodes(scene->mRootNode);
+    if (nodeCount == 0) return;
+
+    ModelSkeleton skel{};
+    skel.boneCount = 0;
+    skel.bones = new BoneInfo[nodeCount];
+    skel.bindPose = new Transform[nodeCount];
+    BuildSkeletonFromHierarchy(scene->mRootNode, skel, -1);
+
+    model.skeleton = skel;
+    delete[] model.boneMatrices;
+    model.boneMatrices = (model.skeleton.boneCount > 0) ? new Matrix[model.skeleton.boneCount] : nullptr;
+}
+
+void qcFreeModelSkeleton(Model& model) {
+    delete[] model.skeleton.bones;
+    model.skeleton.bones = nullptr;
+    delete[] model.skeleton.bindPose;
+    model.skeleton.bindPose = nullptr;
+    model.skeleton.boneCount = 0;
+    model.currentPose = nullptr;
+    delete[] model.boneMatrices;
+    model.boneMatrices = nullptr;
+}
+
+ModelAnimation* LoadModelAnimations(const char* fileName, int* animCount) {
+    if (animCount != nullptr) *animCount = 0;
+    if (fileName == nullptr || *fileName == '\0') return nullptr;
+
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(fileName, aiProcess_Triangulate | aiProcess_GenNormals);
+    if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || !scene->mRootNode) {
+        TraceLog(LogLevel::Error, "MODEL", TextFormat("[Anim] Failed to load animations from %s: %s",
+            fileName, importer.GetErrorString()));
+        return nullptr;
+    }
+
+    if (scene->mNumAnimations == 0) {
+        TraceLog(LogLevel::Warn, "MODEL", TextFormat("[Anim] No animations found in %s", fileName));
+        return nullptr;
+    }
+
+    ModelSkeleton skel{};
+    const unsigned int nodeCount = CountSceneNodes(scene->mRootNode);
+    skel.bones = new BoneInfo[nodeCount];
+    skel.bindPose = new Transform[nodeCount];
+    BuildSkeletonFromHierarchy(scene->mRootNode, skel, -1);
+
+    const int count = static_cast<int>(scene->mNumAnimations);
+    ModelAnimation* result = new ModelAnimation[count];
+
+    for (unsigned int a = 0; a < scene->mNumAnimations; ++a) {
+        const aiAnimation* anim = scene->mAnimations[a];
+        ModelAnimation& dst = result[a];
+        dst.boneCount = skel.boneCount;
+        dst.keyframeCount = 0;
+
+        if (anim->mName.length > 0) {
+            strncpy_s(dst.name, sizeof(dst.name), anim->mName.C_Str(), _TRUNCATE);
+        }
+
+        std::vector<const aiNodeAnim*> channels(skel.boneCount, nullptr);
+        for (unsigned int c = 0; c < anim->mNumChannels; ++c) {
+            const aiNodeAnim* nodeAnim = anim->mChannels[c];
+            const std::string name = nodeAnim->mNodeName.C_Str();
+            int boneId = -1;
+            for (unsigned int b = 0; b < skel.boneCount; ++b) {
+                if (name == std::string(skel.bones[b].name)) { boneId = static_cast<int>(b); break; }
+            }
+            if (boneId >= 0) channels[static_cast<size_t>(boneId)] = nodeAnim;
+        }
+
+        unsigned int frames = 0;
+        for (unsigned int b = 0; b < skel.boneCount; ++b) {
+            const aiNodeAnim* nc = channels[b];
+            if (nc == nullptr) continue;
+            if (nc->mNumPositionKeys > frames) frames = nc->mNumPositionKeys;
+            if (nc->mNumRotationKeys > frames) frames = nc->mNumRotationKeys;
+            if (nc->mNumScalingKeys > frames) frames = nc->mNumScalingKeys;
+        }
+        if (frames == 0) continue;
+        dst.keyframeCount = static_cast<int>(frames);
+        dst.keyframePoses = new ModelAnimPose[dst.keyframeCount];
+        for (int f = 0; f < dst.keyframeCount; ++f) {
+            dst.keyframePoses[f] = new Transform[dst.boneCount];
+            for (unsigned int b = 0; b < dst.boneCount; ++b) {
+                dst.keyframePoses[f][b] = skel.bindPose[b];
+            }
+        }
+
+        for (unsigned int b = 0; b < skel.boneCount; ++b) {
+            const aiNodeAnim* nc = channels[b];
+            if (nc == nullptr) continue;
+            for (int f = 0; f < dst.keyframeCount; ++f) {
+                if (nc->mNumPositionKeys > 0) {
+                    const aiVectorKey& pk0 = nc->mPositionKeys[0];
+                    const aiVectorKey& pk1 = nc->mPositionKeys[nc->mNumPositionKeys - 1];
+                    const double pspan = (pk1.mTime > pk0.mTime) ? (pk1.mTime - pk0.mTime) : 1.0;
+                    const double pft = pk0.mTime + pspan * ((double)f / (double)std::max(1, dst.keyframeCount));
+                    aiVector3D pos;
+                    if (nc->mNumPositionKeys == 1) {
+                        pos = pk0.mValue;
+                    } else {
+                        for (unsigned int k = 0; k + 1 < nc->mNumPositionKeys; ++k) {
+                            const double t0 = nc->mPositionKeys[k].mTime;
+                            const double t1 = nc->mPositionKeys[k + 1].mTime;
+                            if (pft >= t0 && (pft <= t1 || k + 1 == nc->mNumPositionKeys - 1)) {
+                                const double w = (t1 > t0) ? ((pft - t0) / (t1 - t0)) : 0.0;
+                                const aiVector3D& va = nc->mPositionKeys[k].mValue;
+                                const aiVector3D& vb = nc->mPositionKeys[k + 1].mValue;
+                                pos = va + (vb - va) * ((float)w);
+                                break;
+                            }
+                        }
+                    }
+                    dst.keyframePoses[f][b].translation = Vec3{pos.x, pos.y, pos.z};
+                }
+                if (nc->mNumRotationKeys > 0) {
+                    aiQuaternion rot;
+                    if (nc->mNumRotationKeys == 1) {
+                        rot = nc->mRotationKeys[0].mValue;
+                    } else {
+                        const aiQuatKey& qk0 = nc->mRotationKeys[0];
+                        const aiQuatKey& qk1 = nc->mRotationKeys[nc->mNumRotationKeys - 1];
+                        const double qspan = (qk1.mTime > qk0.mTime) ? (qk1.mTime - qk0.mTime) : 1.0;
+                        const double qft = qk0.mTime + qspan * ((double)f / (double)std::max(1, dst.keyframeCount));
+                        for (unsigned int k = 0; k + 1 < nc->mNumRotationKeys; ++k) {
+                            const double t0 = nc->mRotationKeys[k].mTime;
+                            const double t1 = nc->mRotationKeys[k + 1].mTime;
+                            if (qft >= t0 && (qft <= t1 || k + 1 == nc->mNumRotationKeys - 1)) {
+                                const double w = (t1 > t0) ? ((qft - t0) / (t1 - t0)) : 0.0;
+                                aiQuaternion::Interpolate(rot, nc->mRotationKeys[k].mValue,
+                                    nc->mRotationKeys[k + 1].mValue, (float)w);
+                                rot.Normalize();
+                                break;
+                            }
+                        }
+                    }
+                    dst.keyframePoses[f][b].rotation = Quaternion{rot.x, rot.y, rot.z, rot.w};
+                }
+                if (nc->mNumScalingKeys > 0) {
+                    aiVector3D scl;
+                    if (nc->mNumScalingKeys == 1) {
+                        scl = nc->mScalingKeys[0].mValue;
+                    } else {
+                        const aiVectorKey& sk0 = nc->mScalingKeys[0];
+                        const aiVectorKey& sk1 = nc->mScalingKeys[nc->mNumScalingKeys - 1];
+                        const double sspan = (sk1.mTime > sk0.mTime) ? (sk1.mTime - sk0.mTime) : 1.0;
+                        const double sft = sk0.mTime + sspan * ((double)f / (double)std::max(1, dst.keyframeCount));
+                        for (unsigned int k = 0; k + 1 < nc->mNumScalingKeys; ++k) {
+                            const double t0 = nc->mScalingKeys[k].mTime;
+                            const double t1 = nc->mScalingKeys[k + 1].mTime;
+                            if (sft >= t0 && (sft <= t1 || k + 1 == nc->mNumScalingKeys - 1)) {
+                                const double w = (t1 > t0) ? ((sft - t0) / (t1 - t0)) : 0.0;
+                                const aiVector3D& va = nc->mScalingKeys[k].mValue;
+                                const aiVector3D& vb = nc->mScalingKeys[k + 1].mValue;
+                                scl = va + (vb - va) * ((float)w);
+                                break;
+                            }
+                        }
+                    }
+                    dst.keyframePoses[f][b].scale = Vec3{scl.x, scl.y, scl.z};
+                }
+            }
+        }
+    }
+
+    delete[] skel.bones;
+    delete[] skel.bindPose;
+
+    if (animCount != nullptr) *animCount = count;
+    return result;
+}
+
+void UnloadModelAnimations(ModelAnimation* animations, int animCount) {
+    if (animations == nullptr) return;
+    for (int a = 0; a < animCount; ++a) {
+        ModelAnimation& anim = animations[a];
+        if (anim.keyframePoses) {
+            for (int f = 0; f < anim.keyframeCount; ++f) {
+                delete[] anim.keyframePoses[f];
+            }
+            delete[] anim.keyframePoses;
+            anim.keyframePoses = nullptr;
+        }
+        anim.keyframeCount = 0;
+    }
+    delete[] animations;
+}
+
+bool IsModelAnimationValid(Model model, ModelAnimation anim) {
+    if (model.skeleton.bones == nullptr || anim.boneCount != model.skeleton.boneCount) return false;
+    if (anim.keyframePoses == nullptr || anim.keyframeCount <= 0) return false;
+    return true;
+}
+
+void UpdateModelAnimation(Model model, ModelAnimation anim, float frame) {
+    if (anim.boneCount == 0 || anim.keyframeCount <= 0 || anim.keyframePoses == nullptr) return;
+    std::vector<Transform> locals = EvaluateAnimationPose(anim, frame);
+    int f0 = static_cast<int>(frame) % anim.keyframeCount;
+    if (f0 < 0) f0 += anim.keyframeCount;
+    ApplyPoseToModel(model, model.skeleton, locals, anim, f0);
+}
+
+void UpdateModelAnimationEx(Model model, ModelAnimation animA, float frameA,
+                            ModelAnimation animB, float frameB, float blend) {
+    if (animA.boneCount == 0 || animA.keyframeCount <= 0 || animA.keyframePoses == nullptr) return;
+
+    const float b = Clamp(blend, 0.0f, 1.0f);
+    std::vector<Transform> locals = EvaluateAnimationPose(animA, frameA);
+    if (animB.boneCount == animA.boneCount && animB.keyframeCount > 0 && animB.keyframePoses != nullptr && b > 0.0f) {
+        std::vector<Transform> localsB = EvaluateAnimationPose(animB, frameB);
+        for (unsigned int i = 0; i < locals.size(); ++i) {
+            locals[i] = TransformLerp(locals[i], localsB[i], b);
+        }
+    }
+    int f0 = static_cast<int>(frameA) % animA.keyframeCount;
+    if (f0 < 0) f0 += animA.keyframeCount;
+    ApplyPoseToModel(model, model.skeleton, locals, animA, f0);
+}
 
 } // namespace qc

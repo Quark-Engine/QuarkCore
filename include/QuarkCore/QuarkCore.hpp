@@ -107,6 +107,7 @@ struct RenderTexture2D {
 using RenderTexture = RenderTexture2D;
 
 #include "QuarkImage.hpp"
+#include "QuarkUtils.hpp"
 
 /**
  * @brief Font glyph info structure.
@@ -670,11 +671,10 @@ QCAPI void*           MemAlloc(size_t size);
 /**
  * @brief Resize a previously allocated block of memory.
  * @param ptr Pointer to the memory block to resize.
- * @param oldSize Previous size of the memory block, in bytes.
- * @param newSize New desired size of the memory block, in bytes.
+ * @param size New desired size of the memory block, in bytes.
  * @return Pointer to the resized memory block.
  */
-QCAPI void*           MemRealloc(void* ptr, size_t oldSize, size_t newSize);
+QCAPI void*           MemRealloc(void* ptr, unsigned int size);
 
 /**
  * @brief Free a block of memory previously allocated with MemAlloc/MemRealloc.
@@ -1079,11 +1079,9 @@ QCAPI float GetWindowPixelDensity();
 /**
  * @brief Set the icon for the window.
  *
- * @param filePath Path to the icon file.
- * @return true on success.
- * @return false on failure.
+ * @param image Icon image (RGBA 32bit).
  */
-QCAPI bool SetWindowIcon(const char* filePath);
+QCAPI void SetWindowIcon(Image image);
 
 /**
  * @brief Get the underlying SDL window.
@@ -1150,6 +1148,208 @@ QCAPI void TraceLog(LogLevel level, const char* logType, const char* message);
  * @return Pointer to formatted string.
  */
 QCAPI const char* TextFormat(const char* format, ...);
+
+/**
+ * @brief Copy one string to another, returns bytes copied.
+ * @param dst Destination string.
+ * @param src Source string.
+ * @return Number of bytes copied.
+ */
+QCAPI int TextCopy(char* dst, const char* src);
+
+/**
+ * @brief Check if two strings are equal.
+ * @param text1 First string.
+ * @param text2 Second string.
+ * @return True if text1 and text2 are equal.
+ */
+QCAPI bool TextIsEqual(const char* text1, const char* text2);
+
+/**
+ * @brief Get text length in bytes, checks for '\0' ending.
+ * @param text Text string.
+ * @return Length of the text.
+ */
+QCAPI unsigned int TextLength(const char* text);
+
+/**
+ * @brief Get a piece of a text string.
+ * @param text Source text.
+ * @param position Start position.
+ * @param length Desired length.
+ * @return Pointer to a static substring buffer.
+ */
+QCAPI const char* TextSubtext(const char* text, int position, int length);
+
+/**
+ * @brief Remove all whitespace from a text string.
+ * @param text Text string.
+ * @return Pointer to a static buffer without spaces.
+ */
+QCAPI const char* TextRemoveSpaces(const char* text);
+
+/**
+ * @brief Get the text between two markers (allocated, release with MemFree).
+ * @param text Source text.
+ * @param begin Start marker.
+ * @param end End marker.
+ * @return Allocated substring, or NULL if markers not found.
+ */
+QCAPI char* GetTextBetween(const char* text, const char* begin, const char* end);
+
+/**
+ * @brief Replace all occurrences of a string within text (allocated, release with MemFree).
+ * @param text Source text.
+ * @param search String to search.
+ * @param replacement Replacement string.
+ * @return Allocated result, or NULL if search not found.
+ */
+QCAPI char* TextReplace(const char* text, const char* search, const char* replacement);
+
+/**
+ * @brief Replace occurrences of a string within text, always allocating (release with MemFree).
+ * @param text Source text.
+ * @param search String to search (may be NULL/empty for a copy).
+ * @param replacement Replacement string.
+ * @return Always-allocated result.
+ */
+QCAPI char* TextReplaceAlloc(const char* text, const char* search, const char* replacement);
+
+/**
+ * @brief Replace the text between two markers, inclusive (allocated, release with MemFree).
+ * @param text Source text.
+ * @param begin Start marker.
+ * @param end End marker.
+ * @param replacement Replacement string.
+ * @return Allocated result, or NULL if markers not found.
+ */
+QCAPI char* TextReplaceBetween(const char* text, const char* begin, const char* end, const char* replacement);
+
+/**
+ * @brief Replace the text between two markers, always allocating (release with MemFree).
+ * @param text Source text.
+ * @param begin Start marker.
+ * @param end End marker.
+ * @param replacement Replacement string.
+ * @return Always-allocated result.
+ */
+QCAPI char* TextReplaceBetweenAlloc(const char* text, const char* begin, const char* end, const char* replacement);
+
+/**
+ * @brief Insert a string into text at a position (allocated, release with MemFree).
+ * @param text Source text.
+ * @param insert String to insert.
+ * @param position Insertion position.
+ * @return Allocated result, or NULL on invalid input.
+ */
+QCAPI char* TextInsert(const char* text, const char* insert, int position);
+
+/**
+ * @brief Insert a string into text at a position, always allocating (release with MemFree).
+ * @param text Source text.
+ * @param insert String to insert.
+ * @param position Insertion position.
+ * @return Always-allocated result.
+ */
+QCAPI char* TextInsertAlloc(const char* text, const char* insert, int position);
+
+/**
+ * @brief Join a list of strings with a delimiter (allocated, release with MemFree).
+ * @param textList Array of strings.
+ * @param count Number of strings.
+ * @param delimiter Delimiter string.
+ * @return Allocated joined string.
+ */
+QCAPI char* TextJoin(char** textList, int count, const char* delimiter);
+
+/**
+ * @brief Split a text string into an array of tokens (release with MemFree per token and the array).
+ * @param text Text to split.
+ * @param delimiter Delimiter character.
+ * @param count Output number of tokens.
+ * @return Allocated array of allocated tokens.
+ */
+QCAPI char** TextSplit(const char* text, char delimiter, int* count);
+
+/**
+ * @brief Append text at the current position and advance the position.
+ * @param text Destination text (mutable).
+ * @param append String to append.
+ * @param position Position to append at (in/out).
+ */
+QCAPI void TextAppend(char* text, const char* append, int* position);
+
+/**
+ * @brief Find the index of the first occurrence of a string within text.
+ * @param text Text to search in.
+ * @param search String to search for.
+ * @return Index of the match, or -1 if not found.
+ */
+QCAPI int TextFindIndex(const char* text, const char* search);
+
+/**
+ * @brief Convert text to upper case (static buffer).
+ * @param text Text to convert.
+ * @return Pointer to a static buffer.
+ */
+QCAPI const char* TextToUpper(const char* text);
+
+/**
+ * @brief Convert text to lower case (static buffer).
+ * @param text Text to convert.
+ * @return Pointer to a static buffer.
+ */
+QCAPI const char* TextToLower(const char* text);
+
+/**
+ * @brief Convert text to PascalCase (static buffer).
+ * @param text Text to convert.
+ * @return Pointer to a static buffer.
+ */
+QCAPI const char* TextToPascal(const char* text);
+
+/**
+ * @brief Convert text to snake_case (static buffer).
+ * @param text Text to convert.
+ * @return Pointer to a static buffer.
+ */
+QCAPI const char* TextToSnake(const char* text);
+
+/**
+ * @brief Convert text to camelCase (static buffer).
+ * @param text Text to convert.
+ * @return Pointer to a static buffer.
+ */
+QCAPI const char* TextToCamel(const char* text);
+
+/**
+ * @brief Get the integer value from a text string.
+ * @param text Text to parse.
+ * @return Integer value.
+ */
+QCAPI int TextToInteger(const char* text);
+
+/**
+ * @brief Get the float value from a text string.
+ * @param text Text to parse.
+ * @return Float value.
+ */
+QCAPI float TextToFloat(const char* text);
+
+/**
+ * @brief Load an array of lines from a text (release with UnloadTextLines).
+ * @param text Text to split into lines.
+ * @param count Output number of lines.
+ * @return Allocated array of allocated line strings.
+ */
+QCAPI char** LoadTextLines(const char* text, int* count);
+
+/**
+ * @brief Unload an array of lines loaded with LoadTextLines.
+ * @param text Array of line strings.
+ * @param lineCount Number of lines.
+ */
+QCAPI void UnloadTextLines(char** text, int lineCount);
 
 /**
  * @brief Set the target FPS.
@@ -1403,21 +1603,275 @@ QCAPI Vec2 MeasureTextEx(Font font, const char* text,
 QCAPI int MeasureText(const char* text, int fontSize);
 
 /**
- * @brief Load a font from file.
- * 
- * @param filePath Path to the font file (.ttf, .otf, etc.).
+ * @brief Draw current FPS as text.
+ *
+ * @param posX X position.
+ * @param posY Y position.
+ */
+QCAPI void DrawFPS(int posX, int posY);
+
+/**
+ * @brief Draw text using a font, with rotation and origin.
+ *
+ * @param font Font object.
+ * @param text Text (UTF-8 encoded) to draw.
+ * @param position Screen position.
+ * @param origin Rotation origin relative to position.
+ * @param rotation Rotation angle in degrees.
  * @param fontSize Font size in pixels.
+ * @param spacing Additional character spacing in pixels.
+ * @param tint Text tint color.
+ */
+QCAPI void DrawTextPro(Font font, const char* text, Vec2 position, Vec2 origin,
+                float rotation, float fontSize, float spacing, Color tint);
+
+/**
+ * @brief Draw a single codepoint (character).
+ *
+ * @param font Font object.
+ * @param codepoint Unicode codepoint to draw.
+ * @param position Screen position.
+ * @param fontSize Font size in pixels.
+ * @param tint Text tint color.
+ */
+QCAPI void DrawTextCodepoint(Font font, int codepoint, Vec2 position, float fontSize, Color tint);
+
+/**
+ * @brief Draw an array of codepoints (characters).
+ *
+ * @param font Font object.
+ * @param codepoints Unicode codepoints to draw.
+ * @param codepointCount Number of codepoints.
+ * @param position Screen position.
+ * @param fontSize Font size in pixels.
+ * @param spacing Additional character spacing in pixels.
+ * @param tint Text tint color.
+ */
+QCAPI void DrawTextCodepoints(Font font, const int* codepoints, int codepointCount,
+                       Vec2 position, float fontSize, float spacing, Color tint);
+
+/**
+ * @brief Set vertical line spacing between lines of text.
+ *
+ * @param spacing Line spacing in pixels.
+ */
+QCAPI void SetTextLineSpacing(int spacing);
+
+/**
+ * @brief Measure text width/height from an array of codepoints.
+ *
+ * @param font Font object.
+ * @param codepoints Unicode codepoints.
+ * @param length Number of codepoints.
+ * @param fontSize Font size in pixels.
+ * @param spacing Additional character spacing in pixels.
+ * @return Text size as Vec2.
+ */
+QCAPI Vec2 MeasureTextCodepoints(Font font, const int* codepoints, int length,
+                          float fontSize, float spacing);
+
+/**
+ * @brief Get the atlas index of a codepoint in a font.
+ *
+ * @param font Font object.
+ * @param codepoint Unicode codepoint.
+ * @return Index in the font glyph array (fallback to '?' if not found).
+ */
+QCAPI int GetGlyphIndex(Font font, int codepoint);
+
+/**
+ * @brief Get glyph (character) info of a codepoint in a font.
+ *
+ * @param font Font object.
+ * @param codepoint Unicode codepoint.
+ * @return GlyphInfo for the codepoint.
+ */
+QCAPI GlyphInfo GetGlyphInfo(Font font, int codepoint);
+
+/**
+ * @brief Get the atlas rectangle of a codepoint in a font.
+ *
+ * @param font Font object.
+ * @param codepoint Unicode codepoint.
+ * @return Rectangle in font texture coordinates (pixels).
+ */
+QCAPI Rectangle GetGlyphAtlasRec(Font font, int codepoint);
+
+/**
+ * @brief Load UTF-8 text encoded from an array of codepoints.
+ * @param codepoints Array of Unicode codepoints.
+ * @param length Number of codepoints in the array.
+ * @return Heap-allocated UTF-8 string (release with UnloadUTF8).
+ */
+QCAPI char* LoadUTF8(const int* codepoints, int length);
+
+/**
+ * @brief Unload a UTF-8 string previously allocated with LoadUTF8.
+ * @param text UTF-8 string to unload.
+ */
+QCAPI void UnloadUTF8(char* text);
+
+/**
+ * @brief Load all codepoints from a UTF-8 text string.
+ * @param text UTF-8 encoded text.
+ * @param count Output number of codepoints.
+ * @return Heap-allocated array of codepoints (release with UnloadCodepoints).
+ */
+QCAPI int* LoadCodepoints(const char* text, int* count);
+
+/**
+ * @brief Unload a codepoints array previously allocated with LoadCodepoints.
+ * @param codepoints Array to unload.
+ */
+QCAPI void UnloadCodepoints(int* codepoints);
+
+/**
+ * @brief Get the total number of codepoints in a UTF-8 encoded string.
+ * @param text UTF-8 encoded string.
+ * @return Number of codepoints.
+ */
+QCAPI int GetCodepointCount(const char* text);
+
+/**
+ * @brief Get the next codepoint in a UTF-8 encoded string, 0x3f('?') on failure.
+ * @param text UTF-8 encoded string.
+ * @param codepointSize Output size in bytes of the decoded codepoint.
+ * @return Decoded codepoint.
+ */
+QCAPI int GetCodepoint(const char* text, int* codepointSize);
+
+/**
+ * @brief Get the next codepoint in a UTF-8 encoded string, 0x3f('?') on failure.
+ * @param text UTF-8 encoded string.
+ * @param codepointSize Output size in bytes of the decoded codepoint.
+ * @return Decoded codepoint.
+ */
+QCAPI int GetCodepointNext(const char* text, int* codepointSize);
+
+/**
+ * @brief Get the previous codepoint in a UTF-8 encoded string, 0x3f('?') on failure.
+ * @param text UTF-8 encoded string.
+ * @param codepointSize Output size in bytes of the decoded codepoint.
+ * @return Decoded codepoint.
+ */
+QCAPI int GetCodepointPrevious(const char* text, int* codepointSize);
+
+/**
+ * @brief Encode a single codepoint into a UTF-8 byte sequence.
+ * @param codepoint Unicode codepoint to encode.
+ * @param utf8Size Output size in bytes of the encoded sequence.
+ * @return Pointer to a static UTF-8 byte sequence.
+ */
+QCAPI const char* CodepointToUTF8(int codepoint, int* utf8Size);
+
+/**
+ * @brief Load a font from file (rasterized at the default pixel size).
+ * 
+ * @param fileName Path to the font file (.ttf, .otf, etc.).
  * @return Loaded font object.
  * @return Invalid font (valid=false) on failure.
  */
-QCAPI Font LoadFont(const char* filePath, int fontSize);
+QCAPI Font LoadFont(const char* fileName);
 
 /**
  * @brief Unload a font and free resources.
  * 
  * @param font Font object to unload.
  */
-QCAPI void UnloadFont(Font& font);
+QCAPI void UnloadFont(Font font);
+
+/**
+ * @brief Load a font from file with defined codepoints and generation size.
+ *
+ * @param fileName Path to the font file (.ttf, .otf, etc.).
+ * @param fontSize Font size in pixels height.
+ * @param codepoints Pointer to the set of codepoints to load (NULL to load the default ASCII set).
+ * @param codepointCount Number of codepoints (0 when codepoints is NULL).
+ * @return Loaded font object.
+ * @return Invalid font (valid=false) on failure.
+ */
+QCAPI Font LoadFontEx(const char* fileName, int fontSize, const int* codepoints, int codepointCount);
+
+/**
+ * @brief Load a font from an Image (XNA style), where the image holds all glyphs.
+ *
+ * @param image Image with fonts sprites/characters.
+ * @param key Font character color (RGB) to be used as source of the info.
+ * @param firstChar Reference character code (ASCII).
+ * @return Loaded font object.
+ * @return Invalid font (valid=false) on failure.
+ */
+QCAPI Font LoadFontFromImage(Image image, Color key, int firstChar);
+
+/**
+ * @brief Load a font from a memory buffer containing the font file data.
+ *
+ * @param fileType Font file type/extension, i.e. ".ttf".
+ * @param fileData Font file data buffer.
+ * @param dataSize Font file data buffer size in bytes.
+ * @param fontSize Font size in pixels height.
+ * @param codepoints Pointer to the set of codepoints to load (NULL to load the default ASCII set).
+ * @param codepointCount Number of codepoints (0 when codepoints is NULL).
+ * @return Loaded font object.
+ * @return Invalid font (valid=false) on failure.
+ */
+QCAPI Font LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int dataSize,
+                       int fontSize, const int* codepoints, int codepointCount);
+
+/**
+ * @brief Check if a font is valid (font data loaded).
+ *
+ * @param font Font object to validate.
+ * @return true if the font is valid.
+ */
+QCAPI bool IsFontValid(Font font);
+
+/**
+ * @brief Load font data (glyph info) for further use.
+ *
+ * @param fileData Font file data buffer.
+ * @param dataSize Font file data buffer size in bytes.
+ * @param fontSize Requested font size in pixels.
+ * @param codepoints Required codepoints (NULL to load the default ASCII set).
+ * @param codepointCount Number of codepoints (0 when codepoints is NULL).
+ * @param type Type/font data loading information (FontLoadType enum).
+ * @param glyphCount Returned number of loaded glyphs.
+ * @return A heap-allocated array of GlyphInfo (must be released with UnloadFontData).
+ * @return NULL on failure.
+ */
+QCAPI GlyphInfo* LoadFontData(const unsigned char* fileData, int dataSize, int fontSize,
+                       const int* codepoints, int codepointCount, int type, int* glyphCount);
+
+/**
+ * @brief Generate image font atlas using glyph info.
+ *
+ * @param glyphs Array of GlyphInfo to generate the atlas from.
+ * @param glyphRecs Returned array of atlas rectangles (heap-allocated, must be freed).
+ * @param glyphCount Number of glyphs.
+ * @param fontSize Font size in pixels.
+ * @param padding Padding in pixels between glyphs.
+ * @param packMethod Packing method (0 = Spritefont/LoadFontData, 1 = LoadFontEx/Donut packing).
+ * @return Generated atlas image.
+ */
+QCAPI Image GenImageFontAtlas(const GlyphInfo* glyphs, Rectangle** glyphRecs, int glyphCount,
+                       int fontSize, int padding, int packMethod);
+
+/**
+ * @brief Unload font glyph info data (RAM).
+ *
+ * @param glyphs Array of GlyphInfo to unload.
+ * @param glyphCount Number of glyphs in the array.
+ */
+QCAPI void UnloadFontData(GlyphInfo* glyphs, int glyphCount);
+
+/**
+ * @brief Export font data as a code file (C header).
+ *
+ * @param font Font object to export.
+ * @param fileName Path of the output code file.
+ * @return true on success.
+ */
+QCAPI bool ExportFontAsCode(Font font, const char* fileName);
 
 /**
  * @brief Load a texture from a file.
@@ -1453,7 +1907,7 @@ QCAPI Texture2D GenCheckerTexture(int width, int height, int cellSize, Color col
  * @brief Unload a texture.
  * @param texture Texture to unload.
  */
-QCAPI void UnloadTexture(Texture2D& texture);
+QCAPI void UnloadTexture(Texture2D texture);
 /**
  * @brief Release a vertex array object.
  * @param vaoId Renderer vertex array object ID.
@@ -1653,7 +2107,7 @@ QCAPI void EndShaderMode();
  * @brief Unload shader and free resources.
  * @param shader Shader to unload.
  */
-QCAPI void UnloadShader(Shader& shader);
+QCAPI void UnloadShader(Shader shader);
 
 /**
  * @brief Create a default 2D camera.
@@ -1785,6 +2239,26 @@ QCAPI Vec3 GetWorldToScreen(Vec3 position, Camera3D camera);
 QCAPI Ray GetScreenToWorldRay(Vec2 mousePosition, Camera3D camera);
 
 /**
+ * @brief Get a ray from screen coordinates through the camera (3D) in a viewport.
+ * @param position Screen position.
+ * @param camera 3D camera.
+ * @param width Viewport width in pixels.
+ * @param height Viewport height in pixels.
+ * @return Ray starting from camera position.
+ */
+QCAPI Ray GetScreenToWorldRayEx(Vec2 position, Camera3D camera, int width, int height);
+
+/**
+ * @brief Convert world coordinates to screen coordinates (3D) in a viewport.
+ * @param position World position.
+ * @param camera 3D camera.
+ * @param width Viewport width in pixels.
+ * @param height Viewport height in pixels.
+ * @return Screen position (x, y).
+ */
+QCAPI Vec2 GetWorldToScreenEx(Vec3 position, Camera3D camera, int width, int height);
+
+/**
  * @brief Get the current modelview matrix.
  * @return Pointer to the 4x4 modelview matrix (16 floats).
  */
@@ -1865,6 +2339,23 @@ QCAPI bool IsCursorHidden();
  * @param cursor Cursor type.
  */
 QCAPI void SetMouseCursor(MouseCursor cursor);
+
+/**
+ * @brief Show the mouse cursor (calls SDL_ShowCursor).
+ */
+QCAPI void ShowCursor();
+
+/**
+ * @brief Hide the mouse cursor (calls SDL_HideCursor).
+ */
+QCAPI void HideCursor();
+
+/**
+ * @brief Check if the cursor is on the screen (within the window bounds).
+ * @return true if the cursor is inside the window.
+ * @return false otherwise.
+ */
+QCAPI bool IsCursorOnScreen();
 
 /**
  * @brief Check if a gamepad is available.
@@ -2113,11 +2604,13 @@ QCAPI void DrawLineV(Vec2 start, Vec2 end, Color color);
 
 /**
  * @brief Draw rectangle outline.
- * @param rectangle Rectangle to outline.
- * @param lineWidth Line width.
+ * @param posX Rectangle top-left corner X.
+ * @param posY Rectangle top-left corner Y.
+ * @param width Rectangle width.
+ * @param height Rectangle height.
  * @param color Line color.
  */
-QCAPI void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color);
+QCAPI void DrawRectangleLines(int posX, int posY, int width, int height, Color color);
 
 /**
  * @brief Draw a triangle.
@@ -2224,6 +2717,63 @@ QCAPI Color GetColor(unsigned int hexValue);
 QCAPI Color ColorFromNormalized(float r, float g, float b, float a = 1.0f);
 
 /**
+ * @brief Check if two colors are equal.
+ * @param col1 First color.
+ * @param col2 Second color.
+ * @return true if colors are equal.
+ * @return false otherwise.
+ */
+QCAPI bool ColorIsEqual(Color col1, Color col2);
+
+/**
+ * @brief Get the integer (32-bit ARGB) representation of a color.
+ * @param color Color to convert.
+ * @return Integer value in the form 0xAARRGGBB.
+ */
+QCAPI int ColorToInt(Color color);
+
+/**
+ * @brief Get the normalized (0.0-1.0) RGBA components of a color.
+ * @param color Color to convert.
+ * @return Normalized vector (x=r, y=g, z=b, w=a).
+ */
+QCAPI Vec4 ColorNormalize(Color color);
+
+/**
+ * @brief Convert a color to HSV space.
+ * @param color Color to convert.
+ * @return HSV vector (x=hue 0-360, y=saturation 0-1, z=value 0-1).
+ */
+QCAPI Vec3 ColorToHSV(Color color);
+
+/**
+ * @brief Create a color from HSV values.
+ * @param hue Hue (0-360).
+ * @param saturation Saturation (0-1).
+ * @param value Value (0-1).
+ * @return Resulting color.
+ */
+QCAPI Color ColorFromHSV(float hue, float saturation, float value);
+
+/**
+ * @brief Blend two colors applying a tint factor to the source.
+ * @param dst Destination color (bottom layer).
+ * @param src Source color (top layer).
+ * @param tint Tint color applied to the source.
+ * @return Blended color.
+ */
+QCAPI Color ColorAlphaBlend(Color dst, Color src, Color tint);
+
+/**
+ * @brief Get the linear interpolation between two colors.
+ * @param color1 First color.
+ * @param color2 Second color.
+ * @param factor Interpolation factor (0.0-1.0).
+ * @return Interpolated color.
+ */
+QCAPI Color ColorLerp(Color color1, Color color2, float factor);
+
+/**
  * @brief Check collision between two rectangles.
  * @param a First rectangle.
  * @param b Second rectangle.
@@ -2261,6 +2811,79 @@ QCAPI bool CheckCollisionPointRec(Vec2 point, Rectangle rect);
  * @return false otherwise.
  */
 QCAPI bool CheckCollisionPointCircle(Vec2 point, Vec2 center, float radius);
+
+/**
+ * @brief Check collision between circle and rectangle.
+ * @param center Circle center.
+ * @param radius Circle radius.
+ * @param rec Rectangle.
+ * @return true if circle and rectangle collide.
+ * @return false otherwise.
+ */
+QCAPI bool CheckCollisionCircleRec(Vec2 center, float radius, Rectangle rec);
+
+/**
+ * @brief Check collision between circle and line.
+ * @param center Circle center.
+ * @param radius Circle radius.
+ * @param p1 Line start point.
+ * @param p2 Line end point.
+ * @return true if circle and line collide.
+ * @return false otherwise.
+ */
+QCAPI bool CheckCollisionCircleLine(Vec2 center, float radius, Vec2 p1, Vec2 p2);
+
+/**
+ * @brief Check collision between point and triangle.
+ * @param point Point position.
+ * @param p1 Triangle vertex 1.
+ * @param p2 Triangle vertex 2.
+ * @param p3 Triangle vertex 3.
+ * @return true if point is in triangle.
+ * @return false otherwise.
+ */
+QCAPI bool CheckCollisionPointTriangle(Vec2 point, Vec2 p1, Vec2 p2, Vec2 p3);
+
+/**
+ * @brief Check collision between point and line.
+ * @param point Point position.
+ * @param p1 Line start point.
+ * @param p2 Line end point.
+ * @param threshold Detection threshold.
+ * @return true if point is on line.
+ * @return false otherwise.
+ */
+QCAPI bool CheckCollisionPointLine(Vec2 point, Vec2 p1, Vec2 p2, int threshold);
+
+/**
+ * @brief Check collision between point and polygon.
+ * @param point Point position.
+ * @param points Polygon vertices.
+ * @param pointCount Number of polygon vertices.
+ * @return true if point is inside polygon.
+ * @return false otherwise.
+ */
+QCAPI bool CheckCollisionPointPoly(Vec2 point, const Vec2* points, int pointCount);
+
+/**
+ * @brief Check collision between two line segments.
+ * @param startPos1 First line start point.
+ * @param endPos1 First line end point.
+ * @param startPos2 Second line start point.
+ * @param endPos2 Second line end point.
+ * @param collisionPoint Output collision point (may be nullptr).
+ * @return true if lines collide.
+ * @return false otherwise.
+ */
+QCAPI bool CheckCollisionLines(Vec2 startPos1, Vec2 endPos1, Vec2 startPos2, Vec2 endPos2, Vec2* collisionPoint);
+
+/**
+ * @brief Get the intersection rectangle of two rectangles.
+ * @param rec1 First rectangle.
+ * @param rec2 Second rectangle.
+ * @return Overlapping rectangle.
+ */
+QCAPI Rectangle GetCollisionRec(Rectangle rec1, Rectangle rec2);
 
 /**
  * @brief Wait for a specified time duration.
@@ -2435,15 +3058,27 @@ QCAPI int MakeDirectory(const char* dirPath);
 /**
  * @brief Change the current working directory.
  * @param dirPath Directory path.
- * @return True on success.
+ * @return Zero on success, non-zero on failure.
  */
-QCAPI bool ChangeDirectory(const char* dirPath);
+QCAPI int ChangeDirectory(const char* dirPath);
 /**
  * @brief Check whether a path identifies a file.
  * @param path Path to inspect.
  * @return True when it is a file.
  */
 QCAPI bool IsPathFile(const char* path);
+/**
+ * @brief Check whether a path identifies a directory.
+ * @param path Path to inspect.
+ * @return True when it is a directory.
+ */
+QCAPI bool IsPathDirectory(const char* path);
+/**
+ * @brief Check whether a path is an absolute path.
+ * @param path Path to inspect.
+ * @return True when the path is absolute.
+ */
+QCAPI bool IsPathAbsolute(const char* path);
 /**
  * @brief Validate a filename for the current platform.
  * @param fileName Filename to validate.

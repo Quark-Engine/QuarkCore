@@ -96,8 +96,9 @@ int PixelSize(int format) {
         default: return 0;
     }
 }
+} // namespace
 
-int GetPixelDataSize(int width, int height, int format) {
+QCAPI int GetPixelDataSize(int width, int height, int format) {
     if (IsCompressedFormat(format)) return 0;
     return width * height * PixelSize(format);
 }
@@ -106,7 +107,7 @@ std::uint8_t ClampByte(int value) {
     return static_cast<std::uint8_t>(std::max(0, std::min(255, value)));
 }
 
-Color GetPixelColor(const void* srcPtr, int format) {
+QCAPI Color GetPixelColor(const void* srcPtr, int format) {
     const std::uint8_t* src = static_cast<const std::uint8_t*>(srcPtr);
     switch (format) {
         case PIXELFORMAT_UNCOMPRESSED_GRAYSCALE:
@@ -209,7 +210,7 @@ Color GetPixelColor(const void* srcPtr, int format) {
     }
 }
 
-void SetPixelColor(void* dstPtr, int format, Color color) {
+QCAPI void SetPixelColor(void* dstPtr, Color color, int format) {
     std::uint8_t* dst = static_cast<std::uint8_t*>(dstPtr);
     switch (format) {
         case PIXELFORMAT_UNCOMPRESSED_GRAYSCALE:
@@ -330,6 +331,8 @@ void SetPixelColor(void* dstPtr, int format, Color color) {
     }
 }
 
+namespace {
+
 int MipLevelSize(int level) {
     return (level <= 0) ? 1 : (level * level);
 }
@@ -362,7 +365,7 @@ bool ConvertImageData(int width, int height, int mipmaps, int oldFormat, int new
         for (int y = 0; y < h; ++y) {
             for (int x = 0; x < w; ++x) {
                 Color c = GetPixelColor(src + (static_cast<size_t>(y) * w + x) * PixelSize(oldFormat), oldFormat);
-                SetPixelColor(dst + (static_cast<size_t>(y) * w + x) * PixelSize(newFormat), newFormat, c);
+                SetPixelColor(dst + (static_cast<size_t>(y) * w + x) * PixelSize(newFormat), c, newFormat);
             }
         }
     }
@@ -496,9 +499,8 @@ void* MemAlloc(size_t size) {
     return std::malloc(size ? size : 1);
 }
 
-void* MemRealloc(void* ptr, size_t oldSize, size_t newSize) {
-    (void)oldSize;
-    return std::realloc(ptr, newSize ? newSize : 1);
+void* MemRealloc(void* ptr, unsigned int size) {
+    return std::realloc(ptr, size ? size : 1);
 }
 
 void MemFree(void* ptr) {
@@ -1101,7 +1103,7 @@ Image ImageTextEx(Font font, const char* text, float fontSize, float spacing, Co
 
 Image ImageCopy(Image image) {
     if (!IsImageValid(image) || IsCompressedFormat(image.format)) return Image{};
-    const int pixelSize = PixelSize(image.format);
+    (void)PixelSize(image.format);
     const size_t bytes = static_cast<size_t>(GetPixelDataSize(image.width, image.height, image.format)) * MipLevelSize(image.mipmaps);
     Image copy = CreateImage(image.width, image.height, image.format, bytes);
     if (!copy.data) return copy;
@@ -1404,7 +1406,7 @@ void ImageResize(Image* image, int newWidth, int newHeight) {
                 ClampByte(static_cast<int>(Lerp(Lerp(c00.b, c10.b, tx), Lerp(c01.b, c11.b, tx), ty))),
                 ClampByte(static_cast<int>(Lerp(Lerp(c00.a, c10.a, tx), Lerp(c01.a, c11.a, tx), ty)))
             };
-            SetPixelColor(newData + (static_cast<size_t>(y) * newWidth + x) * bpp, image->format, result);
+            SetPixelColor(newData + (static_cast<size_t>(y) * newWidth + x) * bpp, result, image->format);
         }
     }
 
@@ -1453,7 +1455,7 @@ void ImageResizeCanvas(Image* image, int newWidth, int newHeight, int offsetX, i
 
     for (int y = 0; y < newHeight; ++y) {
         for (int x = 0; x < newWidth; ++x) {
-            SetPixelColor(newData + (static_cast<size_t>(y) * newWidth + x) * bpp, image->format, fill);
+            SetPixelColor(newData + (static_cast<size_t>(y) * newWidth + x) * bpp, fill, image->format);
         }
     }
 
@@ -1528,7 +1530,7 @@ void ImageMipmaps(Image* image) {
                     static_cast<std::uint8_t>((a.b + b.b + c.b + d.b) / 4),
                     static_cast<std::uint8_t>((a.a + b.a + c.a + d.a) / 4)
                 };
-                SetPixelColor(mipData + offset + (static_cast<size_t>(y) * newW + x) * bpp, image->format, avg);
+                SetPixelColor(mipData + offset + (static_cast<size_t>(y) * newW + x) * bpp, avg, image->format);
             }
         }
         offset += static_cast<size_t>(newW) * newH * bpp;
@@ -1606,7 +1608,7 @@ void ImageDither(Image* image, int rBpp, int gBpp, int bBpp, int aBpp) {
                 static_cast<std::uint8_t>(bBpp > 0 ? bv : 255),
                 static_cast<std::uint8_t>(aBpp > 0 ? av : 255)
             };
-            SetPixelColor(newData + (static_cast<size_t>(y) * w + x) * PixelSize(targetFormat), targetFormat, c);
+            SetPixelColor(newData + (static_cast<size_t>(y) * w + x) * PixelSize(targetFormat), c, targetFormat);
         }
     }
 
@@ -1706,7 +1708,7 @@ void ImageColorTint(Image* image, Color color) {
         c.g = ClampByte(static_cast<int>(c.g * tg));
         c.b = ClampByte(static_cast<int>(c.b * tb));
         c.a = ClampByte(static_cast<int>(c.a * ta));
-        SetPixelColor(px + static_cast<size_t>(i) * bpp, image->format, c);
+        SetPixelColor(px + static_cast<size_t>(i) * bpp, c, image->format);
     }
 }
 
@@ -1720,7 +1722,7 @@ void ImageColorInvert(Image* image) {
         c.r = static_cast<std::uint8_t>(255 - c.r);
         c.g = static_cast<std::uint8_t>(255 - c.g);
         c.b = static_cast<std::uint8_t>(255 - c.b);
-        SetPixelColor(px + static_cast<size_t>(i) * bpp, image->format, c);
+        SetPixelColor(px + static_cast<size_t>(i) * bpp, c, image->format);
     }
 }
 
@@ -1735,7 +1737,7 @@ void ImageColorGrayscale(Image* image) {
         c.r = ClampByte(gray);
         c.g = ClampByte(gray);
         c.b = ClampByte(gray);
-        SetPixelColor(px + static_cast<size_t>(i) * bpp, image->format, c);
+        SetPixelColor(px + static_cast<size_t>(i) * bpp, c, image->format);
     }
 }
 
@@ -1770,7 +1772,7 @@ void ImageColorReplace(Image* image, Color color, Color replace) {
     for (int i = 0; i < image->width * image->height; ++i) {
         Color c = GetPixelColor(px + static_cast<size_t>(i) * bpp, image->format);
         if (c.r == color.r && c.g == color.g && c.b == color.b && c.a == color.a) {
-            SetPixelColor(px + static_cast<size_t>(i) * bpp, image->format, replace);
+            SetPixelColor(px + static_cast<size_t>(i) * bpp, replace, image->format);
         }
     }
 }
@@ -1901,10 +1903,9 @@ void ImageDrawImageEx(Image* dst, Image src, Vec2 position, float rotation, floa
                       Vec2{dstW * 0.5f, dstH * 0.5f}, rotation, tint);
 }
 
-void ImageDrawImageRec(Image* dst, Image src, Rectangle srcRec, Rectangle dstRec, Color tint) {
-    if (dstRec.width != 0.0f || dstRec.height != 0.0f) {
-        ImageDrawImagePro(dst, src, srcRec, dstRec, Vec2{0.0f, 0.0f}, 0.0f, tint);
-    }
+void ImageDrawImageRec(Image* dst, Image src, Rectangle srcRec, Vec2 position, Color tint) {
+    Rectangle dstRec{ position.x, position.y, srcRec.width, srcRec.height };
+    ImageDrawImagePro(dst, src, srcRec, dstRec, Vec2{0.0f, 0.0f}, 0.0f, tint);
 }
 
 void ImageDraw(Image* dst, Image src, Rectangle srcRec, Rectangle dstRec, Color tint) {

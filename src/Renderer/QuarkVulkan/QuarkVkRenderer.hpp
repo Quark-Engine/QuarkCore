@@ -212,6 +212,7 @@ public:
     void           DrawTextureTiled(ITexture texture, float scale, Vec2 offset, Color tint) override;
     void           DrawTextureNPatch(ITexture texture, NPatchInfo nPatchInfo, Rectangle dest, Vec2 origin, float rotation, Color tint) override;
     ITexture       LoadTexture(const char* filePath) override;
+    ITexture       LoadTextureFromImage(const Image& image) override;
     ITexture       GetRenderTextureTexture(IRenderTexture target) override;
     void           UnloadTexture(ITexture& texture) override;
     bool           isTextureValid(ITexture& texture) override;
@@ -225,8 +226,12 @@ public:
     void BeginTextureMode(IRenderTexture target) override;
     void EndTextureMode() override;
 
-    IFont LoadFont(const char* filePath, int fontSize) override;
+    IFont LoadFont(const char* filePath, int fontSize,
+                   const int* codepoints, int codepointCount) override;
+    IFont LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int dataSize,
+                             int fontSize, const int* codepoints, int codepointCount) override;
     void  UnloadFont(IFont& font) override;
+    void  FillFont(IFont font, Font& out) override;
 
     void   BeginShaderMode(const Shader& shader) override;
     void   EndShaderMode() override;
@@ -433,7 +438,10 @@ private:
     void                     DrawSphereExInternal(Vec3 centerPos, float radius, int rings, int slices, Color color);
 
     struct GlyphData {
+        int       value   = 0;
         Rectangle uv{};
+        Rectangle rec{};
+        Image     image{};
         float     advanceX = 0.f;
         float     offsetX  = 0.f;
         float     offsetY  = 0.f;
@@ -443,15 +451,20 @@ private:
 
     struct FontData {
         uint32_t atlasTextureId = 0;
-        int      baseSize        = 0;
-        int      ascent          = 0;
-        int      descent         = 0;
-        int      lineHeight      = 0;
-        int      lineGap         = 0;
-        GlyphData glyphs[95]{};
+        int      atlasWidth     = 0;
+        int      atlasHeight    = 0;
+        int      baseSize       = 0;
+        int      ascent         = 0;
+        int      descent        = 0;
+        int      lineHeight     = 0;
+        int      lineGap        = 0;
+        int      glyphCount     = 0;
+        std::vector<GlyphData> glyphs;
     };
 
-    bool     LoadFontInternal(const char* filePath, int pointSize, FontData& out);
+    bool     LoadFontInternal(const char* filePath, const unsigned char* fileData, int dataSize,
+                              int pointSize, const int* codepoints, int codepointCount, FontData& out);
+    static int FindGlyph(const FontData& fd, int codepoint);
     uint32_t EnsureDefaultFont();
     const FontData* GetFontData(IFont font) const;
     void DrawTextWithFontData(const FontData& fd, const char* text,

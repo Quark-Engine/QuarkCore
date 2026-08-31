@@ -1,5 +1,6 @@
 #include "QuarkD3D11Renderer.hpp"
 #include "../../QuarkInternal.hpp"
+#include "../../QuarkModelAnim.hpp"
 
 #if defined(_WIN32)
 #include <ft2build.h>
@@ -11,6 +12,7 @@
 #include <assimp/scene.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -1506,6 +1508,7 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
     TraceLog(LogLevel::Info, "MODEL",
              TextFormat("[D3D11] Model loaded successfully: %s (%d meshes, %d materials)",
                         filePath, model.meshCount, model.materialCount));
+    qcPopulateModelSkeleton(scene, model);
     return model;
 }
 
@@ -1553,6 +1556,7 @@ void QuarkD3D11Renderer::UnloadModel(Model& model)
 
     delete[] model.meshMaterial;
     model.meshMaterial = nullptr;
+    qcFreeModelSkeleton(model);
     model.meshCount = 0;
     model.materialCount = 0;
     model.directory.clear();
@@ -2235,18 +2239,49 @@ void QuarkD3D11Renderer::DrawMeshInstanced(const Mesh& mesh,
     }
 }
 
+namespace {
+
+std::vector<int> DefaultCodepoints()
+{
+    std::vector<int> cps;
+    cps.reserve(96);
+    for (int c = 32; c <= 126; ++c) cps.push_back(c);
+    return cps;
+}
+
+int DecodeUTF8(const char*& p)
+{
+    const unsigned char lead = static_cast<unsigned char>(*p);
+    int cp = 0, seq = 0;
+    if ((lead & 0x80) == 0)      { cp = lead; seq = 1; }
+    else if ((lead & 0xE0) == 0xC0) { cp = lead & 0x1F; seq = 2; }
+    else if ((lead & 0xF0) == 0xE0) { cp = lead & 0x0F; seq = 3; }
+    else if ((lead & 0xF8) == 0xF0) { cp = lead & 0x07; seq = 4; }
+    else                        { cp = lead; seq = 1; }
+    for (int k = 1; k < seq && p[k] != '\0'; ++k)
+        cp = (cp << 6) | (static_cast<unsigned char>(p[k]) & 0x3F);
+    p += seq;
+    return cp;
+}
+
+} // namespace
+
 bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
+                                      const unsigned char* fileData,
+                                      int dataSize,
                                       int fontSize,
+                                      const int* codepoints,
+                                      int codepointCount,
                                       FontData& fontData)
 {
     TraceLog(LogLevel::Trace,
              "FONT",
              TextFormat("[D3D11] FreeType initializing font: %s (size: %d px)",
-                        filePath ? filePath : "<null>",
+                        filePath ? filePath : "<memory>",
                         fontSize));
 
-    if (!filePath || fontSize <= 0) {
-        TraceLog(LogLevel::Error, "FONT", "[D3D11] Invalid font path or point size.");
+    if ((!filePath && !fileData) || fontSize <= 0) {
+        TraceLog(LogLevel::Error, "FONT", "[D3D11] Invalid font source or point size.");
         return false;
     }
 
@@ -2257,7 +2292,13 @@ bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
     }
 
     FT_Face face = nullptr;
-    if (FT_New_Face(library, filePath, 0, &face) != 0) {
+    if (fileData != nullptr) {
+        if (FT_New_Memory_Face(library, fileData, static_cast<FT_Long>(dataSize), 0, &face) != 0) {
+            TraceLog(LogLevel::Error, "FONT", "[D3D11] Failed to open font from memory.");
+            FT_Done_FreeType(library);
+            return false;
+        }
+    } else if (FT_New_Face(library, filePath, 0, &face) != 0) {
         TraceLog(LogLevel::Error,
                  "FONT",
                  TextFormat("[D3D11] Failed to open font file: %s", filePath));
@@ -2268,6 +2309,15 @@ bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
     FT_Select_Charmap(face, FT_ENCODING_UNICODE);
     FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(fontSize));
 
+    std::vector<int> cps;
+    const int* cpsPtr = codepoints;
+    int cpsCount = codepointCount;
+    if (cpsPtr == nullptr || cpsCount <= 0) {
+        cps = DefaultCodepoints();
+        cpsPtr = cps.data();
+        cpsCount = static_cast<int>(cps.size());
+    }
+
     constexpr int atlasWidth = 1024;
     constexpr int atlasHeight = 1024;
     std::vector<uint8_t> atlas(static_cast<size_t>(atlasWidth) * atlasHeight * 4, 0);
@@ -2275,9 +2325,12 @@ bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
     int penY = 1;
     int rowHeight = 0;
     int renderedGlyphs = 0;
+    fontData.glyphs.clear();
+    fontData.glyphs.reserve(static_cast<size_t>(cpsCount));
 
-    for (unsigned char character = 32; character < 127; ++character) {
-        if (FT_Load_Char(face, character, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0) {
+    for (int i = 0; i < cpsCount; ++i) {
+        const int cp = cpsPtr[i];
+        if (FT_Load_Char(face, cp, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0) {
             continue;
         }
 
@@ -2309,12 +2362,19 @@ bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
             }
         }
 
-        GlyphData& data = fontData.glyphs[character - 32];
+        GlyphData data;
+        data.value = cp;
         data.uv = {
             static_cast<float>(penX) / atlasWidth,
             static_cast<float>(penY) / atlasHeight,
             static_cast<float>(glyphWidth) / atlasWidth,
             static_cast<float>(glyphHeight) / atlasHeight
+        };
+        data.rec = {
+            static_cast<float>(penX),
+            static_cast<float>(penY),
+            static_cast<float>(glyphWidth),
+            static_cast<float>(glyphHeight)
         };
         data.advanceX = static_cast<float>(glyph->advance.x) / 64.0f;
         data.offsetX = static_cast<float>(glyph->bitmap_left);
@@ -2322,14 +2382,32 @@ bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
         data.width = glyphWidth;
         data.height = glyphHeight;
 
+        if (glyphWidth > 0 && glyphHeight > 0) {
+            unsigned char* gdata = static_cast<unsigned char*>(std::malloc(static_cast<size_t>(glyphWidth) * glyphHeight * 4));
+            if (gdata) {
+                for (int row = 0; row < glyphHeight; ++row) {
+                    for (int column = 0; column < glyphWidth; ++column) {
+                        const unsigned char alpha = glyph->bitmap.buffer[row * glyph->bitmap.pitch + column];
+                        gdata[(static_cast<size_t>(row) * glyphWidth + column) * 4 + 0] = 255;
+                        gdata[(static_cast<size_t>(row) * glyphWidth + column) * 4 + 1] = 255;
+                        gdata[(static_cast<size_t>(row) * glyphWidth + column) * 4 + 2] = 255;
+                        gdata[(static_cast<size_t>(row) * glyphWidth + column) * 4 + 3] = alpha;
+                    }
+                }
+                data.image = Image{ gdata, glyphWidth, glyphHeight, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
+            }
+        }
+
         penX += glyphWidth + 1;
         rowHeight = std::max(rowHeight, glyphHeight);
         ++renderedGlyphs;
+        fontData.glyphs.push_back(data);
     }
 
     fontData.atlasTexture = m_resources.CreateTexture(
         m_device.Get(), atlas.data(), atlasWidth, atlasHeight);
     fontData.baseSize = fontSize;
+    fontData.glyphCount = renderedGlyphs;
     fontData.ascent = static_cast<int>(face->size->metrics.ascender / 64);
     fontData.descent = static_cast<int>(face->size->metrics.descender / 64);
     fontData.lineHeight = static_cast<int>(face->size->metrics.height / 64);
@@ -2338,7 +2416,7 @@ bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
              "FONT",
              TextFormat("[D3D11] Font rasterized: %s (%d glyphs, Atlas: %dx%d, Ascent: %d, "
                         "Descent: %d, LineHeight: %d)",
-                        filePath,
+                        filePath ? filePath : "<memory>",
                         renderedGlyphs,
                         atlasWidth,
                         atlasHeight,
@@ -2349,6 +2427,17 @@ bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
     FT_Done_Face(face);
     FT_Done_FreeType(library);
     return fontData.atlasTexture.IsValid();
+}
+
+int QuarkD3D11Renderer::FindGlyph(const FontData& fontData, int codepoint)
+{
+    for (int i = 0; i < static_cast<int>(fontData.glyphs.size()); ++i) {
+        if (fontData.glyphs[i].value == codepoint) return i;
+    }
+    for (int i = 0; i < static_cast<int>(fontData.glyphs.size()); ++i) {
+        if (fontData.glyphs[i].value == 63) return i;
+    }
+    return -1;
 }
 
 const QuarkD3D11Renderer::FontData* QuarkD3D11Renderer::GetFontData(IFont font) const
@@ -2370,7 +2459,7 @@ uint32_t QuarkD3D11Renderer::EnsureDefaultFont()
     }
 
     FontData fontData{};
-    if (!LoadFontData(path, 32, fontData)) {
+    if (!LoadFontData(path, nullptr, 0, 32, nullptr, 0, fontData)) {
         return 0;
     }
 
@@ -2400,20 +2489,22 @@ void QuarkD3D11Renderer::DrawTextWithFontData(const FontData& fontData,
     float cursorY = position.y;
     bool firstGlyph = true;
 
-    for (const char* character = text; *character != '\0'; ++character) {
+    for (const char* character = text; *character != '\0'; ) {
         if (*character == '\n') {
             cursorX = position.x;
             cursorY += lineHeight;
             firstGlyph = true;
+            ++character;
             continue;
         }
 
-        const unsigned char code = static_cast<unsigned char>(*character);
-        if (code < 32 || code >= 127) {
+        const int cp = DecodeUTF8(character);
+        const int idx = FindGlyph(fontData, cp);
+        if (idx < 0) {
             continue;
         }
 
-        const GlyphData& glyph = fontData.glyphs[code - 32];
+        const GlyphData& glyph = fontData.glyphs[static_cast<size_t>(idx)];
         if (!firstGlyph) {
             cursorX += spacing;
         }
@@ -2463,38 +2554,42 @@ Vec2 QuarkD3D11Renderer::MeasureTextWithFontData(const FontData& fontData,
     bool firstGlyph = true;
     int lineCount = 1;
 
-    for (const char* character = text; *character != '\0'; ++character) {
+    for (const char* character = text; *character != '\0'; ) {
         if (*character == '\n') {
             maximumWidth = std::max(maximumWidth, width);
             width = 0.0f;
             firstGlyph = true;
             ++lineCount;
+            ++character;
             continue;
         }
 
-        const unsigned char code = static_cast<unsigned char>(*character);
-        if (code < 32 || code >= 127) {
+        const int cp = DecodeUTF8(character);
+        const int idx = FindGlyph(fontData, cp);
+        if (idx < 0) {
             continue;
         }
 
+        const GlyphData& glyph = fontData.glyphs[static_cast<size_t>(idx)];
         if (!firstGlyph) {
             width += spacing;
         }
         firstGlyph = false;
-        width += fontData.glyphs[code - 32].advanceX * scale;
+        width += glyph.advanceX * scale;
     }
 
     return {std::max(maximumWidth, width), lineHeight * lineCount};
 }
 
-IFont QuarkD3D11Renderer::LoadFont(const char* filePath, int fontSize)
+IFont QuarkD3D11Renderer::LoadFont(const char* filePath, int fontSize,
+                                   const int* codepoints, int codepointCount)
 {
     if (!filePath) {
         return IFont{EnsureDefaultFont()};
     }
 
     FontData fontData{};
-    if (!LoadFontData(filePath, fontSize, fontData)) {
+    if (!LoadFontData(filePath, nullptr, 0, fontSize, codepoints, codepointCount, fontData)) {
         TraceLog(LogLevel::Error, "FONT", TextFormat("[D3D11] Failed to load font: %s", filePath));
         return {};
     }
@@ -2507,11 +2602,40 @@ IFont QuarkD3D11Renderer::LoadFont(const char* filePath, int fontSize)
     return IFont{id};
 }
 
+IFont QuarkD3D11Renderer::LoadFontFromMemory(const char* fileType, const unsigned char* fileData,
+                                             int dataSize, int fontSize,
+                                             const int* codepoints, int codepointCount)
+{
+    if (!fileData || dataSize <= 0) {
+        TraceLog(LogLevel::Error, "FONT", "[D3D11] LoadFontFromMemory: invalid memory buffer");
+        return {};
+    }
+
+    FontData fontData{};
+    if (!LoadFontData(nullptr, fileData, dataSize, fontSize, codepoints, codepointCount, fontData)) {
+        TraceLog(LogLevel::Error, "FONT", "[D3D11] Failed to load font from memory");
+        return {};
+    }
+
+    const uint32_t id = m_nextFontId++;
+    m_fonts.emplace(id, std::move(fontData));
+    TraceLog(LogLevel::Info,
+             "FONT",
+             TextFormat("[D3D11] Font loaded from memory (type: %s, Font ID: %u)", fileType ? fileType : ".ttf", id));
+    return IFont{id};
+}
+
 void QuarkD3D11Renderer::UnloadFont(IFont& font)
 {
     const auto iterator = m_fonts.find(font.id);
     if (iterator != m_fonts.end()) {
         m_resources.DestroyTexture(iterator->second.atlasTexture.id);
+
+        for (GlyphData& g : iterator->second.glyphs) {
+            std::free(g.image.data);
+            g.image = Image{};
+        }
+
         TraceLog(LogLevel::Info,
                  "FONT",
                  TextFormat("[D3D11] Font unloaded (Font ID: %u, Atlas ID: %u)",
@@ -2524,6 +2648,42 @@ void QuarkD3D11Renderer::UnloadFont(IFont& font)
         m_defaultFontId = 0;
     }
     font = {};
+}
+
+void QuarkD3D11Renderer::FillFont(IFont font, Font& out)
+{
+    const FontData* fd = GetFontData(font);
+    if (!fd) {
+        const uint32_t id = EnsureDefaultFont();
+        fd = (id != 0) ? GetFontData(IFont{ id }) : nullptr;
+    }
+    if (!fd) {
+        out.valid = false;
+        return;
+    }
+
+    out.baseSize     = fd->baseSize;
+    out.glyphCount   = fd->glyphCount;
+    out.glyphPadding = 2;
+    out.valid        = true;
+    out._rendererFontId = font.id;
+    out.texture = Texture2D{ fd->atlasTexture.id, fd->atlasTexture.width, fd->atlasTexture.height, 1,
+                             PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true };
+
+    delete[] out.recs;
+    delete[] out.glyphs;
+    out.recs   = new Rectangle[fd->glyphCount];
+    out.glyphs = new GlyphInfo[fd->glyphCount];
+
+    for (int i = 0; i < fd->glyphCount; ++i) {
+        const GlyphData& g = fd->glyphs[static_cast<size_t>(i)];
+        out.recs[i] = g.rec;
+        out.glyphs[i].value     = g.value;
+        out.glyphs[i].offsetX   = static_cast<int>(g.offsetX);
+        out.glyphs[i].offsetY   = static_cast<int>(g.offsetY);
+        out.glyphs[i].advanceX  = static_cast<int>(g.advanceX);
+        out.glyphs[i].image     = g.image;
+    }
 }
 
 void QuarkD3D11Renderer::DrawText(const char* text, int x, int y, int fontSize, Color color)
@@ -2620,6 +2780,30 @@ ITexture QuarkD3D11Renderer::LoadTexture(const char *filePath)
                             filePath ? filePath : "<null>"));
     }
 
+    return texture;
+}
+
+ITexture QuarkD3D11Renderer::LoadTextureFromImage(const Image& image)
+{
+    TraceLog(LogLevel::Trace, "TEXTURE",
+             TextFormat("[D3D11] Uploading texture from Image (%dx%d, format %d)",
+                        image.width, image.height, image.format));
+    if (!image.data || image.width <= 0 || image.height <= 0 || image.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
+        TraceLog(LogLevel::Error, "TEXTURE",
+                 "[D3D11] LoadTextureFromImage: unsupported or invalid image (requires UNCOMPRESSED_R8G8B8A8)");
+        return ITexture{};
+    }
+
+    ITexture texture = m_resources.CreateTexture(
+        m_device.Get(), static_cast<const uint8_t*>(image.data), image.width, image.height);
+    if (!texture.IsValid()) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[D3D11] LoadTextureFromImage: upload failed");
+        return texture;
+    }
+
+    TraceLog(LogLevel::Info, "TEXTURE",
+             TextFormat("[D3D11] Texture uploaded from Image (%dx%d, ID: %u)",
+                        image.width, image.height, texture.id));
     return texture;
 }
 

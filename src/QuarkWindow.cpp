@@ -184,30 +184,39 @@ float GetWindowPixelDensity() {
     return SDL_GetWindowPixelDensity(gWin.window);
 }
 
-bool SetWindowIcon(const char* filePath) {
+void SetWindowIcon(Image image) {
     EnsureInitialized();
 
-    ImageFileData image;
-    if (!LoadImageFile(filePath, image, 4)) {
-        TraceLog(LogLevel::Warn, "WINDOW", (std::string("Failed to load window icon: ") + (filePath != nullptr ? filePath : "")).c_str());
-        return false;
+    if (!IsImageValid(image) || image.width <= 0 || image.height <= 0) {
+        TraceLog(LogLevel::Warn, "WINDOW", "SetWindowIcon: invalid image");
+        return;
     }
+
+    Color* colors = LoadImageColors(image);
+    if (!colors) {
+        TraceLog(LogLevel::Warn, "WINDOW", "SetWindowIcon: failed to read image colors");
+        return;
+    }
+
+    const int w = image.width, h = image.height;
+    std::vector<unsigned char> rgba(static_cast<size_t>(w) * h * 4);
+    for (int i = 0; i < w * h; ++i) {
+        rgba[static_cast<size_t>(i) * 4 + 0] = colors[i].r;
+        rgba[static_cast<size_t>(i) * 4 + 1] = colors[i].g;
+        rgba[static_cast<size_t>(i) * 4 + 2] = colors[i].b;
+        rgba[static_cast<size_t>(i) * 4 + 3] = colors[i].a;
+    }
+    UnloadImageColors(colors);
 
     SDL_Surface* surface = SDL_CreateSurfaceFrom(
-        image.width,
-        image.height,
-        SDL_PIXELFORMAT_RGBA8888,
-        image.pixels.data(),
-        image.width * 4
-    );
+        w, h, SDL_PIXELFORMAT_RGBA8888, rgba.data(), w * 4);
     if (surface == nullptr) {
         TraceLog(LogLevel::Warn, "WINDOW", (std::string("SDL_CreateSurfaceFrom failed: ") + SDL_GetError()).c_str());
-        return false;
+        return;
     }
 
-    const bool ok = CheckWindowCall(SDL_SetWindowIcon(gWin.window, surface), "SDL_SetWindowIcon");
+    CheckWindowCall(SDL_SetWindowIcon(gWin.window, surface), "SDL_SetWindowIcon");
     SDL_DestroySurface(surface);
-    return ok;
 }
 
 SDL_Window* GetNativeWindow() {

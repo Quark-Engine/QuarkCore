@@ -522,6 +522,168 @@ struct QCAPI Mat4 {
 
 using Matrix = Mat4;
 
+/**
+ * @brief Quaternion structure.
+ */
+struct Quaternion {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float w = 1.0f;
+
+    Quaternion() = default;
+    Quaternion(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
+};
+
+using Quat = Quaternion;
+
+inline float QuaternionLength(const Quaternion& q) {
+    return std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+}
+
+inline Quaternion QuaternionNormalize(const Quaternion& q) {
+    const float length = QuaternionLength(q);
+    if (length == 0.0f) return Quaternion{0.0f, 0.0f, 0.0f, 1.0f};
+    const float ilength = 1.0f / length;
+    return Quaternion{q.x * ilength, q.y * ilength, q.z * ilength, q.w * ilength};
+}
+
+inline Quaternion QuaternionMultiply(const Quaternion& q1, const Quaternion& q2) {
+    Quaternion result;
+    result.x = q1.x*q2.w + q1.w*q2.x + q1.y*q2.z - q1.z*q2.y;
+    result.y = q1.y*q2.w + q1.w*q2.y + q1.z*q2.x - q1.x*q2.z;
+    result.z = q1.z*q2.w + q1.w*q2.z + q1.x*q2.y - q1.y*q2.x;
+    result.w = q1.w*q2.w - q1.x*q2.x - q1.y*q2.y - q1.z*q2.z;
+    return result;
+}
+
+inline Quaternion QuaternionLerp(const Quaternion& q1, const Quaternion& q2, float amount) {
+    Quaternion result;
+    result.x = q1.x + amount*(q2.x - q1.x);
+    result.y = q1.y + amount*(q2.y - q1.y);
+    result.z = q1.z + amount*(q2.z - q1.z);
+    result.w = q1.w + amount*(q2.w - q1.w);
+    return QuaternionNormalize(result);
+}
+
+inline Quaternion QuaternionSlerp(const Quaternion& q1, const Quaternion& q2, float amount) {
+    Quaternion from = q1;
+    Quaternion to = q2;
+
+    float cosom = from.x*to.x + from.y*to.y + from.z*to.z + from.w*to.w;
+    if (cosom < 0.0f) {
+        to.x = -to.x; to.y = -to.y; to.z = -to.z; to.w = -to.w;
+        cosom = -cosom;
+    }
+
+    float scale0, scale1;
+    if (cosom > 0.999999f) {
+        scale0 = 1.0f - amount;
+        scale1 = amount;
+    } else {
+        const float omega = std::acos(cosom);
+        const float invSin = 1.0f / std::sin(omega);
+        scale0 = std::sin((1.0f - amount) * omega) * invSin;
+        scale1 = std::sin(amount * omega) * invSin;
+    }
+
+    Quaternion result;
+    result.x = scale0*from.x + scale1*to.x;
+    result.y = scale0*from.y + scale1*to.y;
+    result.z = scale0*from.z + scale1*to.z;
+    result.w = scale0*from.w + scale1*to.w;
+    return result;
+}
+
+inline Quaternion QuaternionFromAxisAngle(const Vec3& axis, float angle) {
+    Quaternion result;
+    const float half = angle * 0.5f;
+    const float s = std::sin(half);
+    result.x = axis.x * s;
+    result.y = axis.y * s;
+    result.z = axis.z * s;
+    result.w = std::cos(half);
+    return result;
+}
+
+inline Quaternion QuaternionFromMatrix(const Mat4& m) {
+    Quaternion result;
+    const float trace = m.m[0] + m.m[5] + m.m[10];
+    if (trace > 0.0f) {
+        const float s = std::sqrt(trace + 1.0f) * 2.0f;
+        result.w = 0.25f * s;
+        result.x = (m.m[9] - m.m[6]) / s;
+        result.y = (m.m[2] - m.m[8]) / s;
+        result.z = (m.m[4] - m.m[1]) / s;
+    } else if ((m.m[0] > m.m[5]) && (m.m[0] > m.m[10])) {
+        const float s = std::sqrt(1.0f + m.m[0] - m.m[5] - m.m[10]) * 2.0f;
+        result.w = (m.m[9] - m.m[6]) / s;
+        result.x = 0.25f * s;
+        result.y = (m.m[1] + m.m[4]) / s;
+        result.z = (m.m[2] + m.m[8]) / s;
+    } else if (m.m[5] > m.m[10]) {
+        const float s = std::sqrt(1.0f + m.m[5] - m.m[0] - m.m[10]) * 2.0f;
+        result.w = (m.m[2] - m.m[8]) / s;
+        result.x = (m.m[1] + m.m[4]) / s;
+        result.y = 0.25f * s;
+        result.z = (m.m[6] + m.m[9]) / s;
+    } else {
+        const float s = std::sqrt(1.0f + m.m[10] - m.m[0] - m.m[5]) * 2.0f;
+        result.w = (m.m[4] - m.m[1]) / s;
+        result.x = (m.m[2] + m.m[8]) / s;
+        result.y = (m.m[6] + m.m[9]) / s;
+        result.z = 0.25f * s;
+    }
+    return result;
+}
+
+inline Mat4 QuaternionToMatrix(const Quaternion& q) {
+    const float x = q.x, y = q.y, z = q.z, w = q.w;
+    const float x2 = x + x, y2 = y + y, z2 = z + z;
+    const float xx = x*x2, xy = x*y2, xz = x*z2;
+    const float yy = y*y2, yz = y*z2, zz = z*z2;
+    const float wx = w*x2, wy = w*y2, wz = w*z2;
+
+    Mat4 result;
+    result.m[0] = 1.0f - (yy + zz);
+    result.m[1] = xy + wz;
+    result.m[2] = xz - wy;
+    result.m[3] = 0.0f;
+    result.m[4] = xy - wz;
+    result.m[5] = 1.0f - (xx + zz);
+    result.m[6] = yz + wx;
+    result.m[7] = 0.0f;
+    result.m[8] = xz + wy;
+    result.m[9] = yz - wx;
+    result.m[10] = 1.0f - (xx + yy);
+    result.m[11] = 0.0f;
+    result.m[12] = 0.0f;
+    result.m[13] = 0.0f;
+    result.m[14] = 0.0f;
+    result.m[15] = 1.0f;
+    return result;
+}
+
+inline Mat4 TransformToMatrix(const Vec3& translation, const Quaternion& rotation, const Vec3& scale) {
+    Mat4 rot = QuaternionToMatrix(rotation);
+    Mat4 result;
+    result.m[0] = rot.m[0] * scale.x;
+    result.m[1] = rot.m[1] * scale.x;
+    result.m[2] = rot.m[2] * scale.x;
+    result.m[4] = rot.m[4] * scale.y;
+    result.m[5] = rot.m[5] * scale.y;
+    result.m[6] = rot.m[6] * scale.y;
+    result.m[8] = rot.m[8] * scale.z;
+    result.m[9] = rot.m[9] * scale.z;
+    result.m[10] = rot.m[10] * scale.z;
+    result.m[3] = result.m[7] = result.m[11] = 0.0f;
+    result.m[12] = translation.x;
+    result.m[13] = translation.y;
+    result.m[14] = translation.z;
+    result.m[15] = 1.0f;
+    return result;
+}
+
 inline Vec2 Vec2Zero() {
     return Vec2{0.0f, 0.0f};
 }

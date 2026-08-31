@@ -131,6 +131,15 @@ QCAPI Mesh GenMeshCubicmap(Image cubicmap, Vec3 cubeSize);
 #define MAX_MESH_VERTEX_BUFFERS   9
 
 /**
+ * @brief Transform, vertex transformation data.
+ */
+struct Transform {
+    Vec3 translation{0.0f, 0.0f, 0.0f};
+    Quaternion rotation{0.0f, 0.0f, 0.0f, 1.0f};
+    Vec3 scale{1.0f, 1.0f, 1.0f};
+};
+
+/**
  * @brief Bone information.
  */
 struct BoneInfo {
@@ -138,20 +147,26 @@ struct BoneInfo {
     int parent = -1;
 };
 
-/**
- * @brief Model animation pose data.
- */
-struct ModelAnimPose {
-    Matrix* transform = nullptr;
-};
+// Anim pose, an array of Transform[]
+using ModelAnimPose = Transform*;
 
 /**
  * @brief Skeleton with bone hierarchy and bind pose.
  */
 struct ModelSkeleton {
-    int boneCount = 0;
+    unsigned int boneCount = 0;
     BoneInfo* bones = nullptr;
-    ModelAnimPose bindPose;
+    ModelAnimPose bindPose = nullptr;
+};
+
+/**
+ * @brief Model animation sequence data.
+ */
+struct ModelAnimation {
+    char name[32] = {0};
+    unsigned int boneCount = 0;
+    int keyframeCount = 0;
+    ModelAnimPose* keyframePoses = nullptr;
 };
 
 /**
@@ -227,7 +242,54 @@ QCAPI Material LoadMaterialDefault();
  *
  * @param model Model to unload.
  */
-QCAPI void UnloadModel(Model& model);
+QCAPI void UnloadModel(Model model);
+
+/**
+ * @brief Load model animations from file (release with UnloadModelAnimations).
+ *
+ * @param fileName Path to the animated model file (fbx, gltf, glb, dae, ...).
+ * @param animCount Output number of loaded animations.
+ * @return Allocated array of ModelAnimation.
+ */
+QCAPI ModelAnimation* LoadModelAnimations(const char* fileName, int* animCount);
+
+/**
+ * @brief Update the model animation pose at a given frame (CPU/GPU skinning + bone matrices).
+ *
+ * @param model Model to update.
+ * @param anim ModelAnimation data.
+ * @param frame Animation frame (may be fractional, auto-wrapped).
+ */
+QCAPI void UpdateModelAnimation(Model model, ModelAnimation anim, float frame);
+
+/**
+ * @brief Update the model animation pose, blending two animations (CPU/GPU skinning + bone matrices).
+ *
+ * @param model Model to update.
+ * @param animA First animation.
+ * @param frameA Frame of the first animation.
+ * @param animB Second animation.
+ * @param frameB Frame of the second animation.
+ * @param blend Blending factor between 0.0f and 1.0f.
+ */
+QCAPI void UpdateModelAnimationEx(Model model, ModelAnimation animA, float frameA, ModelAnimation animB, float frameB, float blend);
+
+/**
+ * @brief Check if the model animation skeleton matches the model skeleton.
+ *
+ * @param model Model to check.
+ * @param anim ModelAnimation data.
+ * @return True if the animation is valid for the model.
+ */
+QCAPI bool IsModelAnimationValid(Model model, ModelAnimation anim);
+
+/**
+ * @brief Unload an array of ModelAnimation loaded with LoadModelAnimations.
+ *
+ * @param animations Allocated ModelAnimation array.
+ * @param animCount Number of animations in the array.
+ */
+QCAPI void UnloadModelAnimations(ModelAnimation* animations, int animCount);
 
 /**
  * @brief Draw a model (with texture if set).
@@ -467,6 +529,59 @@ inline RayCollision GetRayCollisionBox(Ray ray, BoundingBox box) {
     result.point = ray.position + ray.direction * distance;
     return result;
 }
+
+/**
+ * @brief Check collision between two spheres.
+ * @param center1 Center of the first sphere.
+ * @param radius1 Radius of the first sphere.
+ * @param center2 Center of the second sphere.
+ * @param radius2 Radius of the second sphere.
+ * @return True if the spheres collide.
+ */
+QCAPI bool CheckCollisionSpheres(Vec3 center1, float radius1, Vec3 center2, float radius2);
+
+/**
+ * @brief Check collision between two bounding boxes.
+ * @param box1 First bounding box.
+ * @param box2 Second bounding box.
+ * @return True if the boxes intersect.
+ */
+QCAPI bool CheckCollisionBoxes(BoundingBox box1, BoundingBox box2);
+
+/**
+ * @brief Check collision between a bounding box and a sphere.
+ * @param box Bounding box.
+ * @param center Sphere center.
+ * @param radius Sphere radius.
+ * @return True if the box and sphere collide.
+ */
+QCAPI bool CheckCollisionBoxSphere(BoundingBox box, Vec3 center, float radius);
+
+/**
+ * @brief Get collision info between a ray and a sphere.
+ * @param ray Ray to test.
+ * @param center Sphere center.
+ * @param radius Sphere radius.
+ * @return RayCollision result.
+ */
+QCAPI RayCollision GetRayCollisionSphere(Ray ray, Vec3 center, float radius);
+
+/**
+ * @brief Get collision info between a ray and a mesh (all triangles, transformed).
+ * @param ray Ray to test.
+ * @param mesh Mesh to test against.
+ * @param transform Mesh transformation matrix.
+ * @return RayCollision result (nearest hit).
+ */
+QCAPI RayCollision GetRayCollisionMesh(Ray ray, Mesh mesh, Matrix transform);
+
+/**
+ * @brief Get collision info between a ray and a quadrilateral.
+ * @param ray Ray to test.
+ * @param p1,p2,p3,p4 Quadrilateral vertex positions.
+ * @return RayCollision result.
+ */
+QCAPI RayCollision GetRayCollisionQuad(Ray ray, Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4);
 
 /**
  * @brief Draw a cube outline (wireframe).

@@ -271,6 +271,28 @@ ITexture QuarkVkRenderer::LoadTexture(const char* filePath) {
     return texture;
 }
 
+ITexture QuarkVkRenderer::LoadTextureFromImage(const Image& image) {
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Uploading texture from Image (%dx%d, format %d)", image.width, image.height, image.format));
+    if (!image.data || image.width <= 0 || image.height <= 0 || image.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] LoadTextureFromImage: unsupported or invalid image (requires UNCOMPRESSED_R8G8B8A8)");
+        return ITexture{};
+    }
+
+    const uint32_t textureId = m_vkResources.CreateTextureFromRGBA(
+        static_cast<const unsigned char*>(image.data),
+        static_cast<uint32_t>(image.width),
+        static_cast<uint32_t>(image.height));
+    if (textureId == 0) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] LoadTextureFromImage: upload failed");
+        return ITexture{};
+    }
+
+    const ITexture texture{ textureId, image.width, image.height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true };
+
+    TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[Vulkan] Texture uploaded from Image (%dx%d, ID: %u)", image.width, image.height, textureId));
+    return texture;
+}
+
 ITexture QuarkVkRenderer::GetRenderTextureTexture(IRenderTexture target) {
     auto itRt = m_renderTargets.find(target.id);
     if (itRt == m_renderTargets.end()) {
