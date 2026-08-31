@@ -1165,8 +1165,6 @@ void QuarkGLRenderer::EndTextureMode() {
     RefreshViewport();
 }
 
-// Builds the default character set (ASCII 32..126 plus a couple of extras) when
-// the caller did not supply a codepoints array.
 static std::vector<int> DefaultCodepoints() {
     std::vector<int> cps;
     cps.reserve(96);
@@ -1174,8 +1172,6 @@ static std::vector<int> DefaultCodepoints() {
     return cps;
 }
 
-// Decodes a single UTF-8 codepoint starting at p. Returns the codepoint and
-// advances the pointer by the sequence length (in bytes).
 static int DecodeUTF8(const char*& p) {
     const unsigned char lead = static_cast<unsigned char>(*p);
     int cp = 0, seq = 0;
@@ -1215,7 +1211,6 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, const unsigned char
     FT_Select_Charmap(face, FT_ENCODING_UNICODE);
     FT_Set_Pixel_Sizes(face, 0, (FT_UInt)pointSize);
 
-    // Determine the set of codepoints to rasterize.
     std::vector<int> cps;
     const int* cpsPtr = codepoints;
     int cpsCount = codepointCount;
@@ -1319,7 +1314,6 @@ int QuarkGLRenderer::FindGlyph(const FontData& fd, int codepoint) {
     for (int i = 0; i < (int)fd.glyphs.size(); ++i) {
         if (fd.glyphs[i].value == codepoint) return i;
     }
-    // Fallback to '?' (63)
     for (int i = 0; i < (int)fd.glyphs.size(); ++i) {
         if (fd.glyphs[i].value == 63) return i;
     }

@@ -11,6 +11,7 @@
 ### In Progress
 
 - [ ] Audio API
+- [ ] Full compatibility with Raylib
 
 ### Done ✓
 

@@ -253,6 +253,14 @@ elseif(WIN32)
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
         MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
     )
+else()
+    set_target_properties(ZLIB::ZLIB PROPERTIES
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+        IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/libzlibstaticd.a"
+        IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/libzlibstatic.a"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+    )
 endif()
 
 set(ASSIMP_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
