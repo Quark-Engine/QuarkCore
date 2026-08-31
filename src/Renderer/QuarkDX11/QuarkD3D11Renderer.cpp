@@ -1408,6 +1408,8 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
                 loadedTexture.id,
                 loadedTexture.width,
                 loadedTexture.height,
+                loadedTexture.mipmaps,
+                loadedTexture.format,
                 loadedTexture.valid
             };
         }
@@ -1534,6 +1536,8 @@ void QuarkD3D11Renderer::UnloadModel(Model& model)
                             material.maps[mapIndex].texture.id,
                             material.maps[mapIndex].texture.width,
                             material.maps[mapIndex].texture.height,
+                            material.maps[mapIndex].texture.mipmaps,
+                            material.maps[mapIndex].texture.format,
                             material.maps[mapIndex].texture.valid
                         };
                         UnloadTexture(texture);
@@ -2867,13 +2871,61 @@ void QuarkD3D11Renderer::DrawTextureTiled(ITexture texture,
 }
 
 void QuarkD3D11Renderer::DrawTextureNPatch(ITexture texture,
-                                           Rectangle source,
-                                           Rectangle destination,
+                                           NPatchInfo np,
+                                           Rectangle dst,
                                            Vec2 origin,
                                            float rotation,
                                            Color tint)
 {
-    DrawTexturePro(texture, source, destination, origin, rotation, tint);
+    if (texture.id == 0) return;
+
+    const float dLeft   = static_cast<float>(np.left);
+    const float dTop    = static_cast<float>(np.top);
+    const float dRight  = static_cast<float>(np.right);
+    const float dBottom = static_cast<float>(np.bottom);
+    const float dMiddleW = dst.width  - dLeft - dRight;
+    const float dMiddleH = dst.height - dTop  - dBottom;
+
+    const float sLeft   = np.source.x + dLeft;
+    const float sTop    = np.source.y + dTop;
+    const float sRight  = np.source.x + np.source.width  - dRight;
+    const float sBottom = np.source.y + np.source.height - dBottom;
+
+    auto patch = [&](float sx, float sy, float sw, float sh,
+                     float dx, float dy, float dw, float dh) {
+        if (sw <= 0.f || sh <= 0.f || dw <= 0.f || dh <= 0.f) return;
+        Rectangle src{ sx, sy, sw, sh };
+        Rectangle dpt{ dst.x + dx, dst.y + dy, dw, dh };
+        DrawTexturePro(texture, src, dpt, origin, rotation, tint);
+    };
+
+    if (np.layout == NPATCH_THREE_PATCH_HORIZONTAL) {
+        patch(np.source.x, np.source.y, dLeft,   np.source.height, 0.f, 0.f, dLeft, dst.height);
+        patch(sLeft, np.source.y, np.source.width - dLeft - dRight, np.source.height,
+              dLeft, 0.f, dMiddleW, dst.height);
+        patch(sRight, np.source.y, dRight, np.source.height, dLeft + dMiddleW, 0.f, dRight, dst.height);
+        return;
+    }
+
+    if (np.layout == NPATCH_THREE_PATCH_VERTICAL) {
+        patch(np.source.x, np.source.y, np.source.width, dTop, 0.f, 0.f, dst.width, dTop);
+        patch(np.source.x, sTop, np.source.width, np.source.height - dTop - dBottom,
+              0.f, dTop, dst.width, dMiddleH);
+        patch(np.source.x, sBottom, np.source.width, dBottom, 0.f, dTop + dMiddleH, dst.width, dBottom);
+        return;
+    }
+
+    patch(np.source.x, np.source.y, dLeft, dTop, 0.f, 0.f, dLeft, dTop);
+    patch(sRight, np.source.y, dRight, dTop, dLeft + dMiddleW, 0.f, dRight, dTop);
+    patch(np.source.x, sBottom, dLeft, dBottom, 0.f, dTop + dMiddleH, dLeft, dBottom);
+    patch(sRight, sBottom, dRight, dBottom, dLeft + dMiddleW, dTop + dMiddleH, dRight, dBottom);
+
+    patch(sLeft, np.source.y, np.source.width - dLeft - dRight, dTop, dLeft, 0.f, dMiddleW, dTop);
+    patch(np.source.x, sTop, dLeft, np.source.height - dTop - dBottom, 0.f, dTop, dLeft, dMiddleH);
+    patch(sRight, sTop, dRight, np.source.height - dTop - dBottom, dLeft + dMiddleW, dTop, dRight, dMiddleH);
+    patch(sLeft, sBottom, np.source.width - dLeft - dRight, dBottom, dLeft, dTop + dMiddleH, dMiddleW, dBottom);
+    patch(sLeft, sTop, np.source.width - dLeft - dRight, np.source.height - dTop - dBottom,
+          dLeft, dTop, dMiddleW, dMiddleH);
 }
 
 void QuarkD3D11Renderer::BeginMode2D(const Camera2D& camera)

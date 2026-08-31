@@ -112,6 +112,8 @@ static Material LoadAssimpMaterial(QuarkVkRenderer& renderer, const char* filePa
             material.maps[mapIndex].texture.id = loadedTex.id;
             material.maps[mapIndex].texture.width = loadedTex.width;
             material.maps[mapIndex].texture.height = loadedTex.height;
+            material.maps[mapIndex].texture.mipmaps = loadedTex.mipmaps;
+            material.maps[mapIndex].texture.format = loadedTex.format;
             material.maps[mapIndex].texture.valid = loadedTex.valid;
         }
     }
@@ -270,7 +272,7 @@ void QuarkVkRenderer::UnloadModel(Model& model) {
                 for (int mapIndex = 0; mapIndex <= MATERIAL_MAP_BRDF; ++mapIndex) {
                     const Texture2D& mapTexture = material.maps[mapIndex].texture;
                     if (mapTexture.valid && unloadedTextures.insert(mapTexture.id).second) {
-                        ITexture texture{ mapTexture.id, mapTexture.width, mapTexture.height, mapTexture.valid };
+                        ITexture texture{ mapTexture.id, mapTexture.width, mapTexture.height, mapTexture.mipmaps, mapTexture.format, mapTexture.valid };
                         UnloadTexture(texture);
                     }
                 }

@@ -113,7 +113,7 @@ public:
     void DrawTextureRec(const ITexture &, Rectangle, Vec2, Color) override;
     void DrawTexturePro(ITexture, Rectangle, Rectangle, Vec2, float, Color) override;
     void DrawTextureTiled(ITexture, float, Vec2, Color) override;
-    void DrawTextureNPatch(ITexture, Rectangle, Rectangle, Vec2, float, Color) override;
+    void DrawTextureNPatch(ITexture, NPatchInfo, Rectangle, Vec2, float, Color) override;
     ITexture LoadTexture(const char *) override;
     ITexture GetRenderTextureTexture(IRenderTexture) override;
     void UnloadTexture(ITexture &) override;

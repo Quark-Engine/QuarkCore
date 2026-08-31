@@ -21,6 +21,8 @@
 #include <cstddef>
 #include <cstdint>
 
+struct Font;
+
 /**
  * @brief Image pixel format enumeration (raylib compatible values).
  */

@@ -940,62 +940,64 @@ Texture2D LoadTexture(const char* filePath) {
     t.id    = it.id;
     t.width = it.width;
     t.height= it.height;
+    t.mipmaps = it.mipmaps;
+    t.format  = it.format;
     t.valid = it.valid;
     return t;
 }
 
 void UnloadTexture(Texture2D& texture) {
-    ITexture it{ texture.id, texture.width, texture.height, texture.valid };
+    ITexture it{ texture.id, texture.width, texture.height, texture.mipmaps, texture.format, texture.valid };
     gRenderer.UnloadTexture(it);
     texture = {};
 }
 
 bool IsTextureValid(Texture2D texture) {
-    ITexture it{ texture.id, texture.width, texture.height, texture.valid };
+    ITexture it{ texture.id, texture.width, texture.height, texture.mipmaps, texture.format, texture.valid };
     return gRenderer.isTextureValid(it);
 }
 
 bool IsTextureReady(Texture2D texture) { return IsTextureValid(texture); }
 
 void DrawTexture(const Texture2D& tex, float x, float y, Color tint) {
-    ITexture it{ tex.id, tex.width, tex.height, tex.valid };
+    ITexture it{ tex.id, tex.width, tex.height, tex.mipmaps, tex.format, tex.valid };
     gRenderer.DrawTexture(it, x, y, tint);
 }
 
 void DrawTextureV(Texture2D tex, Vec2 pos, Color tint) {
-    ITexture it{ tex.id, tex.width, tex.height, tex.valid };
+    ITexture it{ tex.id, tex.width, tex.height, tex.mipmaps, tex.format, tex.valid };
     gRenderer.DrawTextureV(it, pos, tint);
 }
 
 void DrawTextureEx(Texture2D tex, Vec2 pos, float rot, float scale, Color tint) {
-    ITexture it{ tex.id, tex.width, tex.height, tex.valid };
+    ITexture it{ tex.id, tex.width, tex.height, tex.mipmaps, tex.format, tex.valid };
     gRenderer.DrawTextureEx(it, pos, rot, scale, tint);
 }
 
 void DrawTextureRec(Texture2D tex, Rectangle source, Vec2 pos, Color tint) {
-    ITexture it{ tex.id, tex.width, tex.height, tex.valid };
+    ITexture it{ tex.id, tex.width, tex.height, tex.mipmaps, tex.format, tex.valid };
     gRenderer.DrawTextureRec(it, source, pos, tint);
 }
 
 void DrawTexturePro(Texture2D tex, Rectangle src, Rectangle dst, Vec2 origin, float rot, Color tint) {
-    ITexture it{ tex.id, tex.width, tex.height, tex.valid };
+    ITexture it{ tex.id, tex.width, tex.height, tex.mipmaps, tex.format, tex.valid };
     gRenderer.DrawTexturePro(it, src, dst, origin, rot, tint);
 }
 
 void DrawTextureTiled(Texture2D tex, float scale, Vec2 offset, Color tint) {
-    ITexture it{ tex.id, tex.width, tex.height, tex.valid };
+    ITexture it{ tex.id, tex.width, tex.height, tex.mipmaps, tex.format, tex.valid };
     gRenderer.DrawTextureTiled(it, scale, offset, tint);
 }
 
-void DrawTextureNPatch(Texture2D tex, Rectangle src, Rectangle dst, Vec2 origin, float rot, Color tint) {
-    ITexture it{ tex.id, tex.width, tex.height, tex.valid };
-    gRenderer.DrawTextureNPatch(it, src, dst, origin, rot, tint);
+void DrawTextureNPatch(Texture2D tex, NPatchInfo nPatchInfo, Rectangle dst, Vec2 origin, float rot, Color tint) {
+    ITexture it{ tex.id, tex.width, tex.height, tex.mipmaps, tex.format, tex.valid };
+    gRenderer.DrawTextureNPatch(it, nPatchInfo, dst, origin, rot, tint);
 }
 
 Texture2D GenCheckerTexture(int w, int h, int cellSize, Color a, Color b) {
     EnsureInitialized();
     ITexture it = gRenderer.GenCheckerTexture(w, h, cellSize, a, b);
-    return Texture2D{ it.id, it.width, it.height, it.valid };
+    return Texture2D{ it.id, it.width, it.height, it.mipmaps, it.format, it.valid };
 }
 
 RenderTexture2D LoadRenderTexture(int w, int h) {
@@ -1004,7 +1006,7 @@ RenderTexture2D LoadRenderTexture(int w, int h) {
     RenderTexture2D rt;
     rt.id       = ir.id;
     rt.depthId  = ir.depthId;
-    rt.texture  = Texture2D{ ir.texture.id, ir.texture.width, ir.texture.height, ir.texture.valid };
+    rt.texture  = Texture2D{ ir.texture.id, ir.texture.width, ir.texture.height, ir.texture.mipmaps, ir.texture.format, ir.texture.valid };
     return rt;
 }
 
@@ -1012,7 +1014,7 @@ void UnloadRenderTexture(RenderTexture2D target) {
     IRenderTexture ir;
     ir.id      = target.id;
     ir.depthId = target.depthId;
-    ir.texture = ITexture{ target.texture.id, target.texture.width, target.texture.height, target.texture.valid };
+    ir.texture = ITexture{ target.texture.id, target.texture.width, target.texture.height, target.texture.mipmaps, target.texture.format, target.texture.valid };
     gRenderer.UnloadRenderTexture(ir);
 }
 
@@ -1020,7 +1022,7 @@ bool IsRenderTextureValid(RenderTexture2D target) {
     IRenderTexture ir;
     ir.id      = target.id;
     ir.depthId = target.depthId;
-    ir.texture = ITexture{ target.texture.id, target.texture.width, target.texture.height, target.texture.valid };
+    ir.texture = ITexture{ target.texture.id, target.texture.width, target.texture.height, target.texture.mipmaps, target.texture.format, target.texture.valid };
     return gRenderer.isRenderTextureValid(ir);
 }
 
@@ -1028,15 +1030,15 @@ Texture2D GetRenderTextureTexture(RenderTexture2D target) {
     IRenderTexture ir;
     ir.id      = target.id;
     ir.depthId = target.depthId;
-    ir.texture = ITexture{ target.texture.id, target.texture.width, target.texture.height, target.texture.valid };
+    ir.texture = ITexture{ target.texture.id, target.texture.width, target.texture.height, target.texture.mipmaps, target.texture.format, target.texture.valid };
     ITexture it = gRenderer.GetRenderTextureTexture(ir);
-    return Texture2D{ it.id, it.width, it.height, it.valid };
+    return Texture2D{ it.id, it.width, it.height, it.mipmaps, it.format, it.valid };
 }
 
 Image LoadImageFromTexture(Texture2D texture) {
     EnsureInitialized();
     if (!IsTextureValid(texture)) return Image{};
-    ITexture it{ texture.id, texture.width, texture.height, texture.valid };
+    ITexture it{ texture.id, texture.width, texture.height, texture.mipmaps, texture.format, texture.valid };
     Image image = gRenderer.ReadTextureImage(it);
     if (!IsImageValid(image)) {
         TraceLog(LogLevel::Error, "IMAGE", "LoadImageFromTexture: failed to read texture pixels back to CPU");
@@ -1058,7 +1060,7 @@ void BeginTextureMode(RenderTexture2D target) {
     IRenderTexture ir;
     ir.id      = target.id;
     ir.depthId = target.depthId;
-    ir.texture = ITexture{ target.texture.id, target.texture.width, target.texture.height, target.texture.valid };
+    ir.texture = ITexture{ target.texture.id, target.texture.width, target.texture.height, target.texture.mipmaps, target.texture.format, target.texture.valid };
     gRenderer.BeginTextureMode(ir);
 }
 
@@ -1071,13 +1073,9 @@ Font LoadFont(const char* filePath, int fontSize) {
     EnsureInitialized();
     IFont iFont = gRenderer.LoadFont(filePath, fontSize);
     Font f;
-    f.textureId  = 0;
     f.baseSize   = fontSize;
+    f.glyphCount = 95;
     f.valid      = iFont.id != 0;
-    f.lineHeight = 0;
-    f.ascent     = 0;
-    f.descent    = 0;
-    f.lineGap    = 0;
     static_assert(sizeof(f._rendererFontId) >= sizeof(uint32_t), "Font needs _rendererFontId field");
     f._rendererFontId = iFont.id;
     return f;
@@ -1096,6 +1094,7 @@ Font GetDefaultFont() {
     f.valid           = iFont.id != 0;
     f._rendererFontId = iFont.id;
     f.baseSize        = 32;
+    f.glyphCount      = 95;
     return f;
 }
 
@@ -1625,11 +1624,11 @@ void SetShaderValueMatrix(const Shader& s, int loc, const Matrix& mat) {
 
 void SetShaderValueSampler(const Shader& s, int loc, int unit)      { gRenderer.SetShaderValueSampler(s, loc, unit); }
 void SetShaderValueTexture(const Shader& s, int loc, const Texture2D& texture) {
-    ITexture it{ texture.id, texture.width, texture.height, texture.valid };
+    ITexture it{ texture.id, texture.width, texture.height, texture.mipmaps, texture.format, texture.valid };
     gRenderer.SetShaderValueTexture(s, loc, it);
 }
 void SetShaderValueTextureUnit(const Shader& s, int loc, const Texture2D& texture, int textureUnit) {
-    ITexture it{ texture.id, texture.width, texture.height, texture.valid };
+    ITexture it{ texture.id, texture.width, texture.height, texture.mipmaps, texture.format, texture.valid };
     gRenderer.SetShaderValueTextureUnit(s, loc, it, textureUnit);
 }
 

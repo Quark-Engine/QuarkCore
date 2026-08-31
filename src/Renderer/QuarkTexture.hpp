@@ -8,6 +8,8 @@ struct ITexture {
     uint32_t id = 0;
     int width = 0;
     int height = 0;
+    int mipmaps = 1;
+    int format = 0;
     bool valid = false;
 
     bool IsValid() const {

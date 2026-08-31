@@ -69,7 +69,7 @@ public:
     virtual void DrawTextureRec(const ITexture& texture, Rectangle source, Vec2 position, Color tint)                           = 0;
     virtual void DrawTexturePro(ITexture texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint)    = 0;
     virtual void DrawTextureTiled(ITexture texture, float scale, Vec2 offset, Color tint)                                       = 0;
-    virtual void DrawTextureNPatch(ITexture texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint) = 0;
+    virtual void DrawTextureNPatch(ITexture texture, NPatchInfo nPatchInfo, Rectangle dest, Vec2 origin, float rotation, Color tint) = 0;
 
     // Camera 2D
     virtual void BeginMode2D(const Camera2D& camera) = 0;

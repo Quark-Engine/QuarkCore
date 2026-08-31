@@ -210,7 +210,7 @@ public:
     void           DrawTextureRec(const ITexture& texture, Rectangle source, Vec2 position, Color tint) override;
     void           DrawTexturePro(ITexture texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint) override;
     void           DrawTextureTiled(ITexture texture, float scale, Vec2 offset, Color tint) override;
-    void           DrawTextureNPatch(ITexture texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint) override;
+    void           DrawTextureNPatch(ITexture texture, NPatchInfo nPatchInfo, Rectangle dest, Vec2 origin, float rotation, Color tint) override;
     ITexture       LoadTexture(const char* filePath) override;
     ITexture       GetRenderTextureTexture(IRenderTexture target) override;
     void           UnloadTexture(ITexture& texture) override;

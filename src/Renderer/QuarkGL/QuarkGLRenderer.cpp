@@ -703,7 +703,7 @@ void QuarkGLRenderer::DrawLineV(Vec2 s, Vec2 e, Color c) {
     if (length <= 0) return;
 
     float angle = atan2f(dy, dx) * 180.0f / PI;
-    ITexture white = { m_whiteTexture, 1, 1, true };
+    ITexture white = { m_whiteTexture, 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true };
     DrawTexturePro(white, { 0, 0, 1, 1 }, { s.x, s.y, length, 1.0f }, { 0, 0.5f }, angle, c);
 }
 
@@ -835,9 +835,64 @@ void QuarkGLRenderer::DrawTextureTiled(ITexture t, float scale, Vec2 off, Color 
         DrawTexture(t, off.x + x * t.width * scale, off.y + y * t.height * scale, tint);
 }
 
-void QuarkGLRenderer::DrawTextureNPatch(ITexture t, Rectangle src, Rectangle dst,
+void QuarkGLRenderer::DrawTextureNPatch(ITexture t, NPatchInfo np, Rectangle dst,
                                          Vec2 origin, float rot, Color tint) {
-    DrawTexturePro(t, src, dst, origin, rot, tint);
+    if (!t.id) return;
+
+    const float srcW = np.source.width  > 0.f ? np.source.width  : 1.f;
+    const float srcH = np.source.height > 0.f ? np.source.height : 1.f;
+    (void)srcW; (void)srcH;
+
+    const float dLeft   = static_cast<float>(np.left);
+    const float dTop    = static_cast<float>(np.top);
+    const float dRight  = static_cast<float>(np.right);
+    const float dBottom = static_cast<float>(np.bottom);
+    const float dMiddleW = dst.width  - dLeft - dRight;
+    const float dMiddleH = dst.height - dTop  - dBottom;
+
+    const float sLeft   = np.source.x + dLeft;
+    const float sTop    = np.source.y + dTop;
+    const float sRight  = np.source.x + np.source.width  - dRight;
+    const float sBottom = np.source.y + np.source.height - dBottom;
+
+    auto patch = [&](float sx, float sy, float sw, float sh,
+                     float dx, float dy, float dw, float dh) {
+        if (sw <= 0.f || sh <= 0.f || dw <= 0.f || dh <= 0.f) return;
+        Rectangle src{ sx, sy, sw, sh };
+        Rectangle dpt{ dst.x + dx, dst.y + dy, dw, dh };
+        DrawTexturePro(t, src, dpt, origin, rot, tint);
+    };
+
+    if (np.layout == NPATCH_THREE_PATCH_HORIZONTAL) {
+        // 1x3: left, center (stretch), right
+        patch(np.source.x,      np.source.y, dLeft,   np.source.height, 0.f,          0.f, dLeft,   dst.height);
+        patch(sLeft,            np.source.y, np.source.width - dLeft - dRight, np.source.height,
+              dLeft, 0.f, dMiddleW, dst.height);
+        patch(sRight,           np.source.y, dRight,  np.source.height, dLeft + dMiddleW, 0.f, dRight, dst.height);
+        return;
+    }
+
+    if (np.layout == NPATCH_THREE_PATCH_VERTICAL) {
+        // 3x1: top, center (stretch), bottom
+        patch(np.source.x, np.source.y,      np.source.width, dTop,    0.f, 0.f,           dst.width, dTop);
+        patch(np.source.x, sTop,             np.source.width, np.source.height - dTop - dBottom,
+              0.f, dTop, dst.width, dMiddleH);
+        patch(np.source.x, sBottom,          np.source.width, dBottom, 0.f, dTop + dMiddleH, dst.width, dBottom);
+        return;
+    }
+
+    // NPATCH_NINE_PATCH (3x3)
+    patch(np.source.x, np.source.y, dLeft, dTop, 0.f, 0.f, dLeft, dTop);
+    patch(sRight, np.source.y, dRight, dTop, dLeft + dMiddleW, 0.f, dRight, dTop);
+    patch(np.source.x, sBottom, dLeft, dBottom, 0.f, dTop + dMiddleH, dLeft, dBottom);
+    patch(sRight, sBottom, dRight, dBottom, dLeft + dMiddleW, dTop + dMiddleH, dRight, dBottom);
+
+    patch(sLeft, np.source.y, np.source.width - dLeft - dRight, dTop, dLeft, 0.f, dMiddleW, dTop);
+    patch(np.source.x, sTop, dLeft, np.source.height - dTop - dBottom, 0.f, dTop, dLeft, dMiddleH);
+    patch(sRight, sTop, dRight, np.source.height - dTop - dBottom, dLeft + dMiddleW, dTop, dRight, dMiddleH);
+    patch(sLeft, sBottom, np.source.width - dLeft - dRight, dBottom, dLeft, dTop + dMiddleH, dMiddleW, dBottom);
+    patch(sLeft, sTop, np.source.width - dLeft - dRight, np.source.height - dTop - dBottom,
+          dLeft, dTop, dMiddleW, dMiddleH);
 }
 
 ITexture QuarkGLRenderer::LoadTexture(const char* path) {
@@ -867,6 +922,8 @@ ITexture QuarkGLRenderer::LoadTexture(const char* path) {
         t.id = CreateTextureFromRgba(img.pixels.data(), img.width, img.height);
         t.width = img.width;
         t.height = img.height;
+        t.mipmaps = 1;
+        t.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
         t.valid = true;
 
         m_textureCache.emplace(cacheKey, CachedTexture{t, 1});
@@ -944,6 +1001,8 @@ IRenderTexture QuarkGLRenderer::LoadRenderTexture(int w, int h) {
 
     rt.texture.width = w;
     rt.texture.height = h;
+    rt.texture.mipmaps = 1;
+    rt.texture.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
     rt.texture.valid = true;
     TraceLog(LogLevel::Info, "RENDER_TARGET", TextFormat("[OpenGL] Render texture created: %dx%d (FBO ID: %u, Color Tex ID: %u, Depth RBO ID: %u, Format: RGBA8/Depth24)",
         w, h, rt.id, rt.texture.id, rt.depthId));
@@ -1054,6 +1113,8 @@ ITexture QuarkGLRenderer::GenCheckerTexture(int w, int h, int cell, Color ca, Co
     t.id = CreateTextureFromRgba(px.data(), w, h);
     t.width = w;
     t.height = h;
+    t.mipmaps = 1;
+    t.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
     t.valid = true;
     TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[OpenGL] Generated checker texture: %dx%d (Cell: %dpx, ID: %u)", w, h, cell, t.id));
     return t;
@@ -2461,6 +2522,8 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
             mat.maps[mapIndex].texture.id = loadedTex.id;
             mat.maps[mapIndex].texture.width = loadedTex.width;
             mat.maps[mapIndex].texture.height = loadedTex.height;
+            mat.maps[mapIndex].texture.mipmaps = loadedTex.mipmaps;
+            mat.maps[mapIndex].texture.format = loadedTex.format;
             mat.maps[mapIndex].texture.valid = loadedTex.valid;
         }
     }
@@ -2597,6 +2660,11 @@ void  QuarkGLRenderer::UnloadModel(Model& model) {
         if (mat.maps && mat.maps[MATERIAL_MAP_ALBEDO].texture.valid) {
             ITexture tempTex;
             tempTex.id = mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
+            tempTex.width = mat.maps[MATERIAL_MAP_ALBEDO].texture.width;
+            tempTex.height = mat.maps[MATERIAL_MAP_ALBEDO].texture.height;
+            tempTex.mipmaps = mat.maps[MATERIAL_MAP_ALBEDO].texture.mipmaps;
+            tempTex.format = mat.maps[MATERIAL_MAP_ALBEDO].texture.format;
+            tempTex.valid = mat.maps[MATERIAL_MAP_ALBEDO].texture.valid;
             this->UnloadTexture(tempTex);
         }
 

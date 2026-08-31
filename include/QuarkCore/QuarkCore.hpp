@@ -68,13 +68,16 @@ enum class RendererType {
  * @brief Texture structure.
  */
 struct Texture {
-    unsigned int id = 0;
-    int width = 0;
-    int height = 0;
-    bool valid = false;
+    unsigned int id = 0;     // Texture id
+    int width = 0;           // Texture base width
+    int height = 0;          // Texture base height
+    int mipmaps = 1;         // Mipmap levels, 1 by default
+    int format = 0;          // Data format (PixelFormat type)
+    bool valid = false;      // Whether the texture is valid and ready to use
 };
 
 using Texture2D = Texture;
+using TextureCubemap = Texture;
 
 } // namespace qc
 
@@ -103,34 +106,32 @@ struct RenderTexture2D {
 
 using RenderTexture = RenderTexture2D;
 
+#include "QuarkImage.hpp"
+
 /**
- * @brief Font glyph metrics.
+ * @brief Font glyph info structure.
  */
-struct FontGlyph {
-    Rectangle uv{0.0f, 0.0f, 0.0f, 0.0f};
-    float advanceX = 0.0f;
-    float offsetX = 0.0f;
-    float offsetY = 0.0f;
-    int width = 0;
-    int height = 0;
+struct GlyphInfo {
+    int value = 0;         // Character value (Unicode)
+    int offsetX = 0;       // Character offset X when drawing
+    int offsetY = 0;       // Character offset Y when drawing
+    int advanceX = 0;      // Character advance position X
+    Image image;           // Character image data
 };
 
 /**
  * @brief Font structure.
  */
 struct Font {
-    unsigned int textureId = 0;
-    int baseSize = 0;
-    int ascent = 0;
-    int descent = 0;
-    int lineGap = 0;
-    int lineHeight = 0;
-    bool valid = false;
-    FontGlyph glyphs[95];
-    uint32_t _rendererFontId = 0;
+    int baseSize = 0;             // Base size (default chars height)
+    int glyphCount = 0;           // Number of glyph characters
+    int glyphPadding = 0;         // Padding around the glyph characters
+    Texture2D texture;            // Texture atlas containing the glyphs
+    Rectangle* recs = nullptr;    // Rectangles in texture for the glyphs
+    GlyphInfo* glyphs = nullptr;  // Glyphs info data
+    bool valid = false;           // Whether the font is valid and ready to use
+    uint32_t _rendererFontId = 0; // Internal renderer font handle
 };
-
-#include "QuarkImage.hpp"
 
 /**
  * @brief Shader uniform data type enumeration.
@@ -2048,15 +2049,34 @@ QCAPI void DrawTextureRec(Texture2D texture, Rectangle source, Vec2 position, Co
 QCAPI void DrawTextureTiled(Texture2D texture, float scale, Vec2 offset, Color tint);
 
 /**
- * @brief Draw a textured polygon (n-patch).
+ * @brief N-Patch layout constants.
+ */
+#define NPATCH_NINE_PATCH            0    // Npatch layout: 3x3 tiles
+#define NPATCH_THREE_PATCH_HORIZONTAL 1   // Npatch layout: 1x3 tiles
+#define NPATCH_THREE_PATCH_VERTICAL  2    // Npatch layout: 3x1 tiles
+
+/**
+ * @brief N-Patch info structure.
+ */
+struct NPatchInfo {
+    Rectangle source;   // Texture source rectangle
+    int left = 0;       // Left border offset
+    int top = 0;        // Top border offset
+    int right = 0;      // Right border offset
+    int bottom = 0;     // Bottom border offset
+    int layout = 0;     // Layout of the n-patch: 3x3, 1x3 or 3x1
+};
+
+/**
+ * @brief Draw a texture (or part of it) that stretches or shrinks nicely.
  * @param texture Texture to draw.
- * @param source Source rectangle.
+ * @param nPatchInfo N-patch layout info (source rectangle and border offsets).
  * @param dest Destination rectangle.
  * @param origin Origin point.
  * @param rotation Rotation in degrees.
  * @param tint Tint color.
  */
-QCAPI void DrawTextureNPatch(Texture2D texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint);
+QCAPI void DrawTextureNPatch(Texture2D texture, NPatchInfo nPatchInfo, Rectangle dest, Vec2 origin, float rotation, Color tint);
 
 /**
  * @brief Check if a render texture is valid.

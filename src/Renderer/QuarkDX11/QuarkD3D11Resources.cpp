@@ -93,7 +93,7 @@ ITexture D3D11Resources::CreateTexture(ID3D11Device *device, const uint8_t *pixe
                                                            &resource.shaderResource),
                          "ID3D11Device::CreateShaderResourceView");
 
-    result = {m_nextTextureId++, width, height, true};
+    result = {m_nextTextureId++, width, height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true};
     m_textures.emplace(result.id, std::move(resource));
     return result;
 }
@@ -139,7 +139,7 @@ IRenderTexture D3D11Resources::CreateRenderTexture(ID3D11Device *device, int wid
                          "ID3D11Device::CreateDepthStencilView render target depth");
 
     result.id = m_nextTextureId++;
-    result.texture = {result.id, width, height, true};
+    result.texture = {result.id, width, height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true};
     m_renderTextures.emplace(result.id, std::move(resource));
     return result;
 }
