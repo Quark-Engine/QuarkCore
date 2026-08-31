@@ -2,8 +2,6 @@
 
 ### Todo
 
-- [ ] Image API
-- [ ] Audio API
 - [ ] Network API
 - [ ] QuarkSL for multibackend shaders
 - [ ] OpenGL ES backend for mobile devices
@@ -12,8 +10,11 @@
 
 ### In Progress
 
+- [ ] Audio API
+
 ### Done ✓
 
+- [x] Image API
 - [x] Improve light compatibility API
 - [x] OpenGL Backend
 - [x] Vulkan Backend
