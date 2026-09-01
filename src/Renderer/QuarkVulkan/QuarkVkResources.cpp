@@ -60,6 +60,58 @@ bool QuarkVkResources::AllocateDescriptorSet(VkDescriptorSet& outSet) {
     return m_descriptorAllocator(outSet);
 }
 
+void QuarkVkResources::SetTextureSamplingMode(TextureFilterMode filterMode, int wrapMode) {
+    if (m_device == VK_NULL_HANDLE) {
+        return;
+    }
+
+    const VkFilter filter = (filterMode == TextureFilterMode::Nearest)
+        ? VK_FILTER_NEAREST
+        : VK_FILTER_LINEAR;
+
+    const VkSamplerAddressMode addressMode = [wrapMode]() {
+        switch (wrapMode) {
+            case TEXTURE_WRAP_CLAMP:
+                return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            case TEXTURE_WRAP_MIRROR_REPEAT:
+                return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+            case TEXTURE_WRAP_MIRROR_CLAMP:
+                return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+            case TEXTURE_WRAP_REPEAT:
+            default:
+                return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        }
+    }();
+
+    for (auto& [id, tex] : m_textures) {
+        if (tex.sampler == VK_NULL_HANDLE || tex.view == VK_NULL_HANDLE) {
+            continue;
+        }
+
+        VkSampler newSampler = VK_NULL_HANDLE;
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = filter;
+        samplerInfo.minFilter = filter;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.addressModeU = addressMode;
+        samplerInfo.addressModeV = addressMode;
+        samplerInfo.addressModeW = addressMode;
+        samplerInfo.anisotropyEnable = VK_FALSE;
+        samplerInfo.maxLod = 1.0f;
+
+        if (vkCreateSampler(m_device, &samplerInfo, nullptr, &newSampler) != VK_SUCCESS) {
+            continue;
+        }
+
+        vkDestroySampler(m_device, tex.sampler, nullptr);
+        tex.sampler = newSampler;
+        if (tex.descriptorSet != VK_NULL_HANDLE) {
+            WriteTextureDescriptorSet(tex);
+        }
+    }
+}
+
 bool QuarkVkResources::WriteTextureDescriptorSet(VkTextureData& tex) {
     if (tex.view == VK_NULL_HANDLE || tex.sampler == VK_NULL_HANDLE) {
         return false;

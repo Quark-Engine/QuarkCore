@@ -33,6 +33,7 @@ public:
     bool IsInitialized() const { return m_device != VK_NULL_HANDLE; }
 
     uint32_t CreateTextureFromRGBA(const unsigned char* rgba, uint32_t width, uint32_t height);
+    void     SetTextureSamplingMode(TextureFilterMode filterMode, int wrapMode);
     void     DestroyTexture(uint32_t textureId);
     bool     Contains(uint32_t textureId) const { return m_textures.find(textureId) != m_textures.end(); }
     const VkTextureData* Get(uint32_t textureId) const;

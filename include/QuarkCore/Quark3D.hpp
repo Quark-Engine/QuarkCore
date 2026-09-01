@@ -237,6 +237,12 @@ QCAPI Model LoadModel(const char* filePath);
 QCAPI Model LoadModelFromMesh(const char* name, Mesh mesh);
 QCAPI Model LoadModelFromMesh(Mesh mesh);
 QCAPI Material LoadMaterialDefault();
+QCAPI bool IsModelValid(Model model);
+QCAPI Material* LoadMaterials(const char* fileName, int* materialCount);
+QCAPI bool IsMaterialValid(Material material);
+QCAPI void UnloadMaterial(Material material);
+QCAPI void SetMaterialTexture(Material* material, int mapType, Texture2D texture);
+QCAPI void SetModelMeshMaterial(Model* model, int meshId, int materialId);
 
 /** * @brief Unload a model and free its resources.
  *
@@ -437,6 +443,13 @@ QCAPI void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, 
  * @param color Line color.
  */
 QCAPI void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color);
+QCAPI void DrawPoint3D(Vec3 position, Color color);
+QCAPI void DrawCircle3D(Vec3 center, float radius, Vec3 rotationAxis, float rotationAngle, Color color);
+QCAPI void DrawTriangle3D(Vec3 v1, Vec3 v2, Vec3 v3, Color color);
+QCAPI void DrawTriangleStrip3D(const Vec3* points, int pointCount, Color color);
+QCAPI void DrawCapsule(Vec3 startPos, Vec3 endPos, float radius, int rings, int slices, Color color);
+QCAPI void DrawCapsuleWires(Vec3 startPos, Vec3 endPos, float radius, int rings, int slices, Color color);
+QCAPI void DrawRay(Ray ray, Color color);
 
 /**
  * @brief Draw a grid.

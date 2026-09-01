@@ -126,6 +126,7 @@ public:
     Image ReadTextureImage(const ITexture &texture) override;
     Image ReadScreenImage() override;
 
+    void DrawDebugText(const char *text, int x, int y, int fontSize, Color color) override;
     void DrawText(const char *text, int x, int y, int fontSize, Color color) override;
     void DrawTextEx(IFont font, const char *text, Vec2 position, float fontSize,
                     float spacing, Color tint) override;
@@ -196,12 +197,17 @@ public:
 
     void BeginTextureMode(IRenderTexture target) override;
     void EndTextureMode() override;
+    void SetTextureFilterMode(TextureFilterMode mode) override;
+    void SetTextureFilter(int filter) override;
+    void SetTextureWrap(int wrap) override;
+    void BeginScissorMode(int x, int y, int width, int height) override;
+    void EndScissorMode() override;
+    void SetBlendMode(int mode) override;
     RendererType GetType() const override { return RendererType::D3D11; }
     bool ShouldClose() const override { return m_shouldClose; }
     void SetShouldClose(bool v) { m_shouldClose = v; }
     void SetTargetFPS(int fps) override { m_targetFps = fps; }
     void SetMSAASamples(int samples);
-    void SetTextureFilterMode(TextureFilterMode mode);
     void Set3DLightEnabled(int index, bool enabled) override;
     bool SetVSync(bool enabled) override {
         m_vsync = enabled;
@@ -336,6 +342,7 @@ private:
     bool m_drawing = false;
     std::chrono::steady_clock::time_point m_lastFrame{};
     std::unordered_map<uint32_t, FontData> m_fonts;
+    std::unordered_map<int, IFont> m_debugFonts;
     uint32_t m_nextFontId = 1;
     uint32_t m_defaultFontId = 0;
     std::unordered_map<uint32_t, ShaderProgramData> m_shaderPrograms;

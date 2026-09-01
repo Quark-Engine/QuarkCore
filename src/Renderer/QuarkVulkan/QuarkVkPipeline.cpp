@@ -212,6 +212,15 @@ void QuarkVkPipeline::EnsureLayouts() {
     }
 }
 
+void QuarkVkPipeline::SetBlendMode(int mode) {
+    m_blendMode = mode;
+    if (m_device == VK_NULL_HANDLE || m_renderPass == VK_NULL_HANDLE) {
+        return;
+    }
+
+    CreatePipelines(m_renderPass, m_offscreenRenderPass, m_msaaSamples);
+}
+
 void QuarkVkPipeline::CreatePipelines(VkRenderPass renderPass,
                                       VkRenderPass offscreenRenderPass,
                                       VkSampleCountFlagBits msaaSamples) {
@@ -427,13 +436,52 @@ VkPipeline QuarkVkPipeline::Create2DPipeline(VkRenderPass renderPass,
                                           VK_COLOR_COMPONENT_G_BIT |
                                           VK_COLOR_COMPONENT_B_BIT |
                                           VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable    = VK_TRUE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+    colorBlendAttachment.blendEnable = VK_TRUE;
+
+    switch (m_blendMode) {
+        case BLEND_ADDITIVE:
+        case BLEND_ADD_COLORS:
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+            colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+            break;
+        case BLEND_MULTIPLIED:
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+            colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+            break;
+        case BLEND_MOD_COLOR:
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+            colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+            colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ZERO;
+            colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+            break;
+        case BLEND_SUBTRACT_COLORS:
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_REVERSE_SUBTRACT;
+            colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_REVERSE_SUBTRACT;
+            break;
+        case BLEND_ALPHA:
+        default:
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+            colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+            break;
+    }
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType             = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -592,13 +640,52 @@ VkPipeline QuarkVkPipeline::Create3DPipeline(VkRenderPass renderPass,
                                           VK_COLOR_COMPONENT_G_BIT |
                                           VK_COLOR_COMPONENT_B_BIT |
                                           VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable    = VK_TRUE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+    colorBlendAttachment.blendEnable = VK_TRUE;
+
+    switch (m_blendMode) {
+        case BLEND_ADDITIVE:
+        case BLEND_ADD_COLORS:
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+            colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+            break;
+        case BLEND_MULTIPLIED:
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+            colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+            break;
+        case BLEND_MOD_COLOR:
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+            colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+            colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ZERO;
+            colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+            break;
+        case BLEND_SUBTRACT_COLORS:
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_REVERSE_SUBTRACT;
+            colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_REVERSE_SUBTRACT;
+            break;
+        case BLEND_ALPHA:
+        default:
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+            colorBlendAttachment.srcAlphaBlendFactor  = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor  = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colorBlendAttachment.alphaBlendOp         = VK_BLEND_OP_ADD;
+            break;
+    }
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;

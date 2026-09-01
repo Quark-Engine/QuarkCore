@@ -1,4 +1,5 @@
 ﻿#include "QuarkVkRenderer.hpp"
+#include "../DebugFont.h"
 
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
@@ -359,6 +360,42 @@ Vec2 QuarkVkRenderer::MeasureTextWithFontData(const FontData& fd, const char* te
     }
 
     return Vec2{ std::max(maxW, x), lineHeight * static_cast<float>(lines) };
+}
+
+void QuarkVkRenderer::DrawDebugText(const char* text, int x, int y, int fontSize, Color color) {
+    if (!text || !*text || fontSize <= 0) {
+        return;
+    }
+
+    static std::unordered_map<int, IFont> s_debugFonts;
+    auto it = s_debugFonts.find(fontSize);
+    if (it == s_debugFonts.end()) {
+        IFont font = LoadFontFromMemory("ttf", tahoma_ttf, static_cast<int>(tahoma_ttf_len), fontSize, nullptr, 0);
+        if (!font.IsValid()) {
+            return;
+        }
+        it = s_debugFonts.emplace(fontSize, font).first;
+    }
+
+    const Color shadow = { 0, 0, 0, 255 };
+    const std::array<Vec2, 9> offsets = {
+        Vec2{ -1.f, -1.f }, Vec2{ 0.f, -1.f }, Vec2{ 1.f, -1.f },
+        Vec2{ -1.f, 0.f }, Vec2{ 0.f, 0.f }, Vec2{ 1.f, 0.f },
+        Vec2{ -1.f, 1.f }, Vec2{ 0.f, 1.f }, Vec2{ 1.f, 1.f }
+    };
+
+    for (const Vec2& delta : offsets) {
+        if (delta.x == 0.f && delta.y == 0.f) {
+            continue;
+        }
+        DrawTextEx(it->second, text, Vec2{ static_cast<float>(x) + delta.x, static_cast<float>(y) + delta.y },
+                   static_cast<float>(fontSize), 0.f, shadow);
+    }
+
+    DrawTextEx(it->second, text, Vec2{ static_cast<float>(x) + 1.f, static_cast<float>(y) + 1.f },
+               static_cast<float>(fontSize), 0.f, shadow);
+    DrawTextEx(it->second, text, Vec2{ static_cast<float>(x), static_cast<float>(y) },
+               static_cast<float>(fontSize), 0.f, color);
 }
 
 void QuarkVkRenderer::DrawText(const char* text, int x, int y, int fontSize, Color color) {

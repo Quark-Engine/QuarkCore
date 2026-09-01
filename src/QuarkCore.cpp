@@ -51,6 +51,9 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
+#include <AL/al.h>
+#include <AL/alc.h>
+
 #include <unordered_map>
 
 namespace qc {
@@ -80,7 +83,45 @@ int   gLastKeyPressed   = 0;
 int   gLastCharPressed  = 0;
 KeyboardKey gExitKey    = KeyboardKey::Escape;
 Vec2  gMousePreviousPosition{};
+Vec2  gMouseOffset{};
+Vec2  gMouseScale{1.0f, 1.0f};
 bool  gCursorHidden     = false;
+
+struct rAudioProcessor {
+    AudioCallback callback = nullptr;
+    rAudioProcessor* next = nullptr;
+};
+
+struct rAudioBuffer {
+    ALuint source = 0;
+    ALuint buffer = 0;
+    unsigned int frameCount = 0;
+    unsigned int sampleRate = 0;
+    unsigned int sampleSize = 0;
+    unsigned int channels = 0;
+    bool ownsBuffer = true;
+    bool streaming = false;
+    AudioCallback callback = nullptr;
+    std::vector<AudioCallback> processors;
+};
+
+ALCdevice* gAudioDevice = nullptr;
+ALCcontext* gAudioContext = nullptr;
+float gMasterVolume = 1.0f;
+int gAudioStreamBufferSizeDefault = 4096;
+std::vector<AudioCallback> gAudioMixedProcessors;
+LoadFileDataCallback gLoadFileDataCallback = nullptr;
+SaveFileDataCallback gSaveFileDataCallback = nullptr;
+LoadFileTextCallback gLoadFileTextCallback = nullptr;
+SaveFileTextCallback gSaveFileTextCallback = nullptr;
+AutomationEventList* gAutomationEventList = nullptr;
+AutomationEventList gDefaultAutomationEventList{};
+int gAutomationBaseFrame = 0;
+bool gAutomationRecording = false;
+bool gVrStereoEnabled = false;
+VrStereoConfig gCurrentVrStereoConfig{};
+Texture2D gShapesTexture{};
+Rectangle gShapesTextureRect{};
 
 
 const char* ToString(LogLevel level) {
@@ -159,7 +200,10 @@ void CopyText(char* dst, size_t size, const char* src) {
 void UpdateInputFromEvents() {
     float mx = 0.f, my = 0.f;
     const SDL_MouseButtonFlags ms = SDL_GetMouseState(&mx, &my);
-    gWin.mousePosition = Vec2{mx, my};
+    gWin.mousePosition = Vec2{
+        (mx + gMouseOffset.x) * gMouseScale.x,
+        (my + gMouseOffset.y) * gMouseScale.y
+    };
     gWin.mouseButtons[static_cast<std::size_t>(MouseButton::Left)]   = (ms & SDL_BUTTON_LMASK) != 0;
     gWin.mouseButtons[static_cast<std::size_t>(MouseButton::Middle)] = (ms & SDL_BUTTON_MMASK) != 0;
     gWin.mouseButtons[static_cast<std::size_t>(MouseButton::Right)]  = (ms & SDL_BUTTON_RMASK) != 0;
@@ -229,6 +273,161 @@ static bool InitOpenGLBackend(int width, int height, const char* title) {
 }
 #endif
 
+static TextureFilterMode ConvertTextureFilterMode(int filter) {
+    switch (filter) {
+        case TEXTURE_FILTER_POINT: return TextureFilterMode::Nearest;
+        case TEXTURE_FILTER_BILINEAR: return TextureFilterMode::Linear;
+        case TEXTURE_FILTER_TRILINEAR:
+        case TEXTURE_FILTER_ANISOTROPIC_4X:
+        case TEXTURE_FILTER_ANISOTROPIC_8X:
+        case TEXTURE_FILTER_ANISOTROPIC_16X:
+        default: return TextureFilterMode::Linear;
+    }
+}
+
+static ALenum GetOpenALFormat(unsigned int sampleSize, unsigned int channels) {
+    if (channels == 1) {
+        if (sampleSize == 8) return AL_FORMAT_MONO8;
+        if (sampleSize == 16) return AL_FORMAT_MONO16;
+    } else if (channels == 2) {
+        if (sampleSize == 8) return AL_FORMAT_STEREO8;
+        if (sampleSize == 16) return AL_FORMAT_STEREO16;
+    }
+    return 0;
+}
+
+static size_t GetAudioFrameSize(unsigned int sampleSize, unsigned int channels) {
+    return static_cast<size_t>((sampleSize + 7u) / 8u) * static_cast<size_t>(channels);
+}
+
+static bool EnsureAudioDevice() {
+    if (gAudioContext != nullptr) return true;
+    InitAudioDevice();
+    return gAudioContext != nullptr;
+}
+
+static uint16_t ReadLE16(const unsigned char* p) {
+    return static_cast<uint16_t>(p[0] | (p[1] << 8));
+}
+
+static uint32_t ReadLE32(const unsigned char* p) {
+    return static_cast<uint32_t>(p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
+}
+
+static Wave LoadWaveFromWavData(const unsigned char* fileData, int dataSize) {
+    Wave wave{};
+    if (!fileData || dataSize < 44) return wave;
+    if (std::memcmp(fileData, "RIFF", 4) != 0 || std::memcmp(fileData + 8, "WAVE", 4) != 0) return wave;
+
+    unsigned int channels = 0;
+    unsigned int sampleRate = 0;
+    unsigned int sampleSize = 0;
+    const unsigned char* samples = nullptr;
+    uint32_t sampleBytes = 0;
+
+    int offset = 12;
+    while (offset + 8 <= dataSize) {
+        const unsigned char* chunk = fileData + offset;
+        const uint32_t chunkSize = ReadLE32(chunk + 4);
+        offset += 8;
+        if (offset + static_cast<int>(chunkSize) > dataSize) break;
+
+        if (std::memcmp(chunk, "fmt ", 4) == 0 && chunkSize >= 16) {
+            const uint16_t audioFormat = ReadLE16(fileData + offset);
+            channels = ReadLE16(fileData + offset + 2);
+            sampleRate = ReadLE32(fileData + offset + 4);
+            sampleSize = ReadLE16(fileData + offset + 14);
+            if (audioFormat != 1 && audioFormat != 3) return {};
+        } else if (std::memcmp(chunk, "data", 4) == 0) {
+            samples = fileData + offset;
+            sampleBytes = chunkSize;
+        }
+
+        offset += static_cast<int>(chunkSize + (chunkSize & 1u));
+    }
+
+    const size_t frameSize = GetAudioFrameSize(sampleSize, channels);
+    if (!samples || sampleBytes == 0 || frameSize == 0 || sampleRate == 0) return wave;
+
+    void* data = MemAlloc(sampleBytes);
+    if (!data) return wave;
+    std::memcpy(data, samples, sampleBytes);
+    wave.frameCount = static_cast<unsigned int>(sampleBytes / frameSize);
+    wave.sampleRate = sampleRate;
+    wave.sampleSize = sampleSize;
+    wave.channels = channels;
+    wave.data = data;
+    return wave;
+}
+
+static void WriteLE16(std::ofstream& out, uint16_t value) {
+    const unsigned char bytes[2] = {
+        static_cast<unsigned char>(value & 0xffu),
+        static_cast<unsigned char>((value >> 8) & 0xffu)
+    };
+    out.write(reinterpret_cast<const char*>(bytes), 2);
+}
+
+static void WriteLE32(std::ofstream& out, uint32_t value) {
+    const unsigned char bytes[4] = {
+        static_cast<unsigned char>(value & 0xffu),
+        static_cast<unsigned char>((value >> 8) & 0xffu),
+        static_cast<unsigned char>((value >> 16) & 0xffu),
+        static_cast<unsigned char>((value >> 24) & 0xffu)
+    };
+    out.write(reinterpret_cast<const char*>(bytes), 4);
+}
+
+static Sound MakeSoundFromWave(Wave wave, bool copyData) {
+    Sound sound{};
+    if (!wave.data || wave.frameCount == 0 || !EnsureAudioDevice()) return sound;
+    const ALenum format = GetOpenALFormat(wave.sampleSize, wave.channels);
+    if (format == 0) return sound;
+
+    ALuint buffer = 0;
+    ALuint source = 0;
+    alGenBuffers(1, &buffer);
+    alGenSources(1, &source);
+    const size_t byteCount = static_cast<size_t>(wave.frameCount) * GetAudioFrameSize(wave.sampleSize, wave.channels);
+    const void* srcData = wave.data;
+    std::vector<unsigned char> owned;
+    if (copyData) {
+        owned.resize(byteCount);
+        std::memcpy(owned.data(), wave.data, byteCount);
+        srcData = owned.data();
+    }
+    alBufferData(buffer, format, srcData, static_cast<ALsizei>(byteCount), static_cast<ALsizei>(wave.sampleRate));
+    alSourcei(source, AL_BUFFER, static_cast<ALint>(buffer));
+    alSourcef(source, AL_GAIN, 1.0f);
+
+    if (alGetError() != AL_NO_ERROR) {
+        if (source) alDeleteSources(1, &source);
+        if (buffer) alDeleteBuffers(1, &buffer);
+        return sound;
+    }
+
+    auto* audioBuffer = new rAudioBuffer{};
+    audioBuffer->source = source;
+    audioBuffer->buffer = buffer;
+    audioBuffer->frameCount = wave.frameCount;
+    audioBuffer->sampleRate = wave.sampleRate;
+    audioBuffer->sampleSize = wave.sampleSize;
+    audioBuffer->channels = wave.channels;
+    sound.stream.buffer = audioBuffer;
+    sound.stream.sampleRate = wave.sampleRate;
+    sound.stream.sampleSize = wave.sampleSize;
+    sound.stream.channels = wave.channels;
+    sound.frameCount = wave.frameCount;
+    return sound;
+}
+
+static void DestroyAudioBuffer(rAudioBuffer* buffer, bool deleteOpenALBuffer) {
+    if (!buffer) return;
+    if (buffer->source) alDeleteSources(1, &buffer->source);
+    if (deleteOpenALBuffer && buffer->buffer) alDeleteBuffers(1, &buffer->buffer);
+    delete buffer;
+}
+
 void SetMSAASamples(int samples) {
     gRequestedMSAASamples = (samples == 2 || samples == 4 || samples == 8) ? samples : 1;
 #if defined(QC_ENABLE_VULKAN)
@@ -241,9 +440,11 @@ void SetMSAASamples(int samples) {
 
 void SetTextureFilterMode(TextureFilterMode mode) {
     gTextureFilterMode = mode;
-#if defined(QC_ENABLE_D3D11)
-    gD3D11Renderer.SetTextureFilterMode(mode);
-#endif
+    gWin.activeTextureFilter = (mode == TextureFilterMode::Nearest) ? TEXTURE_FILTER_POINT : TEXTURE_FILTER_BILINEAR;
+
+    if (gRendererPtr) {
+        gRenderer.SetTextureFilterMode(mode);
+    }
 }
 
 #if defined(QC_ENABLE_VULKAN)
@@ -990,6 +1191,1006 @@ bool IsTextInputActive() {
     return SDL_TextInputActive(gWin.window);
 }
 
+bool IsKeyPressedRepeat(int key) {
+    return IsKeyPressed(static_cast<KeyboardKey>(key));
+}
+
+const char* GetKeyName(int key) {
+    return SDL_GetKeyName(static_cast<SDL_Keycode>(key));
+}
+
+int GetTouchX(void) {
+    return static_cast<int>(GetMousePosition().x);
+}
+
+int GetTouchY(void) {
+    return static_cast<int>(GetMousePosition().y);
+}
+
+Vec2 GetTouchPosition(int index) {
+    if (index == 0) {
+        return GetMousePosition();
+    }
+    return Vec2{};
+}
+
+int GetTouchPointId(int index) {
+    if (index == 0) {
+        return 0;
+    }
+    return -1;
+}
+
+int GetTouchPointCount(void) {
+    const bool hasTouch =
+        IsMouseButtonDown(MouseButton::Left) ||
+        IsMouseButtonDown(MouseButton::Right) ||
+        IsMouseButtonDown(MouseButton::Middle);
+
+    return hasTouch ? 1 : 0;
+}
+
+void SetGesturesEnabled(unsigned int flags) {
+    gWin.enabledGestures = flags;
+    if (flags == GESTURE_NONE) {
+        gWin.currentGesture = GESTURE_NONE;
+    }
+}
+
+bool IsGestureDetected(unsigned int gesture) {
+    if ((gWin.enabledGestures & gesture) == 0u) {
+        return false;
+    }
+
+    return gWin.currentGesture == static_cast<int>(gesture);
+}
+
+int GetGestureDetected(void) {
+    return gWin.currentGesture;
+}
+
+float GetGestureHoldDuration(void) {
+    return gWin.gestureHoldDuration;
+}
+
+Vec2 GetGestureDragVector(void) {
+    return gWin.gestureDragVector;
+}
+
+float GetGestureDragAngle(void) {
+    return gWin.gestureDragAngle;
+}
+
+Vec2 GetGesturePinchVector(void) {
+    return gWin.gesturePinchVector;
+}
+
+float GetGesturePinchAngle(void) {
+    return gWin.gesturePinchAngle;
+}
+
+void UpdateCamera(Camera3D* camera, int mode) {
+    if (!camera) {
+        return;
+    }
+
+    camera->projection = mode;
+    if (mode == CAMERA_FREE || mode == CAMERA_ORBITAL || mode == CAMERA_FIRST_PERSON || mode == CAMERA_THIRD_PERSON) {
+        return;
+    }
+
+    camera->target = camera->position + Vec3{0.0f, 0.0f, -1.0f};
+}
+
+void UpdateCameraPro(Camera3D* camera, Vec2 movement, Vec3 rotation, float zoom) {
+    if (!camera) {
+        return;
+    }
+
+    const Vec3 delta{movement.x, movement.y, 0.0f};
+    camera->position += delta;
+    camera->target += delta;
+
+    if (rotation.x != 0.0f || rotation.y != 0.0f || rotation.z != 0.0f) {
+        const Vec3 direction = (camera->target - camera->position).normalized();
+        const Vec3 right = direction.cross(camera->up).normalized();
+        const Vec3 up = right.cross(direction).normalized();
+
+        const float yaw = rotation.y * DEG2RAD;
+        const float pitch = rotation.x * DEG2RAD;
+        const float roll = rotation.z * DEG2RAD;
+
+        Vec3 rotatedDirection = direction;
+        rotatedDirection = Vec3{
+            rotatedDirection.x * std::cos(yaw) + rotatedDirection.z * std::sin(yaw),
+            rotatedDirection.y,
+            -rotatedDirection.x * std::sin(yaw) + rotatedDirection.z * std::cos(yaw)
+        };
+
+        rotatedDirection = Vec3{
+            rotatedDirection.x,
+            rotatedDirection.y * std::cos(pitch) - rotatedDirection.z * std::sin(pitch),
+            rotatedDirection.y * std::sin(pitch) + rotatedDirection.z * std::cos(pitch)
+        };
+
+        const Vec3 rotatedUp = Vec3{
+            up.x * std::cos(roll) - right.x * std::sin(roll),
+            up.y * std::cos(roll) - right.y * std::sin(roll),
+            up.z * std::cos(roll) - right.z * std::sin(roll)
+        };
+
+        camera->target = camera->position + rotatedDirection;
+        camera->up = rotatedUp.normalized();
+    }
+
+    camera->fovy = std::clamp(camera->fovy + zoom, 1.0f, 179.0f);
+}
+
+Mat4 GetCameraMatrix(Camera3D camera) {
+    return GetCameraMat4(camera);
+}
+
+Mat4 GetCameraMatrix2D(Camera2D camera) {
+    const float angle = camera.rotation * DEG2RAD;
+    const float cosA = std::cos(angle);
+    const float sinA = std::sin(angle);
+    const float scale = camera.zoom;
+
+    const Mat4 translationToTarget = Mat4::translation(-camera.target.x, -camera.target.y, 0.0f);
+    const Mat4 rotation = Mat4::identity();
+    Mat4 rotationMatrix = rotation;
+    rotationMatrix.m[0] = cosA;
+    rotationMatrix.m[1] = sinA;
+    rotationMatrix.m[4] = -sinA;
+    rotationMatrix.m[5] = cosA;
+
+    const Mat4 scaleMatrix = Mat4::scale(scale, scale, 1.0f);
+    const Mat4 translationToScreen = Mat4::translation(camera.offset.x, camera.offset.y, 0.0f);
+
+    return translationToScreen * scaleMatrix * rotationMatrix * translationToTarget;
+}
+
+void BeginBlendMode(int mode) {
+    gWin.activeBlendMode = mode;
+
+    if (gRendererPtr) {
+        gRenderer.SetBlendMode(mode);
+    }
+}
+
+void EndBlendMode(void) {
+    gWin.activeBlendMode = BLEND_ALPHA;
+
+    if (gRendererPtr) {
+        gRenderer.SetBlendMode(BLEND_ALPHA);
+    }
+}
+
+void BeginScissorMode(int x, int y, int width, int height) {
+    gWin.scissorEnabled = true;
+    gWin.scissorRect = Rectangle{
+        static_cast<float>(x),
+        static_cast<float>(y),
+        static_cast<float>(width),
+        static_cast<float>(height)
+    };
+
+    if (gRendererPtr) {
+        gRenderer.BeginScissorMode(x, y, width, height);
+    }
+}
+
+void EndScissorMode(void) {
+    gWin.scissorEnabled = false;
+    gWin.scissorRect = Rectangle{};
+
+    if (gRendererPtr) {
+        gRenderer.EndScissorMode();
+    }
+}
+
+void SetTextureFilter(Texture2D texture, int filter) {
+    gWin.activeTextureFilter = filter;
+    SetTextureFilterMode(ConvertTextureFilterMode(filter));
+
+    if (gRendererPtr) {
+        gRenderer.SetTextureFilter(filter);
+    }
+}
+
+void SetTextureWrap(Texture2D texture, int wrap) {
+    gWin.activeTextureWrap = wrap;
+
+    if (gRendererPtr) {
+        gRenderer.SetTextureWrap(wrap);
+    }
+}
+
+void InitAudioDevice(void) {
+    if (gAudioContext != nullptr) return;
+    TraceLog(LogLevel::Info, "AUDIO", "Initializing OpenAL audio device...");
+    gAudioDevice = alcOpenDevice(nullptr);
+    if (!gAudioDevice) {
+        TraceLog(LogLevel::Error, "AUDIO", "Failed to open OpenAL device");
+        return;
+    }
+    gAudioContext = alcCreateContext(gAudioDevice, nullptr);
+    if (!gAudioContext || !alcMakeContextCurrent(gAudioContext)) {
+        TraceLog(LogLevel::Error, "AUDIO", "Failed to create OpenAL context");
+        if (gAudioContext) alcDestroyContext(gAudioContext);
+        alcCloseDevice(gAudioDevice);
+        gAudioContext = nullptr;
+        gAudioDevice = nullptr;
+        return;
+    }
+    alListenerf(AL_GAIN, gMasterVolume);
+    ALenum error = alGetError();
+    if (error != AL_NO_ERROR) {
+        TraceLog(LogLevel::Warn, "AUDIO", TextFormat("OpenAL context initialized, but reported error: 0x%04X", error));
+    }
+    TraceLog(LogLevel::Info, "AUDIO", "OpenAL audio device initialized successfully.");
+}
+
+void CloseAudioDevice(void) {
+    if (gAudioContext) {
+        TraceLog(LogLevel::Info, "AUDIO", "Closing OpenAL audio context...");
+        alcMakeContextCurrent(nullptr);
+        alcDestroyContext(gAudioContext);
+        gAudioContext = nullptr;
+    }
+    if (gAudioDevice) {
+        alcCloseDevice(gAudioDevice);
+        gAudioDevice = nullptr;
+    }
+}
+
+bool IsAudioDeviceReady(void) {
+    return gAudioDevice != nullptr && gAudioContext != nullptr;
+}
+
+void SetMasterVolume(float volume) {
+    gMasterVolume = std::clamp(volume, 0.0f, 1.0f);
+    if (IsAudioDeviceReady()) alListenerf(AL_GAIN, gMasterVolume);
+}
+
+float GetMasterVolume(void) {
+    return gMasterVolume;
+}
+
+Wave LoadWave(const char* fileName) {
+    int dataSize = 0;
+    unsigned char* data = LoadFileData(fileName, &dataSize);
+    Wave wave = LoadWaveFromMemory(GetFileExtension(fileName), data, dataSize);
+    UnloadFileData(data);
+    return wave;
+}
+
+Wave LoadWaveFromMemory(const char* fileType, const unsigned char* fileData, int dataSize) {
+    if (!fileType || !fileData || dataSize <= 0) {
+        TraceLog(LogLevel::Warn, "AUDIO", TextFormat("LoadWaveFromMemory: invalid input (fileType=%s, data=%p, size=%d)", fileType ? fileType : "<null>", static_cast<const void*>(fileData), dataSize));
+        return {};
+    }
+    if (TextIsEqual(fileType, ".wav") || TextIsEqual(fileType, "wav") || TextIsEqual(fileType, ".WAV") || TextIsEqual(fileType, "WAV")) {
+        TraceLog(LogLevel::Trace, "AUDIO", TextFormat("Loading WAV data (%d bytes)", dataSize));
+        return LoadWaveFromWavData(fileData, dataSize);
+    }
+    TraceLog(LogLevel::Warn, "AUDIO", TextFormat("Unsupported wave format: %s", fileType));
+    return {};
+}
+
+float* LoadWaveSamples(Wave wave) {
+    if (!wave.data || wave.frameCount == 0 || wave.channels == 0) return nullptr;
+    const size_t count = static_cast<size_t>(wave.frameCount) * wave.channels;
+    float* samples = static_cast<float*>(MemAlloc(count * sizeof(float)));
+    if (!samples) return nullptr;
+
+    if (wave.sampleSize == 8) {
+        const auto* src = static_cast<const unsigned char*>(wave.data);
+        for (size_t i = 0; i < count; ++i) samples[i] = (static_cast<float>(src[i]) - 128.0f) / 128.0f;
+    } else if (wave.sampleSize == 16) {
+        const auto* src = static_cast<const int16_t*>(wave.data);
+        for (size_t i = 0; i < count; ++i) samples[i] = static_cast<float>(src[i]) / 32768.0f;
+    } else if (wave.sampleSize == 32) {
+        std::memcpy(samples, wave.data, count * sizeof(float));
+    } else {
+        MemFree(samples);
+        return nullptr;
+    }
+    return samples;
+}
+
+Sound LoadSound(const char* fileName) {
+    TraceLog(LogLevel::Trace, "AUDIO", TextFormat("Loading sound file: %s", fileName ? fileName : "<null>"));
+    Wave wave = LoadWave(fileName);
+    Sound sound = LoadSoundFromWave(wave);
+    UnloadWave(wave);
+    if (sound.stream.buffer == nullptr) {
+        TraceLog(LogLevel::Warn, "AUDIO", TextFormat("Failed to load sound file: %s", fileName ? fileName : "<null>"));
+    } else {
+        TraceLog(LogLevel::Info, "AUDIO", TextFormat("Sound loaded successfully: %s (%u frames)", fileName ? fileName : "<null>", sound.frameCount));
+    }
+    return sound;
+}
+
+Sound LoadSoundFromWave(Wave wave) {
+    if (wave.data == nullptr || wave.frameCount == 0) {
+        TraceLog(LogLevel::Warn, "AUDIO", "LoadSoundFromWave: empty wave data");
+        return {};
+    }
+    TraceLog(LogLevel::Trace, "AUDIO", TextFormat("Creating sound buffer: %u frames, %uHz, %u-bit, %u channels", wave.frameCount, wave.sampleRate, wave.sampleSize, wave.channels));
+    return MakeSoundFromWave(wave, false);
+}
+
+Sound LoadSoundAlias(Sound source) {
+    Sound alias{};
+    if (!source.stream.buffer || !EnsureAudioDevice()) return alias;
+    ALuint src = 0;
+    alGenSources(1, &src);
+    alSourcei(src, AL_BUFFER, static_cast<ALint>(source.stream.buffer->buffer));
+    auto* buffer = new rAudioBuffer{*source.stream.buffer};
+    buffer->source = src;
+    buffer->ownsBuffer = false;
+    alias.stream = source.stream;
+    alias.stream.buffer = buffer;
+    alias.frameCount = source.frameCount;
+    return alias;
+}
+
+void UpdateSound(Sound sound, const void* data, int frameCount) {
+    if (!sound.stream.buffer || !data || frameCount <= 0) return;
+    const ALenum format = GetOpenALFormat(sound.stream.sampleSize, sound.stream.channels);
+    if (format == 0) return;
+    const size_t byteCount = static_cast<size_t>(frameCount) * GetAudioFrameSize(sound.stream.sampleSize, sound.stream.channels);
+    alSourceStop(sound.stream.buffer->source);
+    alBufferData(sound.stream.buffer->buffer, format, data, static_cast<ALsizei>(byteCount), static_cast<ALsizei>(sound.stream.sampleRate));
+    sound.stream.buffer->frameCount = static_cast<unsigned int>(frameCount);
+}
+
+void UnloadWave(Wave wave) {
+    if (wave.data) MemFree(wave.data);
+}
+
+void UnloadSound(Sound sound) {
+    TraceLog(LogLevel::Trace, "AUDIO", TextFormat("Unloading sound: buffer=%p", static_cast<void*>(sound.stream.buffer)));
+    DestroyAudioBuffer(sound.stream.buffer, sound.stream.buffer ? sound.stream.buffer->ownsBuffer : false);
+}
+
+void UnloadSoundAlias(Sound alias) {
+    DestroyAudioBuffer(alias.stream.buffer, false);
+}
+
+bool ExportWave(Wave wave, const char* fileName) {
+    if (!wave.data || !fileName) return false;
+    const size_t dataBytes = static_cast<size_t>(wave.frameCount) * GetAudioFrameSize(wave.sampleSize, wave.channels);
+    if (dataBytes == 0 || dataBytes > UINT32_MAX) return false;
+    std::ofstream out(fileName, std::ios::binary);
+    if (!out) return false;
+    out.write("RIFF", 4);
+    WriteLE32(out, static_cast<uint32_t>(36 + dataBytes));
+    out.write("WAVEfmt ", 8);
+    WriteLE32(out, 16);
+    WriteLE16(out, wave.sampleSize == 32 ? 3 : 1);
+    WriteLE16(out, static_cast<uint16_t>(wave.channels));
+    WriteLE32(out, wave.sampleRate);
+    WriteLE32(out, static_cast<uint32_t>(wave.sampleRate * GetAudioFrameSize(wave.sampleSize, wave.channels)));
+    WriteLE16(out, static_cast<uint16_t>(GetAudioFrameSize(wave.sampleSize, wave.channels)));
+    WriteLE16(out, static_cast<uint16_t>(wave.sampleSize));
+    out.write("data", 4);
+    WriteLE32(out, static_cast<uint32_t>(dataBytes));
+    out.write(static_cast<const char*>(wave.data), static_cast<std::streamsize>(dataBytes));
+    return out.good();
+}
+
+bool ExportWaveAsCode(Wave wave, const char* fileName) {
+    const size_t dataBytes = static_cast<size_t>(wave.frameCount) * GetAudioFrameSize(wave.sampleSize, wave.channels);
+    return ExportDataAsCode(static_cast<const unsigned char*>(wave.data), static_cast<int>(dataBytes), fileName);
+}
+
+Wave WaveCopy(Wave wave) {
+    Wave copy = wave;
+    const size_t bytes = static_cast<size_t>(wave.frameCount) * GetAudioFrameSize(wave.sampleSize, wave.channels);
+    copy.data = nullptr;
+    if (wave.data && bytes > 0) {
+        copy.data = MemAlloc(bytes);
+        if (copy.data) std::memcpy(copy.data, wave.data, bytes);
+    }
+    return copy;
+}
+
+void WaveCrop(Wave* wave, int initFrame, int finalFrame) {
+    if (!wave || !wave->data || wave->frameCount == 0) return;
+    initFrame = std::clamp(initFrame, 0, static_cast<int>(wave->frameCount));
+    finalFrame = std::clamp(finalFrame, initFrame, static_cast<int>(wave->frameCount));
+    const size_t frameSize = GetAudioFrameSize(wave->sampleSize, wave->channels);
+    const size_t frames = static_cast<size_t>(finalFrame - initFrame);
+    void* data = MemAlloc(frames * frameSize);
+    if (!data) return;
+    std::memcpy(data, static_cast<unsigned char*>(wave->data) + static_cast<size_t>(initFrame) * frameSize, frames * frameSize);
+    MemFree(wave->data);
+    wave->data = data;
+    wave->frameCount = static_cast<unsigned int>(frames);
+}
+
+void WaveFormat(Wave* wave, int sampleRate, int sampleSize, int channels) {
+    if (!wave || !wave->data || sampleRate <= 0 || channels <= 0) return;
+    if (sampleRate == static_cast<int>(wave->sampleRate) && sampleSize == static_cast<int>(wave->sampleSize) && channels == static_cast<int>(wave->channels)) return;
+    float* samples = LoadWaveSamples(*wave);
+    if (!samples) return;
+    const size_t outCount = static_cast<size_t>(wave->frameCount) * static_cast<size_t>(channels);
+    const size_t outBytes = outCount * static_cast<size_t>((sampleSize + 7) / 8);
+    void* out = MemAlloc(outBytes);
+    if (!out) { MemFree(samples); return; }
+    for (unsigned int f = 0; f < wave->frameCount; ++f) {
+        for (int ch = 0; ch < channels; ++ch) {
+            const float value = samples[static_cast<size_t>(f) * wave->channels + static_cast<unsigned int>(std::min<int>(ch, wave->channels - 1))];
+            const size_t idx = static_cast<size_t>(f) * channels + ch;
+            if (sampleSize == 8) static_cast<unsigned char*>(out)[idx] = static_cast<unsigned char>(std::clamp(value * 127.0f + 128.0f, 0.0f, 255.0f));
+            else if (sampleSize == 16) static_cast<int16_t*>(out)[idx] = static_cast<int16_t>(std::clamp(value, -1.0f, 1.0f) * 32767.0f);
+            else if (sampleSize == 32) static_cast<float*>(out)[idx] = value;
+        }
+    }
+    MemFree(samples);
+    MemFree(wave->data);
+    wave->data = out;
+    wave->sampleRate = static_cast<unsigned int>(sampleRate);
+    wave->sampleSize = static_cast<unsigned int>(sampleSize);
+    wave->channels = static_cast<unsigned int>(channels);
+}
+
+Music LoadMusicStream(const char* fileName) {
+    Music music{};
+    music.stream = LoadSound(fileName).stream;
+    if (music.stream.buffer) music.frameCount = music.stream.buffer->frameCount;
+    return music;
+}
+
+Music LoadMusicStreamFromMemory(const char* fileType, const unsigned char* data, int dataSize) {
+    Wave wave = LoadWaveFromMemory(fileType, data, dataSize);
+    Music music{};
+    Sound sound = LoadSoundFromWave(wave);
+    music.stream = sound.stream;
+    music.frameCount = sound.frameCount;
+    UnloadWave(wave);
+    return music;
+}
+
+void UnloadMusicStream(Music music) {
+    UnloadAudioStream(music.stream);
+}
+
+bool IsMusicValid(Music music) {
+    return IsAudioStreamValid(music.stream);
+}
+
+void PlayMusicStream(Music music) {
+    PlayAudioStream(music.stream);
+}
+
+bool IsMusicStreamPlaying(Music music) {
+    return IsAudioStreamPlaying(music.stream);
+}
+
+void UpdateMusicStream(Music music) {
+    if (!music.stream.buffer) {
+        return;
+    }
+
+    ALint state = 0;
+    alGetSourcei(music.stream.buffer->source, AL_SOURCE_STATE, &state);
+    if (state == AL_PLAYING || state == AL_PAUSED) {
+        return;
+    }
+}
+
+void StopMusicStream(Music music) {
+    StopAudioStream(music.stream);
+}
+
+void PauseMusicStream(Music music) {
+    PauseAudioStream(music.stream);
+}
+
+void ResumeMusicStream(Music music) {
+    ResumeAudioStream(music.stream);
+}
+
+void SeekMusicStream(Music music, float position) {
+    if (music.stream.buffer) {
+        alSourcef(music.stream.buffer->source, AL_SEC_OFFSET, position);
+    }
+}
+
+void SetMusicVolume(Music music, float volume) {
+    SetAudioStreamVolume(music.stream, volume);
+}
+
+void SetMusicPitch(Music music, float pitch) {
+    SetAudioStreamPitch(music.stream, pitch);
+}
+
+void SetMusicPan(Music music, float pan) {
+    SetAudioStreamPan(music.stream, pan);
+}
+
+float GetMusicTimeLength(Music music) {
+    return (music.stream.sampleRate == 0)
+        ? 0.0f
+        : static_cast<float>(music.frameCount) / static_cast<float>(music.stream.sampleRate);
+}
+
+float GetMusicTimePlayed(Music music) {
+    float value = 0.0f;
+    if (music.stream.buffer) {
+        alGetSourcef(music.stream.buffer->source, AL_SEC_OFFSET, &value);
+    }
+    return value;
+}
+
+AudioStream LoadAudioStream(unsigned int sampleRate, unsigned int sampleSize, unsigned int channels) {
+    AudioStream stream{};
+    TraceLog(LogLevel::Trace, "AUDIO", TextFormat("Creating audio stream: %uHz, %u-bit, %u channels", sampleRate, sampleSize, channels));
+    if (!EnsureAudioDevice() || GetOpenALFormat(sampleSize, channels) == 0) {
+        TraceLog(LogLevel::Error, "AUDIO", TextFormat("Failed to create audio stream: invalid device or unsupported format (%uHz, %u-bit, %u channels)", sampleRate, sampleSize, channels));
+        return stream;
+    }
+
+    auto* buffer = new rAudioBuffer{};
+    alGenBuffers(1, &buffer->buffer);
+    alGenSources(1, &buffer->source);
+    buffer->sampleRate = sampleRate;
+    buffer->sampleSize = sampleSize;
+    buffer->channels = channels;
+    buffer->streaming = true;
+    stream.buffer = buffer;
+    stream.sampleRate = sampleRate;
+    stream.sampleSize = sampleSize;
+    stream.channels = channels;
+    TraceLog(LogLevel::Info, "AUDIO", TextFormat("Audio stream created successfully (%uHz, %u-bit, %u channels)", sampleRate, sampleSize, channels));
+    return stream;
+}
+
+void UnloadAudioStream(AudioStream stream) {
+    DestroyAudioBuffer(stream.buffer, stream.buffer ? stream.buffer->ownsBuffer : false);
+}
+
+bool IsAudioStreamValid(AudioStream stream) {
+    return stream.buffer != nullptr && stream.buffer->source != 0;
+}
+
+bool IsAudioStreamPlaying(AudioStream stream) {
+    ALint state = 0;
+    if (stream.buffer) {
+        alGetSourcei(stream.buffer->source, AL_SOURCE_STATE, &state);
+    }
+    return state == AL_PLAYING;
+}
+
+bool IsAudioStreamProcessed(AudioStream stream) {
+    if (!stream.buffer) {
+        return false;
+    }
+
+    ALint processed = 0;
+    alGetSourcei(stream.buffer->source, AL_BUFFERS_QUEUED, &processed);
+    return processed > 0;
+}
+
+void PlayAudioStream(AudioStream stream) {
+    if (!stream.buffer) {
+        TraceLog(LogLevel::Warn, "AUDIO", "PlayAudioStream: invalid stream");
+        return;
+    }
+    TraceLog(LogLevel::Trace, "AUDIO", TextFormat("Playing audio stream (source=%u)", stream.buffer->source));
+    alSourcePlay(stream.buffer->source);
+}
+
+void PauseAudioStream(AudioStream stream) {
+    if (stream.buffer) {
+        TraceLog(LogLevel::Trace, "AUDIO", TextFormat("Pausing audio stream (source=%u)", stream.buffer->source));
+        alSourcePause(stream.buffer->source);
+    }
+}
+
+void ResumeAudioStream(AudioStream stream) {
+    PlayAudioStream(stream);
+}
+
+void StopAudioStream(AudioStream stream) {
+    if (stream.buffer) {
+        alSourceStop(stream.buffer->source);
+    }
+}
+
+void UpdateAudioStream(AudioStream stream, const void* data, int frameCount) {
+    if (!stream.buffer || !data || frameCount <= 0) {
+        return;
+    }
+
+    if (stream.buffer->callback) {
+        stream.buffer->callback(const_cast<void*>(data), static_cast<unsigned int>(frameCount));
+    }
+
+    for (AudioCallback processor : stream.buffer->processors) {
+        if (processor) {
+            processor(const_cast<void*>(data), static_cast<unsigned int>(frameCount));
+        }
+    }
+
+    for (AudioCallback processor : gAudioMixedProcessors) {
+        if (processor) {
+            processor(const_cast<void*>(data), static_cast<unsigned int>(frameCount));
+        }
+    }
+
+    const ALenum format = GetOpenALFormat(stream.sampleSize, stream.channels);
+    const size_t bytes = static_cast<size_t>(frameCount) * GetAudioFrameSize(stream.sampleSize, stream.channels);
+    alSourceStop(stream.buffer->source);
+    alBufferData(stream.buffer->buffer, format, data, static_cast<ALsizei>(bytes), static_cast<ALsizei>(stream.sampleRate));
+    alSourcei(stream.buffer->source, AL_BUFFER, static_cast<ALint>(stream.buffer->buffer));
+}
+
+void SetAudioStreamBufferSizeDefault(int size) {
+    if (size > 0) {
+        gAudioStreamBufferSizeDefault = size;
+    }
+}
+
+void SetAudioStreamCallback(AudioStream stream, AudioCallback callback) {
+    if (stream.buffer) {
+        stream.buffer->callback = callback;
+    }
+}
+
+void AttachAudioStreamProcessor(AudioStream stream, AudioCallback processor) {
+    if (stream.buffer && processor) {
+        stream.buffer->processors.push_back(processor);
+    }
+}
+
+void DetachAudioStreamProcessor(AudioStream stream, AudioCallback processor) {
+    if (!stream.buffer) {
+        return;
+    }
+
+    auto& list = stream.buffer->processors;
+    list.erase(std::remove(list.begin(), list.end(), processor), list.end());
+}
+
+void AttachAudioMixedProcessor(AudioCallback processor) {
+    if (processor) {
+        gAudioMixedProcessors.push_back(processor);
+    }
+}
+
+void DetachAudioMixedProcessor(AudioCallback processor) {
+    gAudioMixedProcessors.erase(
+        std::remove(gAudioMixedProcessors.begin(), gAudioMixedProcessors.end(), processor),
+        gAudioMixedProcessors.end()
+    );
+}
+
+void SetAudioStreamVolume(AudioStream stream, float volume) {
+    if (stream.buffer) {
+        alSourcef(stream.buffer->source, AL_GAIN, std::max(0.0f, volume));
+    }
+}
+
+void SetAudioStreamPitch(AudioStream stream, float pitch) {
+    if (stream.buffer) {
+        alSourcef(stream.buffer->source, AL_PITCH, std::max(0.01f, pitch));
+    }
+}
+
+void SetAudioStreamPan(AudioStream stream, float pan) {
+    if (stream.buffer) {
+        alSource3f(stream.buffer->source, AL_POSITION, std::clamp(pan, -1.0f, 1.0f), 0.0f, 0.0f);
+    }
+}
+
+void PlaySound(Sound sound) {
+    PlayAudioStream(sound.stream);
+}
+
+void StopSound(Sound sound) {
+    StopAudioStream(sound.stream);
+}
+
+void PauseSound(Sound sound) {
+    PauseAudioStream(sound.stream);
+}
+
+void ResumeSound(Sound sound) {
+    ResumeAudioStream(sound.stream);
+}
+
+bool IsSoundPlaying(Sound sound) {
+    return IsAudioStreamPlaying(sound.stream);
+}
+
+void SetSoundVolume(Sound sound, float volume) {
+    SetAudioStreamVolume(sound.stream, volume);
+}
+
+void SetSoundPitch(Sound sound, float pitch) {
+    SetAudioStreamPitch(sound.stream, pitch);
+}
+
+void SetSoundPan(Sound sound, float pan) {
+    SetAudioStreamPan(sound.stream, pan);
+}
+
+unsigned char* LoadFileData(const char* fileName, int* dataSize) {
+    if (dataSize) *dataSize = 0;
+    if (!fileName) return nullptr;
+    if (gLoadFileDataCallback) return gLoadFileDataCallback(fileName, dataSize);
+    std::ifstream in(fileName, std::ios::binary | std::ios::ate);
+    if (!in) return nullptr;
+    const std::streamsize size = in.tellg();
+    if (size < 0 || size > std::numeric_limits<int>::max()) return nullptr;
+    in.seekg(0, std::ios::beg);
+    unsigned char* data = static_cast<unsigned char*>(MemAlloc(static_cast<size_t>(size) + 1));
+    if (!data) return nullptr;
+    if (size > 0 && !in.read(reinterpret_cast<char*>(data), size)) {
+        MemFree(data);
+        return nullptr;
+    }
+    data[size] = 0;
+    if (dataSize) *dataSize = static_cast<int>(size);
+    return data;
+}
+
+void UnloadFileData(unsigned char* data) {
+    if (data) MemFree(data);
+}
+
+bool SaveFileData(const char* fileName, const void* data, int dataSize) {
+    if (!fileName || (!data && dataSize > 0) || dataSize < 0) return false;
+    if (gSaveFileDataCallback) return gSaveFileDataCallback(fileName, const_cast<void*>(data), dataSize);
+    std::ofstream out(fileName, std::ios::binary);
+    if (!out) return false;
+    if (dataSize > 0) out.write(static_cast<const char*>(data), dataSize);
+    return out.good();
+}
+
+bool ExportDataAsCode(const unsigned char* data, int dataSize, const char* fileName) {
+    if (!data || dataSize < 0 || !fileName) return false;
+    std::ofstream out(fileName);
+    if (!out) return false;
+    out << "static const unsigned char data[" << dataSize << "] = {";
+    for (int i = 0; i < dataSize; ++i) {
+        if ((i % 12) == 0) out << "\n    ";
+        out << static_cast<unsigned int>(data[i]);
+        if (i + 1 < dataSize) out << ", ";
+    }
+    out << "\n};\n";
+    return out.good();
+}
+
+char* LoadFileText(const char* fileName) {
+    if (!fileName) return nullptr;
+    if (gLoadFileTextCallback) return gLoadFileTextCallback(fileName);
+    int size = 0;
+    unsigned char* data = LoadFileData(fileName, &size);
+    if (!data) return nullptr;
+    char* text = static_cast<char*>(MemAlloc(static_cast<size_t>(size) + 1));
+    if (!text) {
+        UnloadFileData(data);
+        return nullptr;
+    }
+    std::memcpy(text, data, static_cast<size_t>(size));
+    text[size] = '\0';
+    UnloadFileData(data);
+    return text;
+}
+
+void UnloadFileText(char* text) {
+    if (text) MemFree(text);
+}
+
+bool SaveFileText(const char* fileName, const char* text) {
+    if (!fileName || !text) return false;
+    if (gSaveFileTextCallback) return gSaveFileTextCallback(fileName, const_cast<char*>(text));
+    return SaveFileData(fileName, text, static_cast<int>(std::strlen(text)));
+}
+
+void SetLoadFileDataCallback(LoadFileDataCallback callback) {
+    gLoadFileDataCallback = callback;
+}
+
+void SetSaveFileDataCallback(SaveFileDataCallback callback) {
+    gSaveFileDataCallback = callback;
+}
+
+void SetLoadFileTextCallback(LoadFileTextCallback callback) {
+    gLoadFileTextCallback = callback;
+}
+void SetSaveFileTextCallback(SaveFileTextCallback callback) {
+    gSaveFileTextCallback = callback;
+}
+
+AutomationEventList LoadAutomationEventList(const char* fileName) {
+    AutomationEventList list{};
+    int dataSize = 0;
+    unsigned char* data = LoadFileData(fileName, &dataSize);
+    if (!data || dataSize < static_cast<int>(sizeof(unsigned int) * 2)) {
+        UnloadFileData(data);
+        return list;
+    }
+    const auto* words = reinterpret_cast<const unsigned int*>(data);
+    list.capacity = words[0];
+    list.count = words[1];
+    const size_t bytes = static_cast<size_t>(list.count) * sizeof(AutomationEvent);
+    if (list.count > 0 && static_cast<size_t>(dataSize) >= sizeof(unsigned int) * 2 + bytes) {
+        list.events = static_cast<AutomationEvent*>(MemAlloc(bytes));
+        if (list.events) std::memcpy(list.events, data + sizeof(unsigned int) * 2, bytes);
+    }
+    UnloadFileData(data);
+    return list;
+}
+
+void UnloadAutomationEventList(AutomationEventList list) {
+    if (list.events) MemFree(list.events);
+}
+
+bool ExportAutomationEventList(AutomationEventList list, const char* fileName) {
+    if (!fileName) return false;
+    std::ofstream out(fileName, std::ios::binary);
+    if (!out) return false;
+    WriteLE32(out, list.capacity);
+    WriteLE32(out, list.count);
+    if (list.events && list.count > 0) out.write(reinterpret_cast<const char*>(list.events), static_cast<std::streamsize>(list.count * sizeof(AutomationEvent)));
+    return out.good();
+}
+
+void SetAutomationEventList(AutomationEventList* list) {
+    gAutomationEventList = list;
+}
+
+void SetAutomationEventBaseFrame(int frame) {
+    gAutomationBaseFrame = frame;
+}
+
+void StartAutomationEventRecording(void) {
+    gAutomationRecording = true;
+
+    if (gAutomationEventList == nullptr) {
+        gAutomationEventList = &gDefaultAutomationEventList;
+        gDefaultAutomationEventList = {};
+        gDefaultAutomationEventList.capacity = 16;
+        gDefaultAutomationEventList.events = static_cast<AutomationEvent*>(
+            MemAlloc(sizeof(AutomationEvent) * gDefaultAutomationEventList.capacity)
+        );
+    }
+
+    gAutomationBaseFrame = 0;
+    gAutomationEventList->count = 0;
+}
+
+void StopAutomationEventRecording(void) {
+    gAutomationRecording = false;
+
+    if (gAutomationEventList == &gDefaultAutomationEventList && gAutomationEventList->events != nullptr) {
+        gAutomationEventList->capacity = gAutomationEventList->count;
+    }
+}
+
+void PlayAutomationEvent(AutomationEvent event) {
+    if (!gAutomationRecording) {
+        return;
+    }
+
+    if (gAutomationEventList == nullptr) {
+        gAutomationEventList = &gDefaultAutomationEventList;
+        gDefaultAutomationEventList = {};
+        gDefaultAutomationEventList.capacity = 16;
+        gDefaultAutomationEventList.events = static_cast<AutomationEvent*>(
+            MemAlloc(sizeof(AutomationEvent) * gDefaultAutomationEventList.capacity)
+        );
+    }
+
+    if (gAutomationEventList->events == nullptr) {
+        gAutomationEventList->capacity = 16;
+        gAutomationEventList->events = static_cast<AutomationEvent*>(
+            MemAlloc(sizeof(AutomationEvent) * gAutomationEventList->capacity)
+        );
+    }
+
+    if (gAutomationEventList->count >= gAutomationEventList->capacity) {
+        const unsigned int newCapacity = gAutomationEventList->capacity == 0 ? 16u : gAutomationEventList->capacity * 2u;
+        AutomationEvent* resized = static_cast<AutomationEvent*>(
+            MemRealloc(gAutomationEventList->events, sizeof(AutomationEvent) * newCapacity)
+        );
+
+        if (!resized) {
+            return;
+        }
+
+        gAutomationEventList->events = resized;
+        gAutomationEventList->capacity = newCapacity;
+    }
+
+    event.frame = static_cast<unsigned int>(gAutomationBaseFrame + static_cast<int>(gAutomationEventList->count));
+    gAutomationEventList->events[gAutomationEventList->count++] = event;
+}
+
+void BeginVrStereoMode(VrStereoConfig config) {
+    gVrStereoEnabled = true;
+    gCurrentVrStereoConfig = config;
+
+    if (config.projection[0].m[0] == 0.0f &&
+        config.projection[1].m[0] == 0.0f &&
+        config.viewOffset[0].m[12] == 0.0f &&
+        config.viewOffset[1].m[12] == 0.0f) {
+        gCurrentVrStereoConfig = LoadVrStereoConfig({});
+    }
+}
+
+void EndVrStereoMode(void) {
+    gVrStereoEnabled = false;
+    gCurrentVrStereoConfig = {};
+}
+
+VrStereoConfig LoadVrStereoConfig(VrDeviceInfo device) {
+    VrStereoConfig config{};
+
+    const float ipd = device.interpupillaryDistance > 0.0f
+        ? device.interpupillaryDistance
+        : 0.064f;
+    const float eyeOffset = ipd * 0.5f;
+    const float screenWidth = device.hScreenSize > 0.0f ? device.hScreenSize : 0.14f;
+    const float screenHeight = device.vScreenSize > 0.0f ? device.vScreenSize : 0.08f;
+    const float aspect = (device.hResolution > 0 && device.vResolution > 0)
+        ? static_cast<float>(device.hResolution) / static_cast<float>(device.vResolution)
+        : 1.7777778f;
+    const float fov = 60.0f;
+    const float nearPlane = 0.01f;
+    const float farPlane = 1000.0f;
+
+    config.projection[0] = MatrixPerspective(fov, aspect, nearPlane, farPlane);
+    config.projection[1] = MatrixPerspective(fov, aspect, nearPlane, farPlane);
+    config.viewOffset[0] = Mat4::translation(-eyeOffset, 0.0f, 0.0f);
+    config.viewOffset[1] = Mat4::translation( eyeOffset, 0.0f, 0.0f);
+
+    config.leftLensCenter[0] = -eyeOffset;
+    config.leftLensCenter[1] = 0.0f;
+    config.rightLensCenter[0] = eyeOffset;
+    config.rightLensCenter[1] = 0.0f;
+
+    config.leftScreenCenter[0] = -screenWidth * 0.5f;
+    config.leftScreenCenter[1] = 0.0f;
+    config.rightScreenCenter[0] = screenWidth * 0.5f;
+    config.rightScreenCenter[1] = 0.0f;
+
+    config.scale[0] = 1.0f;
+    config.scale[1] = 1.0f;
+    config.scaleIn[0] = 1.0f;
+    config.scaleIn[1] = 1.0f;
+
+    if (screenWidth > 0.0f) {
+        config.scale[0] = screenWidth / std::max(0.0001f, screenWidth);
+        config.scaleIn[0] = 1.0f / std::max(0.0001f, config.scale[0]);
+    }
+    if (screenHeight > 0.0f) {
+        config.scale[1] = screenHeight / std::max(0.0001f, screenHeight);
+        config.scaleIn[1] = 1.0f / std::max(0.0001f, config.scale[1]);
+    }
+
+    return config;
+}
+
+void UnloadVrStereoConfig(VrStereoConfig config) {
+    const bool matchesActiveConfig =
+        gCurrentVrStereoConfig.projection[0].m[0] == config.projection[0].m[0] &&
+        gCurrentVrStereoConfig.projection[1].m[0] == config.projection[1].m[0] &&
+        gCurrentVrStereoConfig.viewOffset[0].m[12] == config.viewOffset[0].m[12] &&
+        gCurrentVrStereoConfig.viewOffset[1].m[12] == config.viewOffset[1].m[12];
+
+    if (matchesActiveConfig || config.projection[0].m[0] == 0.0f && config.projection[1].m[0] == 0.0f) {
+        gCurrentVrStereoConfig = {};
+        gVrStereoEnabled = false;
+    }
+}
+
 bool IsKeyDown(KeyboardKey key) {
     EnsureInitialized();
     const auto i = static_cast<std::size_t>(key);
@@ -1014,10 +2215,21 @@ bool IsKeyUp(KeyboardKey key) {
     return !IsKeyDown(key);
 }
 
-int GetKeyPressed()  { int k = gLastKeyPressed;  gLastKeyPressed  = 0; return k; }
-int GetCharPressed() { int c = gLastCharPressed; gLastCharPressed = 0; return c; }
+int GetKeyPressed() {
+    int k = gLastKeyPressed;
+    gLastKeyPressed = 0;
+    return k;
+}
 
-void SetExitKey(KeyboardKey key) { gExitKey = key; }
+int GetCharPressed() {
+    int c = gLastCharPressed;
+    gLastCharPressed = 0;
+    return c;
+}
+
+void SetExitKey(KeyboardKey key) {
+    gExitKey = key;
+}
 
 bool IsMouseButtonDown(MouseButton button) {
     EnsureInitialized();
@@ -1028,22 +2240,39 @@ bool IsMouseButtonDown(MouseButton button) {
 bool IsMouseButtonPressed(MouseButton button) {
     EnsureInitialized();
     const auto i = static_cast<std::size_t>(button);
-    if (i >= gWin.mouseButtons.size()) return false;
+    if (i >= gWin.mouseButtons.size()) {
+        return false;
+    }
     return gWin.mouseButtons[i] && !gWin.previousMouseButtons[i];
 }
 
 bool IsMouseButtonReleased(MouseButton button) {
     EnsureInitialized();
     const auto i = static_cast<std::size_t>(button);
-    if (i >= gWin.mouseButtons.size()) return false;
+    if (i >= gWin.mouseButtons.size()) {
+        return false;
+    }
     return !gWin.mouseButtons[i] && gWin.previousMouseButtons[i];
 }
 
-bool IsMouseButtonUp(MouseButton button) { return !IsMouseButtonDown(button); }
+bool IsMouseButtonUp(MouseButton button) {
+    return !IsMouseButtonDown(button);
+}
 
-Vec2  GetMousePosition()    { EnsureInitialized(); return gWin.mousePosition; }
-Vec2  GetMouseWheelMoveV()  { EnsureInitialized(); return gWin.mouseWheel; }
-float GetMouseWheelMove()   { EnsureInitialized(); return gWin.mouseWheel.y; }
+Vec2 GetMousePosition() {
+    EnsureInitialized();
+    return gWin.mousePosition;
+}
+
+Vec2 GetMouseWheelMoveV() {
+    EnsureInitialized();
+    return gWin.mouseWheel;
+}
+
+float GetMouseWheelMove() {
+    EnsureInitialized();
+    return gWin.mouseWheel.y;
+}
 
 Vec2 GetMouseDelta() {
     Vec2 delta{ gWin.mousePosition.x - gMousePreviousPosition.x,
@@ -1052,23 +2281,64 @@ Vec2 GetMouseDelta() {
     return delta;
 }
 
+void SetMouseOffset(int offsetX, int offsetY) {
+    gMouseOffset = Vec2{static_cast<float>(offsetX), static_cast<float>(offsetY)};
+}
+
+void SetMouseScale(float scaleX, float scaleY) {
+    gMouseScale.x = (scaleX == 0.0f) ? 1.0f : scaleX;
+    gMouseScale.y = (scaleY == 0.0f) ? 1.0f : scaleY;
+}
+
 void SetMousePosition(int x, int y) {
     if (gWin.window) {
-        SDL_WarpMouseInWindow(gWin.window, static_cast<float>(x), static_cast<float>(y));
-        gWin.mousePosition      = Vec2{static_cast<float>(x), static_cast<float>(y)};
-        gMousePreviousPosition  = gWin.mousePosition;
+        const float inverseScaleX = (gMouseScale.x == 0.0f) ? 1.0f : gMouseScale.x;
+        const float inverseScaleY = (gMouseScale.y == 0.0f) ? 1.0f : gMouseScale.y;
+        const float sdlX = (static_cast<float>(x) / inverseScaleX) - gMouseOffset.x;
+        const float sdlY = (static_cast<float>(y) / inverseScaleY) - gMouseOffset.y;
+        SDL_WarpMouseInWindow(gWin.window, sdlX, sdlY);
+        gWin.mousePosition = Vec2{static_cast<float>(x), static_cast<float>(y)};
+        gMousePreviousPosition = gWin.mousePosition;
     }
 }
 
-void DisableCursor()  { if (gWin.window) { SDL_HideCursor(); gCursorHidden = true;  } }
-void EnableCursor()   { if (gWin.window) { SDL_ShowCursor(); gCursorHidden = false; } }
-bool IsCursorHidden() { return gCursorHidden; }
+void DisableCursor() {
+    if (gWin.window) {
+        SDL_HideCursor();
+        gCursorHidden = true;
+    }
+}
 
-void ShowCursor() { if (gWin.window) { SDL_ShowCursor(); gCursorHidden = false; } }
-void HideCursor() { if (gWin.window) { SDL_HideCursor(); gCursorHidden = true;  } }
+void EnableCursor() {
+    if (gWin.window) {
+        SDL_ShowCursor();
+        gCursorHidden = false;
+    }
+}
+
+bool IsCursorHidden() {
+    return gCursorHidden;
+}
+
+void ShowCursor() {
+    if (gWin.window) {
+        SDL_ShowCursor();
+        gCursorHidden = false;
+    }
+}
+
+void HideCursor() {
+    if (gWin.window) {
+        SDL_HideCursor();
+        gCursorHidden = true;
+    }
+}
 
 bool IsCursorOnScreen() {
-    if (!gWin.window) return false;
+    if (!gWin.window) {
+        return false;
+    }
+
     float mx = 0.0f, my = 0.0f;
     SDL_GetGlobalMouseState(&mx, &my);
     int wx = 0, wy = 0, ww = 0, wh = 0;
@@ -1078,22 +2348,49 @@ bool IsCursorOnScreen() {
 }
 
 void SetMouseCursor(MouseCursor cursor) {
-    if (!gWin.window) return;
+    if (!gWin.window) {
+        return;
+    }
+
     SDL_SystemCursor sdl;
     switch (cursor) {
-        case MouseCursor::Ibeam:        sdl = SDL_SYSTEM_CURSOR_TEXT;        break;
-        case MouseCursor::Crosshair:    sdl = SDL_SYSTEM_CURSOR_CROSSHAIR;   break;
-        case MouseCursor::PointingHand: sdl = SDL_SYSTEM_CURSOR_POINTER;     break;
-        case MouseCursor::ResizeEW:     sdl = SDL_SYSTEM_CURSOR_EW_RESIZE;   break;
-        case MouseCursor::ResizeNS:     sdl = SDL_SYSTEM_CURSOR_NS_RESIZE;   break;
-        case MouseCursor::ResizeNWSE:   sdl = SDL_SYSTEM_CURSOR_NWSE_RESIZE; break;
-        case MouseCursor::ResizeNESW:   sdl = SDL_SYSTEM_CURSOR_NESW_RESIZE; break;
-        case MouseCursor::ResizeAll:    sdl = SDL_SYSTEM_CURSOR_MOVE;        break;
-        case MouseCursor::NotAllowed:   sdl = SDL_SYSTEM_CURSOR_NOT_ALLOWED; break;
-        default:                        sdl = SDL_SYSTEM_CURSOR_DEFAULT;     break;
+        case MouseCursor::Ibeam:
+            sdl = SDL_SYSTEM_CURSOR_TEXT;
+            break;
+        case MouseCursor::Crosshair:
+            sdl = SDL_SYSTEM_CURSOR_CROSSHAIR;
+            break;
+        case MouseCursor::PointingHand:
+            sdl = SDL_SYSTEM_CURSOR_POINTER;
+            break;
+        case MouseCursor::ResizeEW:
+            sdl = SDL_SYSTEM_CURSOR_EW_RESIZE;
+            break;
+        case MouseCursor::ResizeNS:
+            sdl = SDL_SYSTEM_CURSOR_NS_RESIZE;
+            break;
+        case MouseCursor::ResizeNWSE:
+            sdl = SDL_SYSTEM_CURSOR_NWSE_RESIZE;
+            break;
+        case MouseCursor::ResizeNESW:
+            sdl = SDL_SYSTEM_CURSOR_NESW_RESIZE;
+            break;
+        case MouseCursor::ResizeAll:
+            sdl = SDL_SYSTEM_CURSOR_MOVE;
+            break;
+        case MouseCursor::NotAllowed:
+            sdl = SDL_SYSTEM_CURSOR_NOT_ALLOWED;
+            break;
+        default:
+            sdl = SDL_SYSTEM_CURSOR_DEFAULT;
+            break;
     }
+
     SDL_Cursor* c = SDL_CreateSystemCursor(sdl);
-    if (c) { SDL_SetCursor(c); SDL_DestroyCursor(c); }
+    if (c) {
+        SDL_SetCursor(c);
+        SDL_DestroyCursor(c);
+    }
 }
 
 static SDL_Gamepad* OpenGamepadByIndex(int gamepad) {
@@ -1348,26 +2645,725 @@ static void DrawModelWireframe(const Model& model, const Mat4& transform, Color 
     }
 }
 
-void BeginDrawing() { EnsureInitialized(); gRenderer.BeginDrawing(); }
-void EndDrawing()   { EnsureInitialized(); gRenderer.EndDrawing();   }
+void BeginDrawing()
+{
+    EnsureInitialized();
+    gRenderer.BeginDrawing();
+}
 
-void ClearBackground(Color color) { EnsureInitialized(); gRenderer.ClearBackground(color); }
+void EndDrawing()
+{
+    EnsureInitialized();
+    gRenderer.EndDrawing();
+}
 
-void DrawRectangle(float x, float y, float w, float h, Color c)    { gRenderer.DrawRectangle(x, y, w, h, c); }
-void DrawRectangle(const Rectangle& r, Color c)                     { gRenderer.DrawRectangle(r, c);          }
-void DrawRectangleV(Vec2 pos, Vec2 size, Color c)                   { gRenderer.DrawRectangleV(pos, size, c); }
-void DrawRectangleLines(int x, int y, int w, int h, Color c)        { gRenderer.DrawRectangleLines(Rectangle{(float)x, (float)y, (float)w, (float)h}, 1.0f, c); }
-void DrawRectangleRounded(Rectangle r, float rn, int seg, Color c)  { gRenderer.DrawRectangleRounded(r, rn, seg, c); }
+void ClearBackground(Color color)
+{
+    EnsureInitialized();
+    gRenderer.ClearBackground(color);
+}
 
-void DrawCircle(float cx, float cy, float radius, Color c)          { gRenderer.DrawCircle(cx, cy, radius, c);      }
-void DrawCircleLines(float cx, float cy, float radius, Color c)     { gRenderer.DrawCircleLines(cx, cy, radius, c); }
-void DrawEllipse(float cx, float cy, float rh, float rv, Color c)   { gRenderer.DrawEllipse(cx, cy, rh, rv, c);    }
+void DrawRectangle(float x, float y, float w, float h, Color c)
+{
+    gRenderer.DrawRectangle(x, y, w, h, c);
+}
 
-void DrawLine(float x1, float y1, float x2, float y2, Color c)      { gRenderer.DrawLine(x1, y1, x2, y2, c); }
-void DrawLineV(Vec2 start, Vec2 end, Color c)                        { gRenderer.DrawLineV(start, end, c);     }
+void DrawRectangle(const Rectangle& r, Color c)
+{
+    gRenderer.DrawRectangle(r, c);
+}
 
-void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color c)               { gRenderer.DrawTriangle(v1, v2, v3, c); }
-void DrawPoly(Vec2 center, int sides, float r, float rot, Color c)  { gRenderer.DrawPoly(center, sides, r, rot, c); }
+void DrawRectangleV(Vec2 pos, Vec2 size, Color c)
+{
+    gRenderer.DrawRectangleV(pos, size, c);
+}
+
+void DrawRectangleLines(int x, int y, int w, int h, Color c)
+{
+    const Rectangle rect = Rectangle{ static_cast<float>(x), static_cast<float>(y), static_cast<float>(w), static_cast<float>(h) };
+    gRenderer.DrawRectangleLines(rect, 1.0f, c);
+}
+
+void DrawRectangleRounded(Rectangle r, float rn, int seg, Color c)
+{
+    gRenderer.DrawRectangleRounded(r, rn, seg, c);
+}
+
+void DrawCircle(float cx, float cy, float radius, Color c)
+{
+    gRenderer.DrawCircle(cx, cy, radius, c);
+}
+
+void DrawCircleLines(float cx, float cy, float radius, Color c)
+{
+    gRenderer.DrawCircleLines(cx, cy, radius, c);
+}
+
+void DrawEllipse(float cx, float cy, float rh, float rv, Color c)
+{
+    gRenderer.DrawEllipse(cx, cy, rh, rv, c);
+}
+
+void DrawLine(float x1, float y1, float x2, float y2, Color c)
+{
+    gRenderer.DrawLine(x1, y1, x2, y2, c);
+}
+
+void DrawLineV(Vec2 start, Vec2 end, Color c)
+{
+    gRenderer.DrawLineV(start, end, c);
+}
+
+void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color c)
+{
+    gRenderer.DrawTriangle(v1, v2, v3, c);
+}
+
+void DrawPoly(Vec2 center, int sides, float r, float rot, Color c)
+{
+    gRenderer.DrawPoly(center, sides, r, rot, c);
+}
+
+void DrawPixel(int posX, int posY, Color color)
+{
+    DrawRectangle(static_cast<float>(posX), static_cast<float>(posY), 1.0f, 1.0f, color);
+}
+
+void DrawPixelV(Vec2 position, Color color)
+{
+    DrawPixel(static_cast<int>(position.x), static_cast<int>(position.y), color);
+}
+
+void DrawLineEx(Vec2 startPos, Vec2 endPos, float thick, Color color)
+{
+    if (thick <= 1.0f)
+    {
+        DrawLineV(startPos, endPos, color);
+        return;
+    }
+
+    const Vec2 dir = Vec2{ endPos.x - startPos.x, endPos.y - startPos.y };
+    const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+
+    if (len <= EPSILON)
+    {
+        DrawCircle(startPos.x, startPos.y, thick * 0.5f, color);
+        return;
+    }
+
+    const Vec2 n = Vec2{
+        -dir.y / len * thick * 0.5f,
+        dir.x / len * thick * 0.5f
+    };
+
+    DrawTriangle(
+        Vec2{ startPos.x + n.x, startPos.y + n.y },
+        Vec2{ startPos.x - n.x, startPos.y - n.y },
+        Vec2{ endPos.x + n.x, endPos.y + n.y },
+        color
+    );
+    DrawTriangle(
+        Vec2{ endPos.x + n.x, endPos.y + n.y },
+        Vec2{ startPos.x - n.x, startPos.y - n.y },
+        Vec2{ endPos.x - n.x, endPos.y - n.y },
+        color
+    );
+}
+
+void DrawLineStrip(const Vec2* points, int pointCount, Color color)
+{
+    if (!points || pointCount < 2)
+    {
+        return;
+    }
+
+    for (int i = 0; i + 1 < pointCount; ++i)
+    {
+        DrawLineV(points[i], points[i + 1], color);
+    }
+}
+
+void DrawLineBezier(Vec2 startPos, Vec2 endPos, float thick, Color color)
+{
+    Vec2 last = startPos;
+
+    for (int i = 1; i <= 24; ++i)
+    {
+        const float t = static_cast<float>(i) / 24.0f;
+        const float u = 1.0f - t;
+        const Vec2 control = Vec2{
+            (startPos.x + endPos.x) * 0.5f,
+            std::min(startPos.y, endPos.y) - std::fabs(endPos.x - startPos.x) * 0.25f
+        };
+        const Vec2 cur = Vec2{
+            u * u * startPos.x + 2.0f * u * t * control.x + t * t * endPos.x,
+            u * u * startPos.y + 2.0f * u * t * control.y + t * t * endPos.y
+        };
+
+        DrawLineEx(last, cur, thick, color);
+        last = cur;
+    }
+}
+
+void DrawLineDashed(Vec2 startPos, Vec2 endPos, int dashSize, int spaceSize, Color color)
+{
+    Vec2 dir = Vec2{ endPos.x - startPos.x, endPos.y - startPos.y };
+    const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+
+    if (len <= EPSILON || dashSize <= 0)
+    {
+        return;
+    }
+
+    dir.x /= len;
+    dir.y /= len;
+
+    const int step = std::max(1, dashSize + std::max(0, spaceSize));
+
+    for (float d = 0.0f; d < len; d += static_cast<float>(step))
+    {
+        const float e = std::min(len, d + static_cast<float>(dashSize));
+        const Vec2 a = Vec2{ startPos.x + dir.x * d, startPos.y + dir.y * d };
+        const Vec2 b = Vec2{ startPos.x + dir.x * e, startPos.y + dir.y * e };
+        DrawLineV(a, b, color);
+    }
+}
+
+void DrawRectangleRec(Rectangle rec, Color color)
+{
+    DrawRectangle(rec, color);
+}
+
+void DrawRectanglePro(Rectangle rec, Vec2 origin, float rotation, Color color)
+{
+    const float rad = rotation * DEG2RAD;
+    const float cs = std::cos(rad);
+    const float sn = std::sin(rad);
+
+    Vec2 corners[4] = {
+        Vec2{ -origin.x, -origin.y },
+        Vec2{ rec.width - origin.x, -origin.y },
+        Vec2{ rec.width - origin.x, rec.height - origin.y },
+        Vec2{ -origin.x, rec.height - origin.y }
+    };
+
+    for (auto& p : corners)
+    {
+        p = Vec2{
+            rec.x + origin.x + p.x * cs - p.y * sn,
+            rec.y + origin.y + p.x * sn + p.y * cs
+        };
+    }
+
+    DrawTriangle(corners[0], corners[1], corners[2], color);
+    DrawTriangle(corners[0], corners[2], corners[3], color);
+}
+
+void DrawRectangleGradientV(int posX, int posY, int width, int height, Color top, Color bottom)
+{
+    const int steps = std::max(1, height);
+
+    for (int y = 0; y < steps; ++y)
+    {
+        const float t = static_cast<float>(y) / static_cast<float>(steps);
+        const Color color = ColorLerp(top, bottom, t);
+        DrawRectangle(static_cast<float>(posX), static_cast<float>(posY + y), static_cast<float>(width), 1.0f, color);
+    }
+}
+
+void DrawRectangleGradientH(int posX, int posY, int width, int height, Color left, Color right)
+{
+    const int steps = std::max(1, width);
+
+    for (int x = 0; x < steps; ++x)
+    {
+        const float t = static_cast<float>(x) / static_cast<float>(steps);
+        const Color color = ColorLerp(left, right, t);
+        DrawRectangle(static_cast<float>(posX + x), static_cast<float>(posY), 1.0f, static_cast<float>(height), color);
+    }
+}
+
+void DrawRectangleGradientEx(Rectangle rec, Color col1, Color col2, Color col3, Color col4)
+{
+    const int stepsX = std::max(1, static_cast<int>(rec.width));
+    const int stepsY = std::max(1, static_cast<int>(rec.height));
+
+    for (int y = 0; y < stepsY; ++y)
+    {
+        const float ty = static_cast<float>(y) / static_cast<float>(stepsY);
+        const Color topRow = ColorLerp(col1, col2, ty);
+        const Color bottomRow = ColorLerp(col3, col4, ty);
+
+        for (int x = 0; x < stepsX; ++x)
+        {
+            const float tx = static_cast<float>(x) / static_cast<float>(stepsX);
+            const Color color = ColorLerp(topRow, bottomRow, tx);
+            DrawRectangle(
+                rec.x + static_cast<float>(x),
+                rec.y + static_cast<float>(y),
+                1.0f,
+                1.0f,
+                color
+            );
+        }
+    }
+}
+
+void DrawRectangleLinesEx(Rectangle rec, float thick, Color color)
+{
+    DrawLineEx(Vec2{ rec.x, rec.y }, Vec2{ rec.x + rec.width, rec.y }, thick, color);
+    DrawLineEx(Vec2{ rec.x + rec.width, rec.y }, Vec2{ rec.x + rec.width, rec.y + rec.height }, thick, color);
+    DrawLineEx(Vec2{ rec.x + rec.width, rec.y + rec.height }, Vec2{ rec.x, rec.y + rec.height }, thick, color);
+    DrawLineEx(Vec2{ rec.x, rec.y + rec.height }, Vec2{ rec.x, rec.y }, thick, color);
+}
+
+void DrawRectangleRoundedLines(Rectangle rec, float roundness, int segments, Color color)
+{
+    DrawRectangleRoundedLinesEx(rec, roundness, segments, 1.0f, color);
+}
+
+void DrawRectangleRoundedLinesEx(Rectangle rec, float roundness, int segments, float thick, Color color)
+{
+    const float radius = std::clamp(roundness, 0.0f, 1.0f) * std::min(rec.width, rec.height) * 0.5f;
+    const int safeSegments = std::max(1, segments);
+
+    if (radius <= 0.0f || rec.width <= 0.0f || rec.height <= 0.0f)
+    {
+        DrawRectangleLinesEx(rec, thick, color);
+        return;
+    }
+
+    DrawLineEx(Vec2{ rec.x + radius, rec.y }, Vec2{ rec.x + rec.width - radius, rec.y }, thick, color);
+    DrawLineEx(Vec2{ rec.x + rec.width, rec.y + radius }, Vec2{ rec.x + rec.width, rec.y + rec.height - radius }, thick, color);
+    DrawLineEx(Vec2{ rec.x + rec.width - radius, rec.y + rec.height }, Vec2{ rec.x + radius, rec.y + rec.height }, thick, color);
+    DrawLineEx(Vec2{ rec.x, rec.y + rec.height - radius }, Vec2{ rec.x, rec.y + radius }, thick, color);
+
+    DrawCircleSectorLinesEx(Vec2{ rec.x + radius, rec.y + radius }, radius, 180.0f, 270.0f, safeSegments, thick, color);
+    DrawCircleSectorLinesEx(Vec2{ rec.x + rec.width - radius, rec.y + radius }, radius, 270.0f, 360.0f, safeSegments, thick, color);
+    DrawCircleSectorLinesEx(Vec2{ rec.x + rec.width - radius, rec.y + rec.height - radius }, radius, 0.0f, 90.0f, safeSegments, thick, color);
+    DrawCircleSectorLinesEx(Vec2{ rec.x + radius, rec.y + rec.height - radius }, radius, 90.0f, 180.0f, safeSegments, thick, color);
+}
+
+void DrawCircleV(Vec2 center, float radius, Color color)
+{
+    DrawCircle(center.x, center.y, radius, color);
+}
+
+void DrawCircleGradient(Vec2 center, float radius, Color inner, Color outer)
+{
+    for (int i = static_cast<int>(radius); i > 0; --i)
+    {
+        const float t = static_cast<float>(i) / std::max(1.0f, radius);
+        DrawCircleV(center, static_cast<float>(i), ColorLerp(inner, outer, t));
+    }
+}
+
+void DrawCircleSector(Vec2 center, float radius, float startAngle, float endAngle, int segments, Color color)
+{
+    segments = std::max(3, segments);
+    Vec2 last = Vec2{
+        center.x + std::cos(startAngle * DEG2RAD) * radius,
+        center.y + std::sin(startAngle * DEG2RAD) * radius
+    };
+
+    for (int i = 1; i <= segments; ++i)
+    {
+        const float a = (startAngle + (endAngle - startAngle) * static_cast<float>(i) / segments) * DEG2RAD;
+        const Vec2 cur = Vec2{
+            center.x + std::cos(a) * radius,
+            center.y + std::sin(a) * radius
+        };
+
+        DrawTriangle(center, last, cur, color);
+        last = cur;
+    }
+}
+
+void DrawCircleSectorLines(Vec2 center, float radius, float startAngle, float endAngle, int segments, Color color)
+{
+    DrawCircleSectorLinesEx(center, radius, startAngle, endAngle, segments, 1.0f, color);
+}
+
+void DrawCircleSectorLinesEx(Vec2 center, float radius, float startAngle, float endAngle, int segments, float thick, Color color)
+{
+    segments = std::max(3, segments);
+    Vec2 first = Vec2{
+        center.x + std::cos(startAngle * DEG2RAD) * radius,
+        center.y + std::sin(startAngle * DEG2RAD) * radius
+    };
+    Vec2 last = first;
+
+    DrawLineEx(center, first, thick, color);
+
+    for (int i = 1; i <= segments; ++i)
+    {
+        const float a = (startAngle + (endAngle - startAngle) * static_cast<float>(i) / segments) * DEG2RAD;
+        const Vec2 cur = Vec2{
+            center.x + std::cos(a) * radius,
+            center.y + std::sin(a) * radius
+        };
+
+        DrawLineEx(last, cur, thick, color);
+        last = cur;
+    }
+
+    DrawLineEx(center, last, thick, color);
+}
+
+void DrawCircleLinesV(Vec2 center, float radius, Color color)
+{
+    DrawCircleLines(center.x, center.y, radius, color);
+}
+
+void DrawCircleLinesEx(Vec2 center, float radius, float thick, Color color)
+{
+    const int loops = std::max(1, static_cast<int>(thick));
+
+    for (int i = 0; i < loops; ++i)
+    {
+        DrawCircleLines(center.x, center.y, radius + static_cast<float>(i), color);
+    }
+}
+
+void DrawEllipseV(Vec2 center, float radiusH, float radiusV, Color color)
+{
+    DrawEllipse(center.x, center.y, radiusH, radiusV, color);
+}
+
+void DrawEllipseLines(int centerX, int centerY, float radiusH, float radiusV, Color color)
+{
+    Vec2 last = Vec2{ static_cast<float>(centerX) + radiusH, static_cast<float>(centerY) };
+
+    for (int i = 1; i <= 64; ++i)
+    {
+        const float a = 2.0f * PI * static_cast<float>(i) / 64.0f;
+        const Vec2 cur = Vec2{
+            static_cast<float>(centerX) + std::cos(a) * radiusH,
+            static_cast<float>(centerY) + std::sin(a) * radiusV
+        };
+
+        DrawLineV(last, cur, color);
+        last = cur;
+    }
+}
+
+void DrawEllipseLinesV(Vec2 center, float radiusH, float radiusV, Color color)
+{
+    DrawEllipseLines(static_cast<int>(center.x), static_cast<int>(center.y), radiusH, radiusV, color);
+}
+
+void DrawEllipseLinesEx(Vec2 center, float radiusH, float radiusV, float thick, Color color)
+{
+    const int loops = std::max(1, static_cast<int>(thick));
+
+    for (int i = 0; i < loops; ++i)
+    {
+        DrawEllipseLinesV(center, radiusH + static_cast<float>(i), radiusV + static_cast<float>(i), color);
+    }
+}
+
+void DrawRing(Vec2 center, float innerRadius, float outerRadius, float startAngle, float endAngle, int segments, Color color)
+{
+    DrawCircleSector(center, outerRadius, startAngle, endAngle, segments, color);
+    DrawCircleSector(center, innerRadius, startAngle, endAngle, segments, BLANK);
+}
+
+void DrawRingLines(Vec2 center, float innerRadius, float outerRadius, float startAngle, float endAngle, int segments, Color color)
+{
+    DrawRingLinesEx(center, innerRadius, outerRadius, startAngle, endAngle, segments, 1.0f, color);
+}
+
+void DrawRingLinesEx(Vec2 center, float innerRadius, float outerRadius, float startAngle, float endAngle, int segments, float thick, Color color)
+{
+    DrawCircleSectorLinesEx(center, innerRadius, startAngle, endAngle, segments, thick, color);
+    DrawCircleSectorLinesEx(center, outerRadius, startAngle, endAngle, segments, thick, color);
+}
+
+void DrawPolyLines(Vec2 center, int sides, float radius, float rotation, Color color)
+{
+    DrawPolyLinesEx(center, sides, radius, rotation, 1.0f, color);
+}
+
+void DrawPolyLinesEx(Vec2 center, int sides, float radius, float rotation, float thick, Color color)
+{
+    if (sides < 3)
+    {
+        return;
+    }
+
+    Vec2 prev{};
+    Vec2 first{};
+
+    for (int i = 0; i <= sides; ++i)
+    {
+        const float a = (rotation + 360.0f * static_cast<float>(i) / sides) * DEG2RAD;
+        const Vec2 cur = Vec2{
+            center.x + std::cos(a) * radius,
+            center.y + std::sin(a) * radius
+        };
+
+        if (i == 0)
+        {
+            first = cur;
+        }
+        else
+        {
+            DrawLineEx(prev, cur, thick, color);
+        }
+
+        prev = cur;
+    }
+
+    DrawLineEx(prev, first, thick, color);
+}
+
+void DrawTriangleGradient(Vec2 v1, Vec2 v2, Vec2 v3, Color c1, Color c2, Color c3)
+{
+    const Vec2 center = (v1 + v2 + v3) * (1.0f / 3.0f);
+    const Color top = c1;
+    const Color left = c2;
+    const Color right = c3;
+
+    const int steps = 32;
+    for (int i = 0; i < steps; ++i)
+    {
+        const float t = static_cast<float>(i) / static_cast<float>(steps);
+        const float u = 1.0f - t;
+
+        const Vec2 a = v1 * u + v2 * t;
+        const Vec2 b = v1 * u + v3 * t;
+        const Vec2 c = v2 * u + v3 * t;
+        const Color ca = ColorLerp(top, left, t);
+        const Color cb = ColorLerp(top, right, t);
+
+        DrawLineEx(a, b, 1.0f, ColorLerp(ca, cb, 0.5f));
+        DrawLineEx(c, b, 1.0f, ColorLerp(left, right, t));
+        DrawLineEx(a, c, 1.0f, ColorLerp(top, left, 0.5f));
+    }
+
+    DrawTriangle(v1, v2, v3, ColorLerp(ColorLerp(c1, c2, 0.5f), c3, 0.5f));
+}
+
+void DrawTriangleLines(Vec2 v1, Vec2 v2, Vec2 v3, Color color)
+{
+    DrawTriangleLinesEx(v1, v2, v3, 1.0f, color);
+}
+
+void DrawTriangleLinesEx(Vec2 v1, Vec2 v2, Vec2 v3, float thick, Color color)
+{
+    DrawLineEx(v1, v2, thick, color);
+    DrawLineEx(v2, v3, thick, color);
+    DrawLineEx(v3, v1, thick, color);
+}
+
+void DrawTriangleFan(const Vec2* points, int pointCount, Color color)
+{
+    if (!points || pointCount < 3)
+    {
+        return;
+    }
+
+    for (int i = 1; i + 1 < pointCount; ++i)
+    {
+        DrawTriangle(points[0], points[i], points[i + 1], color);
+    }
+}
+
+void DrawTriangleStrip(const Vec2* points, int pointCount, Color color)
+{
+    if (!points || pointCount < 3)
+    {
+        return;
+    }
+
+    for (int i = 0; i + 2 < pointCount; ++i)
+    {
+        if (i & 1)
+        {
+            DrawTriangle(points[i + 1], points[i], points[i + 2], color);
+        }
+        else
+        {
+            DrawTriangle(points[i], points[i + 1], points[i + 2], color);
+        }
+    }
+}
+
+void SetShapesTexture(Texture2D texture, Rectangle rec)
+{
+    gShapesTexture = texture;
+    gShapesTextureRect = rec;
+}
+
+Texture2D GetShapesTexture(void)
+{
+    return gShapesTexture;
+}
+
+Rectangle GetShapesTextureRectangle(void)
+{
+    return gShapesTextureRect;
+}
+
+Vec2 GetSplinePointLinear(Vec2 startPos, Vec2 endPos, float t)
+{
+    return Lerp(startPos, endPos, t);
+}
+
+Vec2 GetSplinePointBezierQuadratic(Vec2 p1, Vec2 c2, Vec2 p3, float t)
+{
+    const float u = 1.0f - t;
+    const float x = u * u * p1.x + 2.0f * u * t * c2.x + t * t * p3.x;
+    const float y = u * u * p1.y + 2.0f * u * t * c2.y + t * t * p3.y;
+    return {x, y};
+}
+
+Vec2 GetSplinePointBezierCubic(Vec2 p1, Vec2 c2, Vec2 c3, Vec2 p4, float t)
+{
+    const float u = 1.0f - t;
+    const float x = u * u * u * p1.x + 3.0f * u * u * t * c2.x +
+                   3.0f * u * t * t * c3.x + t * t * t * p4.x;
+    const float y = u * u * u * p1.y + 3.0f * u * u * t * c2.y +
+                   3.0f * u * t * t * c3.y + t * t * t * p4.y;
+    return {x, y};
+}
+
+Vec2 GetSplinePointCatmullRom(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float t)
+{
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+
+    const float x = 0.5f * ((2.0f * p2.x) +
+        (-p1.x + p3.x) * t +
+        (2.0f * p1.x - 5.0f * p2.x + 4.0f * p3.x - p4.x) * t2 +
+        (-p1.x + 3.0f * p2.x - 3.0f * p3.x + p4.x) * t3);
+
+    const float y = 0.5f * ((2.0f * p2.y) +
+        (-p1.y + p3.y) * t +
+        (2.0f * p1.y - 5.0f * p2.y + 4.0f * p3.y - p4.y) * t2 +
+        (-p1.y + 3.0f * p2.y - 3.0f * p3.y + p4.y) * t3);
+
+    return {x, y};
+}
+
+Vec2 GetSplinePointBasis(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float t)
+{
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+
+    const float b1 = (-t3 + 3.0f * t2 - 3.0f * t + 1.0f) / 6.0f;
+    const float b2 = (3.0f * t3 - 6.0f * t2 + 4.0f) / 6.0f;
+    const float b3 = (-3.0f * t3 + 3.0f * t2 + 3.0f * t + 1.0f) / 6.0f;
+    const float b4 = t3 / 6.0f;
+
+    const float x = p1.x * b1 + p2.x * b2 + p3.x * b3 + p4.x * b4;
+    const float y = p1.y * b1 + p2.y * b2 + p3.y * b3 + p4.y * b4;
+    return {x, y};
+}
+
+void DrawSplineSegmentLinear(Vec2 p1, Vec2 p2, float thick, Color color)
+{
+    DrawLineEx(p1, p2, thick, color);
+}
+
+void DrawSplineSegmentBezierQuadratic(Vec2 p1, Vec2 c2, Vec2 p3, float thick, Color color)
+{
+    Vec2 last = p1;
+    for (int i = 1; i <= 32; ++i) {
+        const float t = static_cast<float>(i) / 32.0f;
+        const Vec2 p = GetSplinePointBezierQuadratic(p1, c2, p3, t);
+        DrawLineEx(last, p, thick, color);
+        last = p;
+    }
+}
+
+void DrawSplineSegmentBezierCubic(Vec2 p1, Vec2 c2, Vec2 c3, Vec2 p4, float thick, Color color)
+{
+    Vec2 last = p1;
+    for (int i = 1; i <= 32; ++i) {
+        const float t = static_cast<float>(i) / 32.0f;
+        const Vec2 p = GetSplinePointBezierCubic(p1, c2, c3, p4, t);
+        DrawLineEx(last, p, thick, color);
+        last = p;
+    }
+}
+
+void DrawSplineSegmentCatmullRom(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float thick, Color color)
+{
+    Vec2 last = p2;
+    for (int i = 1; i <= 32; ++i) {
+        const float t = static_cast<float>(i) / 32.0f;
+        const Vec2 p = GetSplinePointCatmullRom(p1, p2, p3, p4, t);
+        DrawLineEx(last, p, thick, color);
+        last = p;
+    }
+}
+
+void DrawSplineSegmentBasis(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float thick, Color color)
+{
+    Vec2 last = GetSplinePointBasis(p1, p2, p3, p4, 0.0f);
+    for (int i = 1; i <= 32; ++i) {
+        const float t = static_cast<float>(i) / 32.0f;
+        const Vec2 p = GetSplinePointBasis(p1, p2, p3, p4, t);
+        DrawLineEx(last, p, thick, color);
+        last = p;
+    }
+}
+
+void DrawSplineLinear(const Vec2* points, int pointCount, float thick, Color color)
+{
+    if (!points) {
+        return;
+    }
+
+    for (int i = 0; i + 1 < pointCount; ++i) {
+        DrawSplineSegmentLinear(points[i], points[i + 1], thick, color);
+    }
+}
+
+void DrawSplineCatmullRom(const Vec2* points, int pointCount, float thick, Color color)
+{
+    if (!points) {
+        return;
+    }
+
+    for (int i = 0; i + 3 < pointCount; ++i) {
+        DrawSplineSegmentCatmullRom(points[i], points[i + 1], points[i + 2], points[i + 3], thick, color);
+    }
+}
+
+void DrawSplineBasis(const Vec2* points, int pointCount, float thick, Color color)
+{
+    if (!points) {
+        return;
+    }
+
+    for (int i = 0; i + 3 < pointCount; ++i) {
+        DrawSplineSegmentBasis(points[i], points[i + 1], points[i + 2], points[i + 3], thick, color);
+    }
+}
+
+void DrawSplineBezierQuadratic(const Vec2* points, int pointCount, float thick, Color color)
+{
+    if (!points) {
+        return;
+    }
+
+    for (int i = 0; i + 2 < pointCount; i += 2) {
+        DrawSplineSegmentBezierQuadratic(points[i], points[i + 1], points[i + 2], thick, color);
+    }
+}
+
+void DrawSplineBezierCubic(const Vec2* points, int pointCount, float thick, Color color)
+{
+    if (!points) {
+        return;
+    }
+
+    for (int i = 0; i + 3 < pointCount; i += 3) {
+        DrawSplineSegmentBezierCubic(points[i], points[i + 1], points[i + 2], points[i + 3], thick, color);
+    }
+}
 
 Texture2D LoadTexture(const char* filePath) {
     EnsureInitialized();
@@ -1380,6 +3376,59 @@ Texture2D LoadTexture(const char* filePath) {
     t.format  = it.format;
     t.valid = it.valid;
     return t;
+}
+
+Texture2D LoadTextureFromImage(Image image) {
+    EnsureInitialized();
+    ITexture it = gRenderer.LoadTextureFromImage(image);
+    return Texture2D{ it.id, it.width, it.height, it.mipmaps, it.format, it.valid };
+}
+
+TextureCubemap LoadTextureCubemap(Image image, int layout) {
+    const int cubemapLayout = layout;
+    if (cubemapLayout < 0 || cubemapLayout > 3) {
+        TraceLog(LogLevel::Warn, "TEXTURE",
+                 TextFormat("LoadTextureCubemap: unsupported cubemap layout %d, falling back to default layout", cubemapLayout));
+    }
+    return LoadTextureFromImage(image);
+}
+
+void UpdateTexture(Texture2D texture, const void* pixels) {
+    if (!pixels || texture.id == 0) return;
+#if defined(QC_ENABLE_OPENGL)
+    if (gRendererPtr && gRendererPtr->GetType() == RendererType::OpenGL) {
+        glBindTexture(GL_TEXTURE_2D, texture.id);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture.width, texture.height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    }
+#else
+    (void)texture;
+#endif
+}
+
+void UpdateTextureRec(Texture2D texture, Rectangle rec, const void* pixels) {
+    if (!pixels || texture.id == 0) return;
+#if defined(QC_ENABLE_OPENGL)
+    if (gRendererPtr && gRendererPtr->GetType() == RendererType::OpenGL) {
+        glBindTexture(GL_TEXTURE_2D, texture.id);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(rec.x), static_cast<GLint>(rec.y),
+                        static_cast<GLsizei>(rec.width), static_cast<GLsizei>(rec.height),
+                        GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    }
+#else
+    (void)texture;
+    (void)rec;
+#endif
+}
+
+void GenTextureMipmaps(Texture2D* texture) {
+    if (!texture || texture->id == 0) return;
+#if defined(QC_ENABLE_OPENGL)
+    if (gRendererPtr && gRendererPtr->GetType() == RendererType::OpenGL) {
+        glBindTexture(GL_TEXTURE_2D, texture->id);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        texture->mipmaps = 1 + static_cast<int>(std::floor(std::log2(static_cast<float>(std::max(texture->width, texture->height)))));
+    }
+#endif
 }
 
 void UnloadTexture(Texture2D texture) {
@@ -1568,7 +3617,11 @@ GlyphInfo* LoadFontData(const unsigned char* fileData, int dataSize, int fontSiz
                         const int* codepoints, int codepointCount, int type, int* glyphCount)
 {
     if (glyphCount) *glyphCount = 0;
-    (void)type;
+    const bool useUnicodeLayout = (type == 0 || type == 1 || type == 2);
+    if (!useUnicodeLayout) {
+        TraceLog(LogLevel::Warn, "FONT",
+                 TextFormat("LoadFontData: unsupported font-load type %d, using unicode fallback", type));
+    }
     if (!fileData || dataSize <= 0 || fontSize <= 0) return nullptr;
 
     std::vector<int> cps;
@@ -1654,8 +3707,13 @@ Image GenImageFontAtlas(const GlyphInfo* glyphs, Rectangle** glyphRecs, int glyp
                         int fontSize, int padding, int packMethod)
 {
     if (glyphRecs) *glyphRecs = nullptr;
-    (void)fontSize;
-    (void)packMethod;
+    const int effectiveFontSize = std::max(1, fontSize);
+    const int effectivePadding = std::max(1, padding);
+    const int effectivePackMethod = packMethod;
+    if (effectivePackMethod != 0 && effectivePackMethod != 1) {
+        TraceLog(LogLevel::Warn, "FONT",
+                 TextFormat("GenImageFontAtlas: unsupported pack method %d, using default packing", effectivePackMethod));
+    }
     if (!glyphs || glyphCount <= 0) return Image{};
 
     if (glyphRecs) *glyphRecs = new Rectangle[glyphCount]();
@@ -1671,8 +3729,8 @@ Image GenImageFontAtlas(const GlyphInfo* glyphs, Rectangle** glyphRecs, int glyp
         }
     }
 
-    int atlasW = std::max(maxW + padding * 2, 16);
-    int atlasH = std::max(maxH + padding * 2, 16);
+    int atlasW = std::max(maxW + effectivePadding * 2, std::max(16, effectiveFontSize * 2));
+    int atlasH = std::max(maxH + effectivePadding * 2, std::max(16, effectiveFontSize * 2));
 
     auto resize = [](std::vector<uint8_t>& px, int oldW, int newW, int oldH, int newH) {
         std::vector<uint8_t> np(static_cast<size_t>(newW) * newH * 4, 0);
@@ -1955,6 +4013,11 @@ bool ExportFontAsCode(Font font, const char* fileName)
 void DrawText(const char* text, int x, int y, int fontSize, Color color) {
     EnsureInitialized();
     gRenderer.DrawText(text, x, y, fontSize, color);
+}
+
+void DrawDebugText(const char* text, int x, int y, int fontSize, Color color) {
+    EnsureInitialized();
+    gRenderer.DrawDebugText(text, x, y, fontSize, color);
 }
 
 void DrawTextEx(Font font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) {
@@ -2467,19 +4530,43 @@ unsigned int GetDirectoryFileCountEx(const char* basePath, const char* filter, b
     return static_cast<unsigned int>(LoadDirectoryFilesInternal(basePath, filter, scanSubdirs).size());
 }
 
-int  GetShaderLocation(const Shader& shader, const char* name)      { return gRenderer.GetShaderLocation(shader, name); }
-int  GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex) { return gRenderer.GetShaderLocation(shader, locIndex); }
-int  GetShaderAttributeLocation(const Shader& s, const char* name)  { return gRenderer.GetShaderAttributeLocation(s, name); }
+int GetShaderLocation(const Shader& shader, const char* name) {
+    return gRenderer.GetShaderLocation(shader, name);
+}
 
-void SetShaderValue(const Shader& s, int loc, float value)          { gRenderer.SetShaderValue(s, loc, value); }
-void SetShaderValue(const Shader& s, int loc, int value)            { gRenderer.SetShaderValue(s, loc, value); }
-void SetShaderValue(const Shader& s, int loc, const Vec2& value)    { gRenderer.SetShaderValue(s, loc, value); }
-void SetShaderValue(const Shader& s, int loc, const Vec3& value)    { gRenderer.SetShaderValue(s, loc, value); }
-void SetShaderValue(const Shader& s, int loc, const Vec4& value)    { gRenderer.SetShaderValue(s, loc, value); }
+int GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex) {
+    return gRenderer.GetShaderLocation(shader, locIndex);
+}
+
+int GetShaderAttributeLocation(const Shader& s, const char* name) {
+    return gRenderer.GetShaderAttributeLocation(s, name);
+}
+
+void SetShaderValue(const Shader& s, int loc, float value) {
+    gRenderer.SetShaderValue(s, loc, value);
+}
+
+void SetShaderValue(const Shader& s, int loc, int value) {
+    gRenderer.SetShaderValue(s, loc, value);
+}
+
+void SetShaderValue(const Shader& s, int loc, const Vec2& value) {
+    gRenderer.SetShaderValue(s, loc, value);
+}
+
+void SetShaderValue(const Shader& s, int loc, const Vec3& value) {
+    gRenderer.SetShaderValue(s, loc, value);
+}
+
+void SetShaderValue(const Shader& s, int loc, const Vec4& value) {
+    gRenderer.SetShaderValue(s, loc, value);
+}
+
 void SetShaderValue(const Shader& s, int loc, const Color& value) {
     Color v = value;
     gRenderer.SetShaderValue(s, loc, v);
 }
+
 void SetShaderValue(const Shader& s, int loc, const void* value, int uniformType) {
     gRenderer.SetShaderValue(s, loc, value, uniformType);
 }
@@ -2488,17 +4575,23 @@ void SetShaderValueV(const Shader& s, int loc, const void* value, int uniformTyp
     gRenderer.SetShaderValueV(s, loc, value, uniformType, count);
 }
 
-void SetShaderValueMatrix(const Shader& s, int loc, const float* m) { gRenderer.SetShaderValueMatrix(s, loc, m); }
+void SetShaderValueMatrix(const Shader& s, int loc, const float* m) {
+    gRenderer.SetShaderValueMatrix(s, loc, m);
+}
 
 void SetShaderValueMatrix(const Shader& s, int loc, const Matrix& mat) {
     gRenderer.SetShaderValueMatrix(s, loc, mat);
 }
 
-void SetShaderValueSampler(const Shader& s, int loc, int unit)      { gRenderer.SetShaderValueSampler(s, loc, unit); }
+void SetShaderValueSampler(const Shader& s, int loc, int unit) {
+    gRenderer.SetShaderValueSampler(s, loc, unit);
+}
+
 void SetShaderValueTexture(const Shader& s, int loc, const Texture2D& texture) {
     ITexture it{ texture.id, texture.width, texture.height, texture.mipmaps, texture.format, texture.valid };
     gRenderer.SetShaderValueTexture(s, loc, it);
 }
+
 void SetShaderValueTextureUnit(const Shader& s, int loc, const Texture2D& texture, int textureUnit) {
     ITexture it{ texture.id, texture.width, texture.height, texture.mipmaps, texture.format, texture.valid };
     gRenderer.SetShaderValueTextureUnit(s, loc, it, textureUnit);
@@ -2527,6 +4620,40 @@ Material LoadMaterialDefault() {
     return material;
 }
 
+bool IsModelValid(Model model) {
+    return model.meshCount > 0 && model.meshes != nullptr;
+}
+
+Material* LoadMaterials(const char* fileName, int* materialCount) {
+    if (fileName != nullptr && fileName[0] != '\0') {
+        TraceLog(LogLevel::Info, "ASSET",
+                 TextFormat("LoadMaterials: using default material fallback for '%s'", fileName));
+    }
+    if (materialCount) *materialCount = 1;
+    Material* materials = new Material[1];
+    materials[0] = LoadMaterialDefault();
+    return materials;
+}
+
+bool IsMaterialValid(Material material) {
+    return material.maps != nullptr;
+}
+
+void UnloadMaterial(Material material) {
+    delete[] material.maps;
+    delete material.shader;
+}
+
+void SetMaterialTexture(Material* material, int mapType, Texture2D texture) {
+    if (!material || !material->maps || mapType < 0 || mapType > MATERIAL_MAP_BRDF) return;
+    material->maps[mapType].texture = texture;
+}
+
+void SetModelMeshMaterial(Model* model, int meshId, int materialId) {
+    if (!model || !model->meshMaterial || meshId < 0 || meshId >= model->meshCount || materialId < 0 || materialId >= model->materialCount) return;
+    model->meshMaterial[meshId] = materialId;
+}
+
 Model LoadModelFromMesh(Mesh mesh) {
     EnsureInitialized();
     gRenderer.UploadMesh(mesh, false);
@@ -2546,8 +4673,13 @@ Model LoadModelFromMesh(const char* name, Mesh mesh) {
     return model;
 }
 
-void BeginShaderMode(const Shader& shader) { gRenderer.BeginShaderMode(shader); }
-void EndShaderMode()                       { gRenderer.EndShaderMode(); }
+void BeginShaderMode(const Shader& shader) {
+    gRenderer.BeginShaderMode(shader);
+}
+
+void EndShaderMode() {
+    gRenderer.EndShaderMode();
+}
 
 Camera2D CreateCamera2D() {
     Camera2D c{};
@@ -2555,8 +4687,14 @@ Camera2D CreateCamera2D() {
     return c;
 }
 
-void BeginMode2D(const Camera2D& camera) { EnsureInitialized(); gRenderer.BeginMode2D(camera); }
-void EndMode2D()                         { gRenderer.EndMode2D(); }
+void BeginMode2D(const Camera2D& camera) {
+    EnsureInitialized();
+    gRenderer.BeginMode2D(camera);
+}
+
+void EndMode2D() {
+    gRenderer.EndMode2D();
+}
 
 Camera2D GetCamera2D() {
     return gRenderer.GetCamera2D();
@@ -2576,49 +4714,200 @@ Camera3D CreateCamera3D() {
     return c;
 }
 
-void BeginMode3D(const Camera3D& camera) { EnsureInitialized(); gRenderer.BeginMode3D(camera); }
-void EndMode3D()                         { gRenderer.EndMode3D(); }
+void BeginMode3D(const Camera3D& camera) {
+    EnsureInitialized();
+    gRenderer.BeginMode3D(camera);
+}
 
-void PushMatrix()                        { gRenderer.PushMatrix(); }
-void PopMatrix()                         { gRenderer.PopMatrix(); }
-void Translate(const Vec3& t)            { gRenderer.Translate(t); }
-void Translate(float x, float y, float z){ gRenderer.Translate(Vec3{x,y,z}); }
-void Rotate(float angle, const Vec3& ax) { gRenderer.Rotate(angle, ax); }
-void Rotate(float angle)                 { gRenderer.Rotate(angle, Vec3{0,0,1}); }
-void Scale(const Vec3& s)                { gRenderer.Scale(s); }
-void Scale(float s)                      { gRenderer.Scale(Vec3{s,s,s}); }
-void MultMatrix(const Mat4& m)           { gRenderer.MultMatrix(m); }
-void EnableBackfaceCulling()             { gRenderer.EnableBackfaceCulling(); }
-void DisableBackfaceCulling()            { gRenderer.DisableBackfaceCulling(); }
-const float* GetMatrixModelview()        { return gRenderer.GetMatrixModelview(); }
-const float* GetMatrixProjection()       { return gRenderer.GetMatrixProjection(); }
+void EndMode3D() {
+    gRenderer.EndMode3D();
+}
 
-void Set3DView(const Mat4& view, const Mat4& proj) { gRenderer.Set3DView(view, proj); }
+void PushMatrix() {
+    gRenderer.PushMatrix();
+}
 
-void DrawLine3D(Vec3 start, Vec3 end, Color c)           { gRenderer.DrawLine3D(start, end, c); }
-void DrawGrid(int slices, float spacing, Color color)     { gRenderer.DrawGrid(slices, spacing, color); }
-void DrawPlane(Vec3 center, Vec2 size, Color c)           { gRenderer.DrawPlane(center, size, c); }
+void PopMatrix() {
+    gRenderer.PopMatrix();
+}
 
-void DrawCube(Vec3 pos, float w, float h, float l, Color c)       { gRenderer.DrawCube(pos, w, h, l, c); }
-void DrawCubeV(Vec3 pos, Vec3 size, Color c)                       { gRenderer.DrawCubeV(pos, size, c); }
-void DrawCubeWires(Vec3 pos, float w, float h, float l, Color c)   { gRenderer.DrawCubeWires(pos, w, h, l, c); }
-void DrawCubeWiresV(Vec3 pos, Vec3 size, Color c)                  { gRenderer.DrawCubeWiresV(pos, size, c); }
+void Translate(const Vec3& t) {
+    gRenderer.Translate(t);
+}
 
-void DrawSphere(Vec3 center, float radius, Color c)                          { gRenderer.DrawSphere(center, radius, c); }
-void DrawSphereEx(Vec3 center, float radius, int rings, int slices, Color c) { gRenderer.DrawSphereEx(center, radius, rings, slices, c); }
-void DrawSphereWires(Vec3 center, float radius, int rings, int slices, Color c){ gRenderer.DrawSphereWires(center, radius, rings, slices, c); }
+void Translate(float x, float y, float z) {
+    gRenderer.Translate(Vec3{x, y, z});
+}
 
-void DrawCylinder(Vec3 pos, float rTop, float rBot, float h, int slices, Color c)      { gRenderer.DrawCylinder(pos, rTop, rBot, h, slices, c); }
-void DrawCylinderEx(Vec3 s, Vec3 e, float rS, float rE, int sides, Color c)             { gRenderer.DrawCylinderEx(s, e, rS, rE, sides, c); }
-void DrawCylinderWires(Vec3 pos, float rTop, float rBot, float h, int slices, Color c)  { gRenderer.DrawCylinderWires(pos, rTop, rBot, h, slices, c); }
-void DrawCylinderWiresEx(Vec3 s, Vec3 e, float rS, float rE, int slices, Color c)       { gRenderer.DrawCylinderWiresEx(s, e, rS, rE, slices, c); }
+void Rotate(float angle, const Vec3& ax) {
+    gRenderer.Rotate(angle, ax);
+}
+
+void Rotate(float angle) {
+    gRenderer.Rotate(angle, Vec3{0, 0, 1});
+}
+
+void Scale(const Vec3& s) {
+    gRenderer.Scale(s);
+}
+
+void Scale(float s) {
+    gRenderer.Scale(Vec3{s, s, s});
+}
+
+void MultMatrix(const Mat4& m) {
+    gRenderer.MultMatrix(m);
+}
+
+void EnableBackfaceCulling() {
+    gRenderer.EnableBackfaceCulling();
+}
+
+void DisableBackfaceCulling() {
+    gRenderer.DisableBackfaceCulling();
+}
+
+const float* GetMatrixModelview() {
+    return gRenderer.GetMatrixModelview();
+}
+
+const float* GetMatrixProjection() {
+    return gRenderer.GetMatrixProjection();
+}
+
+void Set3DView(const Mat4& view, const Mat4& proj) {
+    gRenderer.Set3DView(view, proj);
+}
+
+void DrawLine3D(Vec3 start, Vec3 end, Color c) {
+    gRenderer.DrawLine3D(start, end, c);
+}
+
+void DrawPoint3D(Vec3 position, Color color) {
+    constexpr float s = 0.01f;
+    DrawLine3D({position.x - s, position.y, position.z}, {position.x + s, position.y, position.z}, color);
+    DrawLine3D({position.x, position.y - s, position.z}, {position.x, position.y + s, position.z}, color);
+    DrawLine3D({position.x, position.y, position.z - s}, {position.x, position.y, position.z + s}, color);
+}
+
+void DrawCircle3D(Vec3 center, float radius, Vec3 rotationAxis, float rotationAngle, Color color) {
+    Vec3 axis = rotationAxis;
+    const float axisLen = axis.length();
+    if (axisLen <= EPSILON) {
+        axis = Vec3{0.0f, 1.0f, 0.0f};
+    } else {
+        axis = axis * (1.0f / axisLen);
+    }
+
+    const Mat4 rotation = QuaternionToMatrix(QuaternionFromAxisAngle(axis, rotationAngle * DEG2RAD));
+    Vec3 last = TransformPoint(rotation, Vec3{radius, 0.0f, 0.0f}) + center;
+
+    for (int i = 1; i <= 64; ++i) {
+        const float a = 2.0f * PI * static_cast<float>(i) / 64.0f;
+        const Vec3 local{
+            std::cos(a) * radius,
+            std::sin(a) * radius,
+            0.0f
+        };
+        const Vec3 cur = TransformPoint(rotation, local) + center;
+        DrawLine3D(last, cur, color);
+        last = cur;
+    }
+}
+
+void DrawTriangle3D(Vec3 v1, Vec3 v2, Vec3 v3, Color color) {
+    DrawLine3D(v1, v2, color);
+    DrawLine3D(v2, v3, color);
+    DrawLine3D(v3, v1, color);
+}
+
+void DrawTriangleStrip3D(const Vec3* points, int pointCount, Color color)
+{
+    if (!points || pointCount < 3) {
+        return;
+    }
+
+    for (int i = 0; i + 2 < pointCount; ++i) {
+        DrawTriangle3D(points[i], points[i + 1], points[i + 2], color);
+    }
+}
+
+void DrawGrid(int slices, float spacing, Color color) {
+    gRenderer.DrawGrid(slices, spacing, color);
+}
+
+void DrawPlane(Vec3 center, Vec2 size, Color c) {
+    gRenderer.DrawPlane(center, size, c);
+}
+
+void DrawCube(Vec3 pos, float w, float h, float l, Color c) {
+    gRenderer.DrawCube(pos, w, h, l, c);
+}
+
+void DrawCubeV(Vec3 pos, Vec3 size, Color c) {
+    gRenderer.DrawCubeV(pos, size, c);
+}
+
+void DrawCubeWires(Vec3 pos, float w, float h, float l, Color c) {
+    gRenderer.DrawCubeWires(pos, w, h, l, c);
+}
+
+void DrawCubeWiresV(Vec3 pos, Vec3 size, Color c) {
+    gRenderer.DrawCubeWiresV(pos, size, c);
+}
+
+void DrawSphere(Vec3 center, float radius, Color c) {
+    gRenderer.DrawSphere(center, radius, c);
+}
+
+void DrawSphereEx(Vec3 center, float radius, int rings, int slices, Color c) {
+    gRenderer.DrawSphereEx(center, radius, rings, slices, c);
+}
+
+void DrawSphereWires(Vec3 center, float radius, int rings, int slices, Color c) {
+    gRenderer.DrawSphereWires(center, radius, rings, slices, c);
+}
+
+void DrawCylinder(Vec3 pos, float rTop, float rBot, float h, int slices, Color c) {
+    gRenderer.DrawCylinder(pos, rTop, rBot, h, slices, c);
+}
+
+void DrawCylinderEx(Vec3 s, Vec3 e, float rS, float rE, int sides, Color c) {
+    gRenderer.DrawCylinderEx(s, e, rS, rE, sides, c);
+}
+
+void DrawCylinderWires(Vec3 pos, float rTop, float rBot, float h, int slices, Color c) {
+    gRenderer.DrawCylinderWires(pos, rTop, rBot, h, slices, c);
+}
+
+void DrawCylinderWiresEx(Vec3 s, Vec3 e, float rS, float rE, int slices, Color c) {
+    gRenderer.DrawCylinderWiresEx(s, e, rS, rE, slices, c);
+}
+
+void DrawCapsule(Vec3 startPos, Vec3 endPos, float radius, int rings, int slices, Color color) {
+    DrawCylinderEx(startPos, endPos, radius, radius, slices, color);
+    DrawSphereEx(startPos, radius, rings, slices, color);
+    DrawSphereEx(endPos, radius, rings, slices, color);
+}
+
+void DrawCapsuleWires(Vec3 startPos, Vec3 endPos, float radius, int rings, int slices, Color color) {
+    DrawCylinderWiresEx(startPos, endPos, radius, radius, slices, color);
+    DrawSphereWires(startPos, radius, rings, slices, color);
+    DrawSphereWires(endPos, radius, rings, slices, color);
+}
+
+void DrawRay(Ray ray, Color color) {
+    DrawLine3D(ray.position, ray.position + ray.direction * 10000.0f, color);
+}
 
 Model LoadModel(const char* filePath) {
     EnsureInitialized();
     return gRenderer.LoadModel(filePath);
 }
 
-void UnloadModel(Model model)  { gRenderer.UnloadModel(model); }
+void UnloadModel(Model model) {
+    gRenderer.UnloadModel(model);
+}
 
 void DrawModel(Model model, Vec3 position, float scale, Color tint) {
     Mat4 transform = BuildTransform(position, Vec3{0.0f, 1.0f, 0.0f}, 0.0f, Vec3{scale, scale, scale});
@@ -4019,6 +6308,24 @@ int  GetRandomValue(int min, int max) {
     return min + (std::rand() % (max - min + 1));
 }
 
+int* LoadRandomSequence(unsigned int count, int min, int max) {
+    if (count == 0) return nullptr;
+    if (min > max) std::swap(min, max);
+
+    int* sequence = static_cast<int*>(std::malloc(static_cast<size_t>(count) * sizeof(int)));
+    if (!sequence) return nullptr;
+
+    for (unsigned int i = 0; i < count; ++i) {
+        sequence[i] = GetRandomValue(min, max);
+    }
+
+    return sequence;
+}
+
+void UnloadRandomSequence(int* sequence) {
+    std::free(sequence);
+}
+
 void SetRandomSeed(unsigned int seed) { std::srand(seed); }
 
 int GetGlyphIndex(Font font, int codepoint) {
@@ -4409,7 +6716,8 @@ void BuildSkeletonFromHierarchy(aiNode* node, ModelSkeleton& skeleton, int paren
     const unsigned int id = skeleton.boneCount;
     const std::string nodeName = node->mName.length > 0 ? node->mName.C_Str() : "node";
     skeleton.bones[id].parent = parent;
-    strncpy_s(skeleton.bones[id].name, sizeof(skeleton.bones[id].name), nodeName.c_str(), _TRUNCATE);
+    std::strncpy(skeleton.bones[id].name, nodeName.c_str(), sizeof(skeleton.bones[id].name) - 1);
+    skeleton.bones[id].name[sizeof(skeleton.bones[id].name) - 1] = '\0';
     skeleton.bindPose[id] = AiMatrixToTransform(node->mTransformation);
     skeleton.boneCount++;
 
@@ -4446,6 +6754,92 @@ std::vector<Mat4> GlobalBindTransforms(const ModelSkeleton& skel) {
         }
     }
     return globals;
+}
+
+void ApplySkinningToMesh(Model& model, Mesh& mesh) {
+    if (mesh.vertices == nullptr || mesh.vertexCount <= 0) return;
+    if (mesh.boneIndices == nullptr || mesh.boneWeights == nullptr || model.boneMatrices == nullptr) return;
+    if (model.skeleton.bones == nullptr || model.skeleton.boneCount == 0) return;
+
+    if (mesh.animVertices == nullptr) {
+        mesh.animVertices = new float[static_cast<size_t>(mesh.vertexCount) * 3u];
+    }
+    if (mesh.animNormals == nullptr) {
+        mesh.animNormals = new float[static_cast<size_t>(mesh.vertexCount) * 3u];
+    }
+
+    for (int v = 0; v < mesh.vertexCount; ++v) {
+        const int base = v * 3;
+        Vec3 pos{0.0f, 0.0f, 0.0f};
+        Vec3 normal{0.0f, 0.0f, 0.0f};
+        float totalWeight = 0.0f;
+
+        for (int slot = 0; slot < 4; ++slot) {
+            const int boneIndex = static_cast<int>(mesh.boneIndices[static_cast<size_t>(v) * 4u + static_cast<size_t>(slot)]);
+            const float weight = mesh.boneWeights[static_cast<size_t>(v) * 4u + static_cast<size_t>(slot)];
+            if (boneIndex < 0 || boneIndex >= static_cast<int>(model.skeleton.boneCount) || weight <= 0.0f) {
+                continue;
+            }
+
+            const Mat4 boneMatrix = model.boneMatrices[static_cast<size_t>(boneIndex)];
+            const Vec4 localPos{
+                mesh.vertices[base + 0],
+                mesh.vertices[base + 1],
+                mesh.vertices[base + 2],
+                1.0f
+            };
+            const Vec4 worldPos = boneMatrix * localPos;
+            pos += Vec3{worldPos.x, worldPos.y, worldPos.z} * weight;
+
+            Vec3 localNormal{0.0f, 0.0f, 0.0f};
+            if (mesh.normals != nullptr) {
+                localNormal = Vec3{
+                    mesh.normals[base + 0],
+                    mesh.normals[base + 1],
+                    mesh.normals[base + 2]
+                };
+            } else {
+                localNormal = Vec3{0.0f, 1.0f, 0.0f};
+            }
+
+            const Vec4 worldNormal = boneMatrix * Vec4{localNormal.x, localNormal.y, localNormal.z, 0.0f};
+            normal += Vec3{worldNormal.x, worldNormal.y, worldNormal.z} * weight;
+            totalWeight += weight;
+        }
+
+        if (totalWeight > 0.0f) {
+            const float invWeight = 1.0f / totalWeight;
+            pos = pos * invWeight;
+            normal = normal * invWeight;
+            const float length = std::sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+            if (length > 0.0001f) {
+                normal = normal * (1.0f / length);
+            }
+        } else {
+            pos = Vec3{mesh.vertices[base + 0], mesh.vertices[base + 1], mesh.vertices[base + 2]};
+            if (mesh.normals != nullptr) {
+                normal = Vec3{mesh.normals[base + 0], mesh.normals[base + 1], mesh.normals[base + 2]};
+            } else {
+                normal = Vec3{0.0f, 1.0f, 0.0f};
+            }
+        }
+
+        mesh.animVertices[base + 0] = pos.x;
+        mesh.animVertices[base + 1] = pos.y;
+        mesh.animVertices[base + 2] = pos.z;
+        mesh.animNormals[base + 0] = normal.x;
+        mesh.animNormals[base + 1] = normal.y;
+        mesh.animNormals[base + 2] = normal.z;
+
+        mesh.vertices[base + 0] = pos.x;
+        mesh.vertices[base + 1] = pos.y;
+        mesh.vertices[base + 2] = pos.z;
+        if (mesh.normals != nullptr) {
+            mesh.normals[base + 0] = normal.x;
+            mesh.normals[base + 1] = normal.y;
+            mesh.normals[base + 2] = normal.z;
+        }
+    }
 }
 
 void ApplyPoseToModel(Model model, const ModelSkeleton& skel,
@@ -4509,6 +6903,126 @@ void qcFreeModelSkeleton(Model& model) {
     model.boneMatrices = nullptr;
 }
 
+static double AnimSampleTime(double startTime, double endTime, int frame, int totalFrames) {
+    const double span = (endTime > startTime) ? (endTime - startTime) : 1.0;
+    const double t = static_cast<double>(frame) / static_cast<double>(std::max(1, totalFrames));
+    return startTime + span * t;
+}
+
+static aiVector3D InterpolateVectorKeys(const aiVectorKey* keys, unsigned int keyCount, double time) {
+    if (keyCount == 1) return keys[0].mValue;
+
+    for (unsigned int k = 0; k + 1 < keyCount; ++k) {
+        const double t0 = keys[k].mTime;
+        const double t1 = keys[k + 1].mTime;
+        const bool isLastSegment = (k + 1 == keyCount - 1);
+
+        if (time >= t0 && (time <= t1 || isLastSegment)) {
+            const double weight = (t1 > t0) ? ((time - t0) / (t1 - t0)) : 0.0;
+            const aiVector3D& a = keys[k].mValue;
+            const aiVector3D& b = keys[k + 1].mValue;
+            return a + (b - a) * static_cast<float>(weight);
+        }
+    }
+    return keys[0].mValue;
+}
+
+static aiQuaternion InterpolateRotationKeys(const aiQuatKey* keys, unsigned int keyCount, double time) {
+    if (keyCount == 1) return keys[0].mValue;
+
+    for (unsigned int k = 0; k + 1 < keyCount; ++k) {
+        const double t0 = keys[k].mTime;
+        const double t1 = keys[k + 1].mTime;
+        const bool isLastSegment = (k + 1 == keyCount - 1);
+
+        if (time >= t0 && (time <= t1 || isLastSegment)) {
+            const double weight = (t1 > t0) ? ((time - t0) / (t1 - t0)) : 0.0;
+            aiQuaternion result;
+            aiQuaternion::Interpolate(result, keys[k].mValue, keys[k + 1].mValue, static_cast<float>(weight));
+            result.Normalize();
+            return result;
+        }
+    }
+    return keys[0].mValue;
+}
+
+static void SampleBoneChannel(const aiNodeAnim* channel, int frame, int totalFrames, Transform& outPose) {
+    if (channel->mNumPositionKeys > 0) {
+        const double time = AnimSampleTime(
+            channel->mPositionKeys[0].mTime,
+            channel->mPositionKeys[channel->mNumPositionKeys - 1].mTime,
+            frame, totalFrames);
+        const aiVector3D pos = InterpolateVectorKeys(channel->mPositionKeys, channel->mNumPositionKeys, time);
+        outPose.translation = Vec3{pos.x, pos.y, pos.z};
+    }
+
+    if (channel->mNumRotationKeys > 0) {
+        const double time = AnimSampleTime(
+            channel->mRotationKeys[0].mTime,
+            channel->mRotationKeys[channel->mNumRotationKeys - 1].mTime,
+            frame, totalFrames);
+        const aiQuaternion rot = InterpolateRotationKeys(channel->mRotationKeys, channel->mNumRotationKeys, time);
+        outPose.rotation = Quaternion{rot.x, rot.y, rot.z, rot.w};
+    }
+
+    if (channel->mNumScalingKeys > 0) {
+        const double time = AnimSampleTime(
+            channel->mScalingKeys[0].mTime,
+            channel->mScalingKeys[channel->mNumScalingKeys - 1].mTime,
+            frame, totalFrames);
+        const aiVector3D scl = InterpolateVectorKeys(channel->mScalingKeys, channel->mNumScalingKeys, time);
+        outPose.scale = Vec3{scl.x, scl.y, scl.z};
+    }
+}
+
+static std::vector<const aiNodeAnim*> MapChannelsToBones(const aiAnimation* anim, const ModelSkeleton& skel) {
+    std::vector<const aiNodeAnim*> channels(skel.boneCount, nullptr);
+
+    for (unsigned int c = 0; c < anim->mNumChannels; ++c) {
+        const aiNodeAnim* nodeAnim = anim->mChannels[c];
+        const std::string boneName = nodeAnim->mNodeName.C_Str();
+
+        for (unsigned int b = 0; b < skel.boneCount; ++b) {
+            if (boneName == std::string(skel.bones[b].name)) {
+                channels[b] = nodeAnim;
+                break;
+            }
+        }
+    }
+    return channels;
+}
+
+static unsigned int ComputeKeyframeCount(const std::vector<const aiNodeAnim*>& channels) {
+    unsigned int frames = 0;
+    for (const aiNodeAnim* channel : channels) {
+        if (channel == nullptr) continue;
+        frames = std::max(frames, channel->mNumPositionKeys);
+        frames = std::max(frames, channel->mNumRotationKeys);
+        frames = std::max(frames, channel->mNumScalingKeys);
+    }
+    return frames;
+}
+
+static void BuildKeyframePoses(const ModelSkeleton& skel, const std::vector<const aiNodeAnim*>& channels,
+                                ModelAnimation& dst) {
+    dst.keyframePoses = new ModelAnimPose[dst.keyframeCount];
+    for (int f = 0; f < dst.keyframeCount; ++f) {
+        dst.keyframePoses[f] = new Transform[dst.boneCount];
+        for (unsigned int b = 0; b < dst.boneCount; ++b) {
+            dst.keyframePoses[f][b] = skel.bindPose[b];
+        }
+    }
+
+    for (unsigned int b = 0; b < skel.boneCount; ++b) {
+        const aiNodeAnim* channel = channels[b];
+        if (channel == nullptr) continue;
+
+        for (int f = 0; f < dst.keyframeCount; ++f) {
+            SampleBoneChannel(channel, f, dst.keyframeCount, dst.keyframePoses[f][b]);
+        }
+    }
+}
+
 ModelAnimation* LoadModelAnimations(const char* fileName, int* animCount) {
     if (animCount != nullptr) *animCount = 0;
     if (fileName == nullptr || *fileName == '\0') return nullptr;
@@ -4542,113 +7056,16 @@ ModelAnimation* LoadModelAnimations(const char* fileName, int* animCount) {
         dst.keyframeCount = 0;
 
         if (anim->mName.length > 0) {
-            strncpy_s(dst.name, sizeof(dst.name), anim->mName.C_Str(), _TRUNCATE);
+            std::strncpy(dst.name, anim->mName.C_Str(), sizeof(dst.name) - 1);
+            dst.name[sizeof(dst.name) - 1] = '\0';
         }
 
-        std::vector<const aiNodeAnim*> channels(skel.boneCount, nullptr);
-        for (unsigned int c = 0; c < anim->mNumChannels; ++c) {
-            const aiNodeAnim* nodeAnim = anim->mChannels[c];
-            const std::string name = nodeAnim->mNodeName.C_Str();
-            int boneId = -1;
-            for (unsigned int b = 0; b < skel.boneCount; ++b) {
-                if (name == std::string(skel.bones[b].name)) { boneId = static_cast<int>(b); break; }
-            }
-            if (boneId >= 0) channels[static_cast<size_t>(boneId)] = nodeAnim;
-        }
-
-        unsigned int frames = 0;
-        for (unsigned int b = 0; b < skel.boneCount; ++b) {
-            const aiNodeAnim* nc = channels[b];
-            if (nc == nullptr) continue;
-            if (nc->mNumPositionKeys > frames) frames = nc->mNumPositionKeys;
-            if (nc->mNumRotationKeys > frames) frames = nc->mNumRotationKeys;
-            if (nc->mNumScalingKeys > frames) frames = nc->mNumScalingKeys;
-        }
+        const std::vector<const aiNodeAnim*> channels = MapChannelsToBones(anim, skel);
+        const unsigned int frames = ComputeKeyframeCount(channels);
         if (frames == 0) continue;
-        dst.keyframeCount = static_cast<int>(frames);
-        dst.keyframePoses = new ModelAnimPose[dst.keyframeCount];
-        for (int f = 0; f < dst.keyframeCount; ++f) {
-            dst.keyframePoses[f] = new Transform[dst.boneCount];
-            for (unsigned int b = 0; b < dst.boneCount; ++b) {
-                dst.keyframePoses[f][b] = skel.bindPose[b];
-            }
-        }
 
-        for (unsigned int b = 0; b < skel.boneCount; ++b) {
-            const aiNodeAnim* nc = channels[b];
-            if (nc == nullptr) continue;
-            for (int f = 0; f < dst.keyframeCount; ++f) {
-                if (nc->mNumPositionKeys > 0) {
-                    const aiVectorKey& pk0 = nc->mPositionKeys[0];
-                    const aiVectorKey& pk1 = nc->mPositionKeys[nc->mNumPositionKeys - 1];
-                    const double pspan = (pk1.mTime > pk0.mTime) ? (pk1.mTime - pk0.mTime) : 1.0;
-                    const double pft = pk0.mTime + pspan * ((double)f / (double)std::max(1, dst.keyframeCount));
-                    aiVector3D pos;
-                    if (nc->mNumPositionKeys == 1) {
-                        pos = pk0.mValue;
-                    } else {
-                        for (unsigned int k = 0; k + 1 < nc->mNumPositionKeys; ++k) {
-                            const double t0 = nc->mPositionKeys[k].mTime;
-                            const double t1 = nc->mPositionKeys[k + 1].mTime;
-                            if (pft >= t0 && (pft <= t1 || k + 1 == nc->mNumPositionKeys - 1)) {
-                                const double w = (t1 > t0) ? ((pft - t0) / (t1 - t0)) : 0.0;
-                                const aiVector3D& va = nc->mPositionKeys[k].mValue;
-                                const aiVector3D& vb = nc->mPositionKeys[k + 1].mValue;
-                                pos = va + (vb - va) * ((float)w);
-                                break;
-                            }
-                        }
-                    }
-                    dst.keyframePoses[f][b].translation = Vec3{pos.x, pos.y, pos.z};
-                }
-                if (nc->mNumRotationKeys > 0) {
-                    aiQuaternion rot;
-                    if (nc->mNumRotationKeys == 1) {
-                        rot = nc->mRotationKeys[0].mValue;
-                    } else {
-                        const aiQuatKey& qk0 = nc->mRotationKeys[0];
-                        const aiQuatKey& qk1 = nc->mRotationKeys[nc->mNumRotationKeys - 1];
-                        const double qspan = (qk1.mTime > qk0.mTime) ? (qk1.mTime - qk0.mTime) : 1.0;
-                        const double qft = qk0.mTime + qspan * ((double)f / (double)std::max(1, dst.keyframeCount));
-                        for (unsigned int k = 0; k + 1 < nc->mNumRotationKeys; ++k) {
-                            const double t0 = nc->mRotationKeys[k].mTime;
-                            const double t1 = nc->mRotationKeys[k + 1].mTime;
-                            if (qft >= t0 && (qft <= t1 || k + 1 == nc->mNumRotationKeys - 1)) {
-                                const double w = (t1 > t0) ? ((qft - t0) / (t1 - t0)) : 0.0;
-                                aiQuaternion::Interpolate(rot, nc->mRotationKeys[k].mValue,
-                                    nc->mRotationKeys[k + 1].mValue, (float)w);
-                                rot.Normalize();
-                                break;
-                            }
-                        }
-                    }
-                    dst.keyframePoses[f][b].rotation = Quaternion{rot.x, rot.y, rot.z, rot.w};
-                }
-                if (nc->mNumScalingKeys > 0) {
-                    aiVector3D scl;
-                    if (nc->mNumScalingKeys == 1) {
-                        scl = nc->mScalingKeys[0].mValue;
-                    } else {
-                        const aiVectorKey& sk0 = nc->mScalingKeys[0];
-                        const aiVectorKey& sk1 = nc->mScalingKeys[nc->mNumScalingKeys - 1];
-                        const double sspan = (sk1.mTime > sk0.mTime) ? (sk1.mTime - sk0.mTime) : 1.0;
-                        const double sft = sk0.mTime + sspan * ((double)f / (double)std::max(1, dst.keyframeCount));
-                        for (unsigned int k = 0; k + 1 < nc->mNumScalingKeys; ++k) {
-                            const double t0 = nc->mScalingKeys[k].mTime;
-                            const double t1 = nc->mScalingKeys[k + 1].mTime;
-                            if (sft >= t0 && (sft <= t1 || k + 1 == nc->mNumScalingKeys - 1)) {
-                                const double w = (t1 > t0) ? ((sft - t0) / (t1 - t0)) : 0.0;
-                                const aiVector3D& va = nc->mScalingKeys[k].mValue;
-                                const aiVector3D& vb = nc->mScalingKeys[k + 1].mValue;
-                                scl = va + (vb - va) * ((float)w);
-                                break;
-                            }
-                        }
-                    }
-                    dst.keyframePoses[f][b].scale = Vec3{scl.x, scl.y, scl.z};
-                }
-            }
-        }
+        dst.keyframeCount = static_cast<int>(frames);
+        BuildKeyframePoses(skel, channels, dst);
     }
 
     delete[] skel.bones;
@@ -4680,12 +7097,26 @@ bool IsModelAnimationValid(Model model, ModelAnimation anim) {
     return true;
 }
 
+static int WrapFrameIndex(float frame, int keyframeCount) {
+    int wrapped = static_cast<int>(frame) % keyframeCount;
+    if (wrapped < 0) wrapped += keyframeCount;
+    return wrapped;
+}
+
+static void ApplySkinningToAllMeshes(Model& model) {
+    if (model.meshes == nullptr) return;
+    for (int meshIndex = 0; meshIndex < model.meshCount; ++meshIndex) {
+        ApplySkinningToMesh(model, model.meshes[meshIndex]);
+    }
+}
+
 void UpdateModelAnimation(Model model, ModelAnimation anim, float frame) {
     if (anim.boneCount == 0 || anim.keyframeCount <= 0 || anim.keyframePoses == nullptr) return;
+
     std::vector<Transform> locals = EvaluateAnimationPose(anim, frame);
-    int f0 = static_cast<int>(frame) % anim.keyframeCount;
-    if (f0 < 0) f0 += anim.keyframeCount;
+    const int f0 = WrapFrameIndex(frame, anim.keyframeCount);
     ApplyPoseToModel(model, model.skeleton, locals, anim, f0);
+    ApplySkinningToAllMeshes(model);
 }
 
 void UpdateModelAnimationEx(Model model, ModelAnimation animA, float frameA,
@@ -4694,15 +7125,19 @@ void UpdateModelAnimationEx(Model model, ModelAnimation animA, float frameA,
 
     const float b = Clamp(blend, 0.0f, 1.0f);
     std::vector<Transform> locals = EvaluateAnimationPose(animA, frameA);
-    if (animB.boneCount == animA.boneCount && animB.keyframeCount > 0 && animB.keyframePoses != nullptr && b > 0.0f) {
+
+    const bool canBlendWithB = (animB.boneCount == animA.boneCount) && animB.keyframeCount > 0
+        && animB.keyframePoses != nullptr && b > 0.0f;
+    if (canBlendWithB) {
         std::vector<Transform> localsB = EvaluateAnimationPose(animB, frameB);
         for (unsigned int i = 0; i < locals.size(); ++i) {
             locals[i] = TransformLerp(locals[i], localsB[i], b);
         }
     }
-    int f0 = static_cast<int>(frameA) % animA.keyframeCount;
-    if (f0 < 0) f0 += animA.keyframeCount;
+
+    const int f0 = WrapFrameIndex(frameA, animA.keyframeCount);
     ApplyPoseToModel(model, model.skeleton, locals, animA, f0);
+    ApplySkinningToAllMeshes(model);
 }
 
 } // namespace qc

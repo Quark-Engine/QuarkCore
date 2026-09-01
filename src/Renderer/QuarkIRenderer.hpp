@@ -58,6 +58,7 @@ public:
     virtual void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) = 0;
     virtual void DrawGrid(int slices, float spacing, Color color)                                                             = 0;
 
+    virtual void DrawDebugText(const char* text, int x, int y, int fontSize, Color color)                         = 0;
     virtual void DrawText(const char* text, int x, int y, int fontSize, Color color)                                = 0;
     virtual void DrawTextEx(IFont font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) = 0;
     virtual Vec2 MeasureTextEx(IFont font, const char* text, float fontSize, float spacing)                         = 0;
@@ -111,6 +112,12 @@ public:
     // Texture
     virtual void BeginTextureMode(IRenderTexture target)                                                = 0;
     virtual void EndTextureMode()                                                                       = 0;
+    virtual void SetTextureFilterMode(TextureFilterMode mode) { (void)mode; }
+    virtual void SetTextureFilter(int filter) { (void)filter; }
+    virtual void SetTextureWrap(int wrap) { (void)wrap; }
+    virtual void BeginScissorMode(int x, int y, int width, int height) { (void)x; (void)y; (void)width; (void)height; }
+    virtual void EndScissorMode() { }
+    virtual void SetBlendMode(int mode) { (void)mode; }
     virtual ITexture LoadTexture(const char* filePath)                                                  = 0;
     virtual ITexture LoadTextureFromImage(const Image& image)                                            = 0;
     virtual ITexture GetRenderTextureTexture(IRenderTexture target)                                     = 0;

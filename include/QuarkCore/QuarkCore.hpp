@@ -479,10 +479,29 @@ enum class MouseButton {
 };
 
 inline constexpr MouseButton MOUSE_BUTTON_LEFT = MouseButton::Left;
+inline constexpr MouseButton MOUSE_BUTTON_MIDDLE = MouseButton::Middle;
+inline constexpr MouseButton MOUSE_BUTTON_RIGHT = MouseButton::Right;
 inline constexpr MouseButton MOUSE_LEFT_BUTTON = MouseButton::Left;
+inline constexpr MouseButton MOUSE_MIDDLE_BUTTON = MouseButton::Middle;
+inline constexpr MouseButton MOUSE_RIGHT_BUTTON = MouseButton::Right;
+
 inline constexpr KeyboardKey KEY_NULL = KeyboardKey::Unknown;
+inline constexpr KeyboardKey KEY_LEFT = KeyboardKey::Left;
+inline constexpr KeyboardKey KEY_RIGHT = KeyboardKey::Right;
+inline constexpr KeyboardKey KEY_UP = KeyboardKey::Up;
+inline constexpr KeyboardKey KEY_DOWN = KeyboardKey::Down;
+inline constexpr KeyboardKey KEY_SPACE = KeyboardKey::Space;
+inline constexpr KeyboardKey KEY_ENTER = KeyboardKey::Enter;
+inline constexpr KeyboardKey KEY_ESCAPE = KeyboardKey::Escape;
+inline constexpr KeyboardKey KEY_BACKSPACE = KeyboardKey::Backspace;
 inline constexpr KeyboardKey KEY_LEFT_CONTROL = KeyboardKey::LeftControl;
 inline constexpr KeyboardKey KEY_RIGHT_CONTROL = KeyboardKey::RightControl;
+inline constexpr KeyboardKey KEY_LEFT_SHIFT = KeyboardKey::LeftShift;
+inline constexpr KeyboardKey KEY_RIGHT_SHIFT = KeyboardKey::RightShift;
+inline constexpr KeyboardKey KEY_LEFT_ALT = KeyboardKey::LeftAlt;
+inline constexpr KeyboardKey KEY_RIGHT_ALT = KeyboardKey::RightAlt;
+inline constexpr KeyboardKey KEY_LEFT_SUPER = KeyboardKey::LeftSuper;
+inline constexpr KeyboardKey KEY_RIGHT_SUPER = KeyboardKey::RightSuper;
 
 /**
  * @brief Mouse cursor type enumeration.
@@ -499,6 +518,74 @@ enum class MouseCursor {
     ResizeNESW,
     ResizeAll,
     NotAllowed,
+};
+
+enum ConfigFlags {
+    FLAG_VSYNC_HINT = 0x00000040,
+    FLAG_FULLSCREEN_MODE = 0x00000002,
+    FLAG_WINDOW_RESIZABLE = 0x00000004,
+    FLAG_BORDERLESS_WINDOWED_MODE = 0x00000008,
+    FLAG_HIGHDPI = 0x00000020,
+    FLAG_MSAA_4X_HINT = 0x00000080,
+    FLAG_WINDOW_UNDECORATED = 0x00000100,
+    FLAG_WINDOW_HIDDEN = 0x00000200,
+    FLAG_WINDOW_MINIMIZED = 0x00000400,
+    FLAG_WINDOW_MAXIMIZED = 0x00000800,
+    FLAG_WINDOW_TOPMOST = 0x00001000,
+    FLAG_WINDOW_ALWAYS_RUN = 0x00002000,
+};
+
+enum TextureFilter {
+    TEXTURE_FILTER_POINT = 0,
+    TEXTURE_FILTER_BILINEAR = 1,
+    TEXTURE_FILTER_TRILINEAR = 2,
+    TEXTURE_FILTER_ANISOTROPIC_4X = 3,
+    TEXTURE_FILTER_ANISOTROPIC_8X = 4,
+    TEXTURE_FILTER_ANISOTROPIC_16X = 5,
+};
+
+enum TextureWrap {
+    TEXTURE_WRAP_REPEAT = 0,
+    TEXTURE_WRAP_CLAMP = 1,
+    TEXTURE_WRAP_MIRROR_REPEAT = 2,
+    TEXTURE_WRAP_MIRROR_CLAMP = 3,
+};
+
+enum BlendMode {
+    BLEND_ALPHA = 0,
+    BLEND_ADDITIVE = 1,
+    BLEND_MULTIPLIED = 2,
+    BLEND_ADD_COLORS = 3,
+    BLEND_SUBTRACT_COLORS = 4,
+    BLEND_MOD_COLOR = 5,
+};
+
+enum Gesture {
+    GESTURE_NONE = 0,
+    GESTURE_TAP = 1,
+    GESTURE_DOUBLETAP = 2,
+    GESTURE_HOLD = 4,
+    GESTURE_DRAG = 8,
+    GESTURE_SWIPE_RIGHT = 16,
+    GESTURE_SWIPE_LEFT = 32,
+    GESTURE_SWIPE_UP = 64,
+    GESTURE_SWIPE_DOWN = 128,
+    GESTURE_PINCH_IN = 256,
+    GESTURE_PINCH_OUT = 512,
+};
+
+enum CameraMode {
+    CAMERA_CUSTOM = 0,
+    CAMERA_FREE = 1,
+    CAMERA_ORBITAL = 2,
+    CAMERA_FIRST_PERSON = 3,
+    CAMERA_THIRD_PERSON = 4,
+};
+
+enum FontType {
+    FONT_DEFAULT = 0,
+    FONT_BITMAP = 1,
+    FONT_SDF = 2,
 };
 
 /**
@@ -659,6 +746,79 @@ QCAPI void InitWindow(int width, int height, const char* title, RendererType ren
 enum class TextureFilterMode {
     Nearest,
     Linear
+};
+
+struct rAudioBuffer;
+struct rAudioProcessor;
+
+typedef void (*AudioCallback)(void* bufferData, unsigned int frames);
+typedef unsigned char* (*LoadFileDataCallback)(const char* fileName, int* dataSize);
+typedef bool (*SaveFileDataCallback)(const char* fileName, void* data, int dataSize);
+typedef char* (*LoadFileTextCallback)(const char* fileName);
+typedef bool (*SaveFileTextCallback)(const char* fileName, char* text);
+
+struct Wave {
+    unsigned int frameCount = 0;
+    unsigned int sampleRate = 0;
+    unsigned int sampleSize = 0;
+    unsigned int channels = 0;
+    void* data = nullptr;
+};
+
+struct AudioStream {
+    rAudioBuffer* buffer = nullptr;
+    rAudioProcessor* processor = nullptr;
+    unsigned int sampleRate = 0;
+    unsigned int sampleSize = 0;
+    unsigned int channels = 0;
+};
+
+struct Sound {
+    AudioStream stream;
+    unsigned int frameCount = 0;
+};
+
+struct Music {
+    AudioStream stream;
+    unsigned int frameCount = 0;
+    bool looping = false;
+    int ctxType = 0;
+    void* ctxData = nullptr;
+};
+
+struct VrDeviceInfo {
+    int hResolution = 0;
+    int vResolution = 0;
+    float hScreenSize = 0.0f;
+    float vScreenSize = 0.0f;
+    float eyeToScreenDistance = 0.0f;
+    float lensSeparationDistance = 0.0f;
+    float interpupillaryDistance = 0.0f;
+    float lensDistortionValues[4] = {};
+    float chromaAbCorrection[4] = {};
+};
+
+struct VrStereoConfig {
+    Matrix projection[2];
+    Matrix viewOffset[2];
+    float leftLensCenter[2] = {};
+    float rightLensCenter[2] = {};
+    float leftScreenCenter[2] = {};
+    float rightScreenCenter[2] = {};
+    float scale[2] = {};
+    float scaleIn[2] = {};
+};
+
+struct AutomationEvent {
+    unsigned int frame = 0;
+    unsigned int type = 0;
+    int params[4] = {};
+};
+
+struct AutomationEventList {
+    unsigned int capacity = 0;
+    unsigned int count = 0;
+    AutomationEvent* events = nullptr;
 };
 
 /**
@@ -1083,12 +1243,205 @@ QCAPI float GetWindowPixelDensity();
  */
 QCAPI void SetWindowIcon(Image image);
 
+using TraceLogCallback = void (*)(LogLevel level, const char* message);
+
+/**
+ * @brief Check whether the window was resized since the last event pump.
+ * @return true if a resize event has occurred.
+ */
+QCAPI bool IsWindowResized();
+/**
+ * @brief Check whether a window state flag is active.
+ * @param flag SDL window flag bitmask value.
+ * @return true if the flag is set.
+ */
+QCAPI bool IsWindowState(unsigned int flag);
+/**
+ * @brief Set the current window state using a flag bitmask.
+ * @param flags Bitmask of SDL flags to enable.
+ */
+QCAPI void SetWindowState(unsigned int flags);
+/**
+ * @brief Clear the current window state using a flag bitmask.
+ * @param flags Bitmask of SDL flags to disable.
+ */
+QCAPI void ClearWindowState(unsigned int flags);
+/**
+ * @brief Toggle borderless windowed mode.
+ */
+QCAPI void ToggleBorderlessWindowed();
+/**
+ * @brief Set the window icon from an array of images.
+ * @param images Array of images.
+ * @param count Number of images.
+ */
+QCAPI void SetWindowIcons(Image* images, int count);
+/**
+ * @brief Move the window to a specific monitor.
+ * @param monitor Monitor index.
+ */
+QCAPI void SetWindowMonitor(int monitor);
+/**
+ * @brief Set the window opacity.
+ * @param opacity Opacity value in the range [0.0, 1.0].
+ */
+QCAPI void SetWindowOpacity(float opacity);
+/**
+ * @brief Focus the window.
+ */
+QCAPI void SetWindowFocused();
+/**
+ * @brief Get current render width in pixels.
+ * @return Render width.
+ */
+QCAPI int GetRenderWidth();
+/**
+ * @brief Get current render height in pixels.
+ * @return Render height.
+ */
+QCAPI int GetRenderHeight();
+/**
+ * @brief Get the number of available monitors.
+ * @return Number of monitors.
+ */
+QCAPI int GetMonitorCount();
+/**
+ * @brief Get the current monitor index.
+ * @return Current monitor index.
+ */
+QCAPI int GetCurrentMonitor();
+/**
+ * @brief Get the monitor position in desktop coordinates.
+ * @param monitor Monitor index.
+ * @return Monitor position as Vec2.
+ */
+QCAPI Vec2 GetMonitorPosition(int monitor);
+/**
+ * @brief Get the monitor width.
+ * @param monitor Monitor index.
+ * @return Width in pixels.
+ */
+QCAPI int GetMonitorWidth(int monitor);
+/**
+ * @brief Get the monitor height.
+ * @param monitor Monitor index.
+ * @return Height in pixels.
+ */
+QCAPI int GetMonitorHeight(int monitor);
+/**
+ * @brief Get the monitor physical width.
+ * @param monitor Monitor index.
+ * @return Physical width in millimetres.
+ */
+QCAPI int GetMonitorPhysicalWidth(int monitor);
+/**
+ * @brief Get the monitor physical height.
+ * @param monitor Monitor index.
+ * @return Physical height in millimetres.
+ */
+QCAPI int GetMonitorPhysicalHeight(int monitor);
+/**
+ * @brief Get the name of the monitor.
+ * @param monitor Monitor index.
+ * @return Monitor name string.
+ */
+QCAPI const char* GetMonitorName(int monitor);
+/**
+ * @brief Set the clipboard text.
+ * @param text Text to copy.
+ */
+QCAPI void SetClipboardText(const char* text);
+/**
+ * @brief Get the clipboard text.
+ * @return Clipboard text, or empty string if unavailable.
+ */
+QCAPI const char* GetClipboardText();
+/**
+ * @brief Get the clipboard image.
+ * @return Empty image if clipboard doesn't contain an image.
+ */
+QCAPI Image GetClipboardImage();
+/**
+ * @brief Enable event waiting.
+ */
+QCAPI void EnableEventWaiting();
+/**
+ * @brief Disable event waiting.
+ */
+QCAPI void DisableEventWaiting();
+/**
+ * @brief Set config flags that apply to the current window.
+ * @param flags Flag bitmask.
+ */
+QCAPI void SetConfigFlags(unsigned int flags);
+/**
+ * @brief Swap the screen buffer.
+ */
+QCAPI void SwapScreenBuffer();
+/**
+ * @brief Poll and process pending input events.
+ */
+QCAPI void PollInputEvents();
+/**
+ * @brief Save a screenshot to a file.
+ * @param fileName Output image name.
+ */
+QCAPI void TakeScreenshot(const char* fileName);
+/**
+ * @brief Open a URL in the default browser.
+ * @param url URL string.
+ */
+QCAPI bool OpenURL(const char* url);
+/**
+ * @brief Register a custom trace log callback.
+ * @param callback Callback function or nullptr to disable.
+ */
+QCAPI void SetTraceLogCallback(TraceLogCallback callback);
+QCAPI float GetCurrentMonitorRefreshRate();
+QCAPI Font GetDefaultFont();
+QCAPI int GetShaderAttributeLocation(const Shader& shader, const char* attribName);
+QCAPI void SetLogLevel(LogLevel level);
+
 /**
  * @brief Get the underlying SDL window.
  *
  * @return Pointer to the SDL window.
  */
 QCAPI SDL_Window* GetNativeWindow();
+
+inline SDL_Window* GetWindowHandle(void) { return GetNativeWindow(); }
+inline bool SetWindowMinSize(int width, int height) { return SetWindowMinimumSize(width, height); }
+inline bool SetWindowMaxSize(int width, int height) { return SetWindowMaximumSize(width, height); }
+inline float GetWindowScaleDPI(void) { return GetWindowDisplayScale(); }
+inline int GetMonitorRefreshRate(int monitor) {
+    (void)monitor;
+    return static_cast<int>(std::lround(static_cast<double>(GetCurrentMonitorRefreshRate())));
+}
+inline Font GetFontDefault(void) { return GetDefaultFont(); }
+inline int GetShaderLocationAttrib(const Shader& shader, const char* attribName) {
+    return GetShaderAttributeLocation(shader, attribName);
+}
+inline void SetTraceLogLevel(int logLevel) {
+    switch (logLevel) {
+        case 0:
+        case 1:
+        case 2:
+            SetLogLevel(LogLevel::Trace);
+            break;
+        case 3:
+            SetLogLevel(LogLevel::Info);
+            break;
+        case 4:
+            SetLogLevel(LogLevel::Warn);
+            break;
+        case 5:
+            SetLogLevel(LogLevel::Error);
+            break;
+        default:
+            SetLogLevel(LogLevel::None);
+            break;
+    }
+}
 
 /**
  * @brief Get the underlying SDL GL context.
@@ -1464,6 +1817,123 @@ QCAPI bool IsMouseButtonUp(MouseButton button);
 QCAPI Vec2 GetMousePosition();
 inline int GetMouseX() { return static_cast<int>(GetMousePosition().x); }
 inline int GetMouseY() { return static_cast<int>(GetMousePosition().y); }
+
+QCAPI bool IsKeyPressedRepeat(int key);
+QCAPI const char* GetKeyName(int key);
+QCAPI int GetTouchX(void);
+QCAPI int GetTouchY(void);
+QCAPI Vec2 GetTouchPosition(int index);
+QCAPI int GetTouchPointId(int index);
+QCAPI int GetTouchPointCount(void);
+QCAPI void SetGesturesEnabled(unsigned int flags);
+QCAPI bool IsGestureDetected(unsigned int gesture);
+QCAPI int GetGestureDetected(void);
+QCAPI float GetGestureHoldDuration(void);
+QCAPI Vec2 GetGestureDragVector(void);
+QCAPI float GetGestureDragAngle(void);
+QCAPI Vec2 GetGesturePinchVector(void);
+QCAPI float GetGesturePinchAngle(void);
+QCAPI void UpdateCamera(Camera3D* camera, int mode);
+QCAPI void UpdateCameraPro(Camera3D* camera, Vec2 movement, Vec3 rotation, float zoom);
+QCAPI Mat4 GetCameraMatrix(Camera3D camera);
+QCAPI Mat4 GetCameraMatrix2D(Camera2D camera);
+QCAPI void BeginBlendMode(int mode);
+QCAPI void EndBlendMode(void);
+QCAPI void BeginScissorMode(int x, int y, int width, int height);
+QCAPI void EndScissorMode(void);
+QCAPI void SetTextureFilter(Texture2D texture, int filter);
+QCAPI void SetTextureWrap(Texture2D texture, int wrap);
+
+QCAPI void InitAudioDevice(void);
+QCAPI void CloseAudioDevice(void);
+QCAPI bool IsAudioDeviceReady(void);
+QCAPI void SetMasterVolume(float volume);
+QCAPI float GetMasterVolume(void);
+QCAPI Wave LoadWave(const char* fileName);
+QCAPI Wave LoadWaveFromMemory(const char* fileType, const unsigned char* fileData, int dataSize);
+QCAPI float* LoadWaveSamples(Wave wave);
+QCAPI Sound LoadSound(const char* fileName);
+QCAPI Sound LoadSoundFromWave(Wave wave);
+QCAPI Sound LoadSoundAlias(Sound source);
+QCAPI void UpdateSound(Sound sound, const void* data, int frameCount);
+QCAPI void UnloadWave(Wave wave);
+QCAPI void UnloadSound(Sound sound);
+QCAPI void UnloadSoundAlias(Sound alias);
+QCAPI bool ExportWave(Wave wave, const char* fileName);
+QCAPI bool ExportWaveAsCode(Wave wave, const char* fileName);
+QCAPI Wave WaveCopy(Wave wave);
+QCAPI void WaveCrop(Wave* wave, int initFrame, int finalFrame);
+QCAPI void WaveFormat(Wave* wave, int sampleRate, int sampleSize, int channels);
+QCAPI Music LoadMusicStream(const char* fileName);
+QCAPI Music LoadMusicStreamFromMemory(const char* fileType, const unsigned char* data, int dataSize);
+QCAPI void UnloadMusicStream(Music music);
+QCAPI bool IsMusicValid(Music music);
+QCAPI void PlayMusicStream(Music music);
+QCAPI bool IsMusicStreamPlaying(Music music);
+QCAPI void UpdateMusicStream(Music music);
+QCAPI void StopMusicStream(Music music);
+QCAPI void PauseMusicStream(Music music);
+QCAPI void ResumeMusicStream(Music music);
+QCAPI void SeekMusicStream(Music music, float position);
+QCAPI void SetMusicVolume(Music music, float volume);
+QCAPI void SetMusicPitch(Music music, float pitch);
+QCAPI void SetMusicPan(Music music, float pan);
+QCAPI float GetMusicTimeLength(Music music);
+QCAPI float GetMusicTimePlayed(Music music);
+QCAPI AudioStream LoadAudioStream(unsigned int sampleRate, unsigned int sampleSize, unsigned int channels);
+QCAPI void UnloadAudioStream(AudioStream stream);
+QCAPI bool IsAudioStreamValid(AudioStream stream);
+QCAPI bool IsAudioStreamPlaying(AudioStream stream);
+QCAPI bool IsAudioStreamProcessed(AudioStream stream);
+QCAPI void PlayAudioStream(AudioStream stream);
+QCAPI void PauseAudioStream(AudioStream stream);
+QCAPI void ResumeAudioStream(AudioStream stream);
+QCAPI void StopAudioStream(AudioStream stream);
+QCAPI void UpdateAudioStream(AudioStream stream, const void* data, int frameCount);
+QCAPI void SetAudioStreamBufferSizeDefault(int size);
+QCAPI void SetAudioStreamCallback(AudioStream stream, AudioCallback callback);
+QCAPI void AttachAudioStreamProcessor(AudioStream stream, AudioCallback processor);
+QCAPI void DetachAudioStreamProcessor(AudioStream stream, AudioCallback processor);
+QCAPI void AttachAudioMixedProcessor(AudioCallback processor);
+QCAPI void DetachAudioMixedProcessor(AudioCallback processor);
+QCAPI void SetAudioStreamVolume(AudioStream stream, float volume);
+QCAPI void SetAudioStreamPitch(AudioStream stream, float pitch);
+QCAPI void SetAudioStreamPan(AudioStream stream, float pan);
+QCAPI void PlaySound(Sound sound);
+QCAPI void StopSound(Sound sound);
+QCAPI void PauseSound(Sound sound);
+QCAPI void ResumeSound(Sound sound);
+QCAPI bool IsSoundPlaying(Sound sound);
+QCAPI void SetSoundVolume(Sound sound, float volume);
+QCAPI void SetSoundPitch(Sound sound, float pitch);
+QCAPI void SetSoundPan(Sound sound, float pan);
+
+QCAPI unsigned char* LoadFileData(const char* fileName, int* dataSize);
+QCAPI void UnloadFileData(unsigned char* data);
+QCAPI bool SaveFileData(const char* fileName, const void* data, int dataSize);
+QCAPI bool ExportDataAsCode(const unsigned char* data, int dataSize, const char* fileName);
+QCAPI char* LoadFileText(const char* fileName);
+QCAPI void UnloadFileText(char* text);
+QCAPI bool SaveFileText(const char* fileName, const char* text);
+QCAPI void SetLoadFileDataCallback(LoadFileDataCallback callback);
+QCAPI void SetSaveFileDataCallback(SaveFileDataCallback callback);
+QCAPI void SetLoadFileTextCallback(LoadFileTextCallback callback);
+QCAPI void SetSaveFileTextCallback(SaveFileTextCallback callback);
+
+QCAPI AutomationEventList LoadAutomationEventList(const char* fileName);
+QCAPI void UnloadAutomationEventList(AutomationEventList list);
+QCAPI bool ExportAutomationEventList(AutomationEventList list, const char* fileName);
+QCAPI void SetAutomationEventList(AutomationEventList* list);
+QCAPI void SetAutomationEventBaseFrame(int frame);
+QCAPI void StartAutomationEventRecording(void);
+QCAPI void StopAutomationEventRecording(void);
+QCAPI void PlayAutomationEvent(AutomationEvent event);
+
+QCAPI void BeginVrStereoMode(VrStereoConfig config);
+QCAPI void EndVrStereoMode(void);
+QCAPI VrStereoConfig LoadVrStereoConfig(VrDeviceInfo device);
+QCAPI void UnloadVrStereoConfig(VrStereoConfig config);
+
 /**
  * @brief Get mouse wheel movement for both axes.
  *
@@ -1567,6 +2037,17 @@ QCAPI Font GetDefaultFont();
  * @param color Text tint color.
  */
 QCAPI void DrawText(const char* text, int x, int y, int fontSize, Color color);
+
+/**
+ * @brief Draw debug text with a hard drop shadow and 1 px outline.
+ *
+ * @param text Text to draw.
+ * @param x X coordinate.
+ * @param y Y coordinate.
+ * @param fontSize Font size in pixels.
+ * @param color Text tint color.
+ */
+QCAPI void DrawDebugText(const char* text, int x, int y, int fontSize, Color color);
 
 /**
  * @brief Draw text with a custom font.
@@ -1880,6 +2361,11 @@ QCAPI bool ExportFontAsCode(Font font, const char* fileName);
  * @return Empty texture on failure.
  */
 QCAPI Texture2D LoadTexture(const char* filePath);
+QCAPI Texture2D LoadTextureFromImage(Image image);
+QCAPI TextureCubemap LoadTextureCubemap(Image image, int layout);
+QCAPI void UpdateTexture(Texture2D texture, const void* pixels);
+QCAPI void UpdateTextureRec(Texture2D texture, Rectangle rec, const void* pixels);
+QCAPI void GenTextureMipmaps(Texture2D* texture);
 /**
  * @brief Load a render texture.
  * @param width Texture width.
@@ -2311,6 +2797,20 @@ QCAPI void SetExitKey(KeyboardKey key);
 QCAPI Vec2 GetMouseDelta();
 
 /**
+ * @brief Set an offset applied to mouse coordinates.
+ * @param offsetX Horizontal offset applied to mouse input.
+ * @param offsetY Vertical offset applied to mouse input.
+ */
+QCAPI void SetMouseOffset(int offsetX, int offsetY);
+
+/**
+ * @brief Set a scale applied to mouse coordinates.
+ * @param scaleX Horizontal mouse scale.
+ * @param scaleY Vertical mouse scale.
+ */
+QCAPI void SetMouseScale(float scaleX, float scaleY);
+
+/**
  * @brief Set mouse position.
  * @param x Mouse X coordinate.
  * @param y Mouse Y coordinate.
@@ -2584,6 +3084,8 @@ QCAPI bool IsRenderTextureValid(RenderTexture2D target);
  */
 QCAPI Texture2D GetRenderTextureTexture(RenderTexture2D target);
 
+QCAPI void DrawPixel(int posX, int posY, Color color);
+QCAPI void DrawPixelV(Vec2 position, Color color);
 /**
  * @brief Draw a line.
  * @param x1 Start X coordinate.
@@ -2593,6 +3095,10 @@ QCAPI Texture2D GetRenderTextureTexture(RenderTexture2D target);
  * @param color Line color.
  */
 QCAPI void DrawLine(float x1, float y1, float x2, float y2, Color color);
+QCAPI void DrawLineEx(Vec2 startPos, Vec2 endPos, float thick, Color color);
+QCAPI void DrawLineStrip(const Vec2* points, int pointCount, Color color);
+QCAPI void DrawLineBezier(Vec2 startPos, Vec2 endPos, float thick, Color color);
+QCAPI void DrawLineDashed(Vec2 startPos, Vec2 endPos, int dashSize, int spaceSize, Color color);
 
 /**
  * @brief Draw a line using vectors.
@@ -2611,6 +3117,14 @@ QCAPI void DrawLineV(Vec2 start, Vec2 end, Color color);
  * @param color Line color.
  */
 QCAPI void DrawRectangleLines(int posX, int posY, int width, int height, Color color);
+QCAPI void DrawRectangleRec(Rectangle rec, Color color);
+QCAPI void DrawRectanglePro(Rectangle rec, Vec2 origin, float rotation, Color color);
+QCAPI void DrawRectangleGradientV(int posX, int posY, int width, int height, Color top, Color bottom);
+QCAPI void DrawRectangleGradientH(int posX, int posY, int width, int height, Color left, Color right);
+QCAPI void DrawRectangleGradientEx(Rectangle rec, Color col1, Color col2, Color col3, Color col4);
+QCAPI void DrawRectangleLinesEx(Rectangle rec, float thick, Color color);
+QCAPI void DrawRectangleRoundedLines(Rectangle rec, float roundness, int segments, Color color);
+QCAPI void DrawRectangleRoundedLinesEx(Rectangle rec, float roundness, int segments, float thick, Color color);
 
 /**
  * @brief Draw a triangle.
@@ -2620,6 +3134,11 @@ QCAPI void DrawRectangleLines(int posX, int posY, int width, int height, Color c
  * @param color Triangle color.
  */
 QCAPI void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
+QCAPI void DrawTriangleGradient(Vec2 v1, Vec2 v2, Vec2 v3, Color c1, Color c2, Color c3);
+QCAPI void DrawTriangleLines(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
+QCAPI void DrawTriangleLinesEx(Vec2 v1, Vec2 v2, Vec2 v3, float thick, Color color);
+QCAPI void DrawTriangleFan(const Vec2* points, int pointCount, Color color);
+QCAPI void DrawTriangleStrip(const Vec2* points, int pointCount, Color color);
 
 /**
  * @brief Draw circle outline.
@@ -2629,6 +3148,13 @@ QCAPI void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
  * @param color Circle color.
  */
 QCAPI void DrawCircleLines(float centerX, float centerY, float radius, Color color);
+QCAPI void DrawCircleV(Vec2 center, float radius, Color color);
+QCAPI void DrawCircleGradient(Vec2 center, float radius, Color inner, Color outer);
+QCAPI void DrawCircleSector(Vec2 center, float radius, float startAngle, float endAngle, int segments, Color color);
+QCAPI void DrawCircleSectorLines(Vec2 center, float radius, float startAngle, float endAngle, int segments, Color color);
+QCAPI void DrawCircleSectorLinesEx(Vec2 center, float radius, float startAngle, float endAngle, int segments, float thick, Color color);
+QCAPI void DrawCircleLinesV(Vec2 center, float radius, Color color);
+QCAPI void DrawCircleLinesEx(Vec2 center, float radius, float thick, Color color);
 
 /**
  * @brief Draw an ellipse.
@@ -2639,6 +3165,13 @@ QCAPI void DrawCircleLines(float centerX, float centerY, float radius, Color col
  * @param color Ellipse color.
  */
 QCAPI void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Color color);
+QCAPI void DrawEllipseV(Vec2 center, float radiusH, float radiusV, Color color);
+QCAPI void DrawEllipseLines(int centerX, int centerY, float radiusH, float radiusV, Color color);
+QCAPI void DrawEllipseLinesV(Vec2 center, float radiusH, float radiusV, Color color);
+QCAPI void DrawEllipseLinesEx(Vec2 center, float radiusH, float radiusV, float thick, Color color);
+QCAPI void DrawRing(Vec2 center, float innerRadius, float outerRadius, float startAngle, float endAngle, int segments, Color color);
+QCAPI void DrawRingLines(Vec2 center, float innerRadius, float outerRadius, float startAngle, float endAngle, int segments, Color color);
+QCAPI void DrawRingLinesEx(Vec2 center, float innerRadius, float outerRadius, float startAngle, float endAngle, int segments, float thick, Color color);
 
 /**
  * @brief Draw a polygon.
@@ -2649,6 +3182,27 @@ QCAPI void DrawEllipse(float centerX, float centerY, float radiusH, float radius
  * @param color Polygon color.
  */
 QCAPI void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color);
+QCAPI void DrawPolyLines(Vec2 center, int sides, float radius, float rotation, Color color);
+QCAPI void DrawPolyLinesEx(Vec2 center, int sides, float radius, float rotation, float thick, Color color);
+QCAPI void SetShapesTexture(Texture2D texture, Rectangle rec);
+QCAPI Texture2D GetShapesTexture(void);
+QCAPI Rectangle GetShapesTextureRectangle(void);
+
+QCAPI void DrawSplineLinear(const Vec2* points, int pointCount, float thick, Color color);
+QCAPI void DrawSplineBasis(const Vec2* points, int pointCount, float thick, Color color);
+QCAPI void DrawSplineCatmullRom(const Vec2* points, int pointCount, float thick, Color color);
+QCAPI void DrawSplineBezierQuadratic(const Vec2* points, int pointCount, float thick, Color color);
+QCAPI void DrawSplineBezierCubic(const Vec2* points, int pointCount, float thick, Color color);
+QCAPI void DrawSplineSegmentLinear(Vec2 p1, Vec2 p2, float thick, Color color);
+QCAPI void DrawSplineSegmentBasis(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float thick, Color color);
+QCAPI void DrawSplineSegmentCatmullRom(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float thick, Color color);
+QCAPI void DrawSplineSegmentBezierQuadratic(Vec2 p1, Vec2 c2, Vec2 p3, float thick, Color color);
+QCAPI void DrawSplineSegmentBezierCubic(Vec2 p1, Vec2 c2, Vec2 c3, Vec2 p4, float thick, Color color);
+QCAPI Vec2 GetSplinePointLinear(Vec2 startPos, Vec2 endPos, float t);
+QCAPI Vec2 GetSplinePointBasis(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float t);
+QCAPI Vec2 GetSplinePointCatmullRom(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float t);
+QCAPI Vec2 GetSplinePointBezierQuadratic(Vec2 p1, Vec2 c2, Vec2 p3, float t);
+QCAPI Vec2 GetSplinePointBezierCubic(Vec2 p1, Vec2 c2, Vec2 c3, Vec2 p4, float t);
 
 /**
  * @brief Draw a rounded rectangle.
@@ -2898,6 +3452,21 @@ QCAPI void WaitTime(double seconds);
  * @return Random integer value.
  */
 QCAPI int GetRandomValue(int min, int max);
+
+/**
+ * @brief Generate a random integer sequence.
+ * @param count Number of values to generate.
+ * @param min Minimum value (inclusive).
+ * @param max Maximum value (inclusive).
+ * @return Pointer to the generated integers, or nullptr on invalid input.
+ */
+QCAPI int* LoadRandomSequence(unsigned int count, int min, int max);
+
+/**
+ * @brief Unload a random sequence allocated by LoadRandomSequence.
+ * @param sequence Sequence pointer to free.
+ */
+QCAPI void UnloadRandomSequence(int* sequence);
 
 /**
  * @brief Set the random number generator seed.

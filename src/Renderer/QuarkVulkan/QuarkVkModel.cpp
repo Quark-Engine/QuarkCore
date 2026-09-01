@@ -216,6 +216,25 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
         dst.normals = (dst.vertexCount > 0) ? new float[dst.vertexCount * 3]{} : nullptr;
         dst.texcoords = (dst.vertexCount > 0) ? new float[dst.vertexCount * 2]{} : nullptr;
         dst.indices = (dst.triangleCount > 0) ? new unsigned short[dst.triangleCount * 3]{} : nullptr;
+        dst.boneIndices = (dst.vertexCount > 0) ? new unsigned char[static_cast<size_t>(dst.vertexCount) * 4u]{} : nullptr;
+        dst.boneWeights = (dst.vertexCount > 0) ? new float[static_cast<size_t>(dst.vertexCount) * 4u]{} : nullptr;
+
+        for (unsigned int boneIndex = 0; boneIndex < sourceMesh->mNumBones; ++boneIndex) {
+            const aiBone* bone = sourceMesh->mBones[boneIndex];
+            for (unsigned int weightIndex = 0; weightIndex < bone->mNumWeights; ++weightIndex) {
+                const aiVertexWeight& weight = bone->mWeights[weightIndex];
+                const unsigned int vertexIndex = weight.mVertexId;
+                float* dstWeights = dst.boneWeights + static_cast<size_t>(vertexIndex) * 4u;
+                unsigned char* dstBones = dst.boneIndices + static_cast<size_t>(vertexIndex) * 4u;
+                for (int slot = 0; slot < 4; ++slot) {
+                    if (dstWeights[slot] <= 0.0f) {
+                        dstBones[slot] = static_cast<unsigned char>(boneIndex);
+                        dstWeights[slot] = weight.mWeight;
+                        break;
+                    }
+                }
+            }
+        }
 
         for (int v = 0; v < dst.vertexCount; ++v) {
             const Vec3 position = ReadVertexPosition(*sourceMesh, static_cast<unsigned int>(v));

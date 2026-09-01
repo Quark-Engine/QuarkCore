@@ -96,6 +96,14 @@ struct Color {
     std::uint8_t g = 255;
     std::uint8_t b = 255;
     std::uint8_t a = 255;
+
+    bool operator==(const Color& c) const {
+        return r == c.r && g == c.g && b == c.b && a == c.a;
+    }
+
+    bool operator!=(const Color& c) const {
+        return !(*this == c);
+    }
 };
 
 inline constexpr Color LIGHTGRAY{200, 200, 200, 255};
@@ -126,7 +134,99 @@ struct Vec2 {
 
     Vec2() = default;
     Vec2(float x, float y) : x(x), y(y) {}
+
+    Vec2& operator+=(const Vec2& v) {
+        x += v.x;
+        y += v.y;
+        return *this;
+    }
+
+    Vec2& operator-=(const Vec2& v) {
+        x -= v.x;
+        y -= v.y;
+        return *this;
+    }
+
+    Vec2& operator*=(float s) {
+        x *= s;
+        y *= s;
+        return *this;
+    }
+
+    Vec2& operator*=(const Vec2& v) {
+        x *= v.x;
+        y *= v.y;
+        return *this;
+    }
+
+    Vec2& operator/=(float s) {
+        x /= s;
+        y /= s;
+        return *this;
+    }
+
+    Vec2& operator/=(const Vec2& v) {
+        x /= v.x;
+        y /= v.y;
+        return *this;
+    }
+
+    Vec2 operator+(const Vec2& v) const {
+        return Vec2(x + v.x, y + v.y);
+    }
+
+    Vec2 operator-(const Vec2& v) const {
+        return Vec2(x - v.x, y - v.y);
+    }
+
+    Vec2 operator-() const {
+        return Vec2(-x, -y);
+    }
+
+    Vec2 operator*(float s) const {
+        return Vec2(x * s, y * s);
+    }
+
+    Vec2 operator*(const Vec2& v) const {
+        return Vec2(x * v.x, y * v.y);
+    }
+
+    Vec2 operator/(float s) const {
+        return Vec2(x / s, y / s);
+    }
+
+    Vec2 operator/(const Vec2& v) const {
+        return Vec2(x / v.x, y / v.y);
+    }
+
+    bool operator==(const Vec2& v) const {
+        return x == v.x && y == v.y;
+    }
+
+    bool operator!=(const Vec2& v) const {
+        return !(*this == v);
+    }
+
+    float dot(const Vec2& v) const {
+        return x * v.x + y * v.y;
+    }
+
+    float length() const {
+        return std::sqrt(x * x + y * y);
+    }
+
+    Vec2 normalized() const {
+        float len = length();
+        if (len > 0.0f) {
+            return *this * (1.0f / len);
+        }
+        return *this;
+    }
 };
+
+inline Vec2 operator*(float s, const Vec2& v) {
+    return v * s;
+}
 
 using Vector2 = Vec2;
 
@@ -136,7 +236,66 @@ using Vector2 = Vec2;
 struct IVec2 {
     int x = 0;
     int y = 0;
+
+    IVec2() = default;
+    IVec2(int x, int y) : x(x), y(y) {}
+
+    IVec2& operator+=(const IVec2& v) {
+        x += v.x;
+        y += v.y;
+        return *this;
+    }
+
+    IVec2& operator-=(const IVec2& v) {
+        x -= v.x;
+        y -= v.y;
+        return *this;
+    }
+
+    IVec2& operator*=(int s) {
+        x *= s;
+        y *= s;
+        return *this;
+    }
+
+    IVec2& operator/=(int s) {
+        x /= s;
+        y /= s;
+        return *this;
+    }
+
+    IVec2 operator+(const IVec2& v) const {
+        return IVec2(x + v.x, y + v.y);
+    }
+
+    IVec2 operator-(const IVec2& v) const {
+        return IVec2(x - v.x, y - v.y);
+    }
+
+    IVec2 operator-() const {
+        return IVec2(-x, -y);
+    }
+
+    IVec2 operator*(int s) const {
+        return IVec2(x * s, y * s);
+    }
+
+    IVec2 operator/(int s) const {
+        return IVec2(x / s, y / s);
+    }
+
+    bool operator==(const IVec2& v) const {
+        return x == v.x && y == v.y;
+    }
+
+    bool operator!=(const IVec2& v) const {
+        return !(*this == v);
+    }
 };
+
+inline IVec2 operator*(int s, const IVec2& v) {
+    return v * s;
+}
 
 /**
  * @brief Rectangle structure.
@@ -146,6 +305,14 @@ struct Rectangle {
     float y = 0.0f;
     float width = 0.0f;
     float height = 0.0f;
+
+    bool operator==(const Rectangle& r) const {
+        return x == r.x && y == r.y && width == r.width && height == r.height;
+    }
+
+    bool operator!=(const Rectangle& r) const {
+        return !(*this == r);
+    }
 };
 
 /**
@@ -159,6 +326,48 @@ struct Vec3 {
     Vec3() = default;
     Vec3(float x, float y, float z) : x(x), y(y), z(z) {}
 
+    Vec3& operator+=(const Vec3& v) {
+        x += v.x;
+        y += v.y;
+        z += v.z;
+        return *this;
+    }
+
+    Vec3& operator-=(const Vec3& v) {
+        x -= v.x;
+        y -= v.y;
+        z -= v.z;
+        return *this;
+    }
+
+    Vec3& operator*=(float s) {
+        x *= s;
+        y *= s;
+        z *= s;
+        return *this;
+    }
+
+    Vec3& operator*=(const Vec3& v) {
+        x *= v.x;
+        y *= v.y;
+        z *= v.z;
+        return *this;
+    }
+
+    Vec3& operator/=(float s) {
+        x /= s;
+        y /= s;
+        z /= s;
+        return *this;
+    }
+
+    Vec3& operator/=(const Vec3& v) {
+        x /= v.x;
+        y /= v.y;
+        z /= v.z;
+        return *this;
+    }
+
     Vec3 operator+(const Vec3& v) const {
         return Vec3(x + v.x, y + v.y, z + v.z);
     }
@@ -167,8 +376,32 @@ struct Vec3 {
         return Vec3(x - v.x, y - v.y, z - v.z);
     }
 
+    Vec3 operator-() const {
+        return Vec3(-x, -y, -z);
+    }
+
     Vec3 operator*(float s) const {
         return Vec3(x * s, y * s, z * s);
+    }
+
+    Vec3 operator*(const Vec3& v) const {
+        return Vec3(x * v.x, y * v.y, z * v.z);
+    }
+
+    Vec3 operator/(float s) const {
+        return Vec3(x / s, y / s, z / s);
+    }
+
+    Vec3 operator/(const Vec3& v) const {
+        return Vec3(x / v.x, y / v.y, z / v.z);
+    }
+
+    bool operator==(const Vec3& v) const {
+        return x == v.x && y == v.y && z == v.z;
+    }
+
+    bool operator!=(const Vec3& v) const {
+        return !(*this == v);
     }
 
     float dot(const Vec3& v) const {
@@ -196,6 +429,10 @@ struct Vec3 {
     }
 };
 
+inline Vec3 operator*(float s, const Vec3& v) {
+    return v * s;
+}
+
 using Vector3 = Vec3;
 
 /**
@@ -210,6 +447,54 @@ struct Vec4 {
     Vec4() = default;
     Vec4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
 
+    Vec4& operator+=(const Vec4& v) {
+        x += v.x;
+        y += v.y;
+        z += v.z;
+        w += v.w;
+        return *this;
+    }
+
+    Vec4& operator-=(const Vec4& v) {
+        x -= v.x;
+        y -= v.y;
+        z -= v.z;
+        w -= v.w;
+        return *this;
+    }
+
+    Vec4& operator*=(float s) {
+        x *= s;
+        y *= s;
+        z *= s;
+        w *= s;
+        return *this;
+    }
+
+    Vec4& operator*=(const Vec4& v) {
+        x *= v.x;
+        y *= v.y;
+        z *= v.z;
+        w *= v.w;
+        return *this;
+    }
+
+    Vec4& operator/=(float s) {
+        x /= s;
+        y /= s;
+        z /= s;
+        w /= s;
+        return *this;
+    }
+
+    Vec4& operator/=(const Vec4& v) {
+        x /= v.x;
+        y /= v.y;
+        z /= v.z;
+        w /= v.w;
+        return *this;
+    }
+
     Vec4 operator+(const Vec4& v) const {
         return Vec4(x + v.x, y + v.y, z + v.z, w + v.w);
     }
@@ -218,8 +503,32 @@ struct Vec4 {
         return Vec4(x - v.x, y - v.y, z - v.z, w - v.w);
     }
 
+    Vec4 operator-() const {
+        return Vec4(-x, -y, -z, -w);
+    }
+
     Vec4 operator*(float s) const {
         return Vec4(x * s, y * s, z * s, w * s);
+    }
+
+    Vec4 operator*(const Vec4& v) const {
+        return Vec4(x * v.x, y * v.y, z * v.z, w * v.w);
+    }
+
+    Vec4 operator/(float s) const {
+        return Vec4(x / s, y / s, z / s, w / s);
+    }
+
+    Vec4 operator/(const Vec4& v) const {
+        return Vec4(x / v.x, y / v.y, z / v.z, w / v.w);
+    }
+
+    bool operator==(const Vec4& v) const {
+        return x == v.x && y == v.y && z == v.z && w == v.w;
+    }
+
+    bool operator!=(const Vec4& v) const {
+        return !(*this == v);
     }
 
     float dot(const Vec4& v) const {
@@ -238,6 +547,10 @@ struct Vec4 {
         return *this;
     }
 };
+
+inline Vec4 operator*(float s, const Vec4& v) {
+    return v * s;
+}
 
 using Vector4 = Vec4;
 
@@ -481,6 +794,56 @@ struct QCAPI Mat4 {
         return result;
     }
 
+    Mat4& operator*=(float s) {
+        for (int i = 0; i < 16; ++i) m[i] *= s;
+        return *this;
+    }
+
+    Mat4& operator/=(float s) {
+        for (int i = 0; i < 16; ++i) m[i] /= s;
+        return *this;
+    }
+
+    Mat4& operator*=(const Mat4& other) {
+        *this = *this * other;
+        return *this;
+    }
+
+    Mat4 operator*(float s) const {
+        Mat4 result = *this;
+        result *= s;
+        return result;
+    }
+
+    Mat4 operator/(float s) const {
+        Mat4 result = *this;
+        result /= s;
+        return result;
+    }
+
+    Mat4 operator+(const Mat4& other) const {
+        Mat4 result{};
+        for (int i = 0; i < 16; ++i) result.m[i] = m[i] + other.m[i];
+        return result;
+    }
+
+    Mat4 operator-(const Mat4& other) const {
+        Mat4 result{};
+        for (int i = 0; i < 16; ++i) result.m[i] = m[i] - other.m[i];
+        return result;
+    }
+
+    bool operator==(const Mat4& other) const {
+        for (int i = 0; i < 16; ++i) {
+            if (m[i] != other.m[i]) return false;
+        }
+        return true;
+    }
+
+    bool operator!=(const Mat4& other) const {
+        return !(*this == other);
+    }
+
     Mat4 operator*(const Mat4& other) const {
         Mat4 result;
         for (int column = 0; column < 4; ++column) {
@@ -520,6 +883,10 @@ struct QCAPI Mat4 {
     }
 };
 
+inline Mat4 operator*(float s, const Mat4& m) {
+    return m * s;
+}
+
 using Matrix = Mat4;
 
 /**
@@ -533,7 +900,59 @@ struct Quaternion {
 
     Quaternion() = default;
     Quaternion(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
+
+    Quaternion& operator+=(const Quaternion& q) {
+        x += q.x; y += q.y; z += q.z; w += q.w;
+        return *this;
+    }
+
+    Quaternion& operator-=(const Quaternion& q) {
+        x -= q.x; y -= q.y; z -= q.z; w -= q.w;
+        return *this;
+    }
+
+    Quaternion& operator*=(float s) {
+        x *= s; y *= s; z *= s; w *= s;
+        return *this;
+    }
+
+    Quaternion& operator/=(float s) {
+        x /= s; y /= s; z /= s; w /= s;
+        return *this;
+    }
+
+    Quaternion operator+(const Quaternion& q) const {
+        return Quaternion(x + q.x, y + q.y, z + q.z, w + q.w);
+    }
+
+    Quaternion operator-(const Quaternion& q) const {
+        return Quaternion(x - q.x, y - q.y, z - q.z, w - q.w);
+    }
+
+    Quaternion operator-() const {
+        return Quaternion(-x, -y, -z, -w);
+    }
+
+    Quaternion operator*(float s) const {
+        return Quaternion(x * s, y * s, z * s, w * s);
+    }
+
+    Quaternion operator/(float s) const {
+        return Quaternion(x / s, y / s, z / s, w / s);
+    }
+
+    bool operator==(const Quaternion& q) const {
+        return x == q.x && y == q.y && z == q.z && w == q.w;
+    }
+
+    bool operator!=(const Quaternion& q) const {
+        return !(*this == q);
+    }
 };
+
+inline Quaternion operator*(float s, const Quaternion& q) {
+    return q * s;
+}
 
 using Quat = Quaternion;
 
@@ -555,6 +974,10 @@ inline Quaternion QuaternionMultiply(const Quaternion& q1, const Quaternion& q2)
     result.z = q1.z*q2.w + q1.w*q2.z + q1.x*q2.y - q1.y*q2.x;
     result.w = q1.w*q2.w - q1.x*q2.x - q1.y*q2.y - q1.z*q2.z;
     return result;
+}
+
+inline Quaternion operator*(const Quaternion& q1, const Quaternion& q2) {
+    return QuaternionMultiply(q1, q2);
 }
 
 inline Quaternion QuaternionLerp(const Quaternion& q1, const Quaternion& q2, float amount) {

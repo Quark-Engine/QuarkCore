@@ -1,4 +1,5 @@
 #include "QuarkGLRenderer.hpp"
+#include "../DebugFont.h"
 #include "../../QuarkInternal.hpp"
 #include "../../QuarkModelAnim.hpp"
 
@@ -1526,6 +1527,33 @@ void QuarkGLRenderer::FillFont(IFont font, Font& out) {
     }
 }
 
+void QuarkGLRenderer::DrawDebugText(const char* text, int x, int y, int fontSize, Color color) {
+    if (!text || !*text || fontSize <= 0) return;
+
+    static std::unordered_map<int, IFont> s_debugFonts;
+    auto it = s_debugFonts.find(fontSize);
+    if (it == s_debugFonts.end()) {
+        IFont font = LoadFontFromMemory("ttf", tahoma_ttf, static_cast<int>(tahoma_ttf_len), fontSize, nullptr, 0);
+        if (!font.IsValid()) return;
+        it = s_debugFonts.emplace(fontSize, font).first;
+    }
+
+    const Color shadow = { 0, 0, 0, 255 };
+    const std::array<Vec2, 9> offsets = {
+        Vec2{ -1.f, -1.f }, Vec2{ 0.f, -1.f }, Vec2{ 1.f, -1.f },
+        Vec2{ -1.f, 0.f }, Vec2{ 0.f, 0.f }, Vec2{ 1.f, 0.f },
+        Vec2{ -1.f, 1.f }, Vec2{ 0.f, 1.f }, Vec2{ 1.f, 1.f }
+    };
+
+    for (const Vec2& delta : offsets) {
+        if (delta.x == 0.f && delta.y == 0.f) continue;
+        DrawTextEx(it->second, text, Vec2{ static_cast<float>(x) + delta.x, static_cast<float>(y) + delta.y }, static_cast<float>(fontSize), 0.f, shadow);
+    }
+
+    DrawTextEx(it->second, text, Vec2{ static_cast<float>(x) + 1.f, static_cast<float>(y) + 1.f }, static_cast<float>(fontSize), 0.f, shadow);
+    DrawTextEx(it->second, text, Vec2{ static_cast<float>(x), static_cast<float>(y) }, static_cast<float>(fontSize), 0.f, color);
+}
+
 void QuarkGLRenderer::DrawText(const char* text, int x, int y, int fontSize, Color color) {
     uint32_t id = EnsureDefaultFont();
     if (!id) return;
@@ -1828,6 +1856,76 @@ void QuarkGLRenderer::SetShaderValueTextureUnit(const Shader& s, int loc, const 
     glBindTexture(GL_TEXTURE_2D, texture.id);
     SetShaderValueSampler(s, loc, textureUnit);
     glActiveTexture(GL_TEXTURE0);
+}
+
+void QuarkGLRenderer::SetTextureFilterMode(TextureFilterMode mode) {
+    gTextureFilterMode = mode;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+        (mode == TextureFilterMode::Nearest) ? GL_NEAREST : GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+        (mode == TextureFilterMode::Nearest) ? GL_NEAREST : GL_LINEAR);
+}
+
+void QuarkGLRenderer::SetTextureFilter(int filter) {
+    const bool point = (filter == TEXTURE_FILTER_POINT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, point ? GL_NEAREST : GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, point ? GL_NEAREST : GL_LINEAR);
+}
+
+void QuarkGLRenderer::SetTextureWrap(int wrap) {
+    GLenum glWrap = GL_REPEAT;
+    switch (wrap) {
+        case TEXTURE_WRAP_CLAMP:
+            glWrap = GL_CLAMP_TO_EDGE;
+            break;
+        case TEXTURE_WRAP_MIRROR_REPEAT:
+            glWrap = GL_MIRRORED_REPEAT;
+            break;
+        case TEXTURE_WRAP_MIRROR_CLAMP:
+            glWrap = GL_MIRRORED_REPEAT;
+            break;
+        case TEXTURE_WRAP_REPEAT:
+        default:
+            glWrap = GL_REPEAT;
+            break;
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glWrap);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, glWrap);
+}
+
+void QuarkGLRenderer::BeginScissorMode(int x, int y, int width, int height) {
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(x, y, width, height);
+}
+
+void QuarkGLRenderer::EndScissorMode() {
+    glDisable(GL_SCISSOR_TEST);
+}
+
+void QuarkGLRenderer::SetBlendMode(int mode) {
+    glEnable(GL_BLEND);
+
+    switch (mode) {
+        case BLEND_ADDITIVE:
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            break;
+        case BLEND_MULTIPLIED:
+            glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+            break;
+        case BLEND_ADD_COLORS:
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            break;
+        case BLEND_SUBTRACT_COLORS:
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_COLOR);
+            break;
+        case BLEND_MOD_COLOR:
+            glBlendFunc(GL_DST_COLOR, GL_ZERO);
+            break;
+        case BLEND_ALPHA:
+        default:
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            break;
+    }
 }
 
 void QuarkGLRenderer::BeginMode2D(const Camera2D& cam) {
@@ -2748,6 +2846,25 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
         qMesh.normals = new float[qMesh.vertexCount * 3];
         qMesh.texcoords = new float[qMesh.vertexCount * 2];
         qMesh.indices = new unsigned short[qMesh.triangleCount * 3];
+
+        qMesh.boneIndices = new unsigned char[static_cast<size_t>(qMesh.vertexCount) * 4u]{};
+        qMesh.boneWeights = new float[static_cast<size_t>(qMesh.vertexCount) * 4u]{};
+        for (unsigned int boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex) {
+            const aiBone* bone = mesh->mBones[boneIndex];
+            for (unsigned int weightIndex = 0; weightIndex < bone->mNumWeights; ++weightIndex) {
+                const aiVertexWeight& weight = bone->mWeights[weightIndex];
+                const unsigned int vertexIndex = weight.mVertexId;
+                float* dstWeights = qMesh.boneWeights + static_cast<size_t>(vertexIndex) * 4u;
+                unsigned char* dstBones = qMesh.boneIndices + static_cast<size_t>(vertexIndex) * 4u;
+                for (int slot = 0; slot < 4; ++slot) {
+                    if (dstWeights[slot] <= 0.0f) {
+                        dstBones[slot] = static_cast<unsigned char>(boneIndex);
+                        dstWeights[slot] = weight.mWeight;
+                        break;
+                    }
+                }
+            }
+        }
 
         for (int vertexIndex = 0; vertexIndex < qMesh.vertexCount; ++vertexIndex) {
             const int packedBase = vertexIndex * 8;

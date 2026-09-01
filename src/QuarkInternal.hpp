@@ -24,6 +24,19 @@ struct WindowState {
     bool  vsyncSet          = false;
     LogLevel minimumLogLevel = LogLevel::Trace;
 
+    int activeBlendMode = BLEND_ALPHA;
+    int activeTextureFilter = TEXTURE_FILTER_BILINEAR;
+    int activeTextureWrap = TEXTURE_WRAP_REPEAT;
+    bool scissorEnabled = false;
+    Rectangle scissorRect{};
+    unsigned int enabledGestures = GESTURE_NONE;
+    int currentGesture = GESTURE_NONE;
+    float gestureHoldDuration = 0.0f;
+    Vec2 gestureDragVector{};
+    float gestureDragAngle = 0.0f;
+    Vec2 gesturePinchVector{};
+    float gesturePinchAngle = 0.0f;
+
     std::array<bool, SDL_SCANCODE_COUNT> currentKeys{};
     std::array<bool, SDL_SCANCODE_COUNT> previousKeys{};
     std::array<bool, 8> mouseButtons{};

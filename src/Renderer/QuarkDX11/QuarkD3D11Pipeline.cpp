@@ -445,12 +445,40 @@ void D3D11Pipeline::CreateSamplerState(TextureFilterMode mode)
 
     const bool point = (mode == TextureFilterMode::Nearest);
 
+    D3D11_TEXTURE_ADDRESS_MODE addressU = D3D11_TEXTURE_ADDRESS_WRAP;
+    D3D11_TEXTURE_ADDRESS_MODE addressV = D3D11_TEXTURE_ADDRESS_WRAP;
+    D3D11_TEXTURE_ADDRESS_MODE addressW = D3D11_TEXTURE_ADDRESS_WRAP;
+
+    switch (m_textureWrapMode) {
+        case TEXTURE_WRAP_CLAMP:
+            addressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+            addressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+            addressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+            break;
+        case TEXTURE_WRAP_MIRROR_REPEAT:
+            addressU = D3D11_TEXTURE_ADDRESS_MIRROR;
+            addressV = D3D11_TEXTURE_ADDRESS_MIRROR;
+            addressW = D3D11_TEXTURE_ADDRESS_MIRROR;
+            break;
+        case TEXTURE_WRAP_MIRROR_CLAMP:
+            addressU = D3D11_TEXTURE_ADDRESS_MIRROR_ONCE;
+            addressV = D3D11_TEXTURE_ADDRESS_MIRROR_ONCE;
+            addressW = D3D11_TEXTURE_ADDRESS_MIRROR_ONCE;
+            break;
+        case TEXTURE_WRAP_REPEAT:
+        default:
+            addressU = D3D11_TEXTURE_ADDRESS_WRAP;
+            addressV = D3D11_TEXTURE_ADDRESS_WRAP;
+            addressW = D3D11_TEXTURE_ADDRESS_WRAP;
+            break;
+    }
+
     D3D11_SAMPLER_DESC samplerDescription{};
     samplerDescription.Filter =
         point ? D3D11_FILTER_MIN_MAG_MIP_POINT : D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-    samplerDescription.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-    samplerDescription.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-    samplerDescription.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDescription.AddressU = addressU;
+    samplerDescription.AddressV = addressV;
+    samplerDescription.AddressW = addressW;
     samplerDescription.ComparisonFunc = D3D11_COMPARISON_NEVER;
     samplerDescription.MinLOD = 0.0f;
     samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
@@ -471,6 +499,12 @@ void D3D11Pipeline::SetTextureFilterMode(TextureFilterMode mode)
     TraceLog(LogLevel::Info, "D3D11",
              TextFormat("Texture filter mode set to %s.",
                         mode == TextureFilterMode::Nearest ? "Nearest (point)" : "Bilinear"));
+}
+
+void D3D11Pipeline::SetTextureWrapMode(int wrap)
+{
+    m_textureWrapMode = wrap;
+    CreateSamplerState(m_textureFilterMode);
 }
 
 void D3D11Pipeline::Shutdown()

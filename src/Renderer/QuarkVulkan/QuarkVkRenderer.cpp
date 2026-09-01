@@ -415,6 +415,41 @@ void QuarkVkRenderer::ClearBackground(Color color) {
     m_clearColor = color;
 }
 
+void QuarkVkRenderer::SetTextureFilterMode(TextureFilterMode mode) {
+    gTextureFilterMode = mode;
+    m_textureFilterMode = mode;
+    m_vkResources.SetTextureSamplingMode(mode, m_textureWrapMode);
+}
+
+void QuarkVkRenderer::SetTextureFilter(int filter) {
+    gTextureFilterMode = (filter == TEXTURE_FILTER_POINT) ? TextureFilterMode::Nearest : TextureFilterMode::Linear;
+    m_textureFilterMode = gTextureFilterMode;
+    m_vkResources.SetTextureSamplingMode(m_textureFilterMode, m_textureWrapMode);
+}
+
+void QuarkVkRenderer::SetTextureWrap(int wrap) {
+    m_textureWrapMode = wrap;
+    m_vkResources.SetTextureSamplingMode(m_textureFilterMode, m_textureWrapMode);
+}
+
+void QuarkVkRenderer::BeginScissorMode(int x, int y, int width, int height) {
+    m_scissorEnabled = true;
+    m_scissorRect = VkRect2D{{static_cast<int32_t>(x), static_cast<int32_t>(y)}, {static_cast<uint32_t>(width), static_cast<uint32_t>(height)}};
+}
+
+void QuarkVkRenderer::EndScissorMode() {
+    m_scissorEnabled = false;
+    m_scissorRect = VkRect2D{{0, 0}, {m_swapChainExtent.width, m_swapChainExtent.height}};
+}
+
+void QuarkVkRenderer::SetBlendMode(int mode) {
+    if (m_device == VK_NULL_HANDLE) {
+        return;
+    }
+
+    m_vkPipeline.SetBlendMode(mode);
+}
+
 void QuarkVkRenderer::PushMatrix() {
     m_matrixStack.push_back(m_currentMatrix);
 }
@@ -1700,7 +1735,13 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         vkCmdSetViewport(cmd, 0, 1, &viewport);
 
         VkRect2D scissor{};
+        scissor.offset = {0, 0};
         scissor.extent = { pass.width, pass.height };
+        if (m_scissorEnabled) {
+            scissor = m_scissorRect;
+            scissor.offset.x = std::max(0, std::min(scissor.offset.x, static_cast<int32_t>(pass.width)));
+            scissor.offset.y = std::max(0, std::min(scissor.offset.y, static_cast<int32_t>(pass.height)));
+        }
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
         if ((pass.triVertexCount + pass.lineVertexCount) > 0 &&
@@ -1813,7 +1854,13 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor{};
+    scissor.offset = {0, 0};
     scissor.extent = m_swapChainExtent;
+    if (m_scissorEnabled) {
+        scissor = m_scissorRect;
+        scissor.offset.x = std::max(0, std::min(scissor.offset.x, static_cast<int32_t>(m_swapChainExtent.width)));
+        scissor.offset.y = std::max(0, std::min(scissor.offset.y, static_cast<int32_t>(m_swapChainExtent.height)));
+    }
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     if (mainPass && (mainPass->triVertexCount + mainPass->lineVertexCount) > 0 &&

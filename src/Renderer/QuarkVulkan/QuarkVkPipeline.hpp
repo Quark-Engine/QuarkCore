@@ -44,6 +44,8 @@ public:
 
     void SetBackfaceCulling(bool enabled);
     bool BackfaceCulling() const { return m_backfaceCullingEnabled; }
+    void SetBlendMode(int mode);
+    int GetBlendMode() const { return m_blendMode; }
 
     VkPipelineLayout GetLayout2D() const { return m_layout2D; }
     VkPipelineLayout GetLayout3D() const { return m_layout3D; }
@@ -73,6 +75,7 @@ private:
     VkRenderPass          m_offscreenRenderPass = VK_NULL_HANDLE;
     VkSampleCountFlagBits m_msaaSamples        = VK_SAMPLE_COUNT_1_BIT;
     bool                  m_backfaceCullingEnabled = false;
+    int                   m_blendMode = BLEND_ALPHA;
 
     VkPipelineLayout m_layout2D            = VK_NULL_HANDLE;
     VkPipelineLayout m_layout3D            = VK_NULL_HANDLE;

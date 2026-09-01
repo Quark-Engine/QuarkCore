@@ -93,6 +93,7 @@ public:
     void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) override;
     void DrawGrid(int slices, float spacing, Color color) override;
 
+    void DrawDebugText(const char* text, int x, int y, int fontSize, Color color) override;
     void DrawText(const char* text, int x, int y, int fontSize, Color color) override;
     void DrawTextEx(IFont font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) override;
     Vec2 MeasureTextEx(IFont font, const char* text, float fontSize, float spacing) override;
@@ -120,6 +121,12 @@ public:
 
     void BeginTextureMode(IRenderTexture target) override;
     void EndTextureMode() override;
+    void SetTextureFilterMode(TextureFilterMode mode) override;
+    void SetTextureFilter(int filter) override;
+    void SetTextureWrap(int wrap) override;
+    void BeginScissorMode(int x, int y, int width, int height) override;
+    void EndScissorMode() override;
+    void SetBlendMode(int mode) override;
 
     IFont LoadFont(const char* filePath, int fontSize,
                    const int* codepoints, int codepointCount) override;
@@ -324,6 +331,7 @@ private:
     Model3DState m_3d;
 
     std::unordered_map<uint32_t, FontData> m_fonts;
+    std::unordered_map<int, IFont> m_debugFonts;
     uint32_t m_nextFontId    = 1;
     uint32_t m_defaultFontId = 0;
 

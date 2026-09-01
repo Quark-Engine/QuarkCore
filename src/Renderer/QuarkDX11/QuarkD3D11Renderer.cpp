@@ -1,4 +1,5 @@
 #include "QuarkD3D11Renderer.hpp"
+#include "../DebugFont.h"
 #include "../../QuarkInternal.hpp"
 #include "../../QuarkModelAnim.hpp"
 
@@ -316,6 +317,118 @@ void QuarkD3D11Renderer::SetTextureFilterMode(TextureFilterMode mode)
 {
     m_textureFilterMode = mode;
     m_pipeline.SetTextureFilterMode(mode);
+}
+
+void QuarkD3D11Renderer::SetTextureFilter(int filter)
+{
+    SetTextureFilterMode((filter == TEXTURE_FILTER_POINT) ? TextureFilterMode::Nearest : TextureFilterMode::Linear);
+}
+
+void QuarkD3D11Renderer::SetTextureWrap(int wrap)
+{
+    m_pipeline.SetTextureWrapMode(wrap);
+}
+
+void QuarkD3D11Renderer::BeginScissorMode(int x, int y, int width, int height)
+{
+    D3D11_RECT scissorRect{};
+    scissorRect.left = static_cast<LONG>(x);
+    scissorRect.top = static_cast<LONG>(y);
+    scissorRect.right = static_cast<LONG>(x + width);
+    scissorRect.bottom = static_cast<LONG>(y + height);
+    m_device.Context()->RSSetScissorRects(1, &scissorRect);
+}
+
+void QuarkD3D11Renderer::EndScissorMode()
+{
+    D3D11_RECT scissorRect{};
+    scissorRect.left = 0;
+    scissorRect.top = 0;
+    scissorRect.right = static_cast<LONG>(m_width);
+    scissorRect.bottom = static_cast<LONG>(m_height);
+    m_device.Context()->RSSetScissorRects(1, &scissorRect);
+}
+
+void QuarkD3D11Renderer::SetBlendMode(int mode)
+{
+    if (!m_device.Get()) {
+        return;
+    }
+
+    const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    ID3D11BlendState* blendState = nullptr;
+    switch (mode) {
+        case BLEND_ADDITIVE:
+        case BLEND_ADD_COLORS:
+            blendState = nullptr;
+            break;
+        case BLEND_MULTIPLIED:
+        case BLEND_MOD_COLOR:
+            blendState = nullptr;
+            break;
+        case BLEND_SUBTRACT_COLORS:
+            blendState = nullptr;
+            break;
+        case BLEND_ALPHA:
+        default:
+            blendState = m_pipeline.Blend();
+            break;
+    }
+
+    if (blendState == nullptr) {
+        D3D11_BLEND_DESC desc{};
+        desc.AlphaToCoverageEnable = FALSE;
+        desc.IndependentBlendEnable = FALSE;
+        desc.RenderTarget[0].BlendEnable = TRUE;
+        desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+
+        switch (mode) {
+            case BLEND_ADDITIVE:
+            case BLEND_ADD_COLORS:
+                desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+                desc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+                desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+                desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+                desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+                desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+                break;
+            case BLEND_MULTIPLIED:
+            case BLEND_MOD_COLOR:
+                desc.RenderTarget[0].SrcBlend = D3D11_BLEND_DEST_COLOR;
+                desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+                desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+                desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+                desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+                desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+                break;
+            case BLEND_SUBTRACT_COLORS:
+                desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+                desc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+                desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_REV_SUBTRACT;
+                desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+                desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+                desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_REV_SUBTRACT;
+                break;
+            case BLEND_ALPHA:
+            default:
+                desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+                desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+                desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+                desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+                desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+                desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+                break;
+        }
+
+        Microsoft::WRL::ComPtr<ID3D11BlendState> customBlend;
+        HRESULT hr = m_device.Get()->CreateBlendState(&desc, customBlend.GetAddressOf());
+        if (SUCCEEDED(hr)) {
+            m_device.Context()->OMSetBlendState(customBlend.Get(), blendFactor, 0xFFFFFFFF);
+        }
+        return;
+    }
+
+    m_device.Context()->OMSetBlendState(blendState, blendFactor, 0xFFFFFFFF);
 }
 
 void QuarkD3D11Renderer::Set3DLightEnabled(int index, bool enabled)
@@ -1434,11 +1547,34 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
             destinationMesh.vertices = new float[destinationMesh.vertexCount * 3]{};
             destinationMesh.normals = new float[destinationMesh.vertexCount * 3]{};
             destinationMesh.texcoords = new float[destinationMesh.vertexCount * 2]{};
+            destinationMesh.boneIndices = new unsigned char[static_cast<std::size_t>(destinationMesh.vertexCount) * 4u]{};
+            destinationMesh.boneWeights = new float[static_cast<std::size_t>(destinationMesh.vertexCount) * 4u]{};
         }
 
         if (destinationMesh.triangleCount > 0)
         {
             destinationMesh.indices = new unsigned short[destinationMesh.triangleCount * 3]{};
+        }
+
+        for (unsigned int boneIndex = 0; boneIndex < sourceMesh->mNumBones; ++boneIndex)
+        {
+            const aiBone* bone = sourceMesh->mBones[boneIndex];
+            for (unsigned int weightIndex = 0; weightIndex < bone->mNumWeights; ++weightIndex)
+            {
+                const aiVertexWeight& weight = bone->mWeights[weightIndex];
+                const unsigned int vertexIndex = weight.mVertexId;
+                float* dstWeights = destinationMesh.boneWeights + static_cast<std::size_t>(vertexIndex) * 4u;
+                unsigned char* dstBones = destinationMesh.boneIndices + static_cast<std::size_t>(vertexIndex) * 4u;
+                for (int slot = 0; slot < 4; ++slot)
+                {
+                    if (dstWeights[slot] <= 0.0f)
+                    {
+                        dstBones[slot] = static_cast<unsigned char>(boneIndex);
+                        dstWeights[slot] = weight.mWeight;
+                        break;
+                    }
+                }
+            }
         }
 
         if (sourceMesh->HasVertexColors(0))
@@ -2684,6 +2820,43 @@ void QuarkD3D11Renderer::FillFont(IFont font, Font& out)
         out.glyphs[i].advanceX  = static_cast<int>(g.advanceX);
         out.glyphs[i].image     = g.image;
     }
+}
+
+void QuarkD3D11Renderer::DrawDebugText(const char* text, int x, int y, int fontSize, Color color)
+{
+    if (!text || !*text || fontSize <= 0) {
+        return;
+    }
+
+    static std::unordered_map<int, IFont> s_debugFonts;
+    auto it = s_debugFonts.find(fontSize);
+    if (it == s_debugFonts.end()) {
+        IFont font = LoadFontFromMemory("ttf", tahoma_ttf, static_cast<int>(tahoma_ttf_len), fontSize, nullptr, 0);
+        if (!font.IsValid()) {
+            return;
+        }
+        it = s_debugFonts.emplace(fontSize, font).first;
+    }
+
+    const Color shadow = { 0, 0, 0, 255 };
+    const std::array<Vec2, 9> offsets = {
+        Vec2{ -1.f, -1.f }, Vec2{ 0.f, -1.f }, Vec2{ 1.f, -1.f },
+        Vec2{ -1.f, 0.f }, Vec2{ 0.f, 0.f }, Vec2{ 1.f, 0.f },
+        Vec2{ -1.f, 1.f }, Vec2{ 0.f, 1.f }, Vec2{ 1.f, 1.f }
+    };
+
+    for (const Vec2& delta : offsets) {
+        if (delta.x == 0.f && delta.y == 0.f) {
+            continue;
+        }
+        DrawTextEx(it->second, text, Vec2{ static_cast<float>(x) + delta.x, static_cast<float>(y) + delta.y },
+                   static_cast<float>(fontSize), 0.0f, shadow);
+    }
+
+    DrawTextEx(it->second, text, Vec2{ static_cast<float>(x) + 1.f, static_cast<float>(y) + 1.f },
+               static_cast<float>(fontSize), 0.0f, shadow);
+    DrawTextEx(it->second, text, Vec2{ static_cast<float>(x), static_cast<float>(y) },
+               static_cast<float>(fontSize), 0.0f, color);
 }
 
 void QuarkD3D11Renderer::DrawText(const char* text, int x, int y, int fontSize, Color color)

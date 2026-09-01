@@ -219,6 +219,293 @@ void SetWindowIcon(Image image) {
     SDL_DestroySurface(surface);
 }
 
+bool IsWindowResized() {
+    EnsureInitialized();
+    return gWin.nativeEvent.type == SDL_EVENT_WINDOW_RESIZED ||
+           gWin.nativeEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED;
+}
+
+bool IsWindowState(unsigned int flag) {
+    EnsureInitialized();
+    return (SDL_GetWindowFlags(gWin.window) & static_cast<Uint32>(flag)) != 0;
+}
+
+void SetWindowState(unsigned int flags) {
+    EnsureInitialized();
+    if ((flags & SDL_WINDOW_FULLSCREEN) != 0) {
+        SDL_SetWindowFullscreen(gWin.window, true);
+    }
+    if ((flags & SDL_WINDOW_MAXIMIZED) != 0) {
+        MaximizeWindow();
+    }
+    if ((flags & SDL_WINDOW_HIDDEN) != 0) {
+        HideWindow();
+    }
+    if ((flags & SDL_WINDOW_RESIZABLE) != 0) {
+        SetWindowResizable(true);
+    }
+    if ((flags & SDL_WINDOW_BORDERLESS) != 0) {
+        SetWindowBordered(false);
+    }
+}
+
+void ClearWindowState(unsigned int flags) {
+    EnsureInitialized();
+    if ((flags & SDL_WINDOW_FULLSCREEN) != 0) {
+        SDL_SetWindowFullscreen(gWin.window, false);
+    }
+    if ((flags & SDL_WINDOW_MAXIMIZED) != 0) {
+        RestoreWindow();
+    }
+    if ((flags & SDL_WINDOW_HIDDEN) != 0) {
+        ShowWindow();
+    }
+    if ((flags & SDL_WINDOW_RESIZABLE) != 0) {
+        SetWindowResizable(false);
+    }
+    if ((flags & SDL_WINDOW_BORDERLESS) != 0) {
+        SetWindowBordered(true);
+    }
+}
+
+void ToggleBorderlessWindowed() {
+    EnsureInitialized();
+    SetWindowBordered(!IsWindowBorderless());
+}
+
+void SetWindowIcons(Image* images, int count) {
+    if (images == nullptr || count <= 0) {
+        return;
+    }
+    SetWindowIcon(images[0]);
+}
+
+void SetWindowMonitor(int monitor) {
+    EnsureInitialized();
+    int displayCount = 0;
+    SDL_DisplayID* displays = SDL_GetDisplays(&displayCount);
+    if (displays == nullptr || displayCount <= 0 || monitor < 0 || monitor >= displayCount) {
+        if (displays) {
+            SDL_free(displays);
+        }
+        return;
+    }
+
+    SDL_Rect rect{};
+    if (SDL_GetDisplayBounds(displays[monitor], &rect)) {
+        SDL_SetWindowPosition(gWin.window, rect.x, rect.y);
+    }
+    SDL_free(displays);
+}
+
+void SetWindowOpacity(float opacity) {
+    EnsureInitialized();
+    SDL_SetWindowOpacity(gWin.window, opacity);
+}
+
+void SetWindowFocused() {
+    EnsureInitialized();
+    SDL_RaiseWindow(gWin.window);
+}
+
+int GetRenderWidth() {
+    EnsureInitialized();
+    return GetWindowSizeInPixels().x;
+}
+
+int GetRenderHeight() {
+    EnsureInitialized();
+    return GetWindowSizeInPixels().y;
+}
+
+int GetMonitorCount() {
+    int count = 0;
+    SDL_GetDisplays(&count);
+    return count;
+}
+
+int GetCurrentMonitor() {
+    EnsureInitialized();
+    const SDL_DisplayID displayId = SDL_GetDisplayForWindow(gWin.window);
+    int count = 0;
+    SDL_DisplayID* displays = SDL_GetDisplays(&count);
+    if (!displays) {
+        return 0;
+    }
+    for (int i = 0; i < count; ++i) {
+        if (displays[i] == displayId) {
+            SDL_free(displays);
+            return i;
+        }
+    }
+    SDL_free(displays);
+    return 0;
+}
+
+Vec2 GetMonitorPosition(int monitor) {
+    EnsureInitialized();
+    int count = 0;
+    SDL_DisplayID* displays = SDL_GetDisplays(&count);
+    if (!displays || monitor < 0 || monitor >= count) {
+        if (displays) SDL_free(displays);
+        return Vec2{};
+    }
+
+    SDL_Rect rect{};
+    Vec2 result{};
+    if (SDL_GetDisplayBounds(displays[monitor], &rect)) {
+        result = Vec2(static_cast<float>(rect.x), static_cast<float>(rect.y));
+    }
+    SDL_free(displays);
+    return result;
+}
+
+int GetMonitorWidth(int monitor) {
+    int count = 0;
+    SDL_DisplayID* displays = SDL_GetDisplays(&count);
+    if (!displays || monitor < 0 || monitor >= count) {
+        if (displays) SDL_free(displays);
+        return 0;
+    }
+
+    SDL_Rect rect{};
+    int value = 0;
+    if (SDL_GetDisplayBounds(displays[monitor], &rect)) {
+        value = rect.w;
+    }
+    SDL_free(displays);
+    return value;
+}
+
+int GetMonitorHeight(int monitor) {
+    int count = 0;
+    SDL_DisplayID* displays = SDL_GetDisplays(&count);
+    if (!displays || monitor < 0 || monitor >= count) {
+        if (displays) SDL_free(displays);
+        return 0;
+    }
+
+    SDL_Rect rect{};
+    int value = 0;
+    if (SDL_GetDisplayBounds(displays[monitor], &rect)) {
+        value = rect.h;
+    }
+    SDL_free(displays);
+    return value;
+}
+
+int GetMonitorPhysicalWidth(int monitor) {
+    return GetMonitorWidth(monitor);
+}
+
+int GetMonitorPhysicalHeight(int monitor) {
+    return GetMonitorHeight(monitor);
+}
+
+const char* GetMonitorName(int monitor) {
+    int count = 0;
+    SDL_DisplayID* displays = SDL_GetDisplays(&count);
+    if (!displays || monitor < 0 || monitor >= count) {
+        if (displays) SDL_free(displays);
+        return "";
+    }
+
+    const char* name = SDL_GetDisplayName(displays[monitor]);
+    SDL_free(displays);
+    return name ? name : "";
+}
+
+void SetClipboardText(const char* text) {
+    if (text == nullptr) {
+        return;
+    }
+    SDL_SetClipboardText(text);
+}
+
+const char* GetClipboardText() {
+    static thread_local std::string clipboardText;
+    char* text = SDL_GetClipboardText();
+    clipboardText = text ? text : "";
+    SDL_free(text);
+    return clipboardText.c_str();
+}
+
+Image GetClipboardImage() {
+    return Image{};
+}
+
+void EnableEventWaiting() {
+}
+
+void DisableEventWaiting() {
+}
+
+void SetConfigFlags(unsigned int flags) {
+    if ((flags & FLAG_VSYNC_HINT) != 0u) {
+        SetVSync(true);
+    }
+    if ((flags & FLAG_FULLSCREEN_MODE) != 0u) {
+        SetWindowFullscreen(true);
+    }
+    if ((flags & FLAG_WINDOW_RESIZABLE) != 0u) {
+        SetWindowResizable(true);
+    }
+    if ((flags & FLAG_BORDERLESS_WINDOWED_MODE) != 0u) {
+        SetWindowBordered(false);
+    }
+    if ((flags & FLAG_WINDOW_HIDDEN) != 0u) {
+        HideWindow();
+    }
+    if ((flags & FLAG_WINDOW_MAXIMIZED) != 0u) {
+        MaximizeWindow();
+    }
+    if ((flags & FLAG_WINDOW_UNDECORATED) != 0u) {
+        SetWindowBordered(false);
+    }
+}
+
+void SwapScreenBuffer() {
+#if defined(QC_ENABLE_OPENGL)
+    if (gRendererPtr && gRendererPtr->GetRendererType() == RendererType::OpenGL) {
+        SDL_GL_SwapWindow(gWin.window);
+    }
+#else
+    (void)gWin;
+#endif
+}
+
+void PollInputEvents() {
+    EnsureInitialized();
+    SDL_PumpEvents();
+    PumpSystemEvents();
+}
+
+void TakeScreenshot(const char* fileName) {
+    if (!fileName || std::strlen(fileName) == 0) {
+        return;
+    }
+    Image screenshot = LoadImageFromScreen();
+    if (IsImageValid(screenshot)) {
+        ExportImage(screenshot, fileName);
+        UnloadImage(screenshot);
+    }
+}
+
+bool OpenURL(const char* url) {
+    if (url == nullptr || url[0] == '\0') {
+        return false;
+    }
+    return SDL_OpenURL(url);
+}
+
+void SetTraceLogCallback(TraceLogCallback callback) {
+    static TraceLogCallback gCallback = nullptr;
+    gCallback = callback;
+    if (callback != nullptr) {
+        TraceLog(LogLevel::Info, "WINDOW", "Trace log callback registered");
+    }
+}
+
 SDL_Window* GetNativeWindow() {
     EnsureInitialized();
     return gWin.window;

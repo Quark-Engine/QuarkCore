@@ -348,6 +348,46 @@ add_library(glad STATIC "${GLAD_EXTERNAL_DIR}/src/glad.c")
 target_include_directories(glad PUBLIC "${GLAD_EXTERNAL_DIR}/include")
 set_target_properties(glad PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+set(OPENAL_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/OpenAL")
+add_library(OpenAL::OpenAL SHARED IMPORTED GLOBAL)
+target_include_directories(OpenAL::OpenAL INTERFACE "${OPENAL_EXTERNAL_DIR}/include")
+
+if(MSVC)
+    set_target_properties(OpenAL::OpenAL PROPERTIES
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+        IMPORTED_IMPLIB_DEBUG   "${OPENAL_EXTERNAL_DIR}/lib/debug/OpenAL32.lib"
+        IMPORTED_IMPLIB_RELEASE "${OPENAL_EXTERNAL_DIR}/lib/release/OpenAL32.lib"
+        IMPORTED_LOCATION_DEBUG   "${OPENAL_EXTERNAL_DIR}/lib/debug/OpenAL32.dll"
+        IMPORTED_LOCATION_RELEASE "${OPENAL_EXTERNAL_DIR}/lib/release/OpenAL32.dll"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+    )
+elseif(WIN32)
+    set_target_properties(OpenAL::OpenAL PROPERTIES
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+        IMPORTED_IMPLIB_DEBUG   "${OPENAL_EXTERNAL_DIR}/lib/debug/libOpenAL32.dll.a"
+        IMPORTED_IMPLIB_RELEASE "${OPENAL_EXTERNAL_DIR}/lib/release/libOpenAL32.dll.a"
+        IMPORTED_LOCATION_DEBUG   "${OPENAL_EXTERNAL_DIR}/lib/debug/OpenAL32.dll"
+        IMPORTED_LOCATION_RELEASE "${OPENAL_EXTERNAL_DIR}/lib/release/OpenAL32.dll"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+    )
+elseif(APPLE)
+    set_target_properties(OpenAL::OpenAL PROPERTIES
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+        IMPORTED_LOCATION_DEBUG   "${OPENAL_EXTERNAL_DIR}/lib/debug/libopenal.1.25.2.dylib"
+        IMPORTED_LOCATION_RELEASE "${OPENAL_EXTERNAL_DIR}/lib/release/libopenal.1.25.2.dylib"
+        IMPORTED_LOCATION "${OPENAL_EXTERNAL_DIR}/lib/release/libopenal.1.25.2.dylib"
+    )
+else()
+    set_target_properties(OpenAL::OpenAL PROPERTIES
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+        IMPORTED_LOCATION_DEBUG   "${OPENAL_EXTERNAL_DIR}/lib/debug/libopenal.so.1.25.2"
+        IMPORTED_LOCATION_RELEASE "${OPENAL_EXTERNAL_DIR}/lib/release/libopenal.so.1.25.2"
+        IMPORTED_LOCATION "${OPENAL_EXTERNAL_DIR}/lib/release/libopenal.so.1.25.2"
+    )
+endif()
+
 add_library(QuarkCore STATIC
     src/QuarkEvent.cpp
     src/QuarkLights.cpp
@@ -386,6 +426,7 @@ if(WIN32)
             assimp::assimp
             freetype
             ZLIB::ZLIB
+            OpenAL::OpenAL
     )
 else()
     target_link_libraries(QuarkCore
@@ -394,6 +435,7 @@ else()
             assimp::assimp
             freetype
             ZLIB::ZLIB
+            OpenAL::OpenAL
     )
 endif()
 
@@ -440,6 +482,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
             OpenGL::GL
             assimp::assimp
             freetype
+            OpenAL::OpenAL
         )
     elseif(BACKEND_NAME STREQUAL "VULKAN")
         target_sources(${TARGET_NAME} PRIVATE
@@ -487,6 +530,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
                 Vulkan::Vulkan
                 shaderc_combined
                 spirv-cross-glsl
+                OpenAL::OpenAL
             )
         else()
             target_link_libraries(${TARGET_NAME} PUBLIC
@@ -497,6 +541,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
                 ${SHADERC_LIB}
                 ${SPIRV_CROSS_GLSL_LIB}
                 ${SPIRV_CROSS_CORE_LIB}
+                OpenAL::OpenAL
             )
         endif()
     elseif(BACKEND_NAME STREQUAL "D3D11")
@@ -520,6 +565,7 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
             dxgi
             d3dcompiler
             dxguid
+            OpenAL::OpenAL
         )
     else()
         message(FATAL_ERROR "Unknown QuarkCore backend: ${BACKEND_NAME}")
@@ -576,31 +622,49 @@ if(BUILD_TESTING)
         )
     endif()
     add_test(NAME QuarkVulkanValidation COMMAND quark_vulkan_validation_tests)
+
+    add_executable(quark_model_animation_tests
+        tests/QuarkModelAnimationTests.cpp
+    )
+    target_link_libraries(quark_model_animation_tests PRIVATE QuarkCore-OpenGL)
+    target_include_directories(quark_model_animation_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    add_test(NAME QuarkModelAnimation COMMAND quark_model_animation_tests)
+
+    add_executable(quark_vr_stereo_tests
+        tests/QuarkModelAnimationTests.cpp
+    )
+    target_link_libraries(quark_vr_stereo_tests PRIVATE QuarkCore-OpenGL)
+    target_include_directories(quark_vr_stereo_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    add_test(NAME QuarkVRStereo COMMAND quark_vr_stereo_tests)
 endif()
 
 if(QC_BUILD_EXAMPLES)
     set(EXAMPLE_TARGETS
         quarkcore_opengl
+        quarkcore_audio
         quarkcore_textures_and_shaders
         quarkcore_3d_primitives
         quarkcore_meshes
         quarkcore_vulkan
         quarkcore_vulkan_shaders
         quarkcore_vulkan_3d_lights
-        quarkcore_lights
         quarkcore_files
         quarkcore_3d_lights
     )
 
     set(EXAMPLE_SOURCES
         examples/opengl.cpp
+        examples/audio.cpp
         examples/textures_and_shaders.cpp
         examples/primitives_3d.cpp
         examples/meshes.cpp
         examples/vulkan.cpp
         examples/vulkan_shaders.cpp
         examples/vulkan_3d_lights.cpp
-        examples/light.cpp
         examples/file_operations.cpp
         examples/3d_light.cpp
     )
@@ -618,6 +682,7 @@ if(QC_BUILD_EXAMPLES)
             $<IF:$<CONFIG:Debug>,${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll,${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll>
             $<IF:$<CONFIG:Debug>,${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll,${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.dll>
             $<IF:$<CONFIG:Debug>,${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll,${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.dll>
+            $<IF:$<CONFIG:Debug>,${OPENAL_EXTERNAL_DIR}/lib/debug/OpenAL32.dll,${OPENAL_EXTERNAL_DIR}/lib/release/OpenAL32.dll>
             "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools.dll"
             "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Toolsd.dll"
             "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-opt.dll"
@@ -738,6 +803,7 @@ if(QC_BUILD_EXAMPLES)
             $<TARGET_FILE:assimp::assimp>
             $<TARGET_FILE:freetype>
             $<TARGET_FILE:SDL3::SDL3>
+            $<TARGET_FILE:OpenAL::OpenAL>
         )
 
         if(NOT APPLE)
@@ -751,6 +817,8 @@ if(QC_BUILD_EXAMPLES)
                 COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:assimp::assimp> $<TARGET_FILE_DIR:QuarkCore>/$<IF:$<CONFIG:Debug>,libassimpd.so.6,libassimp.so.6>
                 COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:QuarkCore>/libSDL3.so.0
                 COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:SDL3::SDL3> $<TARGET_FILE_DIR:QuarkCore>/libSDL3.so.0
+                COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:QuarkCore>/$<IF:$<CONFIG:Debug>,libopenal.so.1,libopenal.so.1>
+                COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:OpenAL::OpenAL> $<TARGET_FILE_DIR:QuarkCore>/$<IF:$<CONFIG:Debug>,libopenal.so.1,libopenal.so.1>
                 COMMENT "Creating shared library symlinks next to QuarkCore (Linux)..."
             )
         endif()
