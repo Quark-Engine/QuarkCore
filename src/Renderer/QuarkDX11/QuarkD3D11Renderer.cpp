@@ -1,5 +1,6 @@
 #include "QuarkD3D11Renderer.hpp"
 #include "../DebugFont.h"
+#include "../DefaultFont.h"
 #include "../../QuarkInternal.hpp"
 #include "../../QuarkModelAnim.hpp"
 
@@ -170,25 +171,6 @@ DXGI_FORMAT SignatureFormat(D3D_REGISTER_COMPONENT_TYPE componentType, UINT comp
 bool SemanticEquals(const char* semantic, const char* name)
 {
     return semantic != nullptr && _stricmp(semantic, name) == 0;
-}
-
-const char* DefaultFontPath()
-{
-    static const char* paths[] = {
-        "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/segoeui.ttf",
-        "C:/Windows/Fonts/verdana.ttf",
-        nullptr
-    };
-
-    for (int index = 0; paths[index] != nullptr; ++index) {
-        std::ifstream file(paths[index], std::ios::binary);
-        if (file.good()) {
-            return paths[index];
-        }
-    }
-
-    return nullptr;
 }
 
 void DrawThickLine(D3D11CommandContext &commands,
@@ -2588,14 +2570,13 @@ uint32_t QuarkD3D11Renderer::EnsureDefaultFont()
         return m_defaultFontId;
     }
 
-    const char* path = DefaultFontPath();
-    if (!path) {
-        TraceLog(LogLevel::Error, "FONT", "[D3D11] No default system font was found.");
+    if (pixel_ttf == nullptr || pixel_ttf_len == 0) {
+        TraceLog(LogLevel::Error, "FONT", "[D3D11] No bundled default font was found.");
         return 0;
     }
 
     FontData fontData{};
-    if (!LoadFontData(path, nullptr, 0, 32, nullptr, 0, fontData)) {
+    if (!LoadFontData(nullptr, pixel_ttf, static_cast<int>(pixel_ttf_len), 32, nullptr, 0, fontData)) {
         return 0;
     }
 
@@ -4065,6 +4046,23 @@ void QuarkD3D11Renderer::SetShaderValueTextureUnit(const Shader &shader, int loc
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }
+}
+
+bool QuarkD3D11Renderer::UpdateTexture(const ITexture& texture, const void* pixels) {
+    if (!pixels || texture.id == 0) return false;
+    return m_resources.UpdateTexture(m_device.Context(), texture.id,
+                                     static_cast<const uint8_t*>(pixels),
+                                     texture.width, texture.height);
+}
+
+bool QuarkD3D11Renderer::UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pixels) {
+    if (!pixels || texture.id == 0) return false;
+    return m_resources.UpdateTextureRegion(m_device.Context(), texture.id,
+                                           static_cast<const uint8_t*>(pixels),
+                                           static_cast<int>(region.x),
+                                           static_cast<int>(region.y),
+                                           static_cast<int>(region.width),
+                                           static_cast<int>(region.height));
 }
 
 } // namespace qc

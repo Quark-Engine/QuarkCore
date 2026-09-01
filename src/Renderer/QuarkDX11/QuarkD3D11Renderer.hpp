@@ -118,6 +118,8 @@ public:
     ITexture LoadTextureFromImage(const Image& image) override;
     ITexture GetRenderTextureTexture(IRenderTexture) override;
     void UnloadTexture(ITexture &) override;
+    bool UpdateTexture(const ITexture& texture, const void* pixels) override;
+    bool UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pixels) override;
     IRenderTexture LoadRenderTexture(int, int) override;
     void UnloadRenderTexture(IRenderTexture) override;
     ITexture GenCheckerTexture(int, int, int, Color, Color) override;

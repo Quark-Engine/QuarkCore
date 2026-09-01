@@ -19,7 +19,13 @@ option(QC_BUILD_EXAMPLES "Build QuarkCore examples" ON)
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-if(APPLE)
+if(ANDROID)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+    set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+    set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+    set(CMAKE_ANDROID_API 26)
+elseif(APPLE)
     set(CMAKE_INSTALL_RPATH "@loader_path")
 elseif(UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN")
@@ -167,70 +173,86 @@ else()
     find_package(Vulkan REQUIRED)
     set_target_properties(Vulkan::Vulkan PROPERTIES IMPORTED_GLOBAL TRUE)
 
-    if(APPLE)
+    if(ANDROID)
+        set(SHADERC_NAMES shaderc_combined shaderc)
+        set(SPIRV_CROSS_GLSL_NAMES spirv-cross-glsl)
+        set(SPIRV_CROSS_CORE_NAMES spirv-cross-core)
+        find_library(SHADERC_LIB NAMES ${SHADERC_NAMES} PATHS ${ANDROID_NDK}/sources/third_party/shaderc/..)
+        find_library(SPIRV_CROSS_GLSL_LIB NAMES ${SPIRV_CROSS_GLSL_NAMES})
+        find_library(SPIRV_CROSS_CORE_LIB NAMES ${SPIRV_CROSS_CORE_NAMES})
+    elseif(APPLE)
         set(SHADERC_NAMES shaderc_combined shaderc)
     else()
         set(SHADERC_NAMES shaderc shaderc_combined)
     endif()
 
-    find_library(SHADERC_LIB
-        NAMES ${SHADERC_NAMES}
-        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
-              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
-        REQUIRED
-    )
-    find_library(SPIRV_CROSS_GLSL_LIB
-        NAMES spirv-cross-glsl
-        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
-              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
-        REQUIRED
-    )
-    find_library(SPIRV_CROSS_CORE_LIB
-        NAMES spirv-cross-core
-        PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
-              /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
-        REQUIRED
-    )
+    if(NOT ANDROID)
+        find_library(SHADERC_LIB
+            NAMES ${SHADERC_NAMES}
+            PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+                  /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+            REQUIRED
+        )
+        find_library(SPIRV_CROSS_GLSL_LIB
+            NAMES spirv-cross-glsl
+            PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+                  /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+            REQUIRED
+        )
+        find_library(SPIRV_CROSS_CORE_LIB
+            NAMES spirv-cross-core
+            PATHS /opt/homebrew/lib /usr/lib /usr/local/lib
+                  /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+            REQUIRED
+        )
+    endif()
 endif()
 
 set(SDL3_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
-add_library(SDL3::SDL3 SHARED IMPORTED GLOBAL)
-target_include_directories(SDL3::SDL3 INTERFACE "${SDL3_EXTERNAL_DIR}/include")
-
-if(MSVC)
-    set_target_properties(SDL3::SDL3 PROPERTIES
-        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
-        IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.lib"
-        IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.lib"
-        IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
-        IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll"
-        MAP_IMPORTED_CONFIG_MINSIZEREL Release
-        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
-    )
-elseif(WIN32)
-    set_target_properties(SDL3::SDL3 PROPERTIES
-        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
-        IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.dll.a"
-        IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.dll.a"
-        IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
-        IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll"
-        MAP_IMPORTED_CONFIG_MINSIZEREL Release
-        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
-    )
-elseif(APPLE)
-    set_target_properties(SDL3::SDL3 PROPERTIES
-        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
-        IMPORTED_LOCATION "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.0.dylib"
-        IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.0.dylib"
-        IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.0.dylib"
-    )
+if(ANDROID)
+    find_library(SDL3_LIBRARY SDL3 REQUIRED)
+    add_library(SDL3::SDL3 SHARED IMPORTED GLOBAL)
+    set_target_properties(SDL3::SDL3 PROPERTIES IMPORTED_LOCATION "${SDL3_LIBRARY}")
+    target_include_directories(SDL3::SDL3 INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3/include")
 else()
-    set_target_properties(SDL3::SDL3 PROPERTIES
-        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
-        IMPORTED_LOCATION "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
-        IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.so.0.4.8"
-        IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
-    )
+    add_library(SDL3::SDL3 SHARED IMPORTED GLOBAL)
+    target_include_directories(SDL3::SDL3 INTERFACE "${SDL3_EXTERNAL_DIR}/include")
+
+    if(MSVC)
+        set_target_properties(SDL3::SDL3 PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.lib"
+            IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.lib"
+            IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
+            IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    elseif(WIN32)
+        set_target_properties(SDL3::SDL3 PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_IMPLIB_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.dll.a"
+            IMPORTED_IMPLIB_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.dll.a"
+            IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/SDL3.dll"
+            IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/SDL3.dll"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    elseif(APPLE)
+        set_target_properties(SDL3::SDL3 PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.0.dylib"
+            IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.0.dylib"
+            IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.0.dylib"
+        )
+    else()
+        set_target_properties(SDL3::SDL3 PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
+            IMPORTED_LOCATION_DEBUG   "${SDL3_EXTERNAL_DIR}/lib/debug/libSDL3.so.0.4.8"
+            IMPORTED_LOCATION_RELEASE "${SDL3_EXTERNAL_DIR}/lib/release/libSDL3.so.0.4.8"
+        )
+    endif()
 endif()
 
 find_package(ZLIB QUIET)
@@ -398,6 +420,7 @@ add_library(QuarkCore STATIC
     src/QuarkWindow.cpp
     src/QuarkImage.cpp
     src/QuarkUtils.cpp
+    src/Renderer/DefaultFont.h
 )
 
 if(WIN32)
@@ -476,18 +499,51 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
     endif()
 
     if(BACKEND_NAME STREQUAL "OPENGL")
-        find_package(OpenGL REQUIRED)
-        target_sources(${TARGET_NAME} PRIVATE src/Renderer/QuarkGL/QuarkGLRenderer.cpp)
-        target_compile_definitions(${TARGET_NAME} PRIVATE QC_ENABLE_OPENGL)
-        target_compile_definitions(${TARGET_NAME} INTERFACE QC_ENABLE_OPENGL)
-        target_link_libraries(${TARGET_NAME} PUBLIC
-            SDL3::SDL3
-            glad
-            OpenGL::GL
-            assimp::assimp
-            freetype
-            OpenAL::OpenAL
-        )
+        if(ANDROID)
+            find_library(QC_ANDROID_GLES_LIB GLESv3 REQUIRED)
+            find_library(QC_ANDROID_EGL_LIB EGL REQUIRED)
+            target_sources(${TARGET_NAME} PRIVATE
+                src/Renderer/QuarkGL/QuarkGLRenderer.cpp
+                src/Renderer/QuarkGL/QuarkGLDevice.cpp
+                src/Renderer/QuarkGL/QuarkGLBatch.cpp
+                src/Renderer/QuarkGL/QuarkGLShader.cpp
+                src/Renderer/QuarkGL/QuarkGLTexture.cpp
+                src/Renderer/QuarkGL/QuarkGLFont.cpp
+                src/Renderer/QuarkGL/QuarkGL3D.cpp
+            )
+            target_compile_definitions(${TARGET_NAME} PRIVATE QC_ENABLE_OPENGL QC_ENABLE_GLES)
+            target_compile_definitions(${TARGET_NAME} INTERFACE QC_ENABLE_OPENGL QC_ENABLE_GLES)
+            target_link_libraries(${TARGET_NAME} PUBLIC
+                SDL3::SDL3
+                glad
+                ${QC_ANDROID_GLES_LIB}
+                ${QC_ANDROID_EGL_LIB}
+                assimp::assimp
+                freetype
+                OpenAL::OpenAL
+            )
+        else()
+            find_package(OpenGL REQUIRED)
+            target_sources(${TARGET_NAME} PRIVATE
+                src/Renderer/QuarkGL/QuarkGLRenderer.cpp
+                src/Renderer/QuarkGL/QuarkGLDevice.cpp
+                src/Renderer/QuarkGL/QuarkGLBatch.cpp
+                src/Renderer/QuarkGL/QuarkGLShader.cpp
+                src/Renderer/QuarkGL/QuarkGLTexture.cpp
+                src/Renderer/QuarkGL/QuarkGLFont.cpp
+                src/Renderer/QuarkGL/QuarkGL3D.cpp
+            )
+            target_compile_definitions(${TARGET_NAME} PRIVATE QC_ENABLE_OPENGL)
+            target_compile_definitions(${TARGET_NAME} INTERFACE QC_ENABLE_OPENGL)
+            target_link_libraries(${TARGET_NAME} PUBLIC
+                SDL3::SDL3
+                glad
+                OpenGL::GL
+                assimp::assimp
+                freetype
+                OpenAL::OpenAL
+            )
+        endif()
     elseif(BACKEND_NAME STREQUAL "VULKAN")
         target_sources(${TARGET_NAME} PRIVATE
             src/Renderer/QuarkVulkan/QuarkVkCommon.hpp
@@ -536,6 +592,24 @@ function(qc_configure_backend_target TARGET_NAME BACKEND_NAME)
                 spirv-cross-glsl
                 OpenAL::OpenAL
             )
+        elseif(ANDROID)
+            set(_android_vulkan_link_libraries
+                SDL3::SDL3
+                assimp::assimp
+                freetype
+                Vulkan::Vulkan
+                OpenAL::OpenAL
+            )
+            if(SHADERC_LIB)
+                list(APPEND _android_vulkan_link_libraries ${SHADERC_LIB})
+            endif()
+            if(SPIRV_CROSS_GLSL_LIB)
+                list(APPEND _android_vulkan_link_libraries ${SPIRV_CROSS_GLSL_LIB})
+            endif()
+            if(SPIRV_CROSS_CORE_LIB)
+                list(APPEND _android_vulkan_link_libraries ${SPIRV_CROSS_CORE_LIB})
+            endif()
+            target_link_libraries(${TARGET_NAME} PUBLIC ${_android_vulkan_link_libraries})
         else()
             target_link_libraries(${TARGET_NAME} PUBLIC
                 SDL3::SDL3

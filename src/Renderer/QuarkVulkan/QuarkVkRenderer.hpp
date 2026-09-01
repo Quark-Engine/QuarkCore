@@ -216,6 +216,8 @@ public:
     ITexture       LoadTextureFromImage(const Image& image) override;
     ITexture       GetRenderTextureTexture(IRenderTexture target) override;
     void           UnloadTexture(ITexture& texture) override;
+    bool           UpdateTexture(const ITexture& texture, const void* pixels) override;
+    bool           UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pixels) override;
     bool           isTextureValid(ITexture& texture) override;
     IRenderTexture LoadRenderTexture(int width, int height) override;
     void           UnloadRenderTexture(IRenderTexture target) override;

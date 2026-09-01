@@ -60,16 +60,16 @@ int main() {
         }
 
         if (qc::IsKeyDown(qc::KeyboardKey::Left)) {
-            camera.target.x -= 400.0f * qc::GetDeltaTime();
-        }
-        if (qc::IsKeyDown(qc::KeyboardKey::Right)) {
             camera.target.x += 400.0f * qc::GetDeltaTime();
         }
+        if (qc::IsKeyDown(qc::KeyboardKey::Right)) {
+            camera.target.x -= 400.0f * qc::GetDeltaTime();
+        }
         if (qc::IsKeyDown(qc::KeyboardKey::Up)) {
-            camera.target.y -= 400.0f * qc::GetDeltaTime();
+            camera.target.y += 400.0f * qc::GetDeltaTime();
         }
         if (qc::IsKeyDown(qc::KeyboardKey::Down)) {
-            camera.target.y += 400.0f * qc::GetDeltaTime();
+            camera.target.y -= 400.0f * qc::GetDeltaTime();
         }
 
         elapsed += qc::GetDeltaTime();
@@ -94,8 +94,9 @@ int main() {
                     0.0f,
                     qc::Color{255, 255, 255, 220}
                 );
-                qc::Vec2 mousePos = qc::GetMousePosition();
-                qc::DrawCircle(mousePos.x, mousePos.y, 16.0f, qc::Color{255, 180, 60, 200});
+                qc::Vec2 mousePosScreen = qc::GetMousePosition();
+                qc::Vec2 mousePosWorld = qc::GetScreenToWorld2D(mousePosScreen, camera);
+                qc::DrawCircle(mousePosWorld.x, mousePosWorld.y, 16.0f, qc::Color{255, 180, 60, 200});
             qc::EndMode2D();
 
             if (useShader) {

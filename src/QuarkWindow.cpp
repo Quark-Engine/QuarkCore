@@ -503,6 +503,7 @@ bool OpenURL(const char* url) {
 void SetTraceLogCallback(TraceLogCallback callback) {
     static TraceLogCallback gCallback = nullptr;
     gCallback = callback;
+    (void)gCallback;
     if (callback != nullptr) {
         TraceLog(LogLevel::Info, "WINDOW", "Trace log callback registered");
     }

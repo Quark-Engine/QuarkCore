@@ -58,6 +58,16 @@
 
 namespace qc {
 
+static void CopyFixedString(char* dst, size_t dstSize, const char* src) {
+    if (dst == nullptr || dstSize == 0) return;
+    if (src == nullptr) {
+        dst[0] = '\0';
+        return;
+    }
+
+    std::snprintf(dst, dstSize, "%s", src);
+}
+
 #if defined(QC_ENABLE_OPENGL)
 QuarkGLRenderer gGLRenderer;
 #endif
@@ -192,8 +202,7 @@ void CopyText(char* dst, size_t size, const char* src) {
 #if defined(_MSC_VER)
     strncpy_s(dst, size, src, _TRUNCATE);
 #else
-    std::strncpy(dst, src, size - 1);
-    dst[size - 1] = '\0';
+    std::snprintf(dst, size, "%s", src);
 #endif
 }
 
@@ -240,9 +249,15 @@ static void CleanupBackendInitFailure() {
 
 #if defined(QC_ENABLE_OPENGL)
 static bool InitOpenGLBackend(int width, int height, const char* title) {
+#if defined(__ANDROID__)
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+#else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#endif
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     if (gRequestedMSAASamples > 1) {
@@ -1390,6 +1405,7 @@ void EndScissorMode(void) {
 }
 
 void SetTextureFilter(Texture2D texture, int filter) {
+    (void)texture;
     gWin.activeTextureFilter = filter;
     SetTextureFilterMode(ConvertTextureFilterMode(filter));
 
@@ -1399,6 +1415,7 @@ void SetTextureFilter(Texture2D texture, int filter) {
 }
 
 void SetTextureWrap(Texture2D texture, int wrap) {
+    (void)texture;
     gWin.activeTextureWrap = wrap;
 
     if (gRendererPtr) {
@@ -2185,7 +2202,7 @@ void UnloadVrStereoConfig(VrStereoConfig config) {
         gCurrentVrStereoConfig.viewOffset[0].m[12] == config.viewOffset[0].m[12] &&
         gCurrentVrStereoConfig.viewOffset[1].m[12] == config.viewOffset[1].m[12];
 
-    if (matchesActiveConfig || config.projection[0].m[0] == 0.0f && config.projection[1].m[0] == 0.0f) {
+    if (matchesActiveConfig || (config.projection[0].m[0] == 0.0f && config.projection[1].m[0] == 0.0f)) {
         gCurrentVrStereoConfig = {};
         gVrStereoEnabled = false;
     }
@@ -3119,7 +3136,6 @@ void DrawPolyLinesEx(Vec2 center, int sides, float radius, float rotation, float
 
 void DrawTriangleGradient(Vec2 v1, Vec2 v2, Vec2 v3, Color c1, Color c2, Color c3)
 {
-    const Vec2 center = (v1 + v2 + v3) * (1.0f / 3.0f);
     const Color top = c1;
     const Color left = c2;
     const Color right = c3;
@@ -3395,29 +3411,14 @@ TextureCubemap LoadTextureCubemap(Image image, int layout) {
 
 void UpdateTexture(Texture2D texture, const void* pixels) {
     if (!pixels || texture.id == 0) return;
-#if defined(QC_ENABLE_OPENGL)
-    if (gRendererPtr && gRendererPtr->GetType() == RendererType::OpenGL) {
-        glBindTexture(GL_TEXTURE_2D, texture.id);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture.width, texture.height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-    }
-#else
-    (void)texture;
-#endif
+    ITexture it{ texture.id, texture.width, texture.height, texture.mipmaps, texture.format, texture.valid };
+    gRenderer.UpdateTexture(it, pixels);
 }
 
 void UpdateTextureRec(Texture2D texture, Rectangle rec, const void* pixels) {
     if (!pixels || texture.id == 0) return;
-#if defined(QC_ENABLE_OPENGL)
-    if (gRendererPtr && gRendererPtr->GetType() == RendererType::OpenGL) {
-        glBindTexture(GL_TEXTURE_2D, texture.id);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(rec.x), static_cast<GLint>(rec.y),
-                        static_cast<GLsizei>(rec.width), static_cast<GLsizei>(rec.height),
-                        GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-    }
-#else
-    (void)texture;
-    (void)rec;
-#endif
+    ITexture it{ texture.id, texture.width, texture.height, texture.mipmaps, texture.format, texture.valid };
+    gRenderer.UpdateTextureRegion(it, rec, pixels);
 }
 
 void GenTextureMipmaps(Texture2D* texture) {
@@ -3441,7 +3442,9 @@ bool IsTextureValid(Texture2D texture) {
     return gRenderer.isTextureValid(it);
 }
 
-bool IsTextureReady(Texture2D texture) { return IsTextureValid(texture); }
+bool IsTextureReady(Texture2D texture) {
+    return IsTextureValid(texture);
+}
 
 void DrawTexture(const Texture2D& tex, float x, float y, Color tint) {
     ITexture it{ tex.id, tex.width, tex.height, tex.mipmaps, tex.format, tex.valid };
@@ -4598,18 +4601,16 @@ void SetShaderValueTextureUnit(const Shader& s, int loc, const Texture2D& textur
 }
 
 void UnloadVertexArray(unsigned int vaoId) {
+    (void)vaoId;
 #if defined(QC_ENABLE_OPENGL)
     if (vaoId) glDeleteVertexArrays(1, &vaoId);
-#else
-    (void)vaoId;
 #endif
 }
 
 void UnloadVertexBuffer(unsigned int vboId) {
+    (void)vboId;
 #if defined(QC_ENABLE_OPENGL)
     if (vboId) glDeleteBuffers(1, &vboId);
-#else
-    (void)vboId;
 #endif
 }
 
@@ -6144,7 +6145,6 @@ RayCollision GetRayCollisionMesh(Ray ray, Mesh mesh, Matrix transform) {
 }
 
 RayCollision GetRayCollisionQuad(Ray ray, Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4) {
-    RayCollision result{};
     const RayCollision tri1 = GetRayCollisionTriangle(ray, p1, p2, p3);
     const RayCollision tri2 = GetRayCollisionTriangle(ray, p1, p3, p4);
     if (tri1.hit && tri2.hit) return (tri1.distance < tri2.distance) ? tri1 : tri2;
@@ -6716,8 +6716,7 @@ void BuildSkeletonFromHierarchy(aiNode* node, ModelSkeleton& skeleton, int paren
     const unsigned int id = skeleton.boneCount;
     const std::string nodeName = node->mName.length > 0 ? node->mName.C_Str() : "node";
     skeleton.bones[id].parent = parent;
-    std::strncpy(skeleton.bones[id].name, nodeName.c_str(), sizeof(skeleton.bones[id].name) - 1);
-    skeleton.bones[id].name[sizeof(skeleton.bones[id].name) - 1] = '\0';
+    CopyFixedString(skeleton.bones[id].name, sizeof(skeleton.bones[id].name), nodeName.c_str());
     skeleton.bindPose[id] = AiMatrixToTransform(node->mTransformation);
     skeleton.boneCount++;
 
@@ -7056,8 +7055,7 @@ ModelAnimation* LoadModelAnimations(const char* fileName, int* animCount) {
         dst.keyframeCount = 0;
 
         if (anim->mName.length > 0) {
-            std::strncpy(dst.name, anim->mName.C_Str(), sizeof(dst.name) - 1);
-            dst.name[sizeof(dst.name) - 1] = '\0';
+            CopyFixedString(dst.name, sizeof(dst.name), anim->mName.C_Str());
         }
 
         const std::vector<const aiNodeAnim*> channels = MapChannelsToBones(anim, skel);

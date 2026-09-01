@@ -1,5 +1,6 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkInternal.hpp"
+#include "Renderer/DefaultFont.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"
@@ -971,27 +972,6 @@ Image GenImageText(int width, int height, const char* text) {
 
 namespace {
 
-const char* FindDefaultFontPath() {
-#ifdef _WIN32
-    static constexpr const char* kCandidates[] = {
-        "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/segoeui.ttf",
-        "C:/Windows/Fonts/consola.ttf"
-    };
-#else
-    static constexpr const char* kCandidates[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
-    };
-#endif
-    for (const char* path : kCandidates) {
-        std::ifstream file(path);
-        if (file.good()) return path;
-    }
-    return nullptr;
-}
-
 bool RasterizeText(const char* text, float fontSize, float spacing, Color tint,
                    int& outWidth, int& outHeight, std::vector<std::uint8_t>& outRGBA) {
     outWidth = 0;
@@ -1000,9 +980,8 @@ bool RasterizeText(const char* text, float fontSize, float spacing, Color tint,
 
     if (text == nullptr || *text == '\0') return true;
 
-    const char* fontPath = FindDefaultFontPath();
-    if (fontPath == nullptr) {
-        TraceLog(LogLevel::Warn, "IMAGE", "Could not find a default font for text rendering");
+    if (pixel_ttf == nullptr || pixel_ttf_len == 0) {
+        TraceLog(LogLevel::Warn, "IMAGE", "Could not load bundled default font for text rendering");
         return false;
     }
 
@@ -1010,7 +989,7 @@ bool RasterizeText(const char* text, float fontSize, float spacing, Color tint,
     if (FT_Init_FreeType(&ft) != 0) return false;
 
     FT_Face face = nullptr;
-    if (FT_New_Face(ft, fontPath, 0, &face) != 0) {
+    if (FT_New_Memory_Face(ft, pixel_ttf, static_cast<FT_Long>(pixel_ttf_len), 0, &face) != 0) {
         FT_Done_FreeType(ft);
         return false;
     }

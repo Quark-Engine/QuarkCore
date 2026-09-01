@@ -1,5 +1,6 @@
 #include "QuarkGLRenderer.hpp"
 #include "../DebugFont.h"
+#include "../DefaultFont.h"
 #include "../../QuarkInternal.hpp"
 #include "../../QuarkModelAnim.hpp"
 
@@ -204,54 +205,21 @@ static const char* shaderLocationNames[SHADER_LOC_COUNT] = {
 #pragma warning(pop)
 #endif
 
-namespace {
-
-static bool FileExists(const char* p) {
-    if(!p) return false;
-    std::ifstream f(p, std::ios::binary); return f.good();
-}
-
-static const char* DefaultFontPath() {
-#if defined(_WIN32)
-    static const char* paths[] = {
-        "C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/verdana.ttf", nullptr};
-#elif defined(__APPLE__)
-    static const char* paths[] = {
-        "/System/Library/Fonts/SFNS.ttf", "/Library/Fonts/Arial.ttf", "/Library/Fonts/Helvetica.ttf", nullptr};
-#else
-    static const char* paths[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",nullptr};
-#endif
-
-    for(int i = 0; paths[i]; ++i) if(FileExists(paths[i])) return paths[i];
-    return nullptr;
-}
-
-} // namespace
-
 QuarkGLRenderer::~QuarkGLRenderer() {
     this->Shutdown();
 }
 
 void QuarkGLRenderer::Init(SDL_Window* window, int width, int height) {
     m_window = window;
-    m_width  = width;
+    m_width = width;
     m_height = height;
-    m_context = SDL_GL_CreateContext(window);
-    if (!m_context)
-        throw std::runtime_error(std::string("SDL_GL_CreateContext: ") + SDL_GetError());
-        
-    if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
-    {
-        throw std::runtime_error("Failed to initialize GLAD");
-    }
+    m_device.Init(window, width, height);
+    m_context = m_device.GetContext();
 
-    const char* vendor   = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+    const char* vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
     const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
-    const char* version  = reinterpret_cast<const char*>(glGetString(GL_VERSION));
-    const char* glsl     = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION));
+    const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    const char* glsl = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION));
 
     GLint maxTexSize = 0, max3DTexSize = 0, maxCubeMapSize = 0, maxArrayLayers = 0;
     GLint maxSamples = 0, maxAttribs = 0, maxUBO = 0, maxColorAttach = 0, maxRenderbufferSize = 0;
@@ -286,7 +254,6 @@ void QuarkGLRenderer::Init(SDL_Window* window, int width, int height) {
     TraceLog(LogLevel::Trace, "OPENGL", TextFormat("Limits: Max Color Attachments: %d, Max Renderbuffer: %d, Max Viewport: %dx%d", maxColorAttach, maxRenderbufferSize, maxViewportDims[0], maxViewportDims[1]));
 
     InitGL();
-
     if (m_vsyncExplicitlySet) {
         SDL_GL_SetSwapInterval(m_vsync ? 1 : 0);
         TraceLog(LogLevel::Info, "OPENGL", TextFormat("VSync configured: %s (Swap Interval: %d)", m_vsync ? "ON" : "OFF", m_vsync ? 1 : 0));
@@ -302,6 +269,9 @@ void QuarkGLRenderer::Shutdown() {
     }
 
     TraceLog(LogLevel::Info, "OPENGL", "Shutting down OpenGL renderer...");
+    m_font.Clear();
+    m_batch.Shutdown();
+    m_device.Shutdown();
 
     for (auto& [id, fd] : m_fonts)
         if (fd.atlasTexture) glDeleteTextures(1, &fd.atlasTexture);
@@ -435,6 +405,8 @@ void QuarkGLRenderer::InitGL() {
     glBindTexture(GL_TEXTURE_2D, 0);
 
     m_currentTexture = m_whiteTexture;
+    m_batch.Init(m_program, m_whiteTexture, m_width, m_height);
+    m_batch.SetCamera(m_camera2D, m_camera2DActive);
     RefreshViewport();
 }
 
@@ -450,35 +422,21 @@ void QuarkGLRenderer::BeginDrawing() {
     m_drawing = true;
     m_currentTexture = m_whiteTexture;
     m_batchVertices.clear();
-    RefreshViewport();
+    m_batch.Begin(m_defaultShader, m_whiteTexture, m_width, m_height);
+    m_batch.SetCamera(m_camera2D, m_camera2DActive);
+    m_device.BeginDrawing();
 }
 
 void QuarkGLRenderer::EndDrawing() {
     FlushBatch();
-    SDL_GL_SwapWindow(m_window);
-
-    const std::uint64_t freq = SDL_GetPerformanceFrequency();
-
-    if (m_targetFps > 0) {
-        const std::uint64_t targetTicks = freq / static_cast<std::uint64_t>(m_targetFps);
-        while (true) {
-            const std::uint64_t now     = SDL_GetPerformanceCounter();
-            const std::uint64_t elapsed = now - m_lastFrameCounter;
-            if (elapsed >= targetTicks) break;
-            const std::uint64_t remaining = targetTicks - elapsed;
-            if (remaining > freq / 500) SDL_Delay(1);
-        }
-    }
-
-    const std::uint64_t frameEnd = SDL_GetPerformanceCounter();
-    m_frameTime          = static_cast<float>(frameEnd - m_lastFrameCounter)
-                           / static_cast<float>(freq);
-    m_lastFrameCounter   = frameEnd;
-    m_drawing            = false;
+    m_device.EndDrawing();
+    m_frameTime = m_device.GetFrameTime();
+    m_shouldClose = m_device.ShouldClose();
 }
 
 void QuarkGLRenderer::SetTargetFPS(int fps) {
     m_targetFps = fps;
+    m_device.SetTargetFPS(fps);
     if (!m_vsyncExplicitlySet && m_context) {
         if (fps == 0) SDL_GL_SetSwapInterval(0);
         else SDL_GL_SetSwapInterval(1);
@@ -488,195 +446,59 @@ void QuarkGLRenderer::SetTargetFPS(int fps) {
 bool QuarkGLRenderer::SetVSync(bool enabled) {
     m_vsync = enabled;
     m_vsyncExplicitlySet = true;
-    if (m_context) {
-        if (!SDL_GL_SetSwapInterval(enabled ? 1 : 0)) {
-            TraceLog(LogLevel::Warn, "RENDERER", (std::string("SDL_GL_SetSwapInterval failed: ") + SDL_GetError()).c_str());
-            return false;
-        }
+    if (!m_device.SetVSync(enabled)) {
+        TraceLog(LogLevel::Warn, "RENDERER", (std::string("SDL_GL_SetSwapInterval failed: ") + SDL_GetError()).c_str());
+        return false;
     }
     return true;
 }
 
 void QuarkGLRenderer::ClearBackground(Color c) {
-    auto n = ToNormColor(c);
-    glClearColor(n[0], n[1], n[2], n[3]);
-    glClear(GL_COLOR_BUFFER_BIT);
+    m_device.ClearBackground(c);
 }
 
 std::array<float,4> QuarkGLRenderer::ToNormColor(Color c) {
-    constexpr float inv = 1.f / 255.f;
-    return{ c.r * inv, c.g * inv, c.b * inv, c.a * inv };
+    return QuarkGLDevice::ToNormColor(c);
 }
 
 GLuint QuarkGLRenderer::CreateTextureFromRgba(const uint8_t* px, int w, int h) {
-    GLuint id = 0;
-
-    glGenTextures(1, &id);
-    glBindTexture(GL_TEXTURE_2D, id);
-
-    const GLint texture_filter = gTextureFilterMode == TextureFilterMode::Nearest ? GL_NEAREST : GL_LINEAR;
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, texture_filter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, texture_filter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Created GPU texture (ID: %u, %dx%d, Format: RGBA8, Filter: %s)",
-        id, w, h, gTextureFilterMode == TextureFilterMode::Nearest ? "Nearest" : "Linear"));
-    return id;
+    return QuarkGLTexture::CreateTextureFromRgba(px, w, h);
 }
 
 GLuint QuarkGLRenderer::CompileGLShader(GLenum type, const char* src) {
-    const char* stageName = (type == GL_VERTEX_SHADER ? "vertex" : (type == GL_FRAGMENT_SHADER ? "fragment" : "unknown"));
-    TraceLog(LogLevel::Trace, "SHADER", TextFormat("[OpenGL] Compiling %s shader...", stageName));
-
-    GLuint s = glCreateShader(type);
-
-    glShaderSource(s, 1, &src, nullptr);
-    glCompileShader(s);
-
-    GLint ok = 0;
-    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
-
-    if (!ok) {
-        char log[1024];
-        glGetShaderInfoLog(s, sizeof(log), nullptr, log);
-        TraceLog(LogLevel::Error, "SHADER", TextFormat("[OpenGL] %s shader compile failed: %s", stageName, log));
-
-        glDeleteShader(s);
-        throw std::runtime_error(std::string("Shader compile: ") + log);
-    }
-
-    TraceLog(LogLevel::Trace, "SHADER", TextFormat("[OpenGL] Compiled %s shader (ID: %u)", stageName, s));
-    return s;
+    return QuarkGLShader::CompileGLShader(type, src);
 }
 
 GLuint QuarkGLRenderer::CreateDefaultProgram() {
     TraceLog(LogLevel::Trace, "SHADER", "[OpenGL] Creating default 2D shader program...");
-    GLuint vs = CompileGLShader(GL_VERTEX_SHADER,   kVS2D);
-    GLuint fs = CompileGLShader(GL_FRAGMENT_SHADER, kFS2D);
-    GLuint p  = glCreateProgram();
-
-    glAttachShader(p, vs);
-    glAttachShader(p, fs);
-    glLinkProgram(p);
-
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-
-    GLint ok = 0;
-    glGetProgramiv(p, GL_LINK_STATUS, &ok);
-
-    if (!ok) {
-        char log[1024];
-        glGetProgramInfoLog(p, sizeof(log), nullptr, log);
-        TraceLog(LogLevel::Error, "SHADER", TextFormat("[OpenGL] Default 2D shader link error: %s", log));
-        glDeleteProgram(p);
-
-        throw std::runtime_error(std::string("Program link: ") + log);
-    }
-    TraceLog(LogLevel::Info, "SHADER", TextFormat("[OpenGL] Default 2D shader program created (ID: %u)", p));
-    return p;
+    const GLuint program = m_shader.CreateDefaultProgram();
+    TraceLog(LogLevel::Info, "SHADER", TextFormat("[OpenGL] Default 2D shader program created (ID: %u)", program));
+    return program;
 }
 
 void QuarkGLRenderer::FlushBatch() {
-    if (m_batchVertices.empty()) return;
-
-    glUseProgram(m_currentShader);
-
-    if (m_currentShader == m_defaultShader) {
-        GLint sLoc = glGetUniformLocation(m_currentShader, "uScreenSize");
-        GLint tLoc = glGetUniformLocation(m_currentShader, "uTexture");
-        if (sLoc >= 0) glUniform2f(sLoc, (float)m_width, (float)m_height);
-        if (tLoc >= 0) glUniform1i(tLoc, 0);
-    } 
-    
-    else {
-        GLint sLoc = glGetUniformLocation(m_currentShader, "uScreenSize");
-        if (sLoc >= 0) glUniform2f(sLoc, (float)m_width, (float)m_height);
-    }
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_currentTexture ? m_currentTexture : m_whiteTexture);
-    glBindVertexArray(m_vao);
-
-    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER,
-        (GLsizeiptr)(m_batchVertices.size() * sizeof(BatchVertex)),
-        m_batchVertices.data(), GL_DYNAMIC_DRAW);
-
-    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)m_batchVertices.size());
-
-    m_batchVertices.clear();
+    m_batch.Flush();
 }
 
 void QuarkGLRenderer::EnsureBatchTexture(GLuint id) {
-    GLuint r = id ? id : m_whiteTexture;
-
-    if (!m_currentTexture) m_currentTexture=r;
-
-    if (r != m_currentTexture || m_batchVertices.size() >= kMaxBatchVertices) {
-        FlushBatch();
-        m_currentTexture = r;
-    }
+    m_batch.EnsureBatchTexture(id);
 }
 
 void QuarkGLRenderer::PushVertex(const BatchVertex& vtx) {
-    if (m_batchVertices.size() >= kMaxBatchVertices)
-        FlushBatch();
-
-    BatchVertex v = vtx;
-
-    if (m_camera2DActive) {
-        Vec2 s = qc::GetWorldToScreen2D({v.x, v.y}, m_camera2D);
-        v.x = s.x; v.y = s.y;
-    }
-
-    m_batchVertices.push_back(v);
+    m_batch.PushVertex({vtx.x, vtx.y, vtx.u, vtx.v, vtx.r, vtx.g, vtx.b, vtx.a});
 }
 
 void QuarkGLRenderer::PushQuad(GLuint tex, float x, float y, float w, float h, Color col) {
-    EnsureBatchTexture(tex);
-    auto n = ToNormColor(col);
-
-    PushVertex({x, y, 0, 0, n[0], n[1], n[2], n[3]});
-    PushVertex({x + w, y, 1, 0, n[0], n[1], n[2], n[3]});
-    PushVertex({x + w, y + h, 1, 1, n[0], n[1], n[2], n[3]});
-    PushVertex({x, y, 0, 0, n[0], n[1], n[2], n[3]});
-    PushVertex({x + w, y + h, 1, 1, n[0], n[1], n[2], n[3]});
-    PushVertex({x, y + h, 0, 1, n[0], n[1], n[2], n[3]});
+    m_batch.PushQuad(tex, x, y, w, h, col);
 }
 
 void QuarkGLRenderer::PushTexturedQuad(GLuint tex, Rectangle uv,
                                         float x, float y, float w, float h, Color col) {
-    EnsureBatchTexture(tex);
-    auto n = ToNormColor(col);
-
-    float u0 = uv.x, v0 = uv.y, u1 = uv.x + uv.width, v1 = uv.y + uv.height;
-
-    PushVertex({x, y, u0, v0, n[0], n[1], n[2], n[3]});
-    PushVertex({x + w, y, u1, v0, n[0], n[1], n[2], n[3]});
-    PushVertex({x + w, y + h, u1, v1, n[0], n[1], n[2], n[3]});
-    PushVertex({x, y,  u0, v0, n[0], n[1], n[2], n[3]});
-    PushVertex({x + w, y + h, u1, v1, n[0], n[1], n[2], n[3]});
-    PushVertex({x,  y + h, u0, v1, n[0], n[1], n[2], n[3]});
+    m_batch.PushTexturedQuad(tex, uv, x, y, w, h, col);
 }
 
 void QuarkGLRenderer::PushCircleImpl(float cx, float cy, float r, Color col) {
-    EnsureBatchTexture(0);
-    auto n = ToNormColor(col);
-
-    constexpr int seg = 48;
-    for(int i = 0; i < seg; ++i) {
-        float a0 = (float)i / seg * 6.28318530718f, a1 = (float)(i + 1) / seg * 6.28318530718f;
-        PushVertex({cx, cy, 0.5f, 0.5f, n[0], n[1], n[2], n[3]});
-        PushVertex({cx + cosf(a0) * r, cy + sinf(a0) * r, 1, 0, n[0], n[1], n[2], n[3]});
-        PushVertex({cx + cosf(a1) * r, cy + sinf(a1) * r, 0, 1, n[0], n[1], n[2], n[3]});
-    }
+    m_batch.PushCircleImpl(cx, cy, r, col);
 }
 
 void QuarkGLRenderer::DrawRectangle(float x, float y, float w, float h, Color c) {
@@ -899,155 +721,35 @@ void QuarkGLRenderer::DrawTextureNPatch(ITexture t, NPatchInfo np, Rectangle dst
 }
 
 ITexture QuarkGLRenderer::LoadTexture(const char* path) {
-    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Loading texture from: %s", path ? path : "<null>"));
-
-    if (!path) return {};
-
-    std::error_code pathError;
-    std::string cacheKey = std::filesystem::weakly_canonical(path, pathError).string();
-    if (pathError || cacheKey.empty()) {
-        cacheKey = std::filesystem::path(path).lexically_normal().string();
-    }
-
-    const auto cached = m_textureCache.find(cacheKey);
-    if (cached != m_textureCache.end()) {
-        cached->second.references++;
-        TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Reusing cached texture: %s (ID: %u, References: %d)",
-            path, cached->second.texture.id, cached->second.references));
-        return cached->second.texture;
-    }
-
-    ImageFileData img;
-    ITexture t{};
-    const bool loaded = LoadImageFile(path, img, 4);
-
-    if(loaded) {
-        t.id = CreateTextureFromRgba(img.pixels.data(), img.width, img.height);
-        t.width = img.width;
-        t.height = img.height;
-        t.mipmaps = 1;
-        t.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-        t.valid = true;
-
-        m_textureCache.emplace(cacheKey, CachedTexture{t, 1});
-        m_textureCacheKeys.emplace(t.id, cacheKey);
-
-        TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[OpenGL] Texture loaded successfully: %s (%dx%d, %zu bytes, ID: %u)",
-            path ? path : "<null>", t.width, t.height, img.pixels.size(), t.id));
-    }
-    else {
-        TraceLog(LogLevel::Error, "TEXTURE", TextFormat("[OpenGL] Failed to load texture: %s", path ? path : "<null>"));
-    }
-
-    return t;
+    return m_texture.LoadTexture(path);
 }
 
 ITexture QuarkGLRenderer::LoadTextureFromImage(const Image& image) {
-    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Uploading texture from Image (%dx%d, format %d)", image.width, image.height, image.format));
-    if (!image.data || image.width <= 0 || image.height <= 0 || image.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
-        TraceLog(LogLevel::Error, "TEXTURE", "[OpenGL] LoadTextureFromImage: unsupported or invalid image (requires UNCOMPRESSED_R8G8B8A8)");
-        return ITexture{};
-    }
-
-    ITexture t{};
-    t.id = CreateTextureFromRgba(static_cast<const uint8_t*>(image.data), image.width, image.height);
-    if (t.id == 0) {
-        TraceLog(LogLevel::Error, "TEXTURE", "[OpenGL] LoadTextureFromImage: upload failed");
-        return t;
-    }
-    t.width = image.width;
-    t.height = image.height;
-    t.mipmaps = 1;
-    t.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-    t.valid = true;
-
-    TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[OpenGL] Texture uploaded from Image (%dx%d, ID: %u)", image.width, image.height, t.id));
-    return t;
+    return m_texture.LoadTextureFromImage(image);
 }
 
 void QuarkGLRenderer::UnloadTexture(ITexture& t) {
-    if(t.id) {
-        const auto cacheKey = m_textureCacheKeys.find(t.id);
-        if (cacheKey != m_textureCacheKeys.end()) {
-            auto cached = m_textureCache.find(cacheKey->second);
-            if (cached != m_textureCache.end()) {
-                cached->second.references--;
-                if (cached->second.references > 0) {
-                    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[OpenGL] Released cached texture (ID: %u, References: %d)",
-                        t.id, cached->second.references));
-                    t = {};
-                    return;
-                }
-                glDeleteTextures(1, &t.id);
-                m_textureCache.erase(cached);
-            }
-            m_textureCacheKeys.erase(cacheKey);
-            t = {};
-            return;
-        }
-
-        TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[OpenGL] Texture unloaded (ID: %u, %dx%d)", t.id, t.width, t.height));
-        glDeleteTextures(1, &t.id);
-    }
-    t = {};
+    m_texture.UnloadTexture(t);
 }
 
 bool QuarkGLRenderer::isTextureValid(ITexture& t) {
-    return t.valid && t.id != 0;
+    return m_texture.IsTextureValid(t);
 }
 
 ITexture QuarkGLRenderer::GetRenderTextureTexture(IRenderTexture rt) {
-    return rt.texture;
+    return m_texture.GetRenderTextureTexture(rt);
 }
 
 IRenderTexture QuarkGLRenderer::LoadRenderTexture(int w, int h) {
-    IRenderTexture rt{};
-
-    glGenFramebuffers(1, &rt.id);
-    glBindFramebuffer(GL_FRAMEBUFFER, rt.id);
-
-    glGenTextures(1, &rt.texture.id);
-    glBindTexture(GL_TEXTURE_2D, rt.texture.id);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    const GLint texture_filter = gTextureFilterMode == TextureFilterMode::Nearest ? GL_NEAREST : GL_LINEAR;
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, texture_filter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, texture_filter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, rt.texture.id, 0);
-    glGenRenderbuffers(1, &rt.depthId);
-    glBindRenderbuffer(GL_RENDERBUFFER, rt.depthId);
-
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
-
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rt.depthId);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    rt.texture.width = w;
-    rt.texture.height = h;
-    rt.texture.mipmaps = 1;
-    rt.texture.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-    rt.texture.valid = true;
-    TraceLog(LogLevel::Info, "RENDER_TARGET", TextFormat("[OpenGL] Render texture created: %dx%d (FBO ID: %u, Color Tex ID: %u, Depth RBO ID: %u, Format: RGBA8/Depth24)",
-        w, h, rt.id, rt.texture.id, rt.depthId));
-    return rt;
+    return m_texture.LoadRenderTexture(w, h);
 }
 
 void QuarkGLRenderer::UnloadRenderTexture(IRenderTexture rt) {
-    TraceLog(LogLevel::Info, "RENDER_TARGET", TextFormat("[OpenGL] Render texture unloaded (FBO ID: %u, Color Tex ID: %u, Depth RBO ID: %u)",
-        rt.id, rt.texture.id, rt.depthId));
-    if(rt.id)
-        glDeleteFramebuffers(1, &rt.id);
-    if(rt.depthId)
-        glDeleteRenderbuffers(1, &rt.depthId);
-    if(rt.texture.id)
-        glDeleteTextures(1, &rt.texture.id);
+    m_texture.UnloadRenderTexture(rt);
 }
 
 bool QuarkGLRenderer::isRenderTextureValid(IRenderTexture& rt) {
-    return rt.id && rt.texture.valid;
+    return m_texture.IsRenderTextureValid(rt);
 }
 
 namespace {
@@ -1153,6 +855,8 @@ void QuarkGLRenderer::BeginTextureMode(IRenderTexture rt) {
     m_currentFbo = rt.id;
     m_width = rt.texture.width;
     m_height = rt.texture.height;
+    m_batch.SetScreenSize(m_width, m_height);
+    m_batch.SetCamera(m_camera2D, m_camera2DActive);
 
     glViewport(0, 0, m_width, m_height);
 }
@@ -1164,6 +868,8 @@ void QuarkGLRenderer::EndTextureMode() {
     m_currentFbo = 0;
 
     RefreshViewport();
+    m_batch.SetScreenSize(m_width, m_height);
+    m_batch.SetCamera(m_camera2D, m_camera2DActive);
 }
 
 static std::vector<int> DefaultCodepoints() {
@@ -1324,11 +1030,10 @@ int QuarkGLRenderer::FindGlyph(const FontData& fd, int codepoint) {
 uint32_t QuarkGLRenderer::EnsureDefaultFont() {
     if (m_defaultFontId != 0) return m_defaultFontId;
 
-    const char* path = DefaultFontPath();
-    if (!path) return 0;
+    if (pixel_ttf == nullptr || pixel_ttf_len == 0) return 0;
 
     FontData fd{};
-    if (!LoadFontInternal(path, nullptr, 0, 32, nullptr, 0, fd)) return 0;
+    if (!LoadFontInternal(nullptr, pixel_ttf, static_cast<int>(pixel_ttf_len), 32, nullptr, 0, fd)) return 0;
 
     uint32_t id = m_nextFontId++;
     m_fonts[id]  = std::move(fd);
@@ -1416,58 +1121,37 @@ Vec2 QuarkGLRenderer::MeasureTextWithFontData(const FontData& fd, const char* te
 
 IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize,
                                 const int* codepoints, int codepointCount) {
-    if (filePath == nullptr) {
-        TraceLog(LogLevel::Info, "FONT", "[OpenGL] Loading default system font...");
-
+    if (!filePath) {
         IFont handle{};
-        handle.id = this->EnsureDefaultFont();
-
-        if (handle.id) TraceLog(LogLevel::Info, "FONT", TextFormat("[OpenGL] Default font loaded (Font ID: %u)", handle.id));
+        handle.id = m_font.EnsureDefaultFont();
         return handle;
     }
 
-    TraceLog(LogLevel::Trace, "FONT", TextFormat("[OpenGL] Loading font file: %s (size: %d pt, codepoints: %d)", filePath, fontSize, codepointCount));
-
-    FontData fd{};
-    if (!LoadFontInternal(filePath, nullptr, 0, fontSize, codepoints, codepointCount, fd)) {
-        TraceLog(LogLevel::Error, "FONT", TextFormat("[OpenGL] Failed to load font: %s", filePath));
+    qc::FontData fd{};
+    if (!m_font.LoadFontInternal(filePath, nullptr, 0, fontSize, codepoints, codepointCount, fd)) {
         return IFont{};
     }
 
-    uint32_t id = m_nextFontId++;
-    m_fonts[id] = std::move(fd);
-
+    const uint32_t id = m_font.AddFont(std::move(fd));
     IFont handle{};
     handle.id = id;
-
-    TraceLog(LogLevel::Info, "FONT", TextFormat("[OpenGL] Font loaded successfully: %s (BaseSize: %d, Atlas ID: %u, Font ID: %u)",
-        filePath, fd.baseSize, fd.atlasTexture, id));
     return handle;
 }
 
 IFont QuarkGLRenderer::LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int dataSize,
                                           int fontSize, const int* codepoints, int codepointCount) {
-    if (fileData == nullptr || dataSize <= 0) {
-        TraceLog(LogLevel::Error, "FONT", "[OpenGL] LoadFontFromMemory: invalid memory buffer");
+    if (!fileData || dataSize <= 0) {
         return IFont{};
     }
 
-    TraceLog(LogLevel::Trace, "FONT", TextFormat("[OpenGL] Loading font from memory (type: %s, size: %d pt, %d bytes)", fileType ? fileType : ".ttf", fontSize, dataSize));
-
-    FontData fd{};
-    if (!LoadFontInternal(nullptr, fileData, dataSize, fontSize, codepoints, codepointCount, fd)) {
-        TraceLog(LogLevel::Error, "FONT", "[OpenGL] Failed to load font from memory");
+    qc::FontData fd{};
+    if (!m_font.LoadFontInternal(fileType, fileData, dataSize, fontSize, codepoints, codepointCount, fd)) {
         return IFont{};
     }
 
-    uint32_t id = m_nextFontId++;
-    m_fonts[id] = std::move(fd);
-
+    const uint32_t id = m_font.AddFont(std::move(fd));
     IFont handle{};
     handle.id = id;
-
-    TraceLog(LogLevel::Info, "FONT", TextFormat("[OpenGL] Font loaded from memory (BaseSize: %d, Atlas ID: %u, Font ID: %u)",
-        fd.baseSize, fd.atlasTexture, id));
     return handle;
 }
 
@@ -1585,8 +1269,9 @@ int QuarkGLRenderer::MeasureText(const char* text, int fontSize) {
 }
 
 void QuarkGLRenderer::BeginShaderMode(const Shader& sh) {
-    if(sh.id) {
+    if (sh.id) {
         m_currentShader = sh.id;
+        m_batch.SetCurrentShader(sh.id);
         glUseProgram(sh.id);
     }
 }
@@ -1594,6 +1279,7 @@ void QuarkGLRenderer::BeginShaderMode(const Shader& sh) {
 void QuarkGLRenderer::EndShaderMode() {
     FlushBatch();
     m_currentShader = m_defaultShader;
+    m_batch.SetCurrentShader(m_defaultShader);
     glUseProgram(m_defaultShader);
 }
 
@@ -1931,10 +1617,12 @@ void QuarkGLRenderer::SetBlendMode(int mode) {
 void QuarkGLRenderer::BeginMode2D(const Camera2D& cam) {
     m_camera2D = cam;
     m_camera2DActive = true;
+    m_batch.SetCamera(cam, true);
 }
 
 void QuarkGLRenderer::EndMode2D() {
     m_camera2DActive = false;
+    m_batch.SetCamera(m_camera2D, false);
 }
 
 void QuarkGLRenderer::BeginMode3D(const Camera3D& camera) {
@@ -2427,40 +2115,12 @@ void QuarkGLRenderer::DrawPlane(Vec3 c,Vec2 size,Color color){
     FlushLines3D();
     FlushTriangles3D();
 
-    Mat4 t = ApplyCurrentMatrix(
-        Mat4::translation(
-            c.x,
-            c.y,
-            c.z
-        ) * Mat4::scale(
-            size.x,
-            1.0f,
-            size.y
-        )
-    );
+    const Mat4 transform = ApplyCurrentMatrix(
+        Mat4::translation(c.x, c.y, c.z) * Mat4::scale(size.x, 1.0f, size.y));
+    QuarkGL3D::ApplyDrawState(m_3d, transform, color, m_3d.whiteTexture);
 
-    if (m_3d.modelLoc >= 0)
-        glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, t.m);
-
-    if (m_3d.colorLoc >= 0)
-        glUniform4f(
-            m_3d.colorLoc,
-            color.r / 255.f,
-            color.g / 255.f,
-            color.b / 255.f,
-            color.a / 255.f
-        );
-
-    glBindTexture(GL_TEXTURE_2D, m_3d.whiteTexture);
     glBindVertexArray(m_3d.planeVAO);
-
-    glDrawElements(
-        GL_TRIANGLES,
-        m_3d.planeIndexCount,
-        GL_UNSIGNED_INT,
-        nullptr
-    );
-
+    glDrawElements(GL_TRIANGLES, m_3d.planeIndexCount, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
 }
 
@@ -2468,40 +2128,12 @@ void QuarkGLRenderer::DrawCube(Vec3 pos,float w,float h,float l,Color color){
     FlushLines3D();
     FlushTriangles3D();
 
-    Mat4 t = ApplyCurrentMatrix(
-        Mat4::translation(
-            pos.x,
-            pos.y,
-            pos.z
-        ) * Mat4::scale(
-            w,
-            h,
-            l
-        )
-    );
+    const Mat4 transform = ApplyCurrentMatrix(
+        Mat4::translation(pos.x, pos.y, pos.z) * Mat4::scale(w, h, l));
+    QuarkGL3D::ApplyDrawState(m_3d, transform, color, m_3d.whiteTexture);
 
-    if (m_3d.modelLoc >= 0)
-        glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, t.m);
-
-    if (m_3d.colorLoc >= 0)
-        glUniform4f(
-            m_3d.colorLoc,
-            color.r / 255.f,
-            color.g / 255.f,
-            color.b / 255.f,
-            color.a / 255.f
-        );
-
-    glBindTexture(GL_TEXTURE_2D, m_3d.whiteTexture);
     glBindVertexArray(m_3d.cubeVAO);
-
-    glDrawElements(
-        GL_TRIANGLES,
-        m_3d.cubeIndexCount,
-        GL_UNSIGNED_INT,
-        nullptr
-    );
-
+    glDrawElements(GL_TRIANGLES, m_3d.cubeIndexCount, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
 }
 
@@ -2550,40 +2182,12 @@ void QuarkGLRenderer::DrawSphere(Vec3 pos, float r, Color color) {
     FlushLines3D();
     FlushTriangles3D();
 
-    Mat4 t = ApplyCurrentMatrix(
-        Mat4::translation(
-            pos.x,
-            pos.y,
-            pos.z
-        ) * Mat4::scale(
-            r,
-            r,
-            r
-        )
-    );
+    const Mat4 transform = ApplyCurrentMatrix(
+        Mat4::translation(pos.x, pos.y, pos.z) * Mat4::scale(r, r, r));
+    QuarkGL3D::ApplyDrawState(m_3d, transform, color, m_3d.whiteTexture);
 
-    if (m_3d.modelLoc >= 0)
-        glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, t.m);
-
-    if (m_3d.colorLoc >= 0)
-        glUniform4f(
-            m_3d.colorLoc,
-            color.r / 255.f,
-            color.g / 255.f,
-            color.b / 255.f,
-            color.a / 255.f
-        );
-
-    glBindTexture(GL_TEXTURE_2D, m_3d.whiteTexture);
     glBindVertexArray(m_3d.sphereVAO);
-
-    glDrawElements(
-        GL_TRIANGLES,
-        m_3d.sphereIndexCount,
-        GL_UNSIGNED_INT,
-        0
-    );
-
+    glDrawElements(GL_TRIANGLES, m_3d.sphereIndexCount, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
 }
 
@@ -3173,9 +2777,7 @@ void QuarkGLRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
         glUseProgram(customShader->id);
         ApplyMaterialShaderUniforms(*customShader, transform, m_3d.viewMatrix, m_3d.projectionMatrix, WHITE, hasTexture);
     } else {
-        glUseProgram(m_3d.shader3D);
-        if (m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, transform.m);
-        if (m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+        QuarkGL3D::ApplyDrawState(m_3d, transform, WHITE, texId);
     }
 
     glActiveTexture(GL_TEXTURE0);
@@ -3302,6 +2904,24 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Col
         }
         glBindVertexArray(0);
     }
+}
+
+bool QuarkGLRenderer::UpdateTexture(const ITexture& texture, const void* pixels) {
+    if (!pixels || texture.id == 0) return false;
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture.width, texture.height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return true;
+}
+
+bool QuarkGLRenderer::UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pixels) {
+    if (!pixels || texture.id == 0) return false;
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(region.x), static_cast<GLint>(region.y),
+                    static_cast<GLsizei>(region.width), static_cast<GLsizei>(region.height),
+                    GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return true;
 }
 
 } // namespace qc

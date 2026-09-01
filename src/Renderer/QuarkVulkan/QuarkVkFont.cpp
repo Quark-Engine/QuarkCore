@@ -1,5 +1,6 @@
 ﻿#include "QuarkVkRenderer.hpp"
 #include "../DebugFont.h"
+#include "../DefaultFont.h"
 
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
@@ -17,29 +18,6 @@
 
 namespace qc {
 namespace {
-
-const char* FindDefaultFontPath() {
-#ifdef _WIN32
-    static constexpr const char* kCandidates[] = {
-        "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/segoeui.ttf",
-        "C:/Windows/Fonts/consola.ttf"
-    };
-#else
-    static constexpr const char* kCandidates[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
-    };
-#endif
-    for (const char* path : kCandidates) {
-        std::ifstream file(path);
-        if (file.good()) {
-            return path;
-        }
-    }
-    return nullptr;
-}
 
 std::vector<int> DefaultCodepoints() {
     std::vector<int> cps;
@@ -233,13 +211,12 @@ uint32_t QuarkVkRenderer::EnsureDefaultFont() {
         return m_defaultFontId;
     }
 
-    const char* path = FindDefaultFontPath();
-    if (!path) {
+    if (pixel_ttf == nullptr || pixel_ttf_len == 0) {
         return 0;
     }
 
     FontData fd{};
-    if (!LoadFontInternal(path, nullptr, 0, 32, nullptr, 0, fd)) {
+    if (!LoadFontInternal(nullptr, pixel_ttf, static_cast<int>(pixel_ttf_len), 32, nullptr, 0, fd)) {
         return 0;
     }
 

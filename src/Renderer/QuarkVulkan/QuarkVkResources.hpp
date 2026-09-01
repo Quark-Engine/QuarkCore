@@ -38,6 +38,9 @@ public:
     bool     Contains(uint32_t textureId) const { return m_textures.find(textureId) != m_textures.end(); }
     const VkTextureData* Get(uint32_t textureId) const;
     VkDescriptorSet      DescriptorSet(uint32_t textureId) const;
+    bool     UpdateTextureFromRGBA(uint32_t textureId, const unsigned char* rgba, uint32_t width, uint32_t height);
+    bool     UpdateTextureRegionRGBA(uint32_t textureId, const unsigned char* rgba,
+                                     uint32_t offsetX, uint32_t offsetY, uint32_t width, uint32_t height);
 
     uint32_t Import(VkTextureData tex);
     bool     TransitionImageLayout(VkImage image, VkFormat format,

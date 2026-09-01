@@ -122,6 +122,8 @@ public:
     virtual ITexture LoadTextureFromImage(const Image& image)                                            = 0;
     virtual ITexture GetRenderTextureTexture(IRenderTexture target)                                     = 0;
     virtual void UnloadTexture(ITexture& texture)                                                       = 0;
+    virtual bool UpdateTexture(const ITexture& texture, const void* pixels)                             = 0;
+    virtual bool UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pixels)    = 0;
     virtual IRenderTexture LoadRenderTexture(int width, int height)                                     = 0;
     virtual void UnloadRenderTexture(IRenderTexture target)                                             = 0;
     virtual ITexture GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB) = 0;

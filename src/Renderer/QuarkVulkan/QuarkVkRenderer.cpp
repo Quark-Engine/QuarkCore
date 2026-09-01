@@ -2074,4 +2074,20 @@ void QuarkVkRenderer::EnsureBatchTexture(VkDescriptorSet ds) {
     m_currentDescriptorSet = ds;
 }
 
+bool QuarkVkRenderer::UpdateTexture(const ITexture& texture, const void* pixels) {
+    if (!pixels || texture.id == 0) return false;
+    return m_vkResources.UpdateTextureFromRGBA(texture.id, static_cast<const unsigned char*>(pixels),
+                                               static_cast<uint32_t>(texture.width),
+                                               static_cast<uint32_t>(texture.height));
+}
+
+bool QuarkVkRenderer::UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pixels) {
+    if (!pixels || texture.id == 0) return false;
+    return m_vkResources.UpdateTextureRegionRGBA(texture.id, static_cast<const unsigned char*>(pixels),
+                                                 static_cast<uint32_t>(region.x),
+                                                 static_cast<uint32_t>(region.y),
+                                                 static_cast<uint32_t>(region.width),
+                                                 static_cast<uint32_t>(region.height));
+}
+
 } // namespace qc

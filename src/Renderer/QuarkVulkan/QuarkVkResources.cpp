@@ -551,4 +551,149 @@ bool QuarkVkResources::ReadImageToRGBA(VkImage image, VkFormat format, uint32_t 
     return true;
 }
 
+bool QuarkVkResources::UpdateTextureFromRGBA(uint32_t textureId, const unsigned char* rgba,
+                                             uint32_t width, uint32_t height) {
+    if (!rgba || width == 0 || height == 0 || m_device == VK_NULL_HANDLE || m_allocator == nullptr) {
+        TraceLog(LogLevel::Warn, "TEXTURE", "[Vulkan] Cannot update texture: invalid parameters");
+        return false;
+    }
+
+    const auto it = m_textures.find(textureId);
+    if (it == m_textures.end()) {
+        TraceLog(LogLevel::Warn, "TEXTURE", TextFormat("[Vulkan] Texture not found for update (ID: %u)", textureId));
+        return false;
+    }
+
+    VkTextureData& tex = it->second;
+    if (tex.width != static_cast<uint32_t>(width) || tex.height != static_cast<uint32_t>(height)) {
+        TraceLog(LogLevel::Warn, "TEXTURE", TextFormat("[Vulkan] Texture size mismatch: expected %ux%u, got %ux%u",
+            tex.width, tex.height, width, height));
+        return false;
+    }
+
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4u;
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+    if (!m_allocator->CreateBuffer(imageSize,
+                                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                   VMA_MEMORY_USAGE_AUTO,
+                                   stagingBuffer,
+                                   stagingAllocation,
+                                   VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                                   VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to allocate staging buffer for texture update");
+        return false;
+    }
+
+    void* mapped = nullptr;
+    if (vmaMapMemory(m_allocator->GetAllocator(), stagingAllocation, &mapped) != VK_SUCCESS) {
+        m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+        return false;
+    }
+    std::memcpy(mapped, rgba, static_cast<size_t>(imageSize));
+    vmaUnmapMemory(m_allocator->GetAllocator(), stagingAllocation);
+
+    if (!TransitionImageLayout(tex.image, VK_FORMAT_R8G8B8A8_UNORM,
+                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) ||
+        !CopyBufferToImage(stagingBuffer, tex.image, width, height) ||
+        !TransitionImageLayout(tex.image, VK_FORMAT_R8G8B8A8_UNORM,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to update texture");
+        m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+        return false;
+    }
+
+    m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Texture updated (ID: %u, %ux%u)", textureId, width, height));
+    return true;
+}
+
+bool QuarkVkResources::UpdateTextureRegionRGBA(uint32_t textureId, const unsigned char* rgba,
+                                               uint32_t offsetX, uint32_t offsetY,
+                                               uint32_t width, uint32_t height) {
+    if (!rgba || width == 0 || height == 0 || m_device == VK_NULL_HANDLE || m_allocator == nullptr) {
+        TraceLog(LogLevel::Warn, "TEXTURE", "[Vulkan] Cannot update texture region: invalid parameters");
+        return false;
+    }
+
+    const auto it = m_textures.find(textureId);
+    if (it == m_textures.end()) {
+        TraceLog(LogLevel::Warn, "TEXTURE", TextFormat("[Vulkan] Texture not found for region update (ID: %u)", textureId));
+        return false;
+    }
+
+    VkTextureData& tex = it->second;
+    if (offsetX + width > tex.width || offsetY + height > tex.height) {
+        TraceLog(LogLevel::Warn, "TEXTURE", TextFormat("[Vulkan] Region out of bounds: texture %ux%u, region (%u,%u) %ux%u",
+            tex.width, tex.height, offsetX, offsetY, width, height));
+        return false;
+    }
+
+    const VkDeviceSize regionSize = static_cast<VkDeviceSize>(width) * height * 4u;
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+    if (!m_allocator->CreateBuffer(regionSize,
+                                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                   VMA_MEMORY_USAGE_AUTO,
+                                   stagingBuffer,
+                                   stagingAllocation,
+                                   VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                                   VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to allocate staging buffer for texture region update");
+        return false;
+    }
+
+    void* mapped = nullptr;
+    if (vmaMapMemory(m_allocator->GetAllocator(), stagingAllocation, &mapped) != VK_SUCCESS) {
+        m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+        return false;
+    }
+    std::memcpy(mapped, rgba, static_cast<size_t>(regionSize));
+    vmaUnmapMemory(m_allocator->GetAllocator(), stagingAllocation);
+
+    VkCommandBuffer cmd = BeginSingleTimeCommands();
+    if (cmd == VK_NULL_HANDLE) {
+        m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+        return false;
+    }
+
+    if (!TransitionImageLayout(tex.image, VK_FORMAT_R8G8B8A8_UNORM,
+                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)) {
+        EndSingleTimeCommands(cmd);
+        m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+        return false;
+    }
+
+    VkBufferImageCopy region{};
+    region.bufferOffset                    = 0;
+    region.bufferRowLength                 = 0;
+    region.bufferImageHeight               = 0;
+    region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel       = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount     = 1;
+    region.imageOffset                     = { static_cast<int32_t>(offsetX), static_cast<int32_t>(offsetY), 0 };
+    region.imageExtent                     = { width, height, 1 };
+
+    vkCmdCopyBufferToImage(cmd, stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    EndSingleTimeCommands(cmd);
+
+    if (!TransitionImageLayout(tex.image, VK_FORMAT_R8G8B8A8_UNORM,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
+        m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+        return false;
+    }
+
+    m_allocator->DestroyBuffer(stagingBuffer, stagingAllocation);
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Texture region updated (ID: %u, offset (%u,%u) size %ux%u)",
+        textureId, offsetX, offsetY, width, height));
+    return true;
+}
+
 } // namespace qc

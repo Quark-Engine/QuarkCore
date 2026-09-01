@@ -231,5 +231,69 @@ bool D3D11Resources::ReadPixels(ID3D11DeviceContext *context, uint32_t id, void 
     return true;
 }
 
+bool D3D11Resources::UpdateTexture(ID3D11DeviceContext *context, uint32_t id, const uint8_t *pixels,
+                                   int width, int height) {
+    if (!context || !pixels || width <= 0 || height <= 0) return false;
+
+    const auto it = m_textures.find(id);
+    if (it == m_textures.end()) {
+        TraceLog(LogLevel::Warn, "TEXTURE", TextFormat("[D3D11] Texture not found for update (ID: %u)", id));
+        return false;
+    }
+
+    const TextureResource& resource = it->second;
+    if (!resource.texture) return false;
+
+    D3D11_TEXTURE2D_DESC desc{};
+    resource.texture->GetDesc(&desc);
+
+    if (static_cast<int>(desc.Width) != width || static_cast<int>(desc.Height) != height) {
+        TraceLog(LogLevel::Warn, "TEXTURE", TextFormat("[D3D11] Texture size mismatch: expected %ux%u, got %ux%u",
+            desc.Width, desc.Height, width, height));
+        return false;
+    }
+
+    const size_t rowBytes = static_cast<size_t>(width) * 4;
+    const D3D11_BOX box{ 0, 0, 0, static_cast<UINT>(width), static_cast<UINT>(height), 1 };
+
+    context->UpdateSubresource(resource.texture.Get(), 0, &box, pixels, static_cast<UINT>(rowBytes), 0);
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[D3D11] Texture updated (ID: %u, %ux%u)", id, width, height));
+    return true;
+}
+
+bool D3D11Resources::UpdateTextureRegion(ID3D11DeviceContext *context, uint32_t id, const uint8_t *pixels,
+                                         int offsetX, int offsetY, int width, int height) {
+    if (!context || !pixels || width <= 0 || height <= 0) return false;
+
+    const auto it = m_textures.find(id);
+    if (it == m_textures.end()) {
+        TraceLog(LogLevel::Warn, "TEXTURE", TextFormat("[D3D11] Texture not found for region update (ID: %u)", id));
+        return false;
+    }
+
+    const TextureResource& resource = it->second;
+    if (!resource.texture) return false;
+
+    D3D11_TEXTURE2D_DESC desc{};
+    resource.texture->GetDesc(&desc);
+
+    if (offsetX + width > static_cast<int>(desc.Width) || offsetY + height > static_cast<int>(desc.Height)) {
+        TraceLog(LogLevel::Warn, "TEXTURE", TextFormat("[D3D11] Region out of bounds: texture %ux%u, region (%d,%d) %ux%u",
+            desc.Width, desc.Height, offsetX, offsetY, width, height));
+        return false;
+    }
+
+    const size_t rowBytes = static_cast<size_t>(width) * 4;
+    const D3D11_BOX box{ 
+        static_cast<UINT>(offsetX), static_cast<UINT>(offsetY), 0,
+        static_cast<UINT>(offsetX + width), static_cast<UINT>(offsetY + height), 1 
+    };
+
+    context->UpdateSubresource(resource.texture.Get(), 0, &box, pixels, static_cast<UINT>(rowBytes), 0);
+    TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[D3D11] Texture region updated (ID: %u, offset (%d,%d) size %ux%u)",
+        id, offsetX, offsetY, width, height));
+    return true;
+}
+
 } // namespace qc
 #endif

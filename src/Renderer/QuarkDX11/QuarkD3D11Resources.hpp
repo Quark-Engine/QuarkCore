@@ -20,6 +20,10 @@ public:
     ID3D11Buffer *VertexBuffer3D() const { return m_vertexBuffer3D.Get(); }
     ITexture CreateTexture(ID3D11Device *device, const uint8_t *pixels, int width, int height);
     IRenderTexture CreateRenderTexture(ID3D11Device *device, int width, int height);
+    bool UpdateTexture(ID3D11DeviceContext *context, uint32_t id, const uint8_t *pixels,
+                       int width, int height);
+    bool UpdateTextureRegion(ID3D11DeviceContext *context, uint32_t id, const uint8_t *pixels,
+                             int offsetX, int offsetY, int width, int height);
     ID3D11ShaderResourceView *ShaderResource(uint32_t id) const;
     ID3D11RenderTargetView *RenderTarget(uint32_t id) const;
     ID3D11DepthStencilView *DepthStencil(uint32_t id) const;

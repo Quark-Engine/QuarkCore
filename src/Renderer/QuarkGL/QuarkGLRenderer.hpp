@@ -43,6 +43,12 @@
 #include "../QuarkFont.hpp"
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkCore/Quark3D.hpp"
+#include "QuarkGLDevice.hpp"
+#include "QuarkGLBatch.hpp"
+#include "QuarkGLShader.hpp"
+#include "QuarkGLTexture.hpp"
+#include "QuarkGLFont.hpp"
+#include "QuarkGL3D.hpp"
 
 #include <glad/glad.h>
 #include <array>
@@ -111,6 +117,8 @@ public:
     ITexture       LoadTextureFromImage(const Image& image) override;
     ITexture       GetRenderTextureTexture(IRenderTexture target) override;
     void           UnloadTexture(ITexture& texture) override;
+    bool           UpdateTexture(const ITexture& texture, const void* pixels) override;
+    bool           UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pixels) override;
     bool           isTextureValid(ITexture& texture) override;
     IRenderTexture LoadRenderTexture(int width, int height) override;
     void           UnloadRenderTexture(IRenderTexture target) override;
@@ -205,12 +213,6 @@ private:
         float x, y, u, v, r, g, b, a;
     };
 
-    struct Vertex3D {
-        Vec3 position;
-        Vec3 normal;
-        Vec2 texCoord;
-    };
-
     struct GlyphData {
         int       value   = 0;
         Rectangle uv{};
@@ -239,30 +241,6 @@ private:
     struct CachedTexture {
         ITexture texture{};
         int      references = 0;
-    };
-
-    struct Model3DState {
-        bool   initialized    = false;
-        GLuint shader3D       = 0;
-        GLint  modelLoc       = -1, viewLoc    = -1, projLoc = -1;
-        GLint  samplerLoc     = -1, lightPosLoc = -1, colorLoc = -1;
-        GLuint whiteTexture      = 0;
-        GLuint blackTexture      = 0;
-        GLuint flatNormalTexture = 0;
-
-        GLuint planeVAO  = 0, planeVBO  = 0, planeEBO  = 0; int planeIndexCount  = 0;
-        GLuint cubeVAO   = 0, cubeVBO   = 0, cubeEBO   = 0; int cubeIndexCount   = 0;
-        GLuint sphereVAO = 0, sphereVBO = 0, sphereEBO = 0; int sphereIndexCount = 0;
-
-        GLuint lineVAO = 0, lineVBO = 0;
-        GLuint triVAO  = 0, triVBO  = 0;
-        std::vector<Vertex3D> lineVertices;
-        std::vector<Vertex3D> triVertices;
-        Color currentLineColor{ 255,255,255,255 };
-        Color currentTriColor { 255,255,255,255 };
-        Vec3  lightPosition{ 5.f, 5.f, 5.f };
-        Mat4  viewMatrix       = Mat4::identity();
-        Mat4  projectionMatrix = Mat4::identity();
     };
 
     void   InitGL();
@@ -329,6 +307,12 @@ private:
     std::vector<Mat4> m_matrixStack;
 
     Model3DState m_3d;
+
+    QuarkGLDevice m_device;
+    QuarkGLBatch m_batch;
+    QuarkGLTexture m_texture;
+    QuarkGLShader m_shader;
+    QuarkGLFont m_font;
 
     std::unordered_map<uint32_t, FontData> m_fonts;
     std::unordered_map<int, IFont> m_debugFonts;

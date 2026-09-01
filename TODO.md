@@ -10,11 +10,11 @@
 
 ### In Progress
 
-- [ ] Audio API
 - [ ] Full compatibility with Raylib
 
 ### Done ✓
 
+- [x] Audio API
 - [x] Image API
 - [x] Improve light compatibility API
 - [x] OpenGL Backend
