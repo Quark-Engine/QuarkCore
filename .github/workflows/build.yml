@@ -54,6 +54,7 @@ jobs:
           cmake \
           ninja-build \
           gnome-desktop-testing \
+          zlib1g-dev \
           libasound2-dev \
           libpulse-dev \
           libaudio-dev \
@@ -128,7 +129,8 @@ jobs:
             vulkan-headers \
             vulkan-loader \
             shaderc \
-            spirv-cross
+            spirv-cross \
+            zlib
 
       - name: Configure CMake
         run: |
@@ -137,8 +139,8 @@ jobs:
           -DQC_BUILD_EXAMPLES=ON \
           -DASSIMP_BUILD_ZLIB=OFF \
           -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-          -DCMAKE_LIBRARY_PATH="/opt/homebrew/lib" \
-          -DCMAKE_INCLUDE_PATH="/opt/homebrew/include" \
+          -DCMAKE_LIBRARY_PATH="/opt/homebrew/lib;/opt/homebrew/opt/zlib/lib" \
+          -DCMAKE_INCLUDE_PATH="/opt/homebrew/include;/opt/homebrew/opt/zlib/include" \
           -G Ninja
 
       - name: Build

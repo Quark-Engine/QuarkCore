@@ -3,6 +3,8 @@
 #include "QuarkInternal.hpp"
 #include "Renderer/QuarkIRenderer.hpp"
 
+#include <cstring>
+
 namespace qc {
 
 extern IRenderer* gRendererPtr;

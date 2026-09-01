@@ -233,34 +233,38 @@ else()
     )
 endif()
 
-set(ZLIB_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
-add_library(ZLIB::ZLIB STATIC IMPORTED GLOBAL)
-target_include_directories(ZLIB::ZLIB INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+find_package(ZLIB QUIET)
 
-if(MSVC)
-    set_target_properties(ZLIB::ZLIB PROPERTIES
-        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
-        IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.lib"
-        IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.lib"
-        MAP_IMPORTED_CONFIG_MINSIZEREL Release
-        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
-    )
-elseif(WIN32)
-    set_target_properties(ZLIB::ZLIB PROPERTIES
-        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
-        IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.a"
-        IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.a"
-        MAP_IMPORTED_CONFIG_MINSIZEREL Release
-        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
-    )
-else()
-    set_target_properties(ZLIB::ZLIB PROPERTIES
-        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
-        IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/libzlibstaticd.a"
-        IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/libzlibstatic.a"
-        MAP_IMPORTED_CONFIG_MINSIZEREL Release
-        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
-    )
+if(NOT TARGET ZLIB::ZLIB)
+    set(ZLIB_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
+    add_library(ZLIB::ZLIB STATIC IMPORTED GLOBAL)
+    target_include_directories(ZLIB::ZLIB INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+    if(MSVC)
+        set_target_properties(ZLIB::ZLIB PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.lib"
+            IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.lib"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    elseif(WIN32)
+        set_target_properties(ZLIB::ZLIB PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.a"
+            IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.a"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    else()
+        set_target_properties(ZLIB::ZLIB PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/libzlibstaticd.a"
+            IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/libzlibstatic.a"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    endif()
 endif()
 
 set(ASSIMP_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
