@@ -761,23 +761,14 @@ if(QC_BUILD_EXAMPLES)
             $<IF:$<CONFIG:Debug>,${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll,${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.dll>
             $<IF:$<CONFIG:Debug>,${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll,${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.dll>
             $<IF:$<CONFIG:Debug>,${OPENAL_EXTERNAL_DIR}/lib/debug/OpenAL32.dll,${OPENAL_EXTERNAL_DIR}/lib/release/OpenAL32.dll>
-            "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools.dll"
-            "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Toolsd.dll"
-            "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-opt.dll"
-            "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-optd.dll"
+            $<IF:$<CONFIG:Debug>,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Toolsd.dll,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools.dll>
+            $<IF:$<CONFIG:Debug>,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-optd.dll,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-opt.dll>
             "${VULKAN_RUNTIME_DLL}"
         )
-
         add_custom_command(TARGET QuarkCore POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${_RUNTIME_DLLS}
                 $<TARGET_FILE_DIR:QuarkCore>
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-optd.dll"
-                "$<TARGET_FILE_DIR:QuarkCore>/SPIRV-Tools-opt.dll"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Toolsd.dll"
-                "$<TARGET_FILE_DIR:QuarkCore>/SPIRV-Tools.dll"
             COMMENT "Copying DLLs next to QuarkCore..."
         )
 
