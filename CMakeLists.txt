@@ -671,11 +671,68 @@ endfunction()
 
 qc_configure_backend_target(QuarkCore-OpenGL OPENGL)
 qc_configure_backend_target(QuarkCore-Vulkan VULKAN)
+
+add_library(QuarkCore-Combined STATIC
+    src/QuarkCore.cpp
+    src/Renderer/QuarkGL/QuarkGLRenderer.cpp
+    src/Renderer/QuarkGL/QuarkGLDevice.cpp
+    src/Renderer/QuarkGL/QuarkGLBatch.cpp
+    src/Renderer/QuarkGL/QuarkGLShader.cpp
+    src/Renderer/QuarkGL/QuarkGLTexture.cpp
+    src/Renderer/QuarkGL/QuarkGLFont.cpp
+    src/Renderer/QuarkGL/QuarkGL3D.cpp
+    src/Renderer/QuarkVulkan/QuarkVkDescriptorSetManager.cpp
+    src/Renderer/QuarkVulkan/QuarkVkDevice.cpp
+    src/Renderer/QuarkVulkan/QuarkVkPipeline.cpp
+    src/Renderer/QuarkVulkan/QuarkVkRenderTarget.cpp
+    src/Renderer/QuarkVulkan/QuarkVkSwapChain.cpp
+    src/Renderer/QuarkVulkan/QuarkVkResources.cpp
+    src/Renderer/QuarkVulkan/QuarkVkCommandContext.cpp
+    src/Renderer/QuarkVulkan/QuarkVkShaderCompiler.cpp
+    src/Renderer/QuarkVulkan/QuarkVkRenderPass.cpp
+    src/Renderer/QuarkVulkan/QuarkVkFrameManager.cpp
+    src/Renderer/QuarkVulkan/QuarkVkFramebufferManager.cpp
+    src/Renderer/QuarkVulkan/QuarkVkRenderer.cpp
+    src/Renderer/QuarkVulkan/QuarkVkDraw2D.cpp
+    src/Renderer/QuarkVulkan/QuarkVkDraw3D.cpp
+    src/Renderer/QuarkVulkan/QuarkVkShader.cpp
+    src/Renderer/QuarkVulkan/QuarkVkTexture.cpp
+    src/Renderer/QuarkVulkan/QuarkVkModel.cpp
+    src/Renderer/QuarkVulkan/QuarkVkFont.cpp
+    src/Renderer/QuarkVulkan/QuarkVkGpuAllocator.cpp
+)
+if(WIN32)
+    target_sources(QuarkCore-Combined PRIVATE
+        src/Renderer/QuarkDX11/QuarkD3D11Renderer.cpp
+        src/Renderer/QuarkDX11/QuarkD3D11Device.cpp
+        src/Renderer/QuarkDX11/QuarkD3D11SwapChain.cpp
+        src/Renderer/QuarkDX11/QuarkD3D11Resources.cpp
+        src/Renderer/QuarkDX11/QuarkD3D11Pipeline.cpp
+        src/Renderer/QuarkDX11/QuarkD3D11CommandContext.cpp
+        src/Renderer/QuarkDX11/QuarkD3D11ShaderCompiler.cpp
+    )
+endif()
+target_link_libraries(QuarkCore-Combined PUBLIC QuarkCore glad Vulkan::Vulkan shaderc_combined spirv-cross-glsl)
+target_compile_definitions(QuarkCore-Combined PRIVATE
+    QUARKCORE_BUILD_DLL
+    NOMINMAX
+    QC_ENABLE_OPENGL
+    QC_ENABLE_VULKAN
+)
+target_compile_definitions(QuarkCore-Combined INTERFACE QC_ENABLE_OPENGL QC_ENABLE_VULKAN)
+if(WIN32)
+    target_compile_definitions(QuarkCore-Combined PRIVATE QC_ENABLE_D3D11)
+    target_compile_definitions(QuarkCore-Combined INTERFACE QC_ENABLE_D3D11)
+    target_link_libraries(QuarkCore-Combined PUBLIC d3d11 dxgi d3dcompiler dxguid)
+endif()
+set_target_properties(QuarkCore-OpenGL PROPERTIES OUTPUT_NAME QuarkCore-OpenGL)
+
 if(WIN32)
     qc_configure_backend_target(QuarkCore-D3D11 D3D11)
 endif()
 add_library(QuarkCore::OpenGL ALIAS QuarkCore-OpenGL)
 add_library(QuarkCore::Vulkan ALIAS QuarkCore-Vulkan)
+add_library(QuarkCore::Combined ALIAS QuarkCore-Combined)
 if(WIN32)
     add_library(QuarkCore::D3D11 ALIAS QuarkCore-D3D11)
 endif()

@@ -33,7 +33,9 @@
 #define __QUARK_CORE__
 
 #if defined(_WIN32)
-    #if defined(QUARKCORE_BUILD_DLL)
+    #if defined(QUARKCORE_STATIC)
+        #define QCAPI
+    #elif defined(QUARKCORE_BUILD_DLL)
         #define QCAPI __declspec(dllexport)
     #else
         #define QCAPI __declspec(dllimport)
@@ -50,6 +52,7 @@
 #if defined(QC_ENABLE_D3D11)
 struct ID3D11Device;
 struct ID3D11DeviceContext;
+struct ID3D11ShaderResourceView;
 #endif
 
 namespace qc {
@@ -951,6 +954,7 @@ QCAPI ID3D11Device *GetD3D11Device();
  * @return D3D11 immediate context, or nullptr if unavailable.
  */
 QCAPI ID3D11DeviceContext *GetD3D11ImmediateContext();
+QCAPI ID3D11ShaderResourceView *GetD3D11TextureShaderResourceView(uint32_t textureId);
 
 using D3D11RenderCallback = void(*)(ID3D11DeviceContext *deviceContext);
 /**

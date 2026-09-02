@@ -221,6 +221,9 @@ public:
     int GetScreenHeight() const override { return m_height; }
     ID3D11Device *GetD3D11Device() const { return m_device.Get(); }
     ID3D11DeviceContext *GetD3D11ImmediateContext() const { return m_device.Context(); }
+    ID3D11ShaderResourceView *GetD3D11TextureShaderResourceView(uint32_t textureId) const {
+        return m_resources.ShaderResource(textureId);
+    }
 
 private:
       struct GlyphData {

@@ -252,6 +252,9 @@ void QuarkD3D11Renderer::Init(SDL_Window *window, int width, int height)
 
 void QuarkD3D11Renderer::Shutdown()
 {
+    if (m_window == nullptr)
+        return;
+
     TraceLog(LogLevel::Info, "D3D11", "Shutting down D3D11 renderer...");
 
     m_currentShaderId = 0;

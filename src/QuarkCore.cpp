@@ -719,6 +719,13 @@ ID3D11DeviceContext* GetD3D11ImmediateContext() {
     return nullptr;
 }
 
+ID3D11ShaderResourceView* GetD3D11TextureShaderResourceView(uint32_t textureId) {
+    if (QuarkD3D11Renderer* renderer = GetD3D11Renderer()) {
+        return renderer->GetD3D11TextureShaderResourceView(textureId);
+    }
+    return nullptr;
+}
+
 static D3D11RenderCallback gD3D11RenderCallback = nullptr;
 
 void SetD3D11RenderCallback(D3D11RenderCallback callback) {
