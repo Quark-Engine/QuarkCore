@@ -2547,6 +2547,8 @@ void  QuarkGLRenderer::UnloadModel(Model& model) {
         delete[] mesh.boneWeights;
         delete[] mesh.animVertices;
         delete[] mesh.animNormals;
+        delete[] mesh.bindVertices;
+        delete[] mesh.bindNormals;
         mesh = {};
     }
 

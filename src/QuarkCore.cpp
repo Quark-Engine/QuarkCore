@@ -4980,6 +4980,8 @@ static void FreeMeshCpuData(Mesh& mesh) {
     delete[] mesh.boneWeights; mesh.boneWeights = nullptr;
     delete[] mesh.animVertices; mesh.animVertices = nullptr;
     delete[] mesh.animNormals; mesh.animNormals = nullptr;
+    delete[] mesh.bindVertices; mesh.bindVertices = nullptr;
+    delete[] mesh.bindNormals; mesh.bindNormals = nullptr;
 }
 
 static Vec3 CalculateTriangleTangent(const Vec3& p0, const Vec3& p1, const Vec3& p2,
@@ -6780,6 +6782,14 @@ void ApplySkinningToMesh(Model& model, Mesh& mesh) {
     if (mesh.animNormals == nullptr) {
         mesh.animNormals = new float[static_cast<size_t>(mesh.vertexCount) * 3u];
     }
+    if (mesh.bindVertices == nullptr) {
+        mesh.bindVertices = new float[static_cast<size_t>(mesh.vertexCount) * 3u];
+        std::copy(mesh.vertices, mesh.vertices + mesh.vertexCount * 3, mesh.bindVertices);
+    }
+    if (mesh.normals != nullptr && mesh.bindNormals == nullptr) {
+        mesh.bindNormals = new float[static_cast<size_t>(mesh.vertexCount) * 3u];
+        std::copy(mesh.normals, mesh.normals + mesh.vertexCount * 3, mesh.bindNormals);
+    }
 
     for (int v = 0; v < mesh.vertexCount; ++v) {
         const int base = v * 3;
@@ -6796,9 +6806,9 @@ void ApplySkinningToMesh(Model& model, Mesh& mesh) {
 
             const Mat4 boneMatrix = model.boneMatrices[static_cast<size_t>(boneIndex)];
             const Vec4 localPos{
-                mesh.vertices[base + 0],
-                mesh.vertices[base + 1],
-                mesh.vertices[base + 2],
+                mesh.bindVertices[base + 0],
+                mesh.bindVertices[base + 1],
+                mesh.bindVertices[base + 2],
                 1.0f
             };
             const Vec4 worldPos = boneMatrix * localPos;
@@ -6807,9 +6817,9 @@ void ApplySkinningToMesh(Model& model, Mesh& mesh) {
             Vec3 localNormal{0.0f, 0.0f, 0.0f};
             if (mesh.normals != nullptr) {
                 localNormal = Vec3{
-                    mesh.normals[base + 0],
-                    mesh.normals[base + 1],
-                    mesh.normals[base + 2]
+                    mesh.bindNormals[base + 0],
+                    mesh.bindNormals[base + 1],
+                    mesh.bindNormals[base + 2]
                 };
             } else {
                 localNormal = Vec3{0.0f, 1.0f, 0.0f};
@@ -6829,9 +6839,9 @@ void ApplySkinningToMesh(Model& model, Mesh& mesh) {
                 normal = normal * (1.0f / length);
             }
         } else {
-            pos = Vec3{mesh.vertices[base + 0], mesh.vertices[base + 1], mesh.vertices[base + 2]};
+            pos = Vec3{mesh.bindVertices[base + 0], mesh.bindVertices[base + 1], mesh.bindVertices[base + 2]};
             if (mesh.normals != nullptr) {
-                normal = Vec3{mesh.normals[base + 0], mesh.normals[base + 1], mesh.normals[base + 2]};
+                normal = Vec3{mesh.bindNormals[base + 0], mesh.bindNormals[base + 1], mesh.bindNormals[base + 2]};
             } else {
                 normal = Vec3{0.0f, 1.0f, 0.0f};
             }
@@ -7118,7 +7128,11 @@ static int WrapFrameIndex(float frame, int keyframeCount) {
 static void ApplySkinningToAllMeshes(Model& model) {
     if (model.meshes == nullptr) return;
     for (int meshIndex = 0; meshIndex < model.meshCount; ++meshIndex) {
-        ApplySkinningToMesh(model, model.meshes[meshIndex]);
+        Mesh& mesh = model.meshes[meshIndex];
+        ApplySkinningToMesh(model, mesh);
+        if (mesh.vaoId != 0)
+            UpdateMeshBuffer(mesh, 0, mesh.vertices,
+                mesh.vertexCount * 3 * static_cast<int>(sizeof(float)), 0);
     }
 }
 
