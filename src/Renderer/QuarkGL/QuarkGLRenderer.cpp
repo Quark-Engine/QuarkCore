@@ -2843,7 +2843,10 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
 
         if (customShader) {
             glUseProgram(customShader->id);
-            ApplyMaterialShaderUniforms(*customShader, final, m_3d.viewMatrix, m_3d.projectionMatrix, WHITE, hasTexture);
+            const Color materialColor = material && material->maps
+                ? material->maps[MATERIAL_MAP_ALBEDO].color : WHITE;
+            ApplyMaterialShaderUniforms(*customShader, final, m_3d.viewMatrix, m_3d.projectionMatrix,
+                materialColor, hasTexture);
         } else {
             glUseProgram(m_3d.shader3D);
             if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
@@ -2889,7 +2892,15 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Col
 
         if (customShader) {
             glUseProgram(customShader->id);
-            ApplyMaterialShaderUniforms(*customShader, final, m_3d.viewMatrix, m_3d.projectionMatrix, tint, hasTexture);
+            const Color materialColor = material && material->maps
+                ? material->maps[MATERIAL_MAP_ALBEDO].color : WHITE;
+            const Color combinedColor{
+                static_cast<unsigned char>(materialColor.r * tint.r / 255),
+                static_cast<unsigned char>(materialColor.g * tint.g / 255),
+                static_cast<unsigned char>(materialColor.b * tint.b / 255),
+                static_cast<unsigned char>(materialColor.a * tint.a / 255)};
+            ApplyMaterialShaderUniforms(*customShader, final, m_3d.viewMatrix, m_3d.projectionMatrix,
+                combinedColor, hasTexture);
         } else {
             glUseProgram(m_3d.shader3D);
             if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
