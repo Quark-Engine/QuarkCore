@@ -1217,8 +1217,13 @@ void QuarkGLRenderer::DrawDebugText(const char* text, int x, int y, int fontSize
     static std::unordered_map<int, IFont> s_debugFonts;
     auto it = s_debugFonts.find(fontSize);
     if (it == s_debugFonts.end()) {
-        IFont font = LoadFontFromMemory("ttf", tahoma_ttf, static_cast<int>(tahoma_ttf_len), fontSize, nullptr, 0);
-        if (!font.IsValid()) return;
+        FontData fontData{};
+        if (!LoadFontInternal(nullptr, tahoma_ttf, static_cast<int>(tahoma_ttf_len), fontSize,
+                              nullptr, 0, fontData)) return;
+
+        IFont font{};
+        font.id = m_nextFontId++;
+        m_fonts[font.id] = std::move(fontData);
         it = s_debugFonts.emplace(fontSize, font).first;
     }
 
