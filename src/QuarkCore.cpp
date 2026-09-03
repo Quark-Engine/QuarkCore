@@ -2299,6 +2299,13 @@ float GetMouseWheelMove() {
 }
 
 Vec2 GetMouseDelta() {
+    if (gWin.window && SDL_GetWindowRelativeMouseMode(gWin.window)) {
+        float deltaX = 0.0f;
+        float deltaY = 0.0f;
+        SDL_GetRelativeMouseState(&deltaX, &deltaY);
+        return Vec2{ deltaX * gMouseScale.x, deltaY * gMouseScale.y };
+    }
+
     Vec2 delta{ gWin.mousePosition.x - gMousePreviousPosition.x,
                 gWin.mousePosition.y - gMousePreviousPosition.y };
     gMousePreviousPosition = gWin.mousePosition;
