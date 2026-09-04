@@ -181,7 +181,7 @@ else()
         find_library(SPIRV_CROSS_GLSL_LIB NAMES ${SPIRV_CROSS_GLSL_NAMES})
         find_library(SPIRV_CROSS_CORE_LIB NAMES ${SPIRV_CROSS_CORE_NAMES})
     elseif(APPLE)
-        set(SHADERC_NAMES shaderc_combined shaderc)
+        set(SHADERC_NAMES shaderc_shared shaderc_combined shaderc)
     else()
         set(SHADERC_NAMES shaderc shaderc_combined)
     endif()
@@ -712,7 +712,24 @@ if(WIN32)
         src/Renderer/QuarkDX11/QuarkD3D11ShaderCompiler.cpp
     )
 endif()
-target_link_libraries(QuarkCore-Combined PUBLIC QuarkCore glad Vulkan::Vulkan shaderc_combined spirv-cross-glsl)
+if(WIN32)
+    target_link_libraries(QuarkCore-Combined PUBLIC
+        QuarkCore
+        glad
+        Vulkan::Vulkan
+        shaderc_combined
+        spirv-cross-glsl
+    )
+else()
+    target_link_libraries(QuarkCore-Combined PUBLIC
+        QuarkCore
+        glad
+        Vulkan::Vulkan
+        ${SHADERC_LIB}
+        ${SPIRV_CROSS_GLSL_LIB}
+        ${SPIRV_CROSS_CORE_LIB}
+    )
+endif()
 target_compile_definitions(QuarkCore-Combined PRIVATE
     QUARKCORE_BUILD_DLL
     NOMINMAX
