@@ -3,6 +3,7 @@
 #include "../DefaultFont.h"
 #include "../../QuarkInternal.hpp"
 #include "../../QuarkModelAnim.hpp"
+#include "QuarkCore/QuarkImage.hpp"
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -2400,11 +2401,57 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
             if (mat.maps[mapIndex].texture.valid) continue;
             if (AI_SUCCESS != material->GetTexture(textureType, 0, &path)) continue;
 
-            std::string texturePath = materialDirectory + path.C_Str();
+            const std::string textureReference = path.C_Str();
+            ITexture loadedTex{};
+            std::string texturePath = materialDirectory + textureReference;
+            if (!textureReference.empty() && textureReference[0] == '*') {
+                unsigned long embeddedIndex = 0;
+                try {
+                    embeddedIndex = std::stoul(textureReference.substr(1));
+                } catch (const std::exception&) {
+                    embeddedIndex = scene->mNumTextures;
+                }
+
+                if (embeddedIndex < scene->mNumTextures && scene->mTextures[embeddedIndex]) {
+                    const aiTexture* embeddedTexture = scene->mTextures[embeddedIndex];
+                    Image image{};
+                    std::vector<unsigned char> rawPixels;
+
+                    if (embeddedTexture->mHeight == 0) {
+                        std::string fileType = embeddedTexture->achFormatHint;
+                        if (!fileType.empty() && fileType.front() != '.') fileType.insert(fileType.begin(), '.');
+                        image = LoadImageFromMemory(
+                            fileType.empty() ? ".bin" : fileType.c_str(),
+                            reinterpret_cast<const unsigned char*>(embeddedTexture->pcData),
+                            static_cast<int>(embeddedTexture->mWidth));
+                    } else {
+                        const size_t pixelCount = static_cast<size_t>(embeddedTexture->mWidth) * embeddedTexture->mHeight;
+                        rawPixels.resize(pixelCount * 4u);
+                        for (size_t pixelIndex = 0; pixelIndex < pixelCount; ++pixelIndex) {
+                            const aiTexel& source = embeddedTexture->pcData[pixelIndex];
+                            rawPixels[pixelIndex * 4u + 0] = source.r;
+                            rawPixels[pixelIndex * 4u + 1] = source.g;
+                            rawPixels[pixelIndex * 4u + 2] = source.b;
+                            rawPixels[pixelIndex * 4u + 3] = source.a;
+                        }
+                        image.data = rawPixels.data();
+                        image.width = static_cast<int>(embeddedTexture->mWidth);
+                        image.height = static_cast<int>(embeddedTexture->mHeight);
+                        image.mipmaps = 1;
+                        image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+                    }
+
+                    if (IsImageValid(image)) loadedTex = this->LoadTextureFromImage(image);
+                    if (embeddedTexture->mHeight == 0) UnloadImage(image);
+                    texturePath = std::string("embedded ") + textureReference;
+                }
+            } else {
+                loadedTex = this->LoadTexture(texturePath.c_str());
+            }
+
             TraceLog(LogLevel::Trace, "MODEL",
                      TextFormat("[OpenGL] Model material #%u loading map %d texture: %s",
                                 i, mapIndex, texturePath.c_str()));
-            ITexture loadedTex = this->LoadTexture(texturePath.c_str());
             mat.maps[mapIndex].texture.id = loadedTex.id;
             mat.maps[mapIndex].texture.width = loadedTex.width;
             mat.maps[mapIndex].texture.height = loadedTex.height;
