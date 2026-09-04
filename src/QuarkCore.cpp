@@ -4920,7 +4920,7 @@ Model LoadModel(const char* filePath) {
     return gRenderer.LoadModel(filePath);
 }
 
-void UnloadModel(Model model) {
+void UnloadModel(Model& model) {
     gRenderer.UnloadModel(model);
 }
 

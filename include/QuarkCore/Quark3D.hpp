@@ -250,7 +250,7 @@ QCAPI void SetModelMeshMaterial(Model* model, int meshId, int materialId);
  *
  * @param model Model to unload.
  */
-QCAPI void UnloadModel(Model model);
+QCAPI void UnloadModel(Model& model);
 
 /**
  * @brief Load model animations from file (release with UnloadModelAnimations).

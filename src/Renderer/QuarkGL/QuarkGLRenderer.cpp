@@ -2338,7 +2338,14 @@ void QuarkGLRenderer::DrawGrid(int slices,float spacing,Color color) {
 Model QuarkGLRenderer::LoadModel(const char* filePath) {
     TraceLog(LogLevel::Info, "MODEL", TextFormat("[OpenGL] Loading 3D model: %s", filePath ? filePath : "<null>"));
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(filePath, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs);
+    const aiScene* scene = nullptr;
+    try {
+        scene = importer.ReadFile(filePath, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs);
+    } catch (const std::exception& error) {
+        TraceLog(LogLevel::Error, "MODEL", TextFormat("[OpenGL] Exception while loading model %s: %s",
+            filePath ? filePath : "<null>", error.what()));
+        return Model{};
+    }
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
         TraceLog(LogLevel::Error, "MODEL", TextFormat("[OpenGL] Failed to load model %s: %s", filePath ? filePath : "<null>", importer.GetErrorString()));
