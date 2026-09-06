@@ -1835,12 +1835,99 @@ void QuarkD3D11Renderer::UnloadMesh(Mesh& mesh)
     mesh.eboId = 0;
 }
 
+static void ensure_mesh_tangents(Mesh& mesh) {
+    if (!mesh.vertices || mesh.vertexCount <= 0) return;
+    if (!mesh.tangents)
+        mesh.tangents = new float[static_cast<size_t>(mesh.vertexCount) * 3u];
+
+    for (int i = 0; i < mesh.vertexCount * 3; ++i) mesh.tangents[i] = 0.0f;
+
+    const bool indexed = mesh.indices && mesh.triangleCount > 0;
+    const int triangleCount = mesh.triangleCount > 0
+        ? mesh.triangleCount
+        : static_cast<int>(mesh.vertexCount / 3);
+
+    for (int t = 0; t < triangleCount; ++t) {
+        const int ia = indexed ? mesh.indices[t * 3 + 0] : t * 3 + 0;
+        const int ib = indexed ? mesh.indices[t * 3 + 1] : t * 3 + 1;
+        const int ic = indexed ? mesh.indices[t * 3 + 2] : t * 3 + 2;
+        if (ia < 0 || ib < 0 || ic < 0 ||
+            ia >= mesh.vertexCount || ib >= mesh.vertexCount || ic >= mesh.vertexCount)
+            continue;
+
+        const float* v0 = mesh.vertices + ia * 3;
+        const float* v1 = mesh.vertices + ib * 3;
+        const float* v2 = mesh.vertices + ic * 3;
+
+        const float e1x = v1[0] - v0[0], e1y = v1[1] - v0[1], e1z = v1[2] - v0[2];
+        const float e2x = v2[0] - v0[0], e2y = v2[1] - v0[1], e2z = v2[2] - v0[2];
+
+        float tx = 0.0f, ty = 0.0f, tz = 0.0f;
+        if (mesh.texcoords) {
+            const float u0 = mesh.texcoords[ia * 2 + 0];
+            const float vt0 = mesh.texcoords[ia * 2 + 1];
+            const float u1 = mesh.texcoords[ib * 2 + 0];
+            const float vt1 = mesh.texcoords[ib * 2 + 1];
+            const float u2 = mesh.texcoords[ic * 2 + 0];
+            const float vt2 = mesh.texcoords[ic * 2 + 1];
+
+            const float du1 = u1 - u0, dv1 = vt1 - vt0;
+            const float du2 = u2 - u0, dv2 = vt2 - vt0;
+            const float determinant = du1 * dv2 - du2 * dv1;
+            if (fabsf(determinant) > 1e-8f) {
+                const float r = 1.0f / determinant;
+                tx = (e1x * dv2 - e2x * dv1) * r;
+                ty = (e1y * dv2 - e2y * dv1) * r;
+                tz = (e1z * dv2 - e2z * dv1) * r;
+            }
+        }
+        if (tx == 0.0f && ty == 0.0f && tz == 0.0f) tx = 1.0f;
+
+        const int idx[3] = { ia, ib, ic };
+        for (int k = 0; k < 3; ++k) {
+            float* dst = mesh.tangents + idx[k] * 3;
+            dst[0] += tx;
+            dst[1] += ty;
+            dst[2] += tz;
+        }
+    }
+
+    for (int i = 0; i < mesh.vertexCount; ++i) {
+        float* t = mesh.tangents + i * 3;
+        const float* n = mesh.normals ? mesh.normals + i * 3 : nullptr;
+        if (n) {
+            const float nx = n[0], ny = n[1], nz = n[2];
+            const float nn = sqrtf(nx * nx + ny * ny + nz * nz);
+            if (nn > 1e-9f) {
+                const float inv = 1.0f / nn;
+                const float anx = nx * inv, any = ny * inv, anz = nz * inv;
+                const float d = t[0] * anx + t[1] * any + t[2] * anz;
+                t[0] -= anx * d;
+                t[1] -= any * d;
+                t[2] -= anz * d;
+            }
+        }
+        const float total = sqrtf(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+        if (total > 1e-8f) {
+            const float inv = 1.0f / total;
+            t[0] *= inv;
+            t[1] *= inv;
+            t[2] *= inv;
+        } else {
+            t[0] = 1.0f;
+            t[1] = 0.0f;
+            t[2] = 0.0f;
+        }
+    }
+}
+
 void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform)
 {
     if (!mesh.vertices || mesh.vertexCount <= 0)
     {
         return;
     }
+    ensure_mesh_tangents(const_cast<Mesh&>(mesh));
 
     ShaderProgramData *customProgram = Resolve3DShaderProgram(material);
     if (customProgram != nullptr)
@@ -1860,10 +1947,24 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
         }
     }
 
+    ID3D11ShaderResourceView *normalResource = nullptr;
+    if (material.maps)
+    {
+        const MaterialMap &normalMap = material.maps[MATERIAL_MAP_NORMAL];
+        if (normalMap.texture.valid)
+        {
+            normalResource = m_resources.ShaderResource(normalMap.texture.id);
+        }
+    }
+    if (normalResource == nullptr && m_flatNormalShaderTexture.IsValid())
+    {
+        normalResource = m_resources.ShaderResource(m_flatNormalShaderTexture.id);
+    }
+
     const Mat4 finalTransform = m_currentMatrix * transform;
     const Color baseColor = albedoMap ? albedoMap->color : WHITE;
     const bool textured = textureResource != nullptr;
-    const std::size_t floatsPerVertex = textured ? 18u : 16u;
+    const std::size_t floatsPerVertex = textured ? 22u : 16u;
 
     const auto transformNormal = [&](const Vec3 &normal) -> Vec3 {
         const Vec3 rotated{
@@ -1887,8 +1988,18 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
         return Vec3{0.0f, 1.0f, 0.0f};
     };
 
+    const auto meshTangentAt = [&](int vertexIndex) -> Vec3 {
+        if (mesh.tangents && vertexIndex >= 0 && vertexIndex < mesh.vertexCount)
+        {
+            return transformNormal(Vec3{mesh.tangents[vertexIndex * 3 + 0],
+                                        mesh.tangents[vertexIndex * 3 + 1],
+                                        mesh.tangents[vertexIndex * 3 + 2]});
+        }
+        return Vec3{0.0f, 0.0f, 0.0f};
+    };
+
     const auto appendVertex = [&](std::vector<float> &out, const Vec4 &world, const Vec3 &normal,
-                                  Color color, float u, float v)
+                                  const Vec3 &tangent, Color color, float u, float v)
     {
         const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
         out.push_back(clip.x);
@@ -1916,6 +2027,15 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
         out.push_back(normal.y);
         out.push_back(normal.z);
         out.push_back(1.0f);
+
+        if (textured)
+        {
+            const bool hasTangent = (tangent.x != 0.0f || tangent.y != 0.0f || tangent.z != 0.0f);
+            out.push_back(tangent.x);
+            out.push_back(tangent.y);
+            out.push_back(tangent.z);
+            out.push_back(hasTangent ? 1.0f : 0.0f);
+        }
     };
 
     const auto worldPosAt = [&](int vertexIndex) -> Vec4 {
@@ -1964,7 +2084,8 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
                 const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
                 const Color vertexColor =
                     MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
-                appendVertex(indexedVertices, worldPosAt(vi), normal, vertexColor, u, v);
+                appendVertex(indexedVertices, worldPosAt(vi), normal, meshTangentAt(vi),
+                             vertexColor, u, v);
             }
         }
 
@@ -1973,8 +2094,9 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
             if (textured)
             {
                 m_commands.Draw3DTextured(indexedVertices.data(),
-                                         static_cast<UINT>(indexedVertices.size() / 18),
-                                         const_cast<ID3D11ShaderResourceView *>(textureResource));
+                                         static_cast<UINT>(indexedVertices.size() / 22),
+                                         const_cast<ID3D11ShaderResourceView *>(textureResource),
+                                         normalResource);
             }
             else
             {
@@ -2013,7 +2135,7 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
             const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
             const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
             const Color vertexColor = MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
-            appendVertex(vertices, worldPosAt(vi), normal, vertexColor, u, v);
+            appendVertex(vertices, worldPosAt(vi), normal, meshTangentAt(vi), vertexColor, u, v);
         }
     }
 
@@ -2022,8 +2144,9 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
         if (textured)
         {
             m_commands.Draw3DTextured(vertices.data(),
-                                     static_cast<UINT>(vertices.size() / 18),
-                                     const_cast<ID3D11ShaderResourceView *>(textureResource));
+                                     static_cast<UINT>(vertices.size() / 22),
+                                     const_cast<ID3D11ShaderResourceView *>(textureResource),
+                                     normalResource);
         }
         else
         {

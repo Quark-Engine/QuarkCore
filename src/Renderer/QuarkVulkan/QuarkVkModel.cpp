@@ -30,6 +30,92 @@ static Color MultiplyColor(Color lhs, Color rhs) {
     };
 }
 
+static void ensure_mesh_tangents(Mesh& mesh) {
+    if (!mesh.vertices || mesh.vertexCount <= 0) return;
+    if (!mesh.tangents)
+        mesh.tangents = new float[static_cast<size_t>(mesh.vertexCount) * 3u];
+
+    for (int i = 0; i < mesh.vertexCount * 3; ++i) mesh.tangents[i] = 0.0f;
+
+    const bool indexed = mesh.indices && mesh.triangleCount > 0;
+    const int triangleCount = mesh.triangleCount > 0
+        ? mesh.triangleCount
+        : static_cast<int>(mesh.vertexCount / 3);
+
+    for (int t = 0; t < triangleCount; ++t) {
+        const int ia = indexed ? mesh.indices[t * 3 + 0] : t * 3 + 0;
+        const int ib = indexed ? mesh.indices[t * 3 + 1] : t * 3 + 1;
+        const int ic = indexed ? mesh.indices[t * 3 + 2] : t * 3 + 2;
+        if (ia < 0 || ib < 0 || ic < 0 ||
+            ia >= mesh.vertexCount || ib >= mesh.vertexCount || ic >= mesh.vertexCount)
+            continue;
+
+        const float* v0 = mesh.vertices + ia * 3;
+        const float* v1 = mesh.vertices + ib * 3;
+        const float* v2 = mesh.vertices + ic * 3;
+
+        const float e1x = v1[0] - v0[0], e1y = v1[1] - v0[1], e1z = v1[2] - v0[2];
+        const float e2x = v2[0] - v0[0], e2y = v2[1] - v0[1], e2z = v2[2] - v0[2];
+
+        float tx = 0.0f, ty = 0.0f, tz = 0.0f;
+        if (mesh.texcoords) {
+            const float u0 = mesh.texcoords[ia * 2 + 0];
+            const float vt0 = mesh.texcoords[ia * 2 + 1];
+            const float u1 = mesh.texcoords[ib * 2 + 0];
+            const float vt1 = mesh.texcoords[ib * 2 + 1];
+            const float u2 = mesh.texcoords[ic * 2 + 0];
+            const float vt2 = mesh.texcoords[ic * 2 + 1];
+
+            const float du1 = u1 - u0, dv1 = vt1 - vt0;
+            const float du2 = u2 - u0, dv2 = vt2 - vt0;
+            const float determinant = du1 * dv2 - du2 * dv1;
+            if (fabsf(determinant) > 1e-8f) {
+                const float r = 1.0f / determinant;
+                tx = (e1x * dv2 - e2x * dv1) * r;
+                ty = (e1y * dv2 - e2y * dv1) * r;
+                tz = (e1z * dv2 - e2z * dv1) * r;
+            }
+        }
+        if (tx == 0.0f && ty == 0.0f && tz == 0.0f) tx = 1.0f;
+
+        const int idx[3] = { ia, ib, ic };
+        for (int k = 0; k < 3; ++k) {
+            float* dst = mesh.tangents + idx[k] * 3;
+            dst[0] += tx;
+            dst[1] += ty;
+            dst[2] += tz;
+        }
+    }
+
+    for (int i = 0; i < mesh.vertexCount; ++i) {
+        float* t = mesh.tangents + i * 3;
+        const float* n = mesh.normals ? mesh.normals + i * 3 : nullptr;
+        if (n) {
+            const float nx = n[0], ny = n[1], nz = n[2];
+            const float nn = sqrtf(nx * nx + ny * ny + nz * nz);
+            if (nn > 1e-9f) {
+                const float inv = 1.0f / nn;
+                const float anx = nx * inv, any = ny * inv, anz = nz * inv;
+                const float d = t[0] * anx + t[1] * any + t[2] * anz;
+                t[0] -= anx * d;
+                t[1] -= any * d;
+                t[2] -= anz * d;
+            }
+        }
+        const float total = sqrtf(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+        if (total > 1e-8f) {
+            const float inv = 1.0f / total;
+            t[0] *= inv;
+            t[1] *= inv;
+            t[2] *= inv;
+        } else {
+            t[0] = 1.0f;
+            t[1] = 0.0f;
+            t[2] = 0.0f;
+        }
+    }
+}
+
 static void FreeMeshCpuData(Mesh& mesh) {
     delete[] mesh.vertices;
     delete[] mesh.texcoords;
@@ -432,6 +518,7 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
     if (!mesh.vertices || mesh.vertexCount <= 0) {
         return;
     }
+    ensure_mesh_tangents(const_cast<Mesh&>(mesh));
 
     const MaterialMap* albedoMap = (material.maps != nullptr) ? &material.maps[MATERIAL_MAP_ALBEDO] : nullptr;
     Color baseColor = WHITE;
@@ -477,6 +564,22 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
             normal.y /= normalLength;
             normal.z /= normalLength;
         }
+        Vec4 tangent{0.0f, 0.0f, 0.0f, 0.0f};
+        if (mesh.tangents) {
+            tangent = finalTransform * Vec4{
+                mesh.tangents[vertexIndex * 3 + 0],
+                mesh.tangents[vertexIndex * 3 + 1],
+                mesh.tangents[vertexIndex * 3 + 2],
+                0.0f
+            };
+            const float tangentLength = std::sqrt(tangent.x * tangent.x + tangent.y * tangent.y + tangent.z * tangent.z);
+            if (tangentLength > 0.0f) {
+                tangent.x /= tangentLength;
+                tangent.y /= tangentLength;
+                tangent.z /= tangentLength;
+                tangent.w = 1.0f;
+            }
+        }
         vertices.push_back(Vk3DVertex{
             clip.x,
             clip.y,
@@ -492,7 +595,11 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
             normal.y,
             normal.z,
             0.0f,
-            world.x, world.y, world.z, 1.0f
+            world.x, world.y, world.z, 1.0f,
+            tangent.x,
+            tangent.y,
+            tangent.z,
+            tangent.w
         });
     };
 

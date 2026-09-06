@@ -197,18 +197,19 @@ void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
 }
 
 void D3D11CommandContext::Draw3DTextured(const float *vertices, UINT vertexCount,
-                                         ID3D11ShaderResourceView *shaderResource)
+                                         ID3D11ShaderResourceView *shaderResource,
+                                         ID3D11ShaderResourceView *normalResource)
 {
     if (!m_context || !m_pipeline || !m_resources || !vertices || vertexCount == 0)
     {
         return;
     }
 
-    constexpr UINT kStrideFloats = 18;
+    constexpr UINT kStrideFloats = 22;
     const size_t strideBytes = sizeof(float) * kStrideFloats;
     const UINT maxChunkVertices = static_cast<UINT>(kMax3DBufferBytes / strideBytes);
 
-    m_pipeline->BindTexture3D(m_context, shaderResource);
+    m_pipeline->BindTexture3D(m_context, shaderResource, normalResource);
 
     const float *cursor = vertices;
     UINT remaining = vertexCount;

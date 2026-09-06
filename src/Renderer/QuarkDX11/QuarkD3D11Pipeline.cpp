@@ -54,6 +54,7 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
             float4 color : COLOR;
             float4 worldPosition : WORLD_POSITION;
             float4 normal : NORMAL;
+            float4 tangent : TANGENT;
         };
 
         struct VSOutput {
@@ -62,6 +63,7 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
             float4 color : COLOR;
             float4 worldPosition : WORLD_POSITION;
             float4 normal : NORMAL;
+            float4 tangent : TANGENT;
         };
 
         VSOutput main(VSInput input) {
@@ -71,6 +73,7 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
             output.color = input.color;
             output.worldPosition = input.worldPosition;
             output.normal = input.normal;
+            output.tangent = input.tangent;
             return output;
         }
     )";
@@ -78,6 +81,8 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
     static constexpr char texturedPixelSource3D[] = R"(
         Texture2D textureMap : register(t0);
         SamplerState textureSampler : register(s0);
+        Texture2D normalMap : register(t6);
+        SamplerState normalSampler : register(s6);
 
         cbuffer LightData : register(b1) {
             float4 uAmbientColor;
@@ -93,7 +98,19 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
             float4 color : COLOR;
             float4 worldPosition : WORLD_POSITION;
             float4 normal : NORMAL;
+            float4 tangent : TANGENT;
         };
+
+        float3 PerturbNormal(float3 geometricNormal, float4 tangent,
+                             float2 texCoord) {
+            float3 mapNormal = (normalMap.Sample(normalSampler, texCoord).xyz * 2.0) - 1.0;
+            float3 t = normalize(tangent.xyz);
+            float3 n = normalize(geometricNormal);
+            float3 b = normalize(cross(n, t));
+            float3 worldNormal = normalize(t * mapNormal.x + b * mapNormal.y + n * mapNormal.z);
+            if (dot(worldNormal, n) < 0.0) return n;
+            return worldNormal;
+        }
 
         float3 ApplyLights(float3 worldPos, float3 normal, float3 baseColor) {
             float3 result = baseColor * uAmbientColor.rgb;
@@ -119,9 +136,13 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         float4 main(PSInput input) : SV_TARGET {
             float4 texel = textureMap.Sample(textureSampler, input.texCoord);
             float3 baseColor = texel.rgb * input.color.rgb;
+            float3 shadingNormal = input.normal.xyz;
+            if (input.normal.w > 0.5 && input.tangent.w > 0.5) {
+                shadingNormal = PerturbNormal(input.normal.xyz, input.tangent, input.texCoord);
+            }
             float3 lit = baseColor;
             if (input.normal.w > 0.5) {
-                lit = ApplyLights(input.worldPosition.xyz, input.normal.xyz, baseColor);
+                lit = ApplyLights(input.worldPosition.xyz, shadingNormal, baseColor);
             }
             return float4(lit, texel.a * input.color.a);
         }
@@ -266,6 +287,8 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
         {"WORLD_POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 40,
          D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 56,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TANGENT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 72,
          D3D11_INPUT_PER_VERTEX_DATA, 0}
     };
 
@@ -366,9 +389,10 @@ void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compil
 }
 
 void D3D11Pipeline::BindTexture3D(ID3D11DeviceContext *context,
-                                 ID3D11ShaderResourceView *shaderResource) const
+                                 ID3D11ShaderResourceView *shaderResource,
+                                 ID3D11ShaderResourceView *normalResource) const
 {
-    const UINT stride = sizeof(float) * 18;
+    const UINT stride = sizeof(float) * 22;
     const UINT offset = 0;
     ID3D11Buffer *vertexBuffer = m_vertexBuffer3D;
 
@@ -381,7 +405,10 @@ void D3D11Pipeline::BindTexture3D(ID3D11DeviceContext *context,
     context->PSSetShader(m_texturedPixelShader3D.Get(), nullptr, 0);
     context->PSSetConstantBuffers(1, 1, m_lightConstantBuffer.GetAddressOf());
     context->PSSetShaderResources(0, 1, &shaderResource);
+    ID3D11ShaderResourceView *normalResourceCopy = normalResource;
+    context->PSSetShaderResources(6, 1, &normalResourceCopy);
     context->PSSetSamplers(0, 1, m_textureSampler.GetAddressOf());
+    context->PSSetSamplers(6, 1, m_textureSampler.GetAddressOf());
     const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
     context->OMSetDepthStencilState(m_depthStencilState.Get(), 0);
     context->OMSetBlendState(m_blendState.Get(), blendFactor, 0xFFFFFFFF);

@@ -30,7 +30,8 @@ public:
     void Shutdown();
     void UpdateLights(ID3D11DeviceContext *context, const D3D11LightConstantData &lights);
     void Bind3D(ID3D11DeviceContext *context) const;
-    void BindTexture3D(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource) const;
+    void BindTexture3D(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource,
+                       ID3D11ShaderResourceView *normalResource) const;
     void BindBatch(ID3D11DeviceContext *context, ID3D11Buffer *vertexBuffer,
                    ID3D11Buffer *indexBuffer) const;
     void SetBackfaceCulling(bool enabled) { m_backfaceCullingEnabled = enabled; }

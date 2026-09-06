@@ -2336,6 +2336,8 @@ void QuarkGLRenderer::DrawGrid(int slices,float spacing,Color color) {
     }
 }
 
+static void ensure_mesh_tangents(Mesh& mesh);
+
 Model QuarkGLRenderer::LoadModel(const char* filePath) {
     TraceLog(LogLevel::Info, "MODEL", TextFormat("[OpenGL] Loading 3D model: %s", filePath ? filePath : "<null>"));
     Assimp::Importer importer;
@@ -2543,6 +2545,24 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
 
         std::copy(indices.begin(), indices.end(), qMesh.indices);
 
+        ensure_mesh_tangents(qMesh);
+
+        vertices.clear();
+        vertices.reserve(static_cast<size_t>(qMesh.vertexCount) * 11u);
+        for (int vertexIndex = 0; vertexIndex < qMesh.vertexCount; ++vertexIndex) {
+            vertices.push_back(qMesh.vertices[vertexIndex * 3 + 0]);
+            vertices.push_back(qMesh.vertices[vertexIndex * 3 + 1]);
+            vertices.push_back(qMesh.vertices[vertexIndex * 3 + 2]);
+            vertices.push_back(qMesh.normals[vertexIndex * 3 + 0]);
+            vertices.push_back(qMesh.normals[vertexIndex * 3 + 1]);
+            vertices.push_back(qMesh.normals[vertexIndex * 3 + 2]);
+            vertices.push_back(qMesh.texcoords[vertexIndex * 2 + 0]);
+            vertices.push_back(qMesh.texcoords[vertexIndex * 2 + 1]);
+            vertices.push_back(qMesh.tangents[vertexIndex * 3 + 0]);
+            vertices.push_back(qMesh.tangents[vertexIndex * 3 + 1]);
+            vertices.push_back(qMesh.tangents[vertexIndex * 3 + 2]);
+        }
+
         glGenVertexArrays(1, &qMesh.vaoId);
         glGenBuffers(1, &qMesh.vboId);
         glGenBuffers(1, &qMesh.eboId);
@@ -2557,13 +2577,16 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
 
         // Position
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(float), (void*)0);
         // Normal
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(float), (void*)(3 * sizeof(float)));
         // TexCoords
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 11 * sizeof(float), (void*)(6 * sizeof(float)));
+        // Tangent
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(float), (void*)(8 * sizeof(float)));
 
         glBindVertexArray(0);
 
@@ -2637,8 +2660,96 @@ void  QuarkGLRenderer::UnloadModel(Model& model) {
     model = {};
 }
 
+static void ensure_mesh_tangents(Mesh& mesh) {
+    if (!mesh.vertices || mesh.vertexCount <= 0) return;
+    if (!mesh.tangents)
+        mesh.tangents = new float[static_cast<size_t>(mesh.vertexCount) * 3u];
+
+    for (int i = 0; i < mesh.vertexCount * 3; ++i) mesh.tangents[i] = 0.0f;
+
+    const bool indexed = mesh.indices && mesh.triangleCount > 0;
+    const int triangleCount = mesh.triangleCount > 0
+        ? mesh.triangleCount
+        : static_cast<int>(mesh.vertexCount / 3);
+
+    for (int t = 0; t < triangleCount; ++t) {
+        const int ia = indexed ? mesh.indices[t * 3 + 0] : t * 3 + 0;
+        const int ib = indexed ? mesh.indices[t * 3 + 1] : t * 3 + 1;
+        const int ic = indexed ? mesh.indices[t * 3 + 2] : t * 3 + 2;
+        if (ia < 0 || ib < 0 || ic < 0 ||
+            ia >= mesh.vertexCount || ib >= mesh.vertexCount || ic >= mesh.vertexCount)
+            continue;
+
+        const float* v0 = mesh.vertices + ia * 3;
+        const float* v1 = mesh.vertices + ib * 3;
+        const float* v2 = mesh.vertices + ic * 3;
+
+        const float e1x = v1[0] - v0[0], e1y = v1[1] - v0[1], e1z = v1[2] - v0[2];
+        const float e2x = v2[0] - v0[0], e2y = v2[1] - v0[1], e2z = v2[2] - v0[2];
+
+        float tx = 0.0f, ty = 0.0f, tz = 0.0f;
+        if (mesh.texcoords) {
+            const float u0 = mesh.texcoords[ia * 2 + 0];
+            const float vt0 = mesh.texcoords[ia * 2 + 1];
+            const float u1 = mesh.texcoords[ib * 2 + 0];
+            const float vt1 = mesh.texcoords[ib * 2 + 1];
+            const float u2 = mesh.texcoords[ic * 2 + 0];
+            const float vt2 = mesh.texcoords[ic * 2 + 1];
+
+            const float du1 = u1 - u0, dv1 = vt1 - vt0;
+            const float du2 = u2 - u0, dv2 = vt2 - vt0;
+            const float determinant = du1 * dv2 - du2 * dv1;
+            if (fabsf(determinant) > 1e-8f) {
+                const float r = 1.0f / determinant;
+                tx = (e1x * dv2 - e2x * dv1) * r;
+                ty = (e1y * dv2 - e2y * dv1) * r;
+                tz = (e1z * dv2 - e2z * dv1) * r;
+            }
+        }
+        if (tx == 0.0f && ty == 0.0f && tz == 0.0f) tx = 1.0f;
+
+        const int idx[3] = { ia, ib, ic };
+        for (int k = 0; k < 3; ++k) {
+            float* dst = mesh.tangents + idx[k] * 3;
+            dst[0] += tx;
+            dst[1] += ty;
+            dst[2] += tz;
+        }
+    }
+
+    for (int i = 0; i < mesh.vertexCount; ++i) {
+        float* t = mesh.tangents + i * 3;
+        const float* n = mesh.normals ? mesh.normals + i * 3 : nullptr;
+        if (n) {
+            const float nx = n[0], ny = n[1], nz = n[2];
+            const float nn = sqrtf(nx * nx + ny * ny + nz * nz);
+            if (nn > 1e-9f) {
+                const float inv = 1.0f / nn;
+                const float anx = nx * inv, any = ny * inv, anz = nz * inv;
+                const float d = t[0] * anx + t[1] * any + t[2] * anz;
+                t[0] -= anx * d;
+                t[1] -= any * d;
+                t[2] -= anz * d;
+            }
+        }
+        const float total = sqrtf(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+        if (total > 1e-8f) {
+            const float inv = 1.0f / total;
+            t[0] *= inv;
+            t[1] *= inv;
+            t[2] *= inv;
+        } else {
+            t[0] = 1.0f;
+            t[1] = 0.0f;
+            t[2] = 0.0f;
+        }
+    }
+}
+
 void QuarkGLRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
     if (!mesh.vertices || mesh.vertexCount <= 0) return;
+
+    ensure_mesh_tangents(mesh);
 
     if (mesh.vaoId)
         glDeleteVertexArrays(1, &mesh.vaoId);
@@ -2653,7 +2764,7 @@ void QuarkGLRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
     if (mesh.indices && mesh.triangleCount > 0) glGenBuffers(1, &mesh.eboId);
 
     std::vector<float> vertexData;
-    vertexData.reserve(mesh.vertexCount * 8);
+    vertexData.reserve(mesh.vertexCount * 11);
     for (int i = 0; i < mesh.vertexCount; ++i) {
         vertexData.push_back(mesh.vertices[i * 3 + 0]);
         vertexData.push_back(mesh.vertices[i * 3 + 1]);
@@ -2676,6 +2787,10 @@ void QuarkGLRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
             vertexData.push_back(0.0f);
             vertexData.push_back(0.0f);
         }
+
+        vertexData.push_back(mesh.tangents[i * 3 + 0]);
+        vertexData.push_back(mesh.tangents[i * 3 + 1]);
+        vertexData.push_back(mesh.tangents[i * 3 + 2]);
     }
 
     glBindVertexArray(mesh.vaoId);
@@ -2694,13 +2809,16 @@ void QuarkGLRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
     }
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(0));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(float), reinterpret_cast<void*>(0));
 
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float)));
 
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(6 * sizeof(float)));
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 11 * sizeof(float), reinterpret_cast<void*>(6 * sizeof(float)));
+
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(float), reinterpret_cast<void*>(8 * sizeof(float)));
 
     glBindVertexArray(0);
     TraceLog(LogLevel::Trace, "MESH", TextFormat("[OpenGL] Uploaded mesh to GPU (VAO: %u, VBO: %u, EBO: %u, %d vertices, %d triangles, dynamic: %s)",
@@ -2711,8 +2829,10 @@ void QuarkGLRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, 
     if (!data || dataSize <= 0) return;
 
     if ((index == 0 || index == 1 || index == 2) && mesh.vboId) {
+        ensure_mesh_tangents(mesh);
+
         std::vector<float> vertexData;
-        vertexData.reserve(mesh.vertexCount * 8);
+        vertexData.reserve(mesh.vertexCount * 11);
         for (int i = 0; i < mesh.vertexCount; ++i) {
             vertexData.push_back(mesh.vertices ? mesh.vertices[i * 3 + 0] : 0.0f);
             vertexData.push_back(mesh.vertices ? mesh.vertices[i * 3 + 1] : 0.0f);
@@ -2724,6 +2844,10 @@ void QuarkGLRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, 
 
             vertexData.push_back(mesh.texcoords ? mesh.texcoords[i * 2 + 0] : 0.0f);
             vertexData.push_back(mesh.texcoords ? mesh.texcoords[i * 2 + 1] : 0.0f);
+
+            vertexData.push_back(mesh.tangents ? mesh.tangents[i * 3 + 0] : 1.0f);
+            vertexData.push_back(mesh.tangents ? mesh.tangents[i * 3 + 1] : 0.0f);
+            vertexData.push_back(mesh.tangents ? mesh.tangents[i * 3 + 2] : 0.0f);
         }
 
         glBindBuffer(GL_ARRAY_BUFFER, mesh.vboId);

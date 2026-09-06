@@ -17,6 +17,7 @@ struct Vk3DVertex {
     float r, g, b, a;
     float nx, ny, nz, nw;
     float wx, wy, wz, ww;
+    float tx, ty, tz, tw;
 };
 
 struct Vk3DPushConstants {

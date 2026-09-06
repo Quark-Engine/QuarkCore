@@ -52,30 +52,78 @@ layout(location = 1) in vec2 aTexCoord;
 layout(location = 2) in vec4 aColor;
 layout(location = 3) in vec4 aNormal;
 layout(location = 4) in vec4 aWorldPosition;
+layout(location = 5) in vec4 aTangent;
 layout(location = 0) out vec2 vTexCoord;
 layout(location = 1) out vec4 vColor;
 layout(location = 2) out vec3 vNormal;
 layout(location = 3) out vec3 vWorldPosition;
+layout(location = 4) out vec4 vTangent;
 void main() {
     gl_Position = aPosition;
     vTexCoord = aTexCoord;
     vColor = aColor;
     vNormal = normalize(aNormal.xyz);
     vWorldPosition = aWorldPosition.xyz;
+    vTangent = vec4(normalize(aTangent.xyz), aTangent.w);
 }
 )glsl";
 
 const char* kRuntime3DFragmentShader = R"glsl(
 #version 450
 layout(set = 0, binding = 1) uniform sampler2D albedoMap;
+layout(set = 0, binding = 4) uniform LightBlock {
+    vec4 ambient;
+    vec4 viewPos;
+    vec4 lightPositions[4];
+    vec4 lightColors[4];
+    vec4 lightParams[4];
+} lights;
+layout(set = 0, binding = 6) uniform sampler2D uNormalMap;
 layout(location = 0) in vec2 vTexCoord;
 layout(location = 1) in vec4 vColor;
 layout(location = 2) in vec3 vNormal;
 layout(location = 3) in vec3 vWorldPosition;
+layout(location = 4) in vec4 vTangent;
 layout(location = 0) out vec4 outColor;
 
+vec3 ApplyLights(vec3 worldPos, vec3 normal, vec3 baseColor) {
+    vec3 result = baseColor * lights.ambient.rgb;
+    vec3 n = normalize(normal);
+    int enabled = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (lights.lightParams[i].y < 0.5) { continue; }
+        enabled = 1;
+        float dist = length(lights.lightPositions[i].xyz - worldPos);
+        if (dist < 0.0001) { dist = 0.0001; }
+        vec3 toLight = (lights.lightPositions[i].xyz - worldPos) / dist;
+        if (lights.lightParams[i].z < 0.5) {
+            toLight = -normalize(lights.lightPositions[i].xyz);
+        }
+        float diff = max(dot(n, toLight), 0.0);
+        float attenuation = 1.0 / (1.0 + lights.lightParams[i].x * dist * dist);
+        result += baseColor * lights.lightColors[i].rgb * diff * attenuation;
+    }
+    if (enabled == 0) { return baseColor; }
+    return clamp(result, 0.0, 1.0);
+}
+
 void main() {
-    outColor = texture(albedoMap, vTexCoord) * vColor;
+    vec4 texel = texture(albedoMap, vTexCoord);
+    vec3 baseColor = texel.rgb * vColor.rgb;
+    vec3 normal = vNormal;
+    if (vTangent.w > 0.5) {
+        vec2 mapNormal = texture(uNormalMap, vTexCoord).xy * 2.0 - 1.0;
+        float z = sqrt(max(0.0, 1.0 - dot(mapNormal, mapNormal)));
+        vec3 t = normalize(vTangent.xyz);
+        vec3 n = normalize(vNormal);
+        vec3 b = normalize(cross(n, t));
+        normal = normalize(t * mapNormal.x + b * mapNormal.y + n * z);
+    }
+    vec3 lit = baseColor;
+    if (length(normal) > 0.001) {
+        lit = ApplyLights(vWorldPosition, normal, baseColor);
+    }
+    outColor = vec4(lit, texel.a * vColor.a);
 }
 )glsl";
 
@@ -569,7 +617,7 @@ VkPipeline QuarkVkPipeline::Create3DPipeline(VkRenderPass renderPass,
     bindingDesc.stride    = sizeof(Vk3DVertex);
     bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 5> attributes{};
+    std::array<VkVertexInputAttributeDescription, 6> attributes{};
     attributes[0].binding  = 0;
     attributes[0].location = 0;
     attributes[0].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -594,6 +642,11 @@ VkPipeline QuarkVkPipeline::Create3DPipeline(VkRenderPass renderPass,
     attributes[4].location = 4;
     attributes[4].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
     attributes[4].offset   = offsetof(Vk3DVertex, wx);
+
+    attributes[5].binding  = 0;
+    attributes[5].location = 5;
+    attributes[5].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributes[5].offset   = offsetof(Vk3DVertex, tx);
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType                          = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

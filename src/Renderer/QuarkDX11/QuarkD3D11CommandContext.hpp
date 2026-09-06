@@ -46,7 +46,8 @@ public:
                          int height);
     void Draw3D(const float *vertices, UINT vertexCount, D3D_PRIMITIVE_TOPOLOGY topology);
     void Draw3DTextured(const float *vertices, UINT vertexCount,
-                        ID3D11ShaderResourceView *shaderResource);
+                        ID3D11ShaderResourceView *shaderResource,
+                        ID3D11ShaderResourceView *normalResource);
     void Draw3DShader(const float *vertices, UINT vertexCount,
                       const ShaderOverride &shaderOverride);
     void ClearDepthStencil();

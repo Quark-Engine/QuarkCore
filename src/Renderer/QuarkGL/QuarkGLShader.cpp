@@ -54,6 +54,7 @@ GLuint QuarkGLShader::CompileGLShader(GLenum type, const char* source) {
         char log[1024] = {};
         glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
         glDeleteShader(shader);
+        TraceLog(LogLevel::Error, "SHADER" "[OpenGL] Shader compile error: %s", log);
         throw std::runtime_error(std::string("Shader compile: ") + log);
     }
 
