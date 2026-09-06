@@ -44,7 +44,6 @@ void main() {
 )";
 
 GLuint QuarkGLShader::CompileGLShader(GLenum type, const char* source) {
-    const char* stageName = (type == GL_VERTEX_SHADER ? "vertex" : (type == GL_FRAGMENT_SHADER ? "fragment" : "unknown"));
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &source, nullptr);
     glCompileShader(shader);
