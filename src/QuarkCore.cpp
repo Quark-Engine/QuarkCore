@@ -2641,6 +2641,8 @@ static Vec3 TransformPoint(const Mat4& transform, const Vec3& point) {
 static void DrawModelWireframe(const Model& model, const Mat4& transform, Color color) {
     if (!model.meshes) return;
 
+    const Mat4 finalTransform = transform * model.transform;
+
     for (int i = 0; i < model.meshCount; ++i) {
         const Mesh& mesh = model.meshes[i];
         if (!mesh.vertices) continue;
@@ -2653,17 +2655,17 @@ static void DrawModelWireframe(const Model& model, const Mat4& transform, Color 
             int idx1 = hasIndices ? mesh.indices[t * 3 + 1] : t * 3 + 1;
             int idx2 = hasIndices ? mesh.indices[t * 3 + 2] : t * 3 + 2;
 
-            Vec3 v0 = TransformPoint(transform, Vec3{
+            Vec3 v0 = TransformPoint(finalTransform, Vec3{
                 mesh.vertices[idx0 * 3 + 0],
                 mesh.vertices[idx0 * 3 + 1],
                 mesh.vertices[idx0 * 3 + 2]
             });
-            Vec3 v1 = TransformPoint(transform, Vec3{
+            Vec3 v1 = TransformPoint(finalTransform, Vec3{
                 mesh.vertices[idx1 * 3 + 0],
                 mesh.vertices[idx1 * 3 + 1],
                 mesh.vertices[idx1 * 3 + 2]
             });
-            Vec3 v2 = TransformPoint(transform, Vec3{
+            Vec3 v2 = TransformPoint(finalTransform, Vec3{
                 mesh.vertices[idx2 * 3 + 0],
                 mesh.vertices[idx2 * 3 + 1],
                 mesh.vertices[idx2 * 3 + 2]
