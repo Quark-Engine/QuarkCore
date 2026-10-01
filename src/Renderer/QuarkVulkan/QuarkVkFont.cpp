@@ -211,10 +211,6 @@ uint32_t QuarkVkRenderer::EnsureDefaultFont() {
         return m_defaultFontId;
     }
 
-    if (pixel_ttf == nullptr || pixel_ttf_len == 0) {
-        return 0;
-    }
-
     FontData fd{};
     if (!LoadFontInternal(nullptr, pixel_ttf, static_cast<int>(pixel_ttf_len), 32, nullptr, 0, fd)) {
         return 0;

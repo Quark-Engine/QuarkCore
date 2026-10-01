@@ -24,42 +24,6 @@
 #include <string>
 #include <vector>
 
-static const char* kVS2D = R"(
-#version 330 core
-
-layout(location=0) in vec2 aPos;
-layout(location=1) in vec2 aUV;
-layout(location=2) in vec4 aColor;
-
-out vec2 vUV;
-out vec4 vColor;
-
-uniform vec2 uScreenSize;
-
-void main() {
-    vec2 ndc = (aPos / uScreenSize) * 2.0 - 1.0;
-    ndc.y = -ndc.y;
-    gl_Position = vec4(ndc, 0.0, 1.0);
-    vUV   = aUV;
-    vColor = aColor;
-}
-)";
-
-static const char* kFS2D = R"(
-#version 330 core
-
-in vec2 vUV;
-in vec4 vColor;
-
-out vec4 FragColor;
-
-uniform sampler2D uTexture;
-
-void main() {
-    FragColor = texture(uTexture, vUV) * vColor;
-}
-)";
-
 static const char* kVS3D = R"(
 #version 330 core
 
@@ -1030,8 +994,6 @@ int QuarkGLRenderer::FindGlyph(const FontData& fd, int codepoint) {
 
 uint32_t QuarkGLRenderer::EnsureDefaultFont() {
     if (m_defaultFontId != 0) return m_defaultFontId;
-
-    if (pixel_ttf == nullptr || pixel_ttf_len == 0) return 0;
 
     FontData fd{};
     if (!LoadFontInternal(nullptr, pixel_ttf, static_cast<int>(pixel_ttf_len), 32, nullptr, 0, fd)) return 0;

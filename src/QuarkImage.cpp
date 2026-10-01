@@ -417,73 +417,6 @@ bool EnsureRGBA8(Image* image) {
     return true;
 }
 
-void BlendPixelRGBA(std::uint8_t* dstBase, Vec2 uv, const std::vector<std::uint8_t>& src, int srcW, int srcH,
-                    int dstX, int dstY, int dstW, int dstH, Color tint, bool bilinear) {
-    const int x = std::clamp(dstX, 0, dstW - 1);
-    const int y = std::clamp(dstY, 0, dstH - 1);
-    std::uint8_t* dst = dstBase + (static_cast<size_t>(y) * dstW + x) * 4;
-
-    float sx = uv.x;
-    float sy = uv.y;
-
-    if (!bilinear) {
-        int ix = std::clamp(static_cast<int>(sx), 0, srcW - 1);
-        int iy = std::clamp(static_cast<int>(sy), 0, srcH - 1);
-        const std::uint8_t* p = &src[(static_cast<size_t>(iy) * srcW + ix) * 4];
-        float tr = tint.r / 255.0f, tg = tint.g / 255.0f, tb = tint.b / 255.0f, ta = tint.a / 255.0f;
-        float sr = p[0] * tr, sg = p[1] * tg, sb = p[2] * tb, sa = p[3] * ta;
-        if (sa >= 1.0f || dst[3] == 0) {
-            dst[0] = static_cast<std::uint8_t>(sr); dst[1] = static_cast<std::uint8_t>(sg);
-            dst[2] = static_cast<std::uint8_t>(sb); dst[3] = static_cast<std::uint8_t>(sa * 255.0f);
-        } else {
-            float da = dst[3] / 255.0f;
-            float oa = sa + da * (1.0f - sa);
-            if (oa <= 0.0f) return;
-            dst[0] = ClampByte(static_cast<int>((sr * sa + dst[0] * da * (1.0f - sa)) / oa));
-            dst[1] = ClampByte(static_cast<int>((sg * sa + dst[1] * da * (1.0f - sa)) / oa));
-            dst[2] = ClampByte(static_cast<int>((sb * sa + dst[2] * da * (1.0f - sa)) / oa));
-            dst[3] = ClampByte(static_cast<int>(oa * 255.0f));
-        }
-        return;
-    }
-
-    const float tx = std::clamp(sx - 0.5f, 0.0f, static_cast<float>(srcW - 1));
-    const float ty = std::clamp(sy - 0.5f, 0.0f, static_cast<float>(srcH - 1));
-    const int x0 = std::min(srcW - 1, static_cast<int>(tx));
-    const int y0 = std::min(srcH - 1, static_cast<int>(ty));
-    const int x1 = std::min(srcW - 1, x0 + 1);
-    const int y1 = std::min(srcH - 1, y0 + 1);
-    const float fx = tx - x0;
-    const float fy = ty - y0;
-
-    const std::uint8_t* p00 = &src[(static_cast<size_t>(y0) * srcW + x0) * 4];
-    const std::uint8_t* p10 = &src[(static_cast<size_t>(y0) * srcW + x1) * 4];
-    const std::uint8_t* p01 = &src[(static_cast<size_t>(y1) * srcW + x0) * 4];
-    const std::uint8_t* p11 = &src[(static_cast<size_t>(y1) * srcW + x1) * 4];
-
-    float sr = 0, sg = 0, sb = 0, sa = 0;
-    for (int ch = 0; ch < 4; ++ch) {
-        float top = p00[ch] * (1.0f - fx) + p10[ch] * fx;
-        float bot = p01[ch] * (1.0f - fx) + p11[ch] * fx;
-        float v = top * (1.0f - fy) + bot * fy;
-        if (ch == 0) sr = v; else if (ch == 1) sg = v; else if (ch == 2) sb = v; else sa = v;
-    }
-    float tr = tint.r / 255.0f, tg = tint.g / 255.0f, tb = tint.b / 255.0f, ta = tint.a / 255.0f;
-    sr *= tr; sg *= tg; sb *= tb; sa *= ta;
-    if (sa >= 1.0f || dst[3] == 0) {
-        dst[0] = static_cast<std::uint8_t>(sr); dst[1] = static_cast<std::uint8_t>(sg);
-        dst[2] = static_cast<std::uint8_t>(sb); dst[3] = static_cast<std::uint8_t>(sa * 255.0f);
-    } else {
-        float da = dst[3] / 255.0f;
-        float oa = sa + da * (1.0f - sa);
-        if (oa <= 0.0f) return;
-        dst[0] = ClampByte(static_cast<int>((sr * sa + dst[0] * da * (1.0f - sa)) / oa));
-        dst[1] = ClampByte(static_cast<int>((sg * sa + dst[1] * da * (1.0f - sa)) / oa));
-        dst[2] = ClampByte(static_cast<int>((sb * sa + dst[2] * da * (1.0f - sa)) / oa));
-        dst[3] = ClampByte(static_cast<int>(oa * 255.0f));
-    }
-}
-
 void FlipImageRows(std::uint8_t* data, int width, int height, int bytesPerPixel) {
     const size_t rowBytes = static_cast<size_t>(width) * bytesPerPixel;
     std::vector<std::uint8_t> tmp(rowBytes);
@@ -979,11 +912,6 @@ bool RasterizeText(const char* text, float fontSize, float spacing, Color tint,
     outRGBA.clear();
 
     if (text == nullptr || *text == '\0') return true;
-
-    if (pixel_ttf == nullptr || pixel_ttf_len == 0) {
-        TraceLog(LogLevel::Warn, "IMAGE", "Could not load bundled default font for text rendering");
-        return false;
-    }
 
     FT_Library ft = nullptr;
     if (FT_Init_FreeType(&ft) != 0) return false;

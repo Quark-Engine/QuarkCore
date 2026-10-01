@@ -179,8 +179,6 @@ bool QuarkGLFont::LoadFontInternal(const char* filePath, const unsigned char* fi
 uint32_t QuarkGLFont::EnsureDefaultFont() {
     if (m_defaultFontId != 0) return m_defaultFontId;
 
-    if (pixel_ttf == nullptr || pixel_ttf_len == 0) return 0;
-
     FontData fontData{};
     QuarkGLFont font;
     if (!font.LoadFontInternal(nullptr, pixel_ttf, static_cast<int>(pixel_ttf_len), 32, nullptr, 0, fontData)) return 0;

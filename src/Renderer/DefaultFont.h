@@ -4935,6 +4935,6 @@ inline unsigned char pixel_ttf[] = {
   0xff, 0xff, 0x00, 0x03
 };
 
-static unsigned int pixel_ttf_len = 59164;
+inline constexpr unsigned int pixel_ttf_len = static_cast<unsigned int>(sizeof(pixel_ttf));
 
 #endif // __DEFAULT_FONT__

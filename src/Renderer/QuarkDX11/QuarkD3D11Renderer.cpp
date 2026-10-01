@@ -2696,11 +2696,6 @@ uint32_t QuarkD3D11Renderer::EnsureDefaultFont()
         return m_defaultFontId;
     }
 
-    if (pixel_ttf == nullptr || pixel_ttf_len == 0) {
-        TraceLog(LogLevel::Error, "FONT", "[D3D11] No bundled default font was found.");
-        return 0;
-    }
-
     FontData fontData{};
     if (!LoadFontData(nullptr, pixel_ttf, static_cast<int>(pixel_ttf_len), 32, nullptr, 0, fontData)) {
         return 0;
