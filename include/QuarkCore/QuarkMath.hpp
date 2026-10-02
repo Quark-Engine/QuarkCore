@@ -416,8 +416,12 @@ struct Vec3 {
         );
     }
 
+    float lengthSquared() const {
+        return x * x + y * y + z * z;
+    }
+
     float length() const {
-        return std::sqrt(x * x + y * y + z * z);
+        return std::sqrt(lengthSquared());
     }
 
     Vec3 normalized() const {
@@ -1241,6 +1245,43 @@ inline Vec3 Vec3Transform(const Vec3& value, const Mat4& transform) {
 
 inline float Vec3Distance(const Vec3& left, const Vec3& right) {
     return (left - right).length();
+}
+
+inline float Vec3Dot(const Vec3& left, const Vec3& right) {
+    return left.dot(right);
+}
+
+inline float Vec3SquaredLength(const Vec3& value) {
+    return value.lengthSquared();
+}
+
+inline Vec3 Vec3NormalizeOrForward(const Vec3& value) {
+    const float length = value.length();
+    if (length < 1e-9f) {
+        return Vec3{0.0f, 1.0f, 0.0f};
+    }
+    return value * (1.0f / length);
+}
+
+inline Vec3 Mat4Column(const Mat4& matrix, int column) {
+    return Vec3{matrix.m[column * 4], matrix.m[column * 4 + 1], matrix.m[column * 4 + 2]};
+}
+
+inline Mat4 Mat4PolarRotation(const Mat4& matrix) {
+    Mat4 result = matrix;
+    for (int iteration = 0; iteration < 24; ++iteration) {
+        const Mat4 invertedTranspose = Mat4Transpose(result.inverted());
+        for (int i = 0; i < 16; ++i) {
+            result.m[i] = 0.5f * (result.m[i] + invertedTranspose.m[i]);
+        }
+    }
+    for (int column = 0; column < 3; ++column) {
+        const Vec3 axis = Vec3NormalizeOrForward(Mat4Column(result, column));
+        result.m[column * 4] = axis.x;
+        result.m[column * 4 + 1] = axis.y;
+        result.m[column * 4 + 2] = axis.z;
+    }
+    return result;
 }
 
 }; // namespace qc
