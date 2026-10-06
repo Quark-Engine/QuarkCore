@@ -29,13 +29,15 @@ int main() {
     mesh.boneCount = 1;
     mesh.boneIndices = new unsigned char[4]{0, 0, 0, 0};
     mesh.boneWeights = new float[4]{1.0f, 0.0f, 0.0f, 0.0f};
+    mesh.boneOffsets = new Matrix[1]{Mat4::translation(-10.0f, 0.0f, 0.0f)};
+    mesh.boneOffsetCount = 1;
 
     model.skeleton.boneCount = 1;
     model.skeleton.bones = new BoneInfo[1];
     model.skeleton.bones[0].parent = -1;
     std::strncpy(model.skeleton.bones[0].name, "BoneRoot", sizeof(model.skeleton.bones[0].name) - 1);
     model.skeleton.bindPose = new Transform[1];
-    model.skeleton.bindPose[0] = Transform{{0.0f, 0.0f, 0.0f}, Quaternion{0.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}};
+    model.skeleton.bindPose[0] = Transform{{10.0f, 0.0f, 0.0f}, Quaternion{0.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}};
     model.boneMatrices = new Matrix[1];
 
     ModelAnimation animation{};
@@ -43,7 +45,7 @@ int main() {
     animation.keyframeCount = 1;
     animation.keyframePoses = new ModelAnimPose[1];
     animation.keyframePoses[0] = new Transform[1];
-    animation.keyframePoses[0][0] = Transform{{2.0f, 0.0f, 0.0f}, Quaternion{0.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}};
+    animation.keyframePoses[0][0] = Transform{{12.0f, 0.0f, 0.0f}, Quaternion{0.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}};
 
     UpdateModelAnimation(model, animation, 0.0f);
 
@@ -63,11 +65,12 @@ int main() {
         return 3;
     }
 
-    if (!NearlyEqual(model.boneMatrices[0].m[12], 2.0f)) {
+    if (!NearlyEqual(model.boneMatrices[0].m[12], 12.0f)) {
         std::cerr << "bone matrix translation is wrong: " << model.boneMatrices[0].m[12] << std::endl;
         return 4;
     }
 
+    delete[] mesh.boneOffsets;
     delete[] model.meshes;
     delete[] model.skeleton.bones;
     delete[] model.skeleton.bindPose;

@@ -126,6 +126,7 @@ static void FreeMeshCpuData(Mesh& mesh) {
     delete[] mesh.indices;
     delete[] mesh.boneIndices;
     delete[] mesh.boneWeights;
+    delete[] mesh.boneOffsets;
     delete[] mesh.animVertices;
     delete[] mesh.animNormals;
 
@@ -138,6 +139,8 @@ static void FreeMeshCpuData(Mesh& mesh) {
     mesh.indices = nullptr;
     mesh.boneIndices = nullptr;
     mesh.boneWeights = nullptr;
+    mesh.boneOffsets = nullptr;
+    mesh.boneOffsetCount = 0;
     mesh.animVertices = nullptr;
     mesh.animNormals = nullptr;
 
@@ -168,13 +171,14 @@ static Material LoadAssimpMaterial(QuarkVkRenderer& renderer, const char* filePa
         return material;
     }
 
-    aiColor4D diffuse{};
-    if (AI_SUCCESS == aiGetMaterialColor(source, AI_MATKEY_COLOR_DIFFUSE, &diffuse)) {
+    aiColor4D baseColor{};
+    if (AI_SUCCESS == aiGetMaterialColor(source, AI_MATKEY_BASE_COLOR, &baseColor) ||
+        AI_SUCCESS == aiGetMaterialColor(source, AI_MATKEY_COLOR_DIFFUSE, &baseColor)) {
         material.maps[MATERIAL_MAP_ALBEDO].color = Color{
-            static_cast<std::uint8_t>(std::clamp(diffuse.r, 0.0f, 1.0f) * 255.0f),
-            static_cast<std::uint8_t>(std::clamp(diffuse.g, 0.0f, 1.0f) * 255.0f),
-            static_cast<std::uint8_t>(std::clamp(diffuse.b, 0.0f, 1.0f) * 255.0f),
-            static_cast<std::uint8_t>(std::clamp(diffuse.a, 0.0f, 1.0f) * 255.0f)
+            static_cast<std::uint8_t>(std::clamp(baseColor.r, 0.0f, 1.0f) * 255.0f),
+            static_cast<std::uint8_t>(std::clamp(baseColor.g, 0.0f, 1.0f) * 255.0f),
+            static_cast<std::uint8_t>(std::clamp(baseColor.b, 0.0f, 1.0f) * 255.0f),
+            static_cast<std::uint8_t>(std::clamp(baseColor.a, 0.0f, 1.0f) * 255.0f)
         };
     }
 
@@ -259,7 +263,8 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(
         filePath,
-        aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs
+        aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs |
+            aiProcess_PopulateArmatureData
     );
 
     if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || !scene->mRootNode) {
@@ -282,6 +287,8 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
     for (int i = 0; i < model.materialCount; ++i) {
         model.materials[i] = LoadAssimpMaterial(*this, filePath, scene->mMaterials[i]);
     }
+
+    qcPopulateModelSkeleton(scene, model);
 
     int totalVertices = 0;
     int totalTriangles = 0;
@@ -307,6 +314,15 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
 
         for (unsigned int boneIndex = 0; boneIndex < sourceMesh->mNumBones; ++boneIndex) {
             const aiBone* bone = sourceMesh->mBones[boneIndex];
+            const int skeletonBoneIndex = qcFindSkeletonBoneIndex(scene, model, bone);
+            if (skeletonBoneIndex < 0 || skeletonBoneIndex > 255) {
+                TraceLog(LogLevel::Warn, "MODEL",
+                         TextFormat("[Vulkan] Mesh bone '%s' is not present in the model skeleton or exceeds the 8-bit bone index range",
+                                    bone->mName.C_Str()));
+                continue;
+            }
+            qcSetMeshBoneOffset(dst, static_cast<unsigned int>(skeletonBoneIndex),
+                                model.skeleton.boneCount, bone->mOffsetMatrix);
             for (unsigned int weightIndex = 0; weightIndex < bone->mNumWeights; ++weightIndex) {
                 const aiVertexWeight& weight = bone->mWeights[weightIndex];
                 const unsigned int vertexIndex = weight.mVertexId;
@@ -314,7 +330,7 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
                 unsigned char* dstBones = dst.boneIndices + static_cast<size_t>(vertexIndex) * 4u;
                 for (int slot = 0; slot < 4; ++slot) {
                     if (dstWeights[slot] <= 0.0f) {
-                        dstBones[slot] = static_cast<unsigned char>(boneIndex);
+                        dstBones[slot] = static_cast<unsigned char>(skeletonBoneIndex);
                         dstWeights[slot] = weight.mWeight;
                         break;
                     }
@@ -360,7 +376,6 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
     TraceLog(LogLevel::Info, "MODEL", TextFormat("[Vulkan] Model loaded successfully: %s (%d meshes, %d materials, %d total vertices, %d total triangles)",
         filePath ? filePath : "<null>", model.meshCount, model.materialCount, totalVertices, totalTriangles));
 
-    qcPopulateModelSkeleton(scene, model);
     return model;
 }
 

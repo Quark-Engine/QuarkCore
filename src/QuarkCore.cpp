@@ -4980,6 +4980,8 @@ static void FreeMeshCpuData(Mesh& mesh) {
     delete[] mesh.indices; mesh.indices = nullptr;
     delete[] mesh.boneIndices; mesh.boneIndices = nullptr;
     delete[] mesh.boneWeights; mesh.boneWeights = nullptr;
+    delete[] mesh.boneOffsets; mesh.boneOffsets = nullptr;
+    mesh.boneOffsetCount = 0;
     delete[] mesh.animVertices; mesh.animVertices = nullptr;
     delete[] mesh.animNormals; mesh.animNormals = nullptr;
     delete[] mesh.bindVertices; mesh.bindVertices = nullptr;
@@ -6759,20 +6761,6 @@ std::vector<Transform> EvaluateAnimationPose(const ModelAnimation& anim, float f
     return locals;
 }
 
-std::vector<Mat4> GlobalBindTransforms(const ModelSkeleton& skel) {
-    std::vector<Mat4> globals(skel.boneCount, Mat4::identity());
-    for (unsigned int b = 0; b < skel.boneCount; ++b) {
-        const Transform& bp = skel.bindPose[b];
-        Mat4 local = TransformToMatrix(bp.translation, bp.rotation, bp.scale);
-        if (skel.bones[b].parent >= 0) {
-            globals[b] = globals[static_cast<size_t>(skel.bones[b].parent)] * local;
-        } else {
-            globals[b] = local;
-        }
-    }
-    return globals;
-}
-
 void ApplySkinningToMesh(Model& model, Mesh& mesh) {
     if (mesh.vertices == nullptr || mesh.vertexCount <= 0) return;
     if (mesh.boneIndices == nullptr || mesh.boneWeights == nullptr || model.boneMatrices == nullptr) return;
@@ -6806,7 +6794,9 @@ void ApplySkinningToMesh(Model& model, Mesh& mesh) {
                 continue;
             }
 
-            const Mat4 boneMatrix = model.boneMatrices[static_cast<size_t>(boneIndex)];
+            const Mat4 boneMatrix = model.boneMatrices[static_cast<size_t>(boneIndex)] *
+                ((mesh.boneOffsets != nullptr && boneIndex < mesh.boneOffsetCount)
+                    ? mesh.boneOffsets[boneIndex] : Mat4::identity());
             const Vec4 localPos{
                 mesh.bindVertices[base + 0],
                 mesh.bindVertices[base + 1],
@@ -6883,20 +6873,21 @@ void ApplyPoseToModel(Model model, const ModelSkeleton& skel,
         }
     }
 
-    const bool haveSkeleton = (skel.bones != nullptr && skel.bindPose != nullptr);
-    std::vector<Mat4> bindInv(boneCount, Mat4::identity());
-    if (haveSkeleton) {
-        std::vector<Mat4> bindGlobal = GlobalBindTransforms(skel);
-        for (unsigned int b = 0; b < boneCount; ++b) bindInv[b] = bindGlobal[b].inverted();
-    }
-
     if (model.boneMatrices != nullptr) {
         for (unsigned int b = 0; b < boneCount; ++b) {
-            model.boneMatrices[b] = globals[b] * bindInv[b];
+            model.boneMatrices[b] = globals[b];
         }
     }
 
     model.currentPose = (anim.keyframePoses != nullptr) ? anim.keyframePoses[f0] : nullptr;
+}
+
+void CollectSceneNodes(aiNode* node, std::vector<aiNode*>& nodes) {
+    if (node == nullptr) return;
+    nodes.push_back(node);
+    for (unsigned int i = 0; i < node->mNumChildren; ++i) {
+        CollectSceneNodes(node->mChildren[i], nodes);
+    }
 }
 
 } // namespace
@@ -6915,6 +6906,48 @@ void qcPopulateModelSkeleton(const aiScene* scene, Model& model) {
     model.skeleton = skel;
     delete[] model.boneMatrices;
     model.boneMatrices = (model.skeleton.boneCount > 0) ? new Matrix[model.skeleton.boneCount] : nullptr;
+}
+
+int qcFindSkeletonBoneIndex(const aiScene* scene, const Model& model, const aiBone* bone) {
+    if (scene == nullptr || bone == nullptr || model.skeleton.bones == nullptr) return -1;
+
+    std::vector<aiNode*> nodes;
+    CollectSceneNodes(scene->mRootNode, nodes);
+    if (bone->mNode != nullptr) {
+        for (size_t i = 0; i < nodes.size() && i < model.skeleton.boneCount; ++i) {
+            if (nodes[i] == bone->mNode) return static_cast<int>(i);
+        }
+    }
+
+    const char* boneName = bone->mName.C_Str();
+    for (size_t i = 0; i < nodes.size() && i < model.skeleton.boneCount; ++i) {
+        if (nodes[i]->mNumMeshes == 0 &&
+            std::strncmp(model.skeleton.bones[i].name, boneName, sizeof(model.skeleton.bones[i].name)) == 0 &&
+            std::strlen(boneName) < sizeof(model.skeleton.bones[i].name)) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+void qcSetMeshBoneOffset(Mesh& mesh, unsigned int boneIndex, unsigned int boneCount,
+                         const aiMatrix4x4& offset) {
+    if (boneIndex >= boneCount || boneCount == 0) return;
+
+    if (mesh.boneOffsets == nullptr || mesh.boneOffsetCount != static_cast<int>(boneCount)) {
+        delete[] mesh.boneOffsets;
+        mesh.boneOffsets = new Matrix[boneCount];
+        mesh.boneOffsetCount = static_cast<int>(boneCount);
+        for (unsigned int i = 0; i < boneCount; ++i) {
+            mesh.boneOffsets[i] = Mat4::identity();
+        }
+    }
+
+    Matrix& matrix = mesh.boneOffsets[boneIndex];
+    matrix.m[0] = offset.a1; matrix.m[4] = offset.a2; matrix.m[8] = offset.a3; matrix.m[12] = offset.a4;
+    matrix.m[1] = offset.b1; matrix.m[5] = offset.b2; matrix.m[9] = offset.b3; matrix.m[13] = offset.b4;
+    matrix.m[2] = offset.c1; matrix.m[6] = offset.c2; matrix.m[10] = offset.c3; matrix.m[14] = offset.c4;
+    matrix.m[3] = offset.d1; matrix.m[7] = offset.d2; matrix.m[11] = offset.d3; matrix.m[15] = offset.d4;
 }
 
 void qcFreeModelSkeleton(Model& model) {
@@ -7000,18 +7033,28 @@ static void SampleBoneChannel(const aiNodeAnim* channel, int frame, int totalFra
     }
 }
 
-static std::vector<const aiNodeAnim*> MapChannelsToBones(const aiAnimation* anim, const ModelSkeleton& skel) {
+static std::vector<const aiNodeAnim*> MapChannelsToBones(const aiAnimation* anim,
+                                                         const ModelSkeleton& skel,
+                                                         aiNode* root) {
     std::vector<const aiNodeAnim*> channels(skel.boneCount, nullptr);
+    std::vector<aiNode*> nodes;
+    CollectSceneNodes(root, nodes);
 
     for (unsigned int c = 0; c < anim->mNumChannels; ++c) {
         const aiNodeAnim* nodeAnim = anim->mChannels[c];
         const std::string boneName = nodeAnim->mNodeName.C_Str();
 
-        for (unsigned int b = 0; b < skel.boneCount; ++b) {
-            if (boneName == std::string(skel.bones[b].name)) {
-                channels[b] = nodeAnim;
+        int match = -1;
+        for (size_t b = 0; b < nodes.size(); ++b) {
+            if (boneName != nodes[b]->mName.C_Str()) continue;
+            if (match < 0) match = static_cast<int>(b);
+            if (nodes[b]->mNumMeshes == 0) {
+                match = static_cast<int>(b);
                 break;
             }
+        }
+        if (match >= 0 && static_cast<unsigned int>(match) < skel.boneCount) {
+            channels[static_cast<size_t>(match)] = nodeAnim;
         }
     }
     return channels;
@@ -7053,7 +7096,9 @@ ModelAnimation* LoadModelAnimations(const char* fileName, int* animCount) {
     if (fileName == nullptr || *fileName == '\0') return nullptr;
 
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(fileName, aiProcess_Triangulate | aiProcess_GenNormals);
+    const aiScene* scene = importer.ReadFile(
+        fileName,
+        aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_PopulateArmatureData);
     if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || !scene->mRootNode) {
         TraceLog(LogLevel::Error, "MODEL", TextFormat("[Anim] Failed to load animations from %s: %s",
             fileName, importer.GetErrorString()));
@@ -7084,7 +7129,7 @@ ModelAnimation* LoadModelAnimations(const char* fileName, int* animCount) {
             CopyFixedString(dst.name, sizeof(dst.name), anim->mName.C_Str());
         }
 
-        const std::vector<const aiNodeAnim*> channels = MapChannelsToBones(anim, skel);
+        const std::vector<const aiNodeAnim*> channels = MapChannelsToBones(anim, skel, scene->mRootNode);
         const unsigned int frames = ComputeKeyframeCount(channels);
         if (frames == 0) continue;
 

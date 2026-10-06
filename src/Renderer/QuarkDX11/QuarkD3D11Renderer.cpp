@@ -1443,7 +1443,8 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(
         filePath,
-        aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs);
+        aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs |
+            aiProcess_PopulateArmatureData);
 
     if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || !scene->mRootNode)
     {
@@ -1468,14 +1469,15 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
         material.maps[MATERIAL_MAP_ALBEDO].color = WHITE;
 
         aiMaterial* sourceMaterial = scene->mMaterials[materialIndex];
-        aiColor4D diffuseColor{};
-        if (AI_SUCCESS == aiGetMaterialColor(sourceMaterial, AI_MATKEY_COLOR_DIFFUSE, &diffuseColor))
+        aiColor4D baseColor{};
+        if (AI_SUCCESS == aiGetMaterialColor(sourceMaterial, AI_MATKEY_BASE_COLOR, &baseColor) ||
+            AI_SUCCESS == aiGetMaterialColor(sourceMaterial, AI_MATKEY_COLOR_DIFFUSE, &baseColor))
         {
             material.maps[MATERIAL_MAP_ALBEDO].color = Color{
-                static_cast<unsigned char>(std::clamp(diffuseColor.r * 255.0f, 0.0f, 255.0f)),
-                static_cast<unsigned char>(std::clamp(diffuseColor.g * 255.0f, 0.0f, 255.0f)),
-                static_cast<unsigned char>(std::clamp(diffuseColor.b * 255.0f, 0.0f, 255.0f)),
-                static_cast<unsigned char>(std::clamp(diffuseColor.a * 255.0f, 0.0f, 255.0f))
+                static_cast<unsigned char>(std::clamp(baseColor.r * 255.0f, 0.0f, 255.0f)),
+                static_cast<unsigned char>(std::clamp(baseColor.g * 255.0f, 0.0f, 255.0f)),
+                static_cast<unsigned char>(std::clamp(baseColor.b * 255.0f, 0.0f, 255.0f)),
+                static_cast<unsigned char>(std::clamp(baseColor.a * 255.0f, 0.0f, 255.0f))
             };
         }
 
@@ -1515,6 +1517,8 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
         }
     }
 
+    qcPopulateModelSkeleton(scene, model);
+
     for (int meshIndex = 0; meshIndex < model.meshCount; ++meshIndex)
     {
         aiMesh* sourceMesh = scene->mMeshes[meshIndex];
@@ -1544,6 +1548,16 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
         for (unsigned int boneIndex = 0; boneIndex < sourceMesh->mNumBones; ++boneIndex)
         {
             const aiBone* bone = sourceMesh->mBones[boneIndex];
+            const int skeletonBoneIndex = qcFindSkeletonBoneIndex(scene, model, bone);
+            if (skeletonBoneIndex < 0 || skeletonBoneIndex > 255)
+            {
+                TraceLog(LogLevel::Warn, "MODEL",
+                         TextFormat("[D3D11] Mesh bone '%s' is not present in the model skeleton or exceeds the 8-bit bone index range",
+                                    bone->mName.C_Str()));
+                continue;
+            }
+            qcSetMeshBoneOffset(destinationMesh, static_cast<unsigned int>(skeletonBoneIndex),
+                                model.skeleton.boneCount, bone->mOffsetMatrix);
             for (unsigned int weightIndex = 0; weightIndex < bone->mNumWeights; ++weightIndex)
             {
                 const aiVertexWeight& weight = bone->mWeights[weightIndex];
@@ -1554,7 +1568,7 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
                 {
                     if (dstWeights[slot] <= 0.0f)
                     {
-                        dstBones[slot] = static_cast<unsigned char>(boneIndex);
+                        dstBones[slot] = static_cast<unsigned char>(skeletonBoneIndex);
                         dstWeights[slot] = weight.mWeight;
                         break;
                     }
@@ -1629,7 +1643,6 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
     TraceLog(LogLevel::Info, "MODEL",
              TextFormat("[D3D11] Model loaded successfully: %s (%d meshes, %d materials)",
                         filePath, model.meshCount, model.materialCount));
-    qcPopulateModelSkeleton(scene, model);
     return model;
 }
 
@@ -1823,6 +1836,9 @@ void QuarkD3D11Renderer::UnloadMesh(Mesh& mesh)
     mesh.boneIndices = nullptr;
     delete[] mesh.boneWeights;
     mesh.boneWeights = nullptr;
+    delete[] mesh.boneOffsets;
+    mesh.boneOffsets = nullptr;
+    mesh.boneOffsetCount = 0;
     delete[] mesh.animVertices;
     mesh.animVertices = nullptr;
     delete[] mesh.animNormals;

@@ -187,6 +187,8 @@ struct Mesh {
     int boneCount = 0;          // Number of bones (MAX: 256 bones)
     unsigned char* boneIndices = nullptr;
     float* boneWeights = nullptr;
+    Matrix* boneOffsets = nullptr;
+    int boneOffsetCount = 0;
 
     float* animVertices = nullptr;
     float* animNormals = nullptr;

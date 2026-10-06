@@ -2308,7 +2308,8 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
     Assimp::Importer importer;
     const aiScene* scene = nullptr;
     try {
-        scene = importer.ReadFile(filePath, aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs);
+        scene = importer.ReadFile(filePath, aiProcess_Triangulate | aiProcess_GenNormals |
+            aiProcess_FlipUVs | aiProcess_PopulateArmatureData);
     } catch (const std::exception& error) {
         TraceLog(LogLevel::Error, "MODEL", TextFormat("[OpenGL] Exception while loading model %s: %s",
             filePath ? filePath : "<null>", error.what()));
@@ -2335,14 +2336,16 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
         Material& mat = model.materials[i];
         mat = {};
         mat.maps = new MaterialMap[12];
+        mat.maps[MATERIAL_MAP_ALBEDO].color = WHITE;
 
-        aiColor4D diffuse;
-        if (AI_SUCCESS == aiGetMaterialColor(material, AI_MATKEY_COLOR_DIFFUSE, &diffuse)) {
+        aiColor4D baseColor{};
+        if (AI_SUCCESS == aiGetMaterialColor(material, AI_MATKEY_BASE_COLOR, &baseColor) ||
+            AI_SUCCESS == aiGetMaterialColor(material, AI_MATKEY_COLOR_DIFFUSE, &baseColor)) {
             mat.maps[MATERIAL_MAP_ALBEDO].color = Color{
-                static_cast<unsigned char>(diffuse.r * 255),
-                static_cast<unsigned char>(diffuse.g * 255),
-                static_cast<unsigned char>(diffuse.b * 255),
-                static_cast<unsigned char>(diffuse.a * 255)
+                static_cast<unsigned char>(std::clamp(baseColor.r * 255.0f, 0.0f, 255.0f)),
+                static_cast<unsigned char>(std::clamp(baseColor.g * 255.0f, 0.0f, 255.0f)),
+                static_cast<unsigned char>(std::clamp(baseColor.b * 255.0f, 0.0f, 255.0f)),
+                static_cast<unsigned char>(std::clamp(baseColor.a * 255.0f, 0.0f, 255.0f))
             };
         }
 
@@ -2428,6 +2431,8 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
         }
     }
 
+    qcPopulateModelSkeleton(scene, model);
+
     int totalVertices = 0;
     int totalTriangles = 0;
 
@@ -2481,6 +2486,15 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
         qMesh.boneWeights = new float[static_cast<size_t>(qMesh.vertexCount) * 4u]{};
         for (unsigned int boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex) {
             const aiBone* bone = mesh->mBones[boneIndex];
+            const int skeletonBoneIndex = qcFindSkeletonBoneIndex(scene, model, bone);
+            if (skeletonBoneIndex < 0 || skeletonBoneIndex > 255) {
+                TraceLog(LogLevel::Warn, "MODEL",
+                         TextFormat("[OpenGL] Mesh bone '%s' is not present in the model skeleton or exceeds the 8-bit bone index range",
+                                    bone->mName.C_Str()));
+                continue;
+            }
+            qcSetMeshBoneOffset(qMesh, static_cast<unsigned int>(skeletonBoneIndex),
+                                model.skeleton.boneCount, bone->mOffsetMatrix);
             for (unsigned int weightIndex = 0; weightIndex < bone->mNumWeights; ++weightIndex) {
                 const aiVertexWeight& weight = bone->mWeights[weightIndex];
                 const unsigned int vertexIndex = weight.mVertexId;
@@ -2488,7 +2502,7 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
                 unsigned char* dstBones = qMesh.boneIndices + static_cast<size_t>(vertexIndex) * 4u;
                 for (int slot = 0; slot < 4; ++slot) {
                     if (dstWeights[slot] <= 0.0f) {
-                        dstBones[slot] = static_cast<unsigned char>(boneIndex);
+                        dstBones[slot] = static_cast<unsigned char>(skeletonBoneIndex);
                         dstWeights[slot] = weight.mWeight;
                         break;
                     }
@@ -2564,7 +2578,6 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
 
     TraceLog(LogLevel::Info, "MODEL", TextFormat("[OpenGL] Model loaded successfully: %s (%d meshes, %d materials, %d total vertices, %d total triangles)",
         filePath ? filePath : "<null>", model.meshCount, model.materialCount, totalVertices, totalTriangles));
-    qcPopulateModelSkeleton(scene, model);
     return model;
 }
 
@@ -2587,6 +2600,7 @@ void  QuarkGLRenderer::UnloadModel(Model& model) {
         delete[] mesh.indices;
         delete[] mesh.boneIndices;
         delete[] mesh.boneWeights;
+        delete[] mesh.boneOffsets;
         delete[] mesh.animVertices;
         delete[] mesh.animNormals;
         delete[] mesh.bindVertices;
@@ -2862,6 +2876,9 @@ void QuarkGLRenderer::UnloadMesh(Mesh& mesh) {
     mesh.boneIndices = nullptr;
     delete[] mesh.boneWeights;
     mesh.boneWeights = nullptr;
+    delete[] mesh.boneOffsets;
+    mesh.boneOffsets = nullptr;
+    mesh.boneOffsetCount = 0;
     delete[] mesh.animVertices;
     mesh.animVertices = nullptr;
     delete[] mesh.animNormals;
@@ -2918,6 +2935,8 @@ void QuarkGLRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
 
     GLuint texId = m_3d.whiteTexture;
     const bool hasTexture = material.maps && material.maps[MATERIAL_MAP_ALBEDO].texture.valid;
+    const Color materialColor = material.maps
+        ? material.maps[MATERIAL_MAP_ALBEDO].color : WHITE;
     if (hasTexture) {
         texId = material.maps[MATERIAL_MAP_ALBEDO].texture.id;
     }
@@ -2925,9 +2944,9 @@ void QuarkGLRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
     const Shader* customShader = ResolveMaterialShader(&material);
     if (customShader) {
         glUseProgram(customShader->id);
-        ApplyMaterialShaderUniforms(*customShader, transform, m_3d.viewMatrix, m_3d.projectionMatrix, WHITE, hasTexture);
+        ApplyMaterialShaderUniforms(*customShader, transform, m_3d.viewMatrix, m_3d.projectionMatrix, materialColor, hasTexture);
     } else {
-        QuarkGL3D::ApplyDrawState(m_3d, transform, WHITE, texId);
+        QuarkGL3D::ApplyDrawState(m_3d, transform, materialColor, texId);
     }
 
     glActiveTexture(GL_TEXTURE0);
@@ -2983,17 +3002,19 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
             if(hasTexture)
                 texId = material->maps[MATERIAL_MAP_ALBEDO].texture.id;
         }
+        const Color materialColor = material && material->maps
+            ? material->maps[MATERIAL_MAP_ALBEDO].color : WHITE;
 
         if (customShader) {
             glUseProgram(customShader->id);
-            const Color materialColor = material && material->maps
-                ? material->maps[MATERIAL_MAP_ALBEDO].color : WHITE;
             ApplyMaterialShaderUniforms(*customShader, final, m_3d.viewMatrix, m_3d.projectionMatrix,
                 materialColor, hasTexture);
         } else {
             glUseProgram(m_3d.shader3D);
             if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
-            if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc, 1, 1, 1, 1);
+            if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc,
+                materialColor.r / 255.0f, materialColor.g / 255.0f,
+                materialColor.b / 255.0f, materialColor.a / 255.0f);
             if(m_3d.samplerLoc >= 0) glUniform1i(m_3d.samplerLoc, 0);
         }
 
@@ -3032,16 +3053,16 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Col
             if(hasTexture)
                 texId = material->maps[MATERIAL_MAP_ALBEDO].texture.id;
         }
+        const Color materialColor = material && material->maps
+            ? material->maps[MATERIAL_MAP_ALBEDO].color : WHITE;
+        const Color combinedColor{
+            static_cast<unsigned char>(materialColor.r * tint.r / 255),
+            static_cast<unsigned char>(materialColor.g * tint.g / 255),
+            static_cast<unsigned char>(materialColor.b * tint.b / 255),
+            static_cast<unsigned char>(materialColor.a * tint.a / 255)};
 
         if (customShader) {
             glUseProgram(customShader->id);
-            const Color materialColor = material && material->maps
-                ? material->maps[MATERIAL_MAP_ALBEDO].color : WHITE;
-            const Color combinedColor{
-                static_cast<unsigned char>(materialColor.r * tint.r / 255),
-                static_cast<unsigned char>(materialColor.g * tint.g / 255),
-                static_cast<unsigned char>(materialColor.b * tint.b / 255),
-                static_cast<unsigned char>(materialColor.a * tint.a / 255)};
             ApplyMaterialShaderUniforms(*customShader, final, m_3d.viewMatrix, m_3d.projectionMatrix,
                 combinedColor, hasTexture);
         } else {
@@ -3049,7 +3070,8 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Col
             if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
             if(m_3d.samplerLoc >= 0) glUniform1i(m_3d.samplerLoc, 0);
             if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc,
-                tint.r / 255.0f, tint.g / 255.0f, tint.b / 255.0f, tint.a / 255.0f);
+                combinedColor.r / 255.0f, combinedColor.g / 255.0f,
+                combinedColor.b / 255.0f, combinedColor.a / 255.0f);
         }
 
         glBindTexture(GL_TEXTURE_2D, texId);
