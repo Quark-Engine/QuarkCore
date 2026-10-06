@@ -694,6 +694,7 @@ struct QCAPI Mat4 {
         result.m[10] = (far + near) / (near - far);
         result.m[11] = -1.0f;
         result.m[14] = (2.0f * far * near) / (near - far);
+        result.m[15] = 0.0f;
         return result;
     }
 
@@ -705,6 +706,7 @@ struct QCAPI Mat4 {
         result.m[10] = far / (near - far);
         result.m[11] = -1.0f;
         result.m[14] = (far * near) / (near - far);
+        result.m[15] = 0.0f;
         return result;
     }
 

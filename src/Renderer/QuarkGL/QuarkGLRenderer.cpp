@@ -1621,6 +1621,9 @@ void QuarkGLRenderer::EndMode3D() {
     FlushLines3D();
     FlushTriangles3D();
 
+    m_matrixStack.clear();
+    m_currentMatrix = Mat4::identity();
+
     glDisable(GL_DEPTH_TEST);
     glUseProgram(0);
 }
