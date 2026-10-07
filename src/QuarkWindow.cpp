@@ -31,9 +31,9 @@ bool SetWindowPosition(int x, int y) {
     return CheckWindowCall(SDL_SetWindowPosition(gWin.window, x, y), "SDL_SetWindowPosition");
 }
 
-IVec2 GetWindowPosition() {
+Vec2i GetWindowPosition() {
     EnsureInitialized();
-    IVec2 position{};
+    Vec2i position{};
     SDL_GetWindowPosition(gWin.window, &position.x, &position.y);
     return position;
 }
@@ -43,16 +43,16 @@ bool SetWindowSize(int width, int height) {
     return CheckWindowCall(SDL_SetWindowSize(gWin.window, width, height), "SDL_SetWindowSize");
 }
 
-IVec2 GetWindowSize() {
+Vec2i GetWindowSize() {
     EnsureInitialized();
-    IVec2 size{};
+    Vec2i size{};
     SDL_GetWindowSize(gWin.window, &size.x, &size.y);
     return size;
 }
 
-IVec2 GetWindowSizeInPixels() {
+Vec2i GetWindowSizeInPixels() {
     EnsureInitialized();
-    IVec2 size{};
+    Vec2i size{};
     SDL_GetWindowSizeInPixels(gWin.window, &size.x, &size.y);
     return size;
 }
@@ -62,9 +62,9 @@ bool SetWindowMinimumSize(int width, int height) {
     return CheckWindowCall(SDL_SetWindowMinimumSize(gWin.window, width, height), "SDL_SetWindowMinimumSize");
 }
 
-IVec2 GetWindowMinimumSize() {
+Vec2i GetWindowMinimumSize() {
     EnsureInitialized();
-    IVec2 size{};
+    Vec2i size{};
     SDL_GetWindowMinimumSize(gWin.window, &size.x, &size.y);
     return size;
 }
@@ -74,9 +74,9 @@ bool SetWindowMaximumSize(int width, int height) {
     return CheckWindowCall(SDL_SetWindowMaximumSize(gWin.window, width, height), "SDL_SetWindowMaximumSize");
 }
 
-IVec2 GetWindowMaximumSize() {
+Vec2i GetWindowMaximumSize() {
     EnsureInitialized();
-    IVec2 size{};
+    Vec2i size{};
     SDL_GetWindowMaximumSize(gWin.window, &size.x, &size.y);
     return size;
 }

@@ -255,6 +255,11 @@ struct Camera3D {
 
 using Camera = Camera3D;
 
+/**
+ * @brief Build the view-projection matrix for a 3D camera.
+ * @param camera Camera whose matrix should be calculated.
+ * @return Camera view-projection matrix.
+ */
 inline Mat4 GetCameraMat4(const Camera3D& camera) {
     return Mat4::lookAt(camera.position, camera.target, camera.up);
 }
@@ -954,6 +959,11 @@ QCAPI ID3D11Device *GetD3D11Device();
  * @return D3D11 immediate context, or nullptr if unavailable.
  */
 QCAPI ID3D11DeviceContext *GetD3D11ImmediateContext();
+/**
+ * @brief Get the Direct3D 11 shader resource view for a texture.
+ * @param textureId QuarkCore texture identifier.
+ * @return Shader resource view, or nullptr if the texture is unavailable.
+ */
 QCAPI ID3D11ShaderResourceView *GetD3D11TextureShaderResourceView(uint32_t textureId);
 
 using D3D11RenderCallback = void(*)(ID3D11DeviceContext *deviceContext);
@@ -1038,9 +1048,9 @@ QCAPI bool SetWindowPosition(int x, int y);
 /**
  * @brief Get current window position.
  *
- * @return Window position as IVec2.
+ * @return Window position as Vec2i.
  */
-QCAPI IVec2 GetWindowPosition();
+QCAPI Vec2i GetWindowPosition();
 /**
  * @brief Set window size.
  *
@@ -1053,15 +1063,15 @@ QCAPI bool SetWindowSize(int width, int height);
 /**
  * @brief Get current window size.
  *
- * @return Window size as IVec2.
+ * @return Window size as Vec2i.
  */
-QCAPI IVec2 GetWindowSize();
+QCAPI Vec2i GetWindowSize();
 /**
  * @brief Get current window size in pixels.
  *
- * @return Pixel size as IVec2.
+ * @return Pixel size as Vec2i.
  */
-QCAPI IVec2 GetWindowSizeInPixels();
+QCAPI Vec2i GetWindowSizeInPixels();
 /**
  * @brief Set minimum allowed window size.
  *
@@ -1074,9 +1084,9 @@ QCAPI bool SetWindowMinimumSize(int width, int height);
 /**
  * @brief Get minimum window size.
  *
- * @return Minimum size as IVec2.
+ * @return Minimum size as Vec2i.
  */
-QCAPI IVec2 GetWindowMinimumSize();
+QCAPI Vec2i GetWindowMinimumSize();
 /**
  * @brief Set maximum allowed window size.
  *
@@ -1089,9 +1099,9 @@ QCAPI bool SetWindowMaximumSize(int width, int height);
 /**
  * @brief Get maximum window size.
  *
- * @return Maximum size as IVec2.
+ * @return Maximum size as Vec2i.
  */
-QCAPI IVec2 GetWindowMaximumSize();
+QCAPI Vec2i GetWindowMaximumSize();
 /**
  * @brief Set window resizable flag.
  *
@@ -1401,9 +1411,27 @@ QCAPI bool OpenURL(const char* url);
  * @param callback Callback function or nullptr to disable.
  */
 QCAPI void SetTraceLogCallback(TraceLogCallback callback);
+/**
+ * @brief Get the refresh rate of the current monitor.
+ * @return Refresh rate in hertz.
+ */
 QCAPI float GetCurrentMonitorRefreshRate();
+/**
+ * @brief Get the default font.
+ * @return Default font object.
+ */
 QCAPI Font GetDefaultFont();
+/**
+ * @brief Get a shader attribute location by name.
+ * @param shader Shader to query.
+ * @param attribName Attribute name.
+ * @return Attribute location, or -1 if it is not found.
+ */
 QCAPI int GetShaderAttributeLocation(const Shader& shader, const char* attribName);
+/**
+ * @brief Set the active logging level.
+ * @param level Logging level to use.
+ */
 QCAPI void SetLogLevel(LogLevel level);
 
 /**
@@ -1413,18 +1441,57 @@ QCAPI void SetLogLevel(LogLevel level);
  */
 QCAPI SDL_Window* GetNativeWindow();
 
+/**
+ * @brief Get the native SDL window handle.
+ * @return Pointer to the SDL window.
+ */
 inline SDL_Window* GetWindowHandle(void) { return GetNativeWindow(); }
+/**
+ * @brief Set the minimum window dimensions.
+ * @param width Minimum width in pixels.
+ * @param height Minimum height in pixels.
+ * @return true if the operation succeeds.
+ */
 inline bool SetWindowMinSize(int width, int height) { return SetWindowMinimumSize(width, height); }
+/**
+ * @brief Set the maximum window dimensions.
+ * @param width Maximum width in pixels.
+ * @param height Maximum height in pixels.
+ * @return true if the operation succeeds.
+ */
 inline bool SetWindowMaxSize(int width, int height) { return SetWindowMaximumSize(width, height); }
+/**
+ * @brief Get the window's display scale.
+ * @return Display scale factor.
+ */
 inline float GetWindowScaleDPI(void) { return GetWindowDisplayScale(); }
+/**
+ * @brief Get the refresh rate of a monitor as an integer.
+ * @param monitor Monitor index (the current monitor is used).
+ * @return Refresh rate in hertz.
+ */
 inline int GetMonitorRefreshRate(int monitor) {
     (void)monitor;
     return static_cast<int>(std::lround(static_cast<double>(GetCurrentMonitorRefreshRate())));
 }
+/**
+ * @brief Get the default font.
+ * @return Default font object.
+ */
 inline Font GetFontDefault(void) { return GetDefaultFont(); }
+/**
+ * @brief Get a shader attribute location by name.
+ * @param shader Shader to query.
+ * @param attribName Attribute name.
+ * @return Attribute location, or -1 if it is not found.
+ */
 inline int GetShaderLocationAttrib(const Shader& shader, const char* attribName) {
     return GetShaderAttributeLocation(shader, attribName);
 }
+/**
+ * @brief Set the log level using a raylib-compatible integer value.
+ * @param logLevel Integer log level to map to a QuarkCore logging level.
+ */
 inline void SetTraceLogLevel(int logLevel) {
     switch (logLevel) {
         case 0:
@@ -1819,123 +1886,652 @@ QCAPI bool IsMouseButtonUp(MouseButton button);
  * @return Mouse position as a Vec2.
  */
 QCAPI Vec2 GetMousePosition();
+/**
+ * @brief Get the horizontal mouse position as an integer.
+ * @return Mouse X coordinate in pixels.
+ */
 inline int GetMouseX() { return static_cast<int>(GetMousePosition().x); }
+/**
+ * @brief Get the vertical mouse position as an integer.
+ * @return Mouse Y coordinate in pixels.
+ */
 inline int GetMouseY() { return static_cast<int>(GetMousePosition().y); }
 
+/**
+ * @brief Check whether a key is currently in its repeat-pressed state.
+ * @param key Key code to check.
+ * @return true if the key press is repeating.
+ */
 QCAPI bool IsKeyPressedRepeat(int key);
+/**
+ * @brief Get the display name for a key.
+ * @param key Key code.
+ * @return Key name string, or an empty string if unavailable.
+ */
 QCAPI const char* GetKeyName(int key);
+/**
+ * @brief Get the X coordinate of the primary touch point.
+ * @return Touch X coordinate.
+ */
 QCAPI int GetTouchX(void);
+/**
+ * @brief Get the Y coordinate of the primary touch point.
+ * @return Touch Y coordinate.
+ */
 QCAPI int GetTouchY(void);
+/**
+ * @brief Get the position of a touch point.
+ * @param index Touch point index.
+ * @return Touch position in screen coordinates.
+ */
 QCAPI Vec2 GetTouchPosition(int index);
+/**
+ * @brief Get the identifier of a touch point.
+ * @param index Touch point index.
+ * @return Touch point identifier.
+ */
 QCAPI int GetTouchPointId(int index);
+/**
+ * @brief Get the number of active touch points.
+ * @return Active touch point count.
+ */
 QCAPI int GetTouchPointCount(void);
+/**
+ * @brief Enable the selected gesture types.
+ * @param flags Bitmask of gesture types to enable.
+ */
 QCAPI void SetGesturesEnabled(unsigned int flags);
+/**
+ * @brief Check whether a specified gesture was detected.
+ * @param gesture Gesture type to check.
+ * @return true if the gesture was detected.
+ */
 QCAPI bool IsGestureDetected(unsigned int gesture);
+/**
+ * @brief Get the most recently detected gesture type.
+ * @return Detected gesture identifier.
+ */
 QCAPI int GetGestureDetected(void);
+/**
+ * @brief Get the duration of the current hold gesture.
+ * @return Hold duration in seconds.
+ */
 QCAPI float GetGestureHoldDuration(void);
+/**
+ * @brief Get the movement vector of the current drag gesture.
+ * @return Drag movement vector.
+ */
 QCAPI Vec2 GetGestureDragVector(void);
+/**
+ * @brief Get the angle of the current drag gesture.
+ * @return Drag angle in radians.
+ */
 QCAPI float GetGestureDragAngle(void);
+/**
+ * @brief Get the movement vector of the current pinch gesture.
+ * @return Pinch movement vector.
+ */
 QCAPI Vec2 GetGesturePinchVector(void);
+/**
+ * @brief Get the angle of the current pinch gesture.
+ * @return Pinch angle in radians.
+ */
 QCAPI float GetGesturePinchAngle(void);
+/**
+ * @brief Update a camera using a selected camera control mode.
+ * @param camera Camera to update.
+ * @param mode Camera control mode.
+ */
 QCAPI void UpdateCamera(Camera3D* camera, int mode);
+/**
+ * @brief Update a camera using explicit movement, rotation, and zoom inputs.
+ * @param camera Camera to update.
+ * @param movement Camera movement vector.
+ * @param rotation Camera rotation angles in radians.
+ * @param zoom Zoom change.
+ */
 QCAPI void UpdateCameraPro(Camera3D* camera, Vec2 movement, Vec3 rotation, float zoom);
+/**
+ * @brief Build the view matrix for a 3D camera.
+ * @param camera Camera configuration.
+ * @return Camera view matrix.
+ */
 QCAPI Mat4 GetCameraMatrix(Camera3D camera);
+/**
+ * @brief Build the view matrix for a 2D camera.
+ * @param camera Camera configuration.
+ * @return Camera view matrix.
+ */
 QCAPI Mat4 GetCameraMatrix2D(Camera2D camera);
+/**
+ * @brief Begin rendering with a blend mode.
+ * @param mode Blend mode identifier.
+ */
 QCAPI void BeginBlendMode(int mode);
+/**
+ * @brief End the current blend mode.
+ */
 QCAPI void EndBlendMode(void);
+/**
+ * @brief Begin drawing within a rectangular scissor region.
+ * @param x Scissor region X coordinate.
+ * @param y Scissor region Y coordinate.
+ * @param width Scissor region width.
+ * @param height Scissor region height.
+ */
 QCAPI void BeginScissorMode(int x, int y, int width, int height);
+/**
+ * @brief End the current scissor region.
+ */
 QCAPI void EndScissorMode(void);
+/**
+ * @brief Set the filtering mode for a texture.
+ * @param texture Texture to configure.
+ * @param filter Texture filter identifier.
+ */
 QCAPI void SetTextureFilter(Texture2D texture, int filter);
+/**
+ * @brief Set the wrapping mode for a texture.
+ * @param texture Texture to configure.
+ * @param wrap Texture wrapping identifier.
+ */
 QCAPI void SetTextureWrap(Texture2D texture, int wrap);
 
+/**
+ * @brief Initialize the audio device and its playback resources.
+ */
 QCAPI void InitAudioDevice(void);
+/**
+ * @brief Shut down the audio device and release its resources.
+ */
 QCAPI void CloseAudioDevice(void);
+/**
+ * @brief Check whether the audio device is initialized and available.
+ * @return true if the audio device is ready.
+ */
 QCAPI bool IsAudioDeviceReady(void);
+/**
+ * @brief Set the master audio output volume.
+ * @param volume Master volume, typically in the range [0.0, 1.0].
+ */
 QCAPI void SetMasterVolume(float volume);
+/**
+ * @brief Get the master audio output volume.
+ * @return Current master volume.
+ */
 QCAPI float GetMasterVolume(void);
+/**
+ * @brief Load a waveform from a file.
+ * @param fileName Path to the audio file.
+ * @return Loaded waveform, or an empty waveform on failure.
+ */
 QCAPI Wave LoadWave(const char* fileName);
+/**
+ * @brief Load a waveform from encoded memory data.
+ * @param fileType File extension or data format identifier.
+ * @param fileData Encoded audio data.
+ * @param dataSize Size of the encoded data in bytes.
+ * @return Loaded waveform, or an empty waveform on failure.
+ */
 QCAPI Wave LoadWaveFromMemory(const char* fileType, const unsigned char* fileData, int dataSize);
+/**
+ * @brief Convert waveform samples to a floating-point array.
+ * @param wave Waveform to convert.
+ * @return Allocated sample array, or nullptr if conversion fails.
+ */
 QCAPI float* LoadWaveSamples(Wave wave);
+/**
+ * @brief Load a sound from a file.
+ * @param fileName Path to the audio file.
+ * @return Loaded sound, or an invalid sound on failure.
+ */
 QCAPI Sound LoadSound(const char* fileName);
+/**
+ * @brief Create a sound from a waveform.
+ * @param wave Source waveform.
+ * @return Loaded sound, or an invalid sound on failure.
+ */
 QCAPI Sound LoadSoundFromWave(Wave wave);
+/**
+ * @brief Create an alias that shares the source sound's audio data.
+ * @param source Sound to alias.
+ * @return Sound alias.
+ */
 QCAPI Sound LoadSoundAlias(Sound source);
+/**
+ * @brief Replace audio data in a sound buffer.
+ * @param sound Sound to update.
+ * @param data New sample data.
+ * @param frameCount Number of audio frames supplied.
+ */
 QCAPI void UpdateSound(Sound sound, const void* data, int frameCount);
+/**
+ * @brief Unload waveform data and release its resources.
+ * @param wave Waveform to unload.
+ */
 QCAPI void UnloadWave(Wave wave);
+/**
+ * @brief Unload a sound and release its resources.
+ * @param sound Sound to unload.
+ */
 QCAPI void UnloadSound(Sound sound);
+/**
+ * @brief Unload a sound alias without unloading its source sound.
+ * @param alias Sound alias to unload.
+ */
 QCAPI void UnloadSoundAlias(Sound alias);
+/**
+ * @brief Export a waveform to an audio file.
+ * @param wave Waveform to export.
+ * @param fileName Destination file path.
+ * @return true if the waveform was exported successfully.
+ */
 QCAPI bool ExportWave(Wave wave, const char* fileName);
+/**
+ * @brief Export waveform samples as source code.
+ * @param wave Waveform to export.
+ * @param fileName Destination source file path.
+ * @return true if the file was written successfully.
+ */
 QCAPI bool ExportWaveAsCode(Wave wave, const char* fileName);
+/**
+ * @brief Create a copy of a waveform and its sample data.
+ * @param wave Waveform to copy.
+ * @return Independent waveform copy.
+ */
 QCAPI Wave WaveCopy(Wave wave);
+/**
+ * @brief Crop a waveform to an inclusive frame range.
+ * @param wave Waveform to modify.
+ * @param initFrame First frame to keep.
+ * @param finalFrame Last frame to keep.
+ */
 QCAPI void WaveCrop(Wave* wave, int initFrame, int finalFrame);
+/**
+ * @brief Convert a waveform to the requested audio format.
+ * @param wave Waveform to modify.
+ * @param sampleRate Target sample rate in hertz.
+ * @param sampleSize Target sample size in bits.
+ * @param channels Target channel count.
+ */
 QCAPI void WaveFormat(Wave* wave, int sampleRate, int sampleSize, int channels);
+/**
+ * @brief Load a streaming music track from a file.
+ * @param fileName Path to the audio file.
+ * @return Music stream, or an invalid stream on failure.
+ */
 QCAPI Music LoadMusicStream(const char* fileName);
+/**
+ * @brief Load a streaming music track from encoded memory data.
+ * @param fileType File extension or data format identifier.
+ * @param data Encoded audio data.
+ * @param dataSize Size of the encoded data in bytes.
+ * @return Music stream, or an invalid stream on failure.
+ */
 QCAPI Music LoadMusicStreamFromMemory(const char* fileType, const unsigned char* data, int dataSize);
+/**
+ * @brief Unload a music stream and release its resources.
+ * @param music Music stream to unload.
+ */
 QCAPI void UnloadMusicStream(Music music);
+/**
+ * @brief Check whether a music stream is valid.
+ * @param music Stream to check.
+ * @return true if the stream is valid.
+ */
 QCAPI bool IsMusicValid(Music music);
+/**
+ * @brief Start playback of a music stream.
+ * @param music Stream to play.
+ */
 QCAPI void PlayMusicStream(Music music);
+/**
+ * @brief Check whether a music stream is currently playing.
+ * @param music Stream to check.
+ * @return true if the stream is playing.
+ */
 QCAPI bool IsMusicStreamPlaying(Music music);
+/**
+ * @brief Update a music stream by processing its next audio buffers.
+ * @param music Stream to update.
+ */
 QCAPI void UpdateMusicStream(Music music);
+/**
+ * @brief Stop playback of a music stream.
+ * @param music Stream to stop.
+ */
 QCAPI void StopMusicStream(Music music);
+/**
+ * @brief Pause playback of a music stream.
+ * @param music Stream to pause.
+ */
 QCAPI void PauseMusicStream(Music music);
+/**
+ * @brief Resume playback of a paused music stream.
+ * @param music Stream to resume.
+ */
 QCAPI void ResumeMusicStream(Music music);
+/**
+ * @brief Seek to a position in a music stream.
+ * @param music Music stream to seek.
+ * @param position Playback position in seconds.
+ */
 QCAPI void SeekMusicStream(Music music, float position);
+/**
+ * @brief Set the playback volume of a music stream.
+ * @param music Music stream to modify.
+ * @param volume Volume, typically in the range [0.0, 1.0].
+ */
 QCAPI void SetMusicVolume(Music music, float volume);
+/**
+ * @brief Set the playback pitch of a music stream.
+ * @param music Music stream to modify.
+ * @param pitch Pitch multiplier; 1.0 preserves the original pitch.
+ */
 QCAPI void SetMusicPitch(Music music, float pitch);
+/**
+ * @brief Set the stereo pan of a music stream.
+ * @param music Music stream to modify.
+ * @param pan Pan value, typically in the range [-1.0, 1.0].
+ */
 QCAPI void SetMusicPan(Music music, float pan);
+/**
+ * @brief Get the total playback duration of a music stream in seconds.
+ * @param music Stream to query.
+ * @return Total duration in seconds.
+ */
 QCAPI float GetMusicTimeLength(Music music);
+/**
+ * @brief Get the elapsed playback time of a music stream in seconds.
+ * @param music Stream to query.
+ * @return Elapsed playback time in seconds.
+ */
 QCAPI float GetMusicTimePlayed(Music music);
+/**
+ * @brief Create an audio stream.
+ * @param sampleRate Samples per second.
+ * @param sampleSize Bits per sample.
+ * @param channels Number of audio channels.
+ * @return Audio stream, or an invalid stream on failure.
+ */
 QCAPI AudioStream LoadAudioStream(unsigned int sampleRate, unsigned int sampleSize, unsigned int channels);
+/**
+ * @brief Unload an audio stream and release its resources.
+ * @param stream Stream to unload.
+ */
 QCAPI void UnloadAudioStream(AudioStream stream);
+/**
+ * @brief Check whether an audio stream is valid.
+ * @param stream Stream to check.
+ * @return true if the stream is valid.
+ */
 QCAPI bool IsAudioStreamValid(AudioStream stream);
+/**
+ * @brief Check whether an audio stream is currently playing.
+ * @param stream Stream to check.
+ * @return true if the stream is playing.
+ */
 QCAPI bool IsAudioStreamPlaying(AudioStream stream);
+/**
+ * @brief Check whether an audio stream has a processed buffer available.
+ * @param stream Stream to check.
+ * @return true if a processed buffer is available.
+ */
 QCAPI bool IsAudioStreamProcessed(AudioStream stream);
+/**
+ * @brief Start playback of an audio stream.
+ * @param stream Stream to play.
+ */
 QCAPI void PlayAudioStream(AudioStream stream);
+/**
+ * @brief Pause playback of an audio stream.
+ * @param stream Stream to pause.
+ */
 QCAPI void PauseAudioStream(AudioStream stream);
+/**
+ * @brief Resume playback of a paused audio stream.
+ * @param stream Stream to resume.
+ */
 QCAPI void ResumeAudioStream(AudioStream stream);
+/**
+ * @brief Stop playback of an audio stream.
+ * @param stream Stream to stop.
+ */
 QCAPI void StopAudioStream(AudioStream stream);
+/**
+ * @brief Submit sample data to an audio stream.
+ * @param stream Stream to update.
+ * @param data Interleaved audio sample data.
+ * @param frameCount Number of audio frames supplied.
+ */
 QCAPI void UpdateAudioStream(AudioStream stream, const void* data, int frameCount);
+/**
+ * @brief Set the default audio stream buffer size.
+ * @param size Buffer size in audio frames.
+ */
 QCAPI void SetAudioStreamBufferSizeDefault(int size);
+/**
+ * @brief Set the callback used to generate audio stream data.
+ * @param stream Stream to configure.
+ * @param callback Audio callback, or nullptr to clear it.
+ */
 QCAPI void SetAudioStreamCallback(AudioStream stream, AudioCallback callback);
+/**
+ * @brief Attach a processor callback to an audio stream.
+ * @param stream Stream to process.
+ * @param processor Audio processing callback.
+ */
 QCAPI void AttachAudioStreamProcessor(AudioStream stream, AudioCallback processor);
+/**
+ * @brief Detach a processor callback from an audio stream.
+ * @param stream Stream to update.
+ * @param processor Processor callback to detach.
+ */
 QCAPI void DetachAudioStreamProcessor(AudioStream stream, AudioCallback processor);
+/**
+ * @brief Attach a processor to the mixed output of all audio streams.
+ * @param processor Mixed-audio processing callback.
+ */
 QCAPI void AttachAudioMixedProcessor(AudioCallback processor);
+/**
+ * @brief Detach a processor from the mixed audio output.
+ * @param processor Processor callback to detach.
+ */
 QCAPI void DetachAudioMixedProcessor(AudioCallback processor);
+/**
+ * @brief Set the playback volume of an audio stream.
+ * @param stream Stream to modify.
+ * @param volume Volume, typically in the range [0.0, 1.0].
+ */
 QCAPI void SetAudioStreamVolume(AudioStream stream, float volume);
+/**
+ * @brief Set the playback pitch of an audio stream.
+ * @param stream Stream to modify.
+ * @param pitch Pitch multiplier; 1.0 preserves the original pitch.
+ */
 QCAPI void SetAudioStreamPitch(AudioStream stream, float pitch);
+/**
+ * @brief Set the stereo pan of an audio stream.
+ * @param stream Stream to modify.
+ * @param pan Pan value, typically in the range [-1.0, 1.0].
+ */
 QCAPI void SetAudioStreamPan(AudioStream stream, float pan);
+/**
+ * @brief Start playback of a sound.
+ * @param sound Sound to play.
+ */
 QCAPI void PlaySound(Sound sound);
+/**
+ * @brief Stop playback of a sound.
+ * @param sound Sound to stop.
+ */
 QCAPI void StopSound(Sound sound);
+/**
+ * @brief Pause playback of a sound.
+ * @param sound Sound to pause.
+ */
 QCAPI void PauseSound(Sound sound);
+/**
+ * @brief Resume playback of a paused sound.
+ * @param sound Sound to resume.
+ */
 QCAPI void ResumeSound(Sound sound);
+/**
+ * @brief Check whether a sound is currently playing.
+ * @param sound Sound to check.
+ * @return true if the sound is playing.
+ */
 QCAPI bool IsSoundPlaying(Sound sound);
+/**
+ * @brief Set the playback volume of a sound.
+ * @param sound Sound to modify.
+ * @param volume Volume, typically in the range [0.0, 1.0].
+ */
 QCAPI void SetSoundVolume(Sound sound, float volume);
+/**
+ * @brief Set the playback pitch of a sound.
+ * @param sound Sound to modify.
+ * @param pitch Pitch multiplier; 1.0 preserves the original pitch.
+ */
 QCAPI void SetSoundPitch(Sound sound, float pitch);
+/**
+ * @brief Set the stereo pan of a sound.
+ * @param sound Sound to modify.
+ * @param pan Pan value, typically in the range [-1.0, 1.0].
+ */
 QCAPI void SetSoundPan(Sound sound, float pan);
 
+/**
+ * @brief Load a file into a heap-allocated byte buffer.
+ * @param fileName Path to the file.
+ * @param dataSize Output size of the returned buffer in bytes.
+ * @return File data, or nullptr if loading fails.
+ */
 QCAPI unsigned char* LoadFileData(const char* fileName, int* dataSize);
+/**
+ * @brief Release data allocated by LoadFileData.
+ * @param data File data buffer to release.
+ */
 QCAPI void UnloadFileData(unsigned char* data);
+/**
+ * @brief Save bytes to a file.
+ * @param fileName Destination file path.
+ * @param data Byte data to write.
+ * @param dataSize Number of bytes to write.
+ * @return true if the data was saved successfully.
+ */
 QCAPI bool SaveFileData(const char* fileName, const void* data, int dataSize);
+/**
+ * @brief Export byte data as a C source-code array.
+ * @param data Byte data to export.
+ * @param dataSize Number of bytes to export.
+ * @param fileName Destination source file path.
+ * @return true if the file was written successfully.
+ */
 QCAPI bool ExportDataAsCode(const unsigned char* data, int dataSize, const char* fileName);
+/**
+ * @brief Load a text file into a heap-allocated null-terminated string.
+ * @param fileName Path to the text file.
+ * @return Loaded text, or nullptr if loading fails.
+ */
 QCAPI char* LoadFileText(const char* fileName);
+/**
+ * @brief Release text allocated by LoadFileText.
+ * @param text Text buffer to release.
+ */
 QCAPI void UnloadFileText(char* text);
+/**
+ * @brief Save a null-terminated string to a file.
+ * @param fileName Destination file path.
+ * @param text Text to write.
+ * @return true if the text was saved successfully.
+ */
 QCAPI bool SaveFileText(const char* fileName, const char* text);
+/**
+ * @brief Set the callback used to load file bytes.
+ * @param callback Callback, or nullptr to restore the default loader.
+ */
 QCAPI void SetLoadFileDataCallback(LoadFileDataCallback callback);
+/**
+ * @brief Set the callback used to save file bytes.
+ * @param callback Callback, or nullptr to restore the default saver.
+ */
 QCAPI void SetSaveFileDataCallback(SaveFileDataCallback callback);
+/**
+ * @brief Set the callback used to load text files.
+ * @param callback Callback, or nullptr to restore the default loader.
+ */
 QCAPI void SetLoadFileTextCallback(LoadFileTextCallback callback);
+/**
+ * @brief Set the callback used to save text files.
+ * @param callback Callback, or nullptr to restore the default saver.
+ */
 QCAPI void SetSaveFileTextCallback(SaveFileTextCallback callback);
 
+/**
+ * @brief Load an automation event list from a file.
+ * @param fileName Path to the event-list file.
+ * @return Loaded event list, or an empty list if loading fails.
+ */
 QCAPI AutomationEventList LoadAutomationEventList(const char* fileName);
+/**
+ * @brief Release the storage owned by an automation event list.
+ * @param list Event list to unload.
+ */
 QCAPI void UnloadAutomationEventList(AutomationEventList list);
+/**
+ * @brief Export an automation event list to a file.
+ * @param list Event list to export.
+ * @param fileName Destination file path.
+ * @return true if the list was written successfully.
+ */
 QCAPI bool ExportAutomationEventList(AutomationEventList list, const char* fileName);
+/**
+ * @brief Set the event list used for automation recording and playback.
+ * @param list Event list to use.
+ */
 QCAPI void SetAutomationEventList(AutomationEventList* list);
+/**
+ * @brief Set the current base frame for automation events.
+ * @param frame Base frame index.
+ */
 QCAPI void SetAutomationEventBaseFrame(int frame);
+/** @brief Begin recording automation events. */
+/**
+ * @brief Begin recording automation events.
+ */
 QCAPI void StartAutomationEventRecording(void);
+/** @brief Stop recording automation events. */
+/**
+ * @brief Stop recording automation events.
+ */
 QCAPI void StopAutomationEventRecording(void);
+/**
+ * @brief Dispatch an automation event for playback.
+ * @param event Event to play.
+ */
 QCAPI void PlayAutomationEvent(AutomationEvent event);
 
+/**
+ * @brief Begin rendering using the specified VR stereo configuration.
+ * @param config Stereo configuration to apply.
+ */
 QCAPI void BeginVrStereoMode(VrStereoConfig config);
+/** @brief End the current VR stereo rendering mode. */
+/**
+ * @brief End the current VR stereo rendering mode.
+ */
 QCAPI void EndVrStereoMode(void);
+/**
+ * @brief Create a VR stereo configuration from device information.
+ * @param device VR headset display and lens parameters.
+ * @return Generated stereo configuration.
+ */
 QCAPI VrStereoConfig LoadVrStereoConfig(VrDeviceInfo device);
+/**
+ * @brief Release resources owned by a VR stereo configuration.
+ * @param config Configuration to unload.
+ */
 QCAPI void UnloadVrStereoConfig(VrStereoConfig config);
 
 /**
@@ -2365,10 +2961,36 @@ QCAPI bool ExportFontAsCode(Font font, const char* fileName);
  * @return Empty texture on failure.
  */
 QCAPI Texture2D LoadTexture(const char* filePath);
+/**
+ * @brief Create a texture from image data.
+ * @param image Source image.
+ * @return Created texture, or an empty texture if creation fails.
+ */
 QCAPI Texture2D LoadTextureFromImage(Image image);
+/**
+ * @brief Create a cubemap texture from image data.
+ * @param image Source image.
+ * @param layout Cubemap image layout identifier.
+ * @return Created cubemap texture.
+ */
 QCAPI TextureCubemap LoadTextureCubemap(Image image, int layout);
+/**
+ * @brief Replace the pixel data of a texture.
+ * @param texture Texture to update.
+ * @param pixels New pixel data.
+ */
 QCAPI void UpdateTexture(Texture2D texture, const void* pixels);
+/**
+ * @brief Replace a rectangular region of texture pixel data.
+ * @param texture Texture to update.
+ * @param rec Region to update.
+ * @param pixels New region pixel data.
+ */
 QCAPI void UpdateTextureRec(Texture2D texture, Rectangle rec, const void* pixels);
+/**
+ * @brief Generate mipmap levels for a texture.
+ * @param texture Texture to update with generated mipmaps.
+ */
 QCAPI void GenTextureMipmaps(Texture2D* texture);
 /**
  * @brief Load a render texture.
@@ -3088,7 +3710,18 @@ QCAPI bool IsRenderTextureValid(RenderTexture2D target);
  */
 QCAPI Texture2D GetRenderTextureTexture(RenderTexture2D target);
 
+/**
+ * @brief Draw a pixel at integer screen coordinates.
+ * @param posX Horizontal screen coordinate.
+ * @param posY Vertical screen coordinate.
+ * @param color Pixel color.
+ */
 QCAPI void DrawPixel(int posX, int posY, Color color);
+/**
+ * @brief Draw a pixel at a vector screen position.
+ * @param position Pixel position.
+ * @param color Pixel color.
+ */
 QCAPI void DrawPixelV(Vec2 position, Color color);
 /**
  * @brief Draw a line.
@@ -3099,9 +3732,37 @@ QCAPI void DrawPixelV(Vec2 position, Color color);
  * @param color Line color.
  */
 QCAPI void DrawLine(float x1, float y1, float x2, float y2, Color color);
+/**
+ * @brief Draw a line with the specified thickness.
+ * @param startPos Line start position.
+ * @param endPos Line end position.
+ * @param thick Line thickness in pixels.
+ * @param color Line color.
+ */
 QCAPI void DrawLineEx(Vec2 startPos, Vec2 endPos, float thick, Color color);
+/**
+ * @brief Draw a connected strip of line segments.
+ * @param points Array of line points.
+ * @param pointCount Number of points.
+ * @param color Line color.
+ */
 QCAPI void DrawLineStrip(const Vec2* points, int pointCount, Color color);
+/**
+ * @brief Draw a line using a quadratic Bezier curve.
+ * @param startPos Curve start position.
+ * @param endPos Curve end position.
+ * @param thick Line thickness in pixels.
+ * @param color Line color.
+ */
 QCAPI void DrawLineBezier(Vec2 startPos, Vec2 endPos, float thick, Color color);
+/**
+ * @brief Draw a dashed line.
+ * @param startPos Line start position.
+ * @param endPos Line end position.
+ * @param dashSize Dash length in pixels.
+ * @param spaceSize Gap length in pixels.
+ * @param color Line color.
+ */
 QCAPI void DrawLineDashed(Vec2 startPos, Vec2 endPos, int dashSize, int spaceSize, Color color);
 
 /**
@@ -3121,13 +3782,72 @@ QCAPI void DrawLineV(Vec2 start, Vec2 end, Color color);
  * @param color Line color.
  */
 QCAPI void DrawRectangleLines(int posX, int posY, int width, int height, Color color);
+/**
+ * @brief Draw a filled rectangle.
+ * @param rec Rectangle bounds.
+ * @param color Fill color.
+ */
 QCAPI void DrawRectangleRec(Rectangle rec, Color color);
+/**
+ * @brief Draw a rectangle with origin and rotation.
+ * @param rec Rectangle bounds.
+ * @param origin Rotation origin.
+ * @param rotation Rotation in degrees.
+ * @param color Fill color.
+ */
 QCAPI void DrawRectanglePro(Rectangle rec, Vec2 origin, float rotation, Color color);
+/**
+ * @brief Draw a rectangle with a vertical color gradient.
+ * @param posX Left coordinate.
+ * @param posY Top coordinate.
+ * @param width Rectangle width.
+ * @param height Rectangle height.
+ * @param top Top-edge color.
+ * @param bottom Bottom-edge color.
+ */
 QCAPI void DrawRectangleGradientV(int posX, int posY, int width, int height, Color top, Color bottom);
+/**
+ * @brief Draw a rectangle with a horizontal color gradient.
+ * @param posX Left coordinate.
+ * @param posY Top coordinate.
+ * @param width Rectangle width.
+ * @param height Rectangle height.
+ * @param left Left-edge color.
+ * @param right Right-edge color.
+ */
 QCAPI void DrawRectangleGradientH(int posX, int posY, int width, int height, Color left, Color right);
+/**
+ * @brief Draw a rectangle with independently colored corners.
+ * @param rec Rectangle bounds.
+ * @param col1 Top-left color.
+ * @param col2 Bottom-left color.
+ * @param col3 Bottom-right color.
+ * @param col4 Top-right color.
+ */
 QCAPI void DrawRectangleGradientEx(Rectangle rec, Color col1, Color col2, Color col3, Color col4);
+/**
+ * @brief Draw a rectangle outline with the specified thickness.
+ * @param rec Rectangle bounds.
+ * @param thick Outline thickness in pixels.
+ * @param color Outline color.
+ */
 QCAPI void DrawRectangleLinesEx(Rectangle rec, float thick, Color color);
+/**
+ * @brief Draw the outline of a rounded rectangle.
+ * @param rec Rectangle bounds.
+ * @param roundness Corner roundness from 0.0 to 1.0.
+ * @param segments Number of segments used for rounded corners.
+ * @param color Outline color.
+ */
 QCAPI void DrawRectangleRoundedLines(Rectangle rec, float roundness, int segments, Color color);
+/**
+ * @brief Draw the outline of a rounded rectangle with custom thickness.
+ * @param rec Rectangle bounds.
+ * @param roundness Corner roundness from 0.0 to 1.0.
+ * @param segments Number of segments used for rounded corners.
+ * @param thick Outline thickness in pixels.
+ * @param color Outline color.
+ */
 QCAPI void DrawRectangleRoundedLinesEx(Rectangle rec, float roundness, int segments, float thick, Color color);
 
 /**
@@ -3138,10 +3858,46 @@ QCAPI void DrawRectangleRoundedLinesEx(Rectangle rec, float roundness, int segme
  * @param color Triangle color.
  */
 QCAPI void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
+/**
+ * @brief Draw a triangle with a color gradient across its vertices.
+ * @param v1 First vertex position.
+ * @param v2 Second vertex position.
+ * @param v3 Third vertex position.
+ * @param c1 First vertex color.
+ * @param c2 Second vertex color.
+ * @param c3 Third vertex color.
+ */
 QCAPI void DrawTriangleGradient(Vec2 v1, Vec2 v2, Vec2 v3, Color c1, Color c2, Color c3);
+/**
+ * @brief Draw a triangle outline.
+ * @param v1 First vertex position.
+ * @param v2 Second vertex position.
+ * @param v3 Third vertex position.
+ * @param color Outline color.
+ */
 QCAPI void DrawTriangleLines(Vec2 v1, Vec2 v2, Vec2 v3, Color color);
+/**
+ * @brief Draw a triangle outline with custom thickness.
+ * @param v1 First vertex position.
+ * @param v2 Second vertex position.
+ * @param v3 Third vertex position.
+ * @param thick Outline thickness in pixels.
+ * @param color Outline color.
+ */
 QCAPI void DrawTriangleLinesEx(Vec2 v1, Vec2 v2, Vec2 v3, float thick, Color color);
+/**
+ * @brief Draw a triangle fan from a point array.
+ * @param points Array of vertices.
+ * @param pointCount Number of vertices.
+ * @param color Fill color.
+ */
 QCAPI void DrawTriangleFan(const Vec2* points, int pointCount, Color color);
+/**
+ * @brief Draw a triangle strip from a point array.
+ * @param points Array of vertices.
+ * @param pointCount Number of vertices.
+ * @param color Fill color.
+ */
 QCAPI void DrawTriangleStrip(const Vec2* points, int pointCount, Color color);
 
 /**
@@ -3152,12 +3908,66 @@ QCAPI void DrawTriangleStrip(const Vec2* points, int pointCount, Color color);
  * @param color Circle color.
  */
 QCAPI void DrawCircleLines(float centerX, float centerY, float radius, Color color);
+/**
+ * @brief Draw a filled circle at a vector position.
+ * @param center Circle center.
+ * @param radius Circle radius.
+ * @param color Fill color.
+ */
 QCAPI void DrawCircleV(Vec2 center, float radius, Color color);
+/**
+ * @brief Draw a circle with a radial color gradient.
+ * @param center Circle center.
+ * @param radius Circle radius.
+ * @param inner Color at the center.
+ * @param outer Color at the edge.
+ */
 QCAPI void DrawCircleGradient(Vec2 center, float radius, Color inner, Color outer);
+/**
+ * @brief Draw a filled circular sector.
+ * @param center Sector center.
+ * @param radius Sector radius.
+ * @param startAngle Starting angle in degrees.
+ * @param endAngle Ending angle in degrees.
+ * @param segments Number of segments used to draw the arc.
+ * @param color Fill color.
+ */
 QCAPI void DrawCircleSector(Vec2 center, float radius, float startAngle, float endAngle, int segments, Color color);
+/**
+ * @brief Draw the outline of a circular sector.
+ * @param center Sector center.
+ * @param radius Sector radius.
+ * @param startAngle Starting angle in degrees.
+ * @param endAngle Ending angle in degrees.
+ * @param segments Number of segments used to draw the arc.
+ * @param color Outline color.
+ */
 QCAPI void DrawCircleSectorLines(Vec2 center, float radius, float startAngle, float endAngle, int segments, Color color);
+/**
+ * @brief Draw the outline of a circular sector with custom thickness.
+ * @param center Sector center.
+ * @param radius Sector radius.
+ * @param startAngle Starting angle in degrees.
+ * @param endAngle Ending angle in degrees.
+ * @param segments Number of segments used to draw the arc.
+ * @param thick Outline thickness in pixels.
+ * @param color Outline color.
+ */
 QCAPI void DrawCircleSectorLinesEx(Vec2 center, float radius, float startAngle, float endAngle, int segments, float thick, Color color);
+/**
+ * @brief Draw a circle outline at a vector position.
+ * @param center Circle center.
+ * @param radius Circle radius.
+ * @param color Outline color.
+ */
 QCAPI void DrawCircleLinesV(Vec2 center, float radius, Color color);
+/**
+ * @brief Draw a circle outline with custom thickness.
+ * @param center Circle center.
+ * @param radius Circle radius.
+ * @param thick Outline thickness in pixels.
+ * @param color Outline color.
+ */
 QCAPI void DrawCircleLinesEx(Vec2 center, float radius, float thick, Color color);
 
 /**
@@ -3169,12 +3979,73 @@ QCAPI void DrawCircleLinesEx(Vec2 center, float radius, float thick, Color color
  * @param color Ellipse color.
  */
 QCAPI void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Color color);
+/**
+ * @brief Draw a filled ellipse.
+ * @param center Ellipse center.
+ * @param radiusH Horizontal radius.
+ * @param radiusV Vertical radius.
+ * @param color Fill color.
+ */
 QCAPI void DrawEllipseV(Vec2 center, float radiusH, float radiusV, Color color);
+/**
+ * @brief Draw an ellipse outline at integer coordinates.
+ * @param centerX Center horizontal coordinate.
+ * @param centerY Center vertical coordinate.
+ * @param radiusH Horizontal radius.
+ * @param radiusV Vertical radius.
+ * @param color Outline color.
+ */
 QCAPI void DrawEllipseLines(int centerX, int centerY, float radiusH, float radiusV, Color color);
+/**
+ * @brief Draw an ellipse outline at a vector position.
+ * @param center Ellipse center.
+ * @param radiusH Horizontal radius.
+ * @param radiusV Vertical radius.
+ * @param color Outline color.
+ */
 QCAPI void DrawEllipseLinesV(Vec2 center, float radiusH, float radiusV, Color color);
+/**
+ * @brief Draw an ellipse outline with custom thickness.
+ * @param center Ellipse center.
+ * @param radiusH Horizontal radius.
+ * @param radiusV Vertical radius.
+ * @param thick Outline thickness in pixels.
+ * @param color Outline color.
+ */
 QCAPI void DrawEllipseLinesEx(Vec2 center, float radiusH, float radiusV, float thick, Color color);
+/**
+ * @brief Draw a filled ring sector.
+ * @param center Ring center.
+ * @param innerRadius Inner radius.
+ * @param outerRadius Outer radius.
+ * @param startAngle Starting angle in degrees.
+ * @param endAngle Ending angle in degrees.
+ * @param segments Number of segments used to draw the arcs.
+ * @param color Fill color.
+ */
 QCAPI void DrawRing(Vec2 center, float innerRadius, float outerRadius, float startAngle, float endAngle, int segments, Color color);
+/**
+ * @brief Draw the outlines of a ring sector.
+ * @param center Ring center.
+ * @param innerRadius Inner radius.
+ * @param outerRadius Outer radius.
+ * @param startAngle Starting angle in degrees.
+ * @param endAngle Ending angle in degrees.
+ * @param segments Number of segments used to draw the arcs.
+ * @param color Outline color.
+ */
 QCAPI void DrawRingLines(Vec2 center, float innerRadius, float outerRadius, float startAngle, float endAngle, int segments, Color color);
+/**
+ * @brief Draw the outlines of a ring sector with custom thickness.
+ * @param center Ring center.
+ * @param innerRadius Inner radius.
+ * @param outerRadius Outer radius.
+ * @param startAngle Starting angle in degrees.
+ * @param endAngle Ending angle in degrees.
+ * @param segments Number of segments used to draw the arcs.
+ * @param thick Outline thickness in pixels.
+ * @param color Outline color.
+ */
 QCAPI void DrawRingLinesEx(Vec2 center, float innerRadius, float outerRadius, float startAngle, float endAngle, int segments, float thick, Color color);
 
 /**
@@ -3186,26 +4057,175 @@ QCAPI void DrawRingLinesEx(Vec2 center, float innerRadius, float outerRadius, fl
  * @param color Polygon color.
  */
 QCAPI void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color);
+/**
+ * @brief Draw the outline of a regular polygon.
+ * @param center Polygon center.
+ * @param sides Number of polygon sides.
+ * @param radius Distance from center to vertices.
+ * @param rotation Polygon rotation in degrees.
+ * @param color Outline color.
+ */
 QCAPI void DrawPolyLines(Vec2 center, int sides, float radius, float rotation, Color color);
+/**
+ * @brief Draw the outline of a regular polygon with custom thickness.
+ * @param center Polygon center.
+ * @param sides Number of polygon sides.
+ * @param radius Distance from center to vertices.
+ * @param rotation Polygon rotation in degrees.
+ * @param thick Outline thickness in pixels.
+ * @param color Outline color.
+ */
 QCAPI void DrawPolyLinesEx(Vec2 center, int sides, float radius, float rotation, float thick, Color color);
+/**
+ * @brief Set the texture and source rectangle used to draw shapes.
+ * @param texture Shape texture.
+ * @param rec Texture source rectangle.
+ */
 QCAPI void SetShapesTexture(Texture2D texture, Rectangle rec);
+/**
+ * @brief Get the texture currently used to draw shapes.
+ * @return Current shapes texture.
+ */
 QCAPI Texture2D GetShapesTexture(void);
+/**
+ * @brief Get the source rectangle currently used for the shapes texture.
+ * @return Current shapes texture rectangle.
+ */
 QCAPI Rectangle GetShapesTextureRectangle(void);
 
+/**
+ * @brief Draw a spline through points using linear interpolation.
+ * @param points Spline control points.
+ * @param pointCount Number of control points.
+ * @param thick Line thickness in pixels.
+ * @param color Spline color.
+ */
 QCAPI void DrawSplineLinear(const Vec2* points, int pointCount, float thick, Color color);
+/**
+ * @brief Draw a spline through points using basis interpolation.
+ * @param points Spline control points.
+ * @param pointCount Number of control points.
+ * @param thick Line thickness in pixels.
+ * @param color Spline color.
+ */
 QCAPI void DrawSplineBasis(const Vec2* points, int pointCount, float thick, Color color);
+/**
+ * @brief Draw a spline through points using Catmull-Rom interpolation.
+ * @param points Spline control points.
+ * @param pointCount Number of control points.
+ * @param thick Line thickness in pixels.
+ * @param color Spline color.
+ */
 QCAPI void DrawSplineCatmullRom(const Vec2* points, int pointCount, float thick, Color color);
+/**
+ * @brief Draw a spline using quadratic Bezier interpolation.
+ * @param points Spline control points.
+ * @param pointCount Number of control points.
+ * @param thick Line thickness in pixels.
+ * @param color Spline color.
+ */
 QCAPI void DrawSplineBezierQuadratic(const Vec2* points, int pointCount, float thick, Color color);
+/**
+ * @brief Draw a spline using cubic Bezier interpolation.
+ * @param points Spline control points.
+ * @param pointCount Number of control points.
+ * @param thick Line thickness in pixels.
+ * @param color Spline color.
+ */
 QCAPI void DrawSplineBezierCubic(const Vec2* points, int pointCount, float thick, Color color);
+/**
+ * @brief Draw one linear spline segment.
+ * @param p1 Segment start.
+ * @param p2 Segment end.
+ * @param thick Line thickness in pixels.
+ * @param color Segment color.
+ */
 QCAPI void DrawSplineSegmentLinear(Vec2 p1, Vec2 p2, float thick, Color color);
+/**
+ * @brief Draw one basis spline segment.
+ * @param p1 First control point.
+ * @param p2 Second control point.
+ * @param p3 Third control point.
+ * @param p4 Fourth control point.
+ * @param thick Line thickness in pixels.
+ * @param color Segment color.
+ */
 QCAPI void DrawSplineSegmentBasis(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float thick, Color color);
+/**
+ * @brief Draw one Catmull-Rom spline segment.
+ * @param p1 First control point.
+ * @param p2 Second control point.
+ * @param p3 Third control point.
+ * @param p4 Fourth control point.
+ * @param thick Line thickness in pixels.
+ * @param color Segment color.
+ */
 QCAPI void DrawSplineSegmentCatmullRom(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float thick, Color color);
+/**
+ * @brief Draw one quadratic Bezier spline segment.
+ * @param p1 Segment start.
+ * @param c2 Control point.
+ * @param p3 Segment end.
+ * @param thick Line thickness in pixels.
+ * @param color Segment color.
+ */
 QCAPI void DrawSplineSegmentBezierQuadratic(Vec2 p1, Vec2 c2, Vec2 p3, float thick, Color color);
+/**
+ * @brief Draw one cubic Bezier spline segment.
+ * @param p1 Segment start.
+ * @param c2 First control point.
+ * @param c3 Second control point.
+ * @param p4 Segment end.
+ * @param thick Line thickness in pixels.
+ * @param color Segment color.
+ */
 QCAPI void DrawSplineSegmentBezierCubic(Vec2 p1, Vec2 c2, Vec2 c3, Vec2 p4, float thick, Color color);
+/**
+ * @brief Evaluate a point on a linear spline.
+ * @param startPos Spline start position.
+ * @param endPos Spline end position.
+ * @param t Normalized parameter.
+ * @return Evaluated point.
+ */
 QCAPI Vec2 GetSplinePointLinear(Vec2 startPos, Vec2 endPos, float t);
+/**
+ * @brief Evaluate a point on a basis spline segment.
+ * @param p1 First control point.
+ * @param p2 Second control point.
+ * @param p3 Third control point.
+ * @param p4 Fourth control point.
+ * @param t Normalized parameter.
+ * @return Evaluated point.
+ */
 QCAPI Vec2 GetSplinePointBasis(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float t);
+/**
+ * @brief Evaluate a point on a Catmull-Rom spline segment.
+ * @param p1 First control point.
+ * @param p2 Second control point.
+ * @param p3 Third control point.
+ * @param p4 Fourth control point.
+ * @param t Normalized parameter.
+ * @return Evaluated point.
+ */
 QCAPI Vec2 GetSplinePointCatmullRom(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, float t);
+/**
+ * @brief Evaluate a point on a quadratic Bezier spline.
+ * @param p1 Spline start position.
+ * @param c2 Control point.
+ * @param p3 Spline end position.
+ * @param t Normalized parameter.
+ * @return Evaluated point.
+ */
 QCAPI Vec2 GetSplinePointBezierQuadratic(Vec2 p1, Vec2 c2, Vec2 p3, float t);
+/**
+ * @brief Evaluate a point on a cubic Bezier spline.
+ * @param p1 Spline start position.
+ * @param c2 First control point.
+ * @param c3 Second control point.
+ * @param p4 Spline end position.
+ * @param t Normalized parameter.
+ * @return Evaluated point.
+ */
 QCAPI Vec2 GetSplinePointBezierCubic(Vec2 p1, Vec2 c2, Vec2 c3, Vec2 p4, float t);
 
 /**

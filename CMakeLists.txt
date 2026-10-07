@@ -755,6 +755,13 @@ if(WIN32)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(quark_math_template_tests
+        tests/QuarkMathTemplateTests.cpp
+    )
+    target_link_libraries(quark_math_template_tests PRIVATE QuarkCore)
+    target_compile_definitions(quark_math_template_tests PRIVATE QUARKCORE_STATIC)
+    add_test(NAME QuarkMathTemplates COMMAND quark_math_template_tests)
+
     add_executable(quark_vulkan_validation_tests
         tests/QuarkVulkanValidationTests.cpp
     )
