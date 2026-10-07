@@ -33,77 +33,77 @@ void main() {
 }
 
 int main() {
-    qc::InitWindow(1280, 720, "QuarkCore Meshes Example", qc::RendererType::Vulkan);
-    qc::SetWindowMinimumSize(800, 450);
-    qc::SetTargetFPS(60);
+    InitWindow(1280, 720, "QuarkCore Meshes Example", RendererType::Vulkan);
+    SetWindowMinimumSize(800, 450);
+    SetTargetFPS(60);
 
-    qc::Camera3D camera3d{};
+    Camera3D camera3d{};
     camera3d.position = { 8.0f, 6.0f, 10.0f };
     camera3d.target = { 0.0f, 1.0f, 0.0f };
     camera3d.up = { 0.0f, 1.0f, 0.0f };
     camera3d.fovy = 45.0f;
-    camera3d.projection = qc::CAMERA_PERSPECTIVE;
+    camera3d.projection = CAMERA_PERSPECTIVE;
 
-    qc::Mesh plane = qc::GenMeshPlane(16.0f, 16.0f, 8, 8);
-    qc::Mesh cube = qc::GenMeshCube(2.0f, 2.0f, 2.0f);
-    qc::Mesh sphere = qc::GenMeshSphere(1.25f, 32, 32);
+    Mesh plane = GenMeshPlane(16.0f, 16.0f, 8, 8);
+    Mesh cube = GenMeshCube(2.0f, 2.0f, 2.0f);
+    Mesh sphere = GenMeshSphere(1.25f, 32, 32);
 
-    qc::UploadMesh(&plane, false);
-    qc::UploadMesh(&cube, false);
-    qc::UploadMesh(&sphere, false);
+    UploadMesh(&plane, false);
+    UploadMesh(&cube, false);
+    UploadMesh(&sphere, false);
 
-    qc::GenMeshTangents(&sphere);
+    GenMeshTangents(&sphere);
 
-    qc::BoundingBox cubeBounds = qc::GetMeshBoundingBox(cube);
-    cubeBounds.min = qc::Vec3{-1.0f, 0.0f, -1.0f};
-    cubeBounds.max = qc::Vec3{1.0f, 2.0f, 1.0f};
+    BoundingBox cubeBounds = GetMeshBoundingBox(cube);
+    cubeBounds.min = Vec3{-1.0f, 0.0f, -1.0f};
+    cubeBounds.max = Vec3{1.0f, 2.0f, 1.0f};
 
-    qc::Material defaultMaterial{};
-    qc::Shader unlitShader = qc::LoadShaderFromMemory(kUnlitVertexShader, kUnlitFragmentShader);
+    Material defaultMaterial{};
+    Shader unlitShader = LoadShaderFromMemory(kUnlitVertexShader, kUnlitFragmentShader);
     defaultMaterial.shader = &unlitShader;
 
     const int instanceCount = 4;
-    qc::Matrix instanceTransforms[instanceCount] = {
-        qc::Mat4::translation(-5.0f, 1.0f,  0.0f),
-        qc::Mat4::translation(-3.0f, 1.0f, -3.0f),
-        qc::Mat4::translation(-3.0f, 1.0f,  3.0f),
-        qc::Mat4::translation(-1.0f, 1.0f,  0.0f)
+    Matrix instanceTransforms[instanceCount] = {
+        Mat4::translation(-5.0f, 1.0f,  0.0f),
+        Mat4::translation(-3.0f, 1.0f, -3.0f),
+        Mat4::translation(-3.0f, 1.0f,  3.0f),
+        Mat4::translation(-1.0f, 1.0f,  0.0f)
     };
 
     bool exportReady = false;
 
-    while (!qc::WindowShouldClose()) {
-        if (qc::IsKeyPressed(qc::KeyboardKey::Space)) {
+    while (!WindowShouldClose()) {
+        if (IsKeyPressed(KEY_SPACE)) {
             if (!exportReady) {
-                qc::ExportMesh(sphere, "sphere.obj");
-                qc::ExportMeshAsCode(cube, "cube_export.cpp");
+                ExportMesh(sphere, "sphere.obj");
+                ExportMeshAsCode(cube, "cube_export.cpp");
                 exportReady = true;
-                qc::TraceLog(qc::LogLevel::Info, "MESHES", "Exported sphere.obj and cube_export.cpp");
+                TraceLog(LogLevel::Info, "MESHES", "Exported sphere.obj and cube_export.cpp");
             }
         }
 
-        qc::BeginDrawing();
-        qc::ClearBackground(qc::Color{18, 22, 30, 255});
+        BeginDrawing();
+        ClearBackground(Color{18, 22, 30, 255});
 
-        qc::BeginMode3D(camera3d);
-            qc::DrawMesh(plane, defaultMaterial, qc::Mat4::translation(0.0f, 0.0f, 0.0f));
-            qc::DrawMesh(cube, defaultMaterial, qc::Mat4::translation(3.0f, 1.0f, 0.0f));
-            qc::DrawMesh(sphere, defaultMaterial, qc::Mat4::translation(-3.0f, 1.25f, 0.0f));
-            qc::DrawMeshInstanced(cube, defaultMaterial, instanceTransforms, instanceCount);
-            qc::DrawBoundingBox(cubeBounds, qc::YELLOW);
-        qc::EndMode3D();
+        BeginMode3D(camera3d);
+            DrawMesh(plane, defaultMaterial, Mat4::translation(0.0f, 0.0f, 0.0f));
+            DrawMesh(cube, defaultMaterial, Mat4::translation(3.0f, 1.0f, 0.0f));
+            DrawMesh(sphere, defaultMaterial, Mat4::translation(-3.0f, 1.25f, 0.0f));
+            DrawMeshInstanced(cube, defaultMaterial, instanceTransforms, instanceCount);
+            DrawBoundingBox(cubeBounds, YELLOW);
+        EndMode3D();
 
-        qc::DrawText("Mesh demo: plane, cube, sphere, instanced cube", 20, 20, 20, qc::WHITE);
-        qc::DrawText("Press Space to export sphere.obj and cube_export.cpp", 20, 50, 20, qc::LIGHTGRAY);
+        DrawText("Mesh demo: plane, cube, sphere, instanced cube", 20, 20, 20, WHITE);
+        DrawText("Press Space to export sphere.obj and cube_export.cpp", 20, 50, 20, LIGHTGRAY);
 
-        qc::EndDrawing();
+        EndDrawing();
     }
 
-    qc::UnloadMesh(plane);
-    qc::UnloadMesh(cube);
-    qc::UnloadMesh(sphere);
+    UnloadMesh(plane);
+    UnloadMesh(cube);
+    UnloadMesh(sphere);
 
-    qc::UnloadShader(unlitShader);
-    qc::CloseWindow();
+    UnloadShader(unlitShader);
+    CloseWindow();
     return 0;
 }

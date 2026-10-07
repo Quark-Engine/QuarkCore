@@ -1,7 +1,5 @@
 #include "QuarkVkFramebufferManager.hpp"
-
-namespace qc {
-
+namespace qci {
 void QuarkVkFramebufferManager::Initialize(VkDevice device) {
     m_device = device;
     m_framebuffers.clear();
@@ -50,5 +48,4 @@ void QuarkVkFramebufferManager::CreateSwapChainFramebuffers(VkDevice device,
         }
     }
 }
-
-} // namespace qc
+} // namespace qci

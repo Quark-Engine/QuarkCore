@@ -6,9 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-
-namespace qc {
-
 namespace {
 
 const unsigned char B64_TABLE[64] = {
@@ -515,5 +512,3 @@ unsigned int* ComputeSHA256(const unsigned char* data, int dataSize) {
     std::memcpy(result, state, sizeof(state));
     return result;
 }
-
-} // namespace qc

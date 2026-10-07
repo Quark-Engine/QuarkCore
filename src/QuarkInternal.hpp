@@ -6,9 +6,6 @@
 #include <vector>
 #include <array>
 #include <string>
-
-namespace qc {
-
 /**
  * @brief Shared internal state for windowing and input.
  */
@@ -47,11 +44,9 @@ struct WindowState {
     Vec2  mousePosition{};
     Vec2  mouseWheel{};
 
-    std::vector<Event> events;
     std::vector<std::string> droppedFiles;
-    SDL_Event nativeEvent{};
-    std::size_t nextEventIndex = 0;
-    bool  eventsReady = false;
+    bool windowResized = false;
+    bool inputPolled = false;
 };
 
 /**
@@ -64,17 +59,20 @@ struct ImageFileData {
     std::vector<uint8_t> pixels;
 };
 
+namespace qci {
+class IRenderer;
+}
+
+extern qci::IRenderer* gRendererPtr;
 extern WindowState gWin;
-extern TextureFilterMode gTextureFilterMode;
+extern TextureFilter gTextureFilter;
 
 QCAPI bool LoadImageFile(const char* path, ImageFileData& out, int desiredChannels = 4);
 
 void EnsureInitialized();
-void PumpSystemEvents();
-void UpdateInputFromEvents();
+void PumpInput();
+void UpdateInputState();
+SDL_Scancode ToSDLScancode(KeyboardKey key);
 void CopyText(char* dst, size_t size, const char* src);
 void WriteLog(LogLevel level, const char* type, const std::string& message);
-
-} // namespace qc
-
 #endif // __QUARK_INTERNAL__

@@ -1,6 +1,7 @@
 #include "QuarkD3D11Renderer.hpp"
 #include "../DebugFont.h"
 #include "../DefaultFont.h"
+#include "../QuarkAssimpTexture.hpp"
 #include "../../QuarkInternal.hpp"
 #include "../../QuarkModelAnim.hpp"
 
@@ -17,14 +18,13 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <utility>
-
-namespace qc
-{
-
+#include <vector>
+namespace qci {
 namespace {
 
 static Color MultiplyColor(Color lhs, Color rhs)
@@ -244,7 +244,7 @@ void QuarkD3D11Renderer::Init(SDL_Window *window, int width, int height)
     {
         m_swapChain.SetMSAASamples(static_cast<UINT>(m_requestedMsaaSamples));
     }
-    m_textureFilterMode = gTextureFilterMode;
+    m_textureFilterMode = gTextureFilter;
     m_pipeline.SetTextureFilterMode(m_textureFilterMode);
     RefreshViewport();
     TraceLog(LogLevel::Info, "D3D11", "Renderer initialized successfully.");
@@ -298,15 +298,15 @@ void QuarkD3D11Renderer::SetMSAASamples(int samples)
     }
 }
 
-void QuarkD3D11Renderer::SetTextureFilterMode(TextureFilterMode mode)
+void QuarkD3D11Renderer::SetTextureFilterMode(TextureFilter mode)
 {
     m_textureFilterMode = mode;
     m_pipeline.SetTextureFilterMode(mode);
 }
 
-void QuarkD3D11Renderer::SetTextureFilter(int filter)
+void QuarkD3D11Renderer::SetTextureFilter(TextureFilter filter)
 {
-    SetTextureFilterMode((filter == TEXTURE_FILTER_POINT) ? TextureFilterMode::Nearest : TextureFilterMode::Linear);
+    SetTextureFilterMode(filter);
 }
 
 void QuarkD3D11Renderer::SetTextureWrap(int wrap)
@@ -1441,10 +1441,21 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
     }
 
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(
-        filePath,
-        aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs |
-            aiProcess_PopulateArmatureData);
+    const aiScene* scene = nullptr;
+    try
+    {
+        scene = importer.ReadFile(
+            filePath,
+            aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs |
+                aiProcess_PopulateArmatureData);
+    }
+    catch (const std::exception& error)
+    {
+        TraceLog(LogLevel::Error, "MODEL",
+                 TextFormat("[D3D11] Exception while loading model %s: %s",
+                            filePath, error.what()));
+        return {};
+    }
 
     if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || !scene->mRootNode)
     {
@@ -1504,8 +1515,30 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
                 continue;
             }
 
-            const std::string fullTexturePath = model.directory + texturePath.C_Str();
-            const ITexture loadedTexture = LoadTexture(fullTexturePath.c_str());
+            const std::string textureReference = texturePath.C_Str();
+            const std::string fullTexturePath = model.directory + textureReference;
+            ITexture loadedTexture{};
+            if (!textureReference.empty() && textureReference.front() == '*')
+            {
+                Image embeddedImage{};
+                std::vector<unsigned char> rawPixels;
+                bool ownsImage = false;
+                if (DecodeEmbeddedAssimpTexture(*scene, texturePath, embeddedImage, rawPixels, ownsImage))
+                {
+                    loadedTexture = LoadTextureFromImage(embeddedImage);
+                    ReleaseEmbeddedAssimpTexture(embeddedImage, ownsImage);
+                }
+                else
+                {
+                    TraceLog(LogLevel::Error, "MODEL",
+                             TextFormat("[D3D11] Failed to decode embedded texture: %s",
+                                        textureReference.c_str()));
+                }
+            }
+            else
+            {
+                loadedTexture = LoadTexture(fullTexturePath.c_str());
+            }
             material.maps[mapIndex].texture = Texture2D{
                 loadedTexture.id,
                 loadedTexture.width,
@@ -1691,11 +1724,7 @@ void QuarkD3D11Renderer::UnloadModel(Model& model)
     delete[] model.meshMaterial;
     model.meshMaterial = nullptr;
     qcFreeModelSkeleton(model);
-    model.meshCount = 0;
-    model.materialCount = 0;
-    model.directory.clear();
-    model.id = 0;
-    model.transform = Mat4::identity();
+    model = {};
 }
 
 void QuarkD3D11Renderer::DrawModel(const Model& model,
@@ -3098,6 +3127,15 @@ ITexture QuarkD3D11Renderer::LoadTextureFromImage(const Image& image)
     return texture;
 }
 
+ITexture QuarkD3D11Renderer::LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize)
+{
+    ITexture texture = m_resources.CreateCubemap(m_device.Get(), rgbaFaces, faceSize);
+    if (!texture.IsValid()) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[D3D11] LoadTextureCubemap: upload failed");
+    }
+    return texture;
+}
+
 ITexture QuarkD3D11Renderer::GetRenderTextureTexture(IRenderTexture target)
 {
     return target.texture;
@@ -4201,6 +4239,5 @@ bool QuarkD3D11Renderer::UpdateTextureRegion(const ITexture& texture, Rectangle 
                                            static_cast<int>(region.width),
                                            static_cast<int>(region.height));
 }
-
-} // namespace qc
+} // namespace qci
 #endif

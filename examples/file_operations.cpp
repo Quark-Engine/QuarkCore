@@ -1,110 +1,110 @@
 #include "QuarkCore/QuarkCore.hpp"
 
 int main() {
-    qc::InitWindow(1280, 720, "QuarkCore File Operations Example", qc::RendererType::OpenGL);
-    qc::SetLogLevel(qc::LogLevel::Info);
+    InitWindow(1280, 720, "QuarkCore File Operations Example", RendererType::OpenGL);
+    SetLogLevel(LogLevel::Info);
 
-    const char* appDir = qc::GetApplicationDirectory();
-    const char* workDir = qc::GetWorkingDirectory();
+    const char* appDir = GetApplicationDirectory();
+    const char* workDir = GetWorkingDirectory();
 
     const char* testDir = "test_data";
-    qc::MakeDirectory(testDir);
-    qc::MakeDirectory("test_data/subdirectory");
+    MakeDirectory(testDir);
+    MakeDirectory("test_data/subdirectory");
 
-    qc::FilePathList files = qc::LoadDirectoryFiles(".");
-    qc::FilePathList droppedFiles{};
+    FilePathList files = LoadDirectoryFiles(".");
+    FilePathList droppedFiles{};
     bool hasDropped = false;
 
     const char* testNames[] = { "valid_file.txt", "<invalid>.txt", "con", "file|name.txt" };
     bool testNamesValid[4];
     for (int i = 0; i < 4; ++i)
-        testNamesValid[i] = qc::IsFileNameValid(testNames[i]);
+        testNamesValid[i] = IsFileNameValid(testNames[i]);
 
-    while (!qc::WindowShouldClose()) {
-        if (qc::IsFileDropped()) {
-            if (hasDropped) qc::UnloadDroppedFiles(droppedFiles);
-            droppedFiles = qc::LoadDroppedFiles();
+    while (!WindowShouldClose()) {
+        if (IsFileDropped()) {
+            if (hasDropped) UnloadDroppedFiles(droppedFiles);
+            droppedFiles = LoadDroppedFiles();
             hasDropped = true;
         }
 
-        if (qc::IsKeyPressed(qc::KeyboardKey::Space)) {
-            qc::UnloadDirectoryFiles(files);
-            files = qc::LoadDirectoryFiles(".");
+        if (IsKeyPressed(KEY_SPACE)) {
+            UnloadDirectoryFiles(files);
+            files = LoadDirectoryFiles(".");
         }
 
-        qc::BeginDrawing();
-        qc::ClearBackground(qc::Color{20, 24, 32, 255});
+        BeginDrawing();
+        ClearBackground(Color{20, 24, 32, 255});
 
         int y = 20;
 
-        qc::DrawText("QuarkCore File Operations Example", 20, y, 32, qc::YELLOW);
+        DrawText("QuarkCore File Operations Example", 20, y, 32, YELLOW);
         y += 50;
 
-        qc::DrawText(qc::TextFormat("App Directory: %s", appDir), 20, y, 20, qc::WHITE);
+        DrawText(TextFormat("App Directory: %s", appDir), 20, y, 20, WHITE);
         y += 28;
 
-        qc::DrawText(qc::TextFormat("Working Directory: %s", workDir), 20, y, 20, qc::WHITE);
+        DrawText(TextFormat("Working Directory: %s", workDir), 20, y, 20, WHITE);
         y += 28;
 
-        qc::DrawText(qc::TextFormat("Files in current directory: %d", files.count), 20, y, 20, qc::WHITE);
+        DrawText(TextFormat("Files in current directory: %d", files.count), 20, y, 20, WHITE);
         y += 28;
 
         for (unsigned int i = 0; i < files.count && i < 5; ++i) {
-            qc::DrawText(qc::TextFormat("  %s", files.paths[i]), 20, y, 18, qc::LIGHTGRAY);
+            DrawText(TextFormat("  %s", files.paths[i]), 20, y, 18, LIGHTGRAY);
             y += 22;
         }
         if (files.count > 5) {
-            qc::DrawText(qc::TextFormat("  ... and %d more", files.count - 5), 20, y, 18, qc::GRAY);
+            DrawText(TextFormat("  ... and %d more", files.count - 5), 20, y, 18, GRAY);
             y += 22;
         }
         y += 10;
 
-        qc::DrawText("Filename Validation:", 20, y, 20, qc::WHITE);
+        DrawText("Filename Validation:", 20, y, 20, WHITE);
         y += 26;
         for (int i = 0; i < 4; ++i) {
-            qc::DrawText(
-                qc::TextFormat("  %s  ->  %s", testNames[i], testNamesValid[i] ? "valid" : "invalid"),
-                20, y, 18, testNamesValid[i] ? qc::GREEN : qc::RED
+            DrawText(
+                TextFormat("  %s  ->  %s", testNames[i], testNamesValid[i] ? "valid" : "invalid"),
+                20, y, 18, testNamesValid[i] ? GREEN : RED
             );
             y += 22;
         }
         y += 10;
 
-        qc::DrawText(qc::TextFormat("test_data/ exists: %s", qc::DirectoryExists(testDir) ? "yes" : "no"), 20, y, 20, qc::SKYBLUE);
+        DrawText(TextFormat("test_data/ exists: %s", DirectoryExists(testDir) ? "yes" : "no"), 20, y, 20, SKYBLUE);
         y += 28;
 
-        qc::DrawText(qc::TextFormat("Parent directory: %s", qc::GetPrevDirectoryPath(workDir)), 20, y, 20, qc::WHITE);
+        DrawText(TextFormat("Parent directory: %s", GetPrevDirectoryPath(workDir)), 20, y, 20, WHITE);
         y += 36;
 
         if (hasDropped) {
-            qc::DrawText("Dropped Files:", 20, y, 20, qc::YELLOW);
+            DrawText("Dropped Files:", 20, y, 20, YELLOW);
             y += 26;
             for (unsigned int i = 0; i < droppedFiles.count; ++i) {
                 const char* path = droppedFiles.paths[i];
-                qc::DrawText(qc::TextFormat("  %s", path), 20, y, 18, qc::LIGHTGRAY);
+                DrawText(TextFormat("  %s", path), 20, y, 18, LIGHTGRAY);
                 y += 22;
-                qc::DrawText(qc::TextFormat("    size: %d bytes", qc::GetFileLength(path)), 20, y, 16, qc::GRAY);
+                DrawText(TextFormat("    size: %d bytes", GetFileLength(path)), 20, y, 16, GRAY);
                 y += 20;
-                qc::DrawText(qc::TextFormat("    ext:  %s", qc::GetFileExtension(path)), 20, y, 16, qc::GRAY);
+                DrawText(TextFormat("    ext:  %s", GetFileExtension(path)), 20, y, 16, GRAY);
                 y += 20;
-                qc::DrawText(qc::TextFormat("    name: %s", qc::GetFileName(path)), 20, y, 16, qc::GRAY);
+                DrawText(TextFormat("    name: %s", GetFileName(path)), 20, y, 16, GRAY);
                 y += 24;
             }
         } 
         
         else {
-            qc::DrawText("Drag and drop files here to inspect them", 20, y, 20, qc::GRAY);
+            DrawText("Drag and drop files here to inspect them", 20, y, 20, GRAY);
             y += 28;
         }
 
-        qc::DrawText("Press SPACE to reload directory listing", 20, y, 18, qc::DARKGRAY);
+        DrawText("Press SPACE to reload directory listing", 20, y, 18, DARKGRAY);
 
-        qc::EndDrawing();
+        EndDrawing();
     }
 
-    qc::UnloadDirectoryFiles(files);
-    if (hasDropped) qc::UnloadDroppedFiles(droppedFiles);
-    qc::CloseWindow();
+    UnloadDirectoryFiles(files);
+    if (hasDropped) UnloadDroppedFiles(droppedFiles);
+    CloseWindow();
 
     return 0;
 }

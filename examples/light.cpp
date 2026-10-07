@@ -4,8 +4,6 @@
 
 int main()
 {
-    using namespace qc;
-
     InitWindow(800, 480, "QuarkCore Lights", RendererType::OpenGL);
     SetTargetFPS(60);
 

@@ -1,11 +1,11 @@
 #include "QuarkD3D11Resources.hpp"
 
 #include <cstring>
+#include <limits>
 #include <utility>
 
 #if defined(_WIN32)
-namespace qc {
-
+namespace qci {
 void D3D11Resources::Initialize(ID3D11Device *device)
 {
     TraceLog(LogLevel::Trace, "D3D11", "Creating dynamic triangle vertex buffer...");
@@ -94,6 +94,50 @@ ITexture D3D11Resources::CreateTexture(ID3D11Device *device, const uint8_t *pixe
                          "ID3D11Device::CreateShaderResourceView");
 
     result = {m_nextTextureId++, width, height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true};
+    m_textures.emplace(result.id, std::move(resource));
+    return result;
+}
+
+ITexture D3D11Resources::CreateCubemap(ID3D11Device *device, const uint8_t *rgbaFaces,
+                                       int faceSize)
+{
+    ITexture result{};
+    if (!device || !rgbaFaces || faceSize <= 0 ||
+        static_cast<uint64_t>(faceSize) * 4 > std::numeric_limits<UINT>::max()) {
+        return result;
+    }
+
+    D3D11_TEXTURE2D_DESC description{};
+    description.Width = static_cast<UINT>(faceSize);
+    description.Height = static_cast<UINT>(faceSize);
+    description.MipLevels = 1;
+    description.ArraySize = 6;
+    description.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    description.SampleDesc.Count = 1;
+    description.Usage = D3D11_USAGE_IMMUTABLE;
+    description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    description.MiscFlags = D3D11_RESOURCE_MISC_TEXTURECUBE;
+
+    const size_t faceBytes = static_cast<size_t>(faceSize) * faceSize * 4;
+    D3D11_SUBRESOURCE_DATA initialData[6]{};
+    for (UINT face = 0; face < 6; ++face) {
+        initialData[face].pSysMem = rgbaFaces + static_cast<size_t>(face) * faceBytes;
+        initialData[face].SysMemPitch = static_cast<UINT>(faceSize) * 4;
+    }
+
+    TextureResource resource;
+    d3d11::ThrowIfFailed(device->CreateTexture2D(&description, initialData, &resource.texture),
+                         "ID3D11Device::CreateTexture2D cubemap");
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC viewDescription{};
+    viewDescription.Format = description.Format;
+    viewDescription.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBE;
+    viewDescription.TextureCube.MipLevels = 1;
+    d3d11::ThrowIfFailed(device->CreateShaderResourceView(resource.texture.Get(), &viewDescription,
+                                                           &resource.shaderResource),
+                         "ID3D11Device::CreateShaderResourceView cubemap");
+
+    result = {m_nextTextureId++, faceSize, faceSize, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true};
     m_textures.emplace(result.id, std::move(resource));
     return result;
 }
@@ -294,6 +338,5 @@ bool D3D11Resources::UpdateTextureRegion(ID3D11DeviceContext *context, uint32_t 
         id, offsetX, offsetY, width, height));
     return true;
 }
-
-} // namespace qc
 #endif
+} // namespace qci

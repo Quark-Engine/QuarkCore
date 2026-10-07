@@ -6,9 +6,7 @@
 #include "QuarkD3D11SwapChain.hpp"
 #include <cstdint>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 class D3D11CommandContext {
 public:
     struct ShaderOverride {
@@ -102,8 +100,6 @@ private:
     std::vector<uint32_t> m_batchIndices;
     std::vector<DrawItem> m_batchDrawItems;
 };
-
-} // namespace qc
+} // namespace qci
 #endif
-
 #endif // __QUARK_D3D11_COMMAND_CONTEXT__

@@ -1,9 +1,6 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkCore/QuarkLights.hpp"
 #include <cmath>
-
-using namespace qc;
-
 int main()
 {
 
@@ -41,10 +38,10 @@ int main()
     for (int i = 0; i < 4; ++i)
         lights[i].attenuation = 0.08f;
 
-    qc::Texture2D tex = qc::GenCheckerTexture(
+    Texture2D tex = GenCheckerTexture(
         256, 256, 32,
-        qc::Color{215, 225, 235, 255},
-        qc::Color{70, 100, 180, 255}
+        Color{215, 225, 235, 255},
+        Color{70, 100, 180, 255}
     );
 
     Mesh planeMesh = GenMeshPlane(10.0f, 10.0f, 1, 1);
@@ -88,10 +85,10 @@ int main()
         };
         camera.target = Vec3{0.0f, 0.5f, 0.0f};
 
-        if (IsKeyPressed(KeyboardKey::Y)) lights[0].enabled = !lights[0].enabled;
-        if (IsKeyPressed(KeyboardKey::R)) lights[1].enabled = !lights[1].enabled;
-        if (IsKeyPressed(KeyboardKey::G)) lights[2].enabled = !lights[2].enabled;
-        if (IsKeyPressed(KeyboardKey::B)) lights[3].enabled = !lights[3].enabled;
+        if (IsKeyPressed(KEY_Y)) lights[0].enabled = !lights[0].enabled;
+        if (IsKeyPressed(KEY_R)) lights[1].enabled = !lights[1].enabled;
+        if (IsKeyPressed(KEY_G)) lights[2].enabled = !lights[2].enabled;
+        if (IsKeyPressed(KEY_B)) lights[3].enabled = !lights[3].enabled;
 
         Mat4 planeT = Mat4::identity();
 
@@ -164,8 +161,6 @@ int main()
         DrawText("Use keys [Y][R][G][B] to toggle lights", 10, 10, 20, DARKGRAY);
         EndDrawing();
 
-        Event ev;
-        while (PollEvent(ev)) {}
     }
 
     UnloadMesh(planeMesh);

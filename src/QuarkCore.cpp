@@ -55,8 +55,7 @@
 #include <AL/alc.h>
 
 #include <unordered_map>
-
-namespace qc {
+using namespace qci;
 
 static void CopyFixedString(char* dst, size_t dstSize, const char* src) {
     if (dst == nullptr || dstSize == 0) return;
@@ -77,11 +76,11 @@ QuarkVkRenderer gVkRenderer;
 #if defined(QC_ENABLE_D3D11)
 QuarkD3D11Renderer gD3D11Renderer;
 #endif
-IRenderer* gRendererPtr = nullptr;
+qci::IRenderer* gRendererPtr = nullptr;
 RendererType gCurrentBackend = RendererType::Auto;
 bool gVulkanLibraryLoaded = false;
 int gRequestedMSAASamples = 1;
-TextureFilterMode gTextureFilterMode = TextureFilterMode::Linear;
+TextureFilter gTextureFilter = TEXTURE_FILTER_BILINEAR;
 std::array<std::array<float, SDL_GAMEPAD_AXIS_COUNT>, 16> gGamepadDeadZones{};
 
 #define gRenderer (*gRendererPtr)
@@ -91,7 +90,7 @@ int gTextLineSpacing = 0;
 WindowState gWin;
 int   gLastKeyPressed   = 0;
 int   gLastCharPressed  = 0;
-KeyboardKey gExitKey    = KeyboardKey::Escape;
+KeyboardKey gExitKey    = KEY_ESCAPE;
 Vec2  gMousePreviousPosition{};
 Vec2  gMouseOffset{};
 Vec2  gMouseScale{1.0f, 1.0f};
@@ -206,16 +205,20 @@ void CopyText(char* dst, size_t size, const char* src) {
 #endif
 }
 
-void UpdateInputFromEvents() {
+void UpdateInputState() {
     float mx = 0.f, my = 0.f;
     const SDL_MouseButtonFlags ms = SDL_GetMouseState(&mx, &my);
     gWin.mousePosition = Vec2{
         (mx + gMouseOffset.x) * gMouseScale.x,
         (my + gMouseOffset.y) * gMouseScale.y
     };
-    gWin.mouseButtons[static_cast<std::size_t>(MouseButton::Left)]   = (ms & SDL_BUTTON_LMASK) != 0;
-    gWin.mouseButtons[static_cast<std::size_t>(MouseButton::Middle)] = (ms & SDL_BUTTON_MMASK) != 0;
-    gWin.mouseButtons[static_cast<std::size_t>(MouseButton::Right)]  = (ms & SDL_BUTTON_RMASK) != 0;
+    gWin.mouseButtons[MOUSE_BUTTON_LEFT] = (ms & SDL_BUTTON_LMASK) != 0;
+    gWin.mouseButtons[MOUSE_BUTTON_RIGHT] = (ms & SDL_BUTTON_RMASK) != 0;
+    gWin.mouseButtons[MOUSE_BUTTON_MIDDLE] = (ms & SDL_BUTTON_MMASK) != 0;
+    gWin.mouseButtons[MOUSE_BUTTON_SIDE] = (ms & SDL_BUTTON_X1MASK) != 0;
+    gWin.mouseButtons[MOUSE_BUTTON_EXTRA] = (ms & SDL_BUTTON_X2MASK) != 0;
+    gWin.mouseButtons[MOUSE_BUTTON_FORWARD] = false;
+    gWin.mouseButtons[MOUSE_BUTTON_BACK] = false;
 
     const bool* ks = SDL_GetKeyboardState(nullptr);
     for (int i = 0; i < static_cast<int>(SDL_SCANCODE_COUNT); ++i)
@@ -260,10 +263,8 @@ static bool InitOpenGLBackend(int width, int height, const char* title) {
 #endif
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    if (gRequestedMSAASamples > 1) {
-        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
-        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, gRequestedMSAASamples);
-    }
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, gRequestedMSAASamples > 1 ? 1 : 0);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, gRequestedMSAASamples > 1 ? gRequestedMSAASamples : 0);
 
     TraceLog(LogLevel::Info, "RENDERER", "Backend selected: OpenGL");
 
@@ -279,6 +280,17 @@ static bool InitOpenGLBackend(int width, int height, const char* title) {
 
     gRendererPtr = &gGLRenderer;
     gRenderer.Init(gWin.window, width, height);
+    int sampleBuffers = 0;
+    int actualSamples = 0;
+    if (SDL_GL_GetAttribute(SDL_GL_MULTISAMPLEBUFFERS, &sampleBuffers) &&
+        SDL_GL_GetAttribute(SDL_GL_MULTISAMPLESAMPLES, &actualSamples)) {
+        const int effectiveSamples = sampleBuffers > 0 ? actualSamples : 1;
+        if (effectiveSamples != gRequestedMSAASamples) {
+            TraceLog(LogLevel::Warn, "RENDERER",
+                TextFormat("OpenGL requested %d MSAA samples, but the selected pixel format provides %d.",
+                           gRequestedMSAASamples, effectiveSamples));
+        }
+    }
     gRenderer.SetTargetFPS(gWin.targetFps);
     if (gWin.vsyncSet) {
         gRenderer.SetVSync(gWin.vsync);
@@ -287,18 +299,6 @@ static bool InitOpenGLBackend(int width, int height, const char* title) {
     return true;
 }
 #endif
-
-static TextureFilterMode ConvertTextureFilterMode(int filter) {
-    switch (filter) {
-        case TEXTURE_FILTER_POINT: return TextureFilterMode::Nearest;
-        case TEXTURE_FILTER_BILINEAR: return TextureFilterMode::Linear;
-        case TEXTURE_FILTER_TRILINEAR:
-        case TEXTURE_FILTER_ANISOTROPIC_4X:
-        case TEXTURE_FILTER_ANISOTROPIC_8X:
-        case TEXTURE_FILTER_ANISOTROPIC_16X:
-        default: return TextureFilterMode::Linear;
-    }
-}
 
 static ALenum GetOpenALFormat(unsigned int sampleSize, unsigned int channels) {
     if (channels == 1) {
@@ -445,6 +445,18 @@ static void DestroyAudioBuffer(rAudioBuffer* buffer, bool deleteOpenALBuffer) {
 
 void SetMSAASamples(int samples) {
     gRequestedMSAASamples = (samples == 2 || samples == 4 || samples == 8) ? samples : 1;
+#if defined(QC_ENABLE_OPENGL)
+    if (gCurrentBackend == RendererType::OpenGL) {
+        int sampleBuffers = 0;
+        int actualSamples = 0;
+        if (SDL_GL_GetAttribute(SDL_GL_MULTISAMPLEBUFFERS, &sampleBuffers) &&
+            SDL_GL_GetAttribute(SDL_GL_MULTISAMPLESAMPLES, &actualSamples) &&
+            (sampleBuffers > 0 ? actualSamples : 1) != gRequestedMSAASamples) {
+            TraceLog(LogLevel::Warn, "RENDERER",
+                "OpenGL MSAA is configured when the window is created; call SetMSAASamples before InitWindow to change it.");
+        }
+    }
+#endif
 #if defined(QC_ENABLE_VULKAN)
     gVkRenderer.SetMSAASamples(gRequestedMSAASamples);
 #endif
@@ -453,9 +465,9 @@ void SetMSAASamples(int samples) {
 #endif
 }
 
-void SetTextureFilterMode(TextureFilterMode mode) {
-    gTextureFilterMode = mode;
-    gWin.activeTextureFilter = (mode == TextureFilterMode::Nearest) ? TEXTURE_FILTER_POINT : TEXTURE_FILTER_BILINEAR;
+void SetTextureFilterMode(TextureFilter mode) {
+    gTextureFilter = mode;
+    gWin.activeTextureFilter = mode;
 
     if (gRendererPtr) {
         gRenderer.SetTextureFilterMode(mode);
@@ -738,10 +750,10 @@ D3D11RenderCallback GetD3D11RenderCallback() {
 #endif
 
 bool WindowShouldClose() {
-    if (!gWin.eventsReady) {
-        PumpSystemEvents();
+    if (!gWin.inputPolled) {
+        PumpInput();
     }
-    gWin.eventsReady = false;
+    gWin.inputPolled = false;
 
     if (gRendererPtr && gRenderer.ShouldClose()) gWin.shouldClose = true;
     return gWin.shouldClose;
@@ -1245,9 +1257,9 @@ int GetTouchPointId(int index) {
 
 int GetTouchPointCount(void) {
     const bool hasTouch =
-        IsMouseButtonDown(MouseButton::Left) ||
-        IsMouseButtonDown(MouseButton::Right) ||
-        IsMouseButtonDown(MouseButton::Middle);
+        IsMouseButtonDown(MOUSE_BUTTON_LEFT) ||
+        IsMouseButtonDown(MOUSE_BUTTON_RIGHT) ||
+        IsMouseButtonDown(MOUSE_BUTTON_MIDDLE);
 
     return hasTouch ? 1 : 0;
 }
@@ -1411,10 +1423,10 @@ void EndScissorMode(void) {
     }
 }
 
-void SetTextureFilter(Texture2D texture, int filter) {
+void SetTextureFilter(Texture2D texture, TextureFilter filter) {
     (void)texture;
     gWin.activeTextureFilter = filter;
-    SetTextureFilterMode(ConvertTextureFilterMode(filter));
+    SetTextureFilterMode(filter);
 
     if (gRendererPtr) {
         gRenderer.SetTextureFilter(filter);
@@ -1422,11 +1434,10 @@ void SetTextureFilter(Texture2D texture, int filter) {
 }
 
 void SetTextureWrap(Texture2D texture, int wrap) {
-    (void)texture;
     gWin.activeTextureWrap = wrap;
 
     if (gRendererPtr) {
-        gRenderer.SetTextureWrap(wrap);
+        gRenderer.SetTextureWrap(texture.id, wrap);
     }
 }
 
@@ -2215,22 +2226,108 @@ void UnloadVrStereoConfig(VrStereoConfig config) {
     }
 }
 
+SDL_Scancode ToSDLScancode(KeyboardKey key) {
+    const int value = static_cast<int>(key);
+    if (value >= KEY_A && value <= KEY_Z) {
+        return static_cast<SDL_Scancode>(SDL_SCANCODE_A + value - KEY_A);
+    }
+    if (value >= KEY_ONE && value <= KEY_NINE) {
+        return static_cast<SDL_Scancode>(SDL_SCANCODE_1 + value - KEY_ONE);
+    }
+    if (value >= KEY_F1 && value <= KEY_F12) {
+        return static_cast<SDL_Scancode>(SDL_SCANCODE_F1 + value - KEY_F1);
+    }
+
+    switch (key) {
+        case KEY_NULL: return SDL_SCANCODE_UNKNOWN;
+        case KEY_APOSTROPHE: return SDL_SCANCODE_APOSTROPHE;
+        case KEY_COMMA: return SDL_SCANCODE_COMMA;
+        case KEY_MINUS: return SDL_SCANCODE_MINUS;
+        case KEY_PERIOD: return SDL_SCANCODE_PERIOD;
+        case KEY_SLASH: return SDL_SCANCODE_SLASH;
+        case KEY_ZERO: return SDL_SCANCODE_0;
+        case KEY_SEMICOLON: return SDL_SCANCODE_SEMICOLON;
+        case KEY_EQUAL: return SDL_SCANCODE_EQUALS;
+        case KEY_LEFT_BRACKET: return SDL_SCANCODE_LEFTBRACKET;
+        case KEY_BACKSLASH: return SDL_SCANCODE_BACKSLASH;
+        case KEY_RIGHT_BRACKET: return SDL_SCANCODE_RIGHTBRACKET;
+        case KEY_GRAVE: return SDL_SCANCODE_GRAVE;
+        case KEY_SPACE: return SDL_SCANCODE_SPACE;
+        case KEY_ESCAPE: return SDL_SCANCODE_ESCAPE;
+        case KEY_ENTER: return SDL_SCANCODE_RETURN;
+        case KEY_TAB: return SDL_SCANCODE_TAB;
+        case KEY_BACKSPACE: return SDL_SCANCODE_BACKSPACE;
+        case KEY_INSERT: return SDL_SCANCODE_INSERT;
+        case KEY_DELETE: return SDL_SCANCODE_DELETE;
+        case KEY_RIGHT: return SDL_SCANCODE_RIGHT;
+        case KEY_LEFT: return SDL_SCANCODE_LEFT;
+        case KEY_DOWN: return SDL_SCANCODE_DOWN;
+        case KEY_UP: return SDL_SCANCODE_UP;
+        case KEY_PAGE_UP: return SDL_SCANCODE_PAGEUP;
+        case KEY_PAGE_DOWN: return SDL_SCANCODE_PAGEDOWN;
+        case KEY_HOME: return SDL_SCANCODE_HOME;
+        case KEY_END: return SDL_SCANCODE_END;
+        case KEY_CAPS_LOCK: return SDL_SCANCODE_CAPSLOCK;
+        case KEY_SCROLL_LOCK: return SDL_SCANCODE_SCROLLLOCK;
+        case KEY_NUM_LOCK: return SDL_SCANCODE_NUMLOCKCLEAR;
+        case KEY_PRINT_SCREEN: return SDL_SCANCODE_PRINTSCREEN;
+        case KEY_PAUSE: return SDL_SCANCODE_PAUSE;
+        case KEY_LEFT_SHIFT: return SDL_SCANCODE_LSHIFT;
+        case KEY_LEFT_CONTROL: return SDL_SCANCODE_LCTRL;
+        case KEY_LEFT_ALT: return SDL_SCANCODE_LALT;
+        case KEY_LEFT_SUPER: return SDL_SCANCODE_LGUI;
+        case KEY_RIGHT_SHIFT: return SDL_SCANCODE_RSHIFT;
+        case KEY_RIGHT_CONTROL: return SDL_SCANCODE_RCTRL;
+        case KEY_RIGHT_ALT: return SDL_SCANCODE_RALT;
+        case KEY_RIGHT_SUPER: return SDL_SCANCODE_RGUI;
+        case KEY_KB_MENU: return SDL_SCANCODE_APPLICATION;
+        case KEY_KP_0: return SDL_SCANCODE_KP_0;
+        case KEY_KP_1: return SDL_SCANCODE_KP_1;
+        case KEY_KP_2: return SDL_SCANCODE_KP_2;
+        case KEY_KP_3: return SDL_SCANCODE_KP_3;
+        case KEY_KP_4: return SDL_SCANCODE_KP_4;
+        case KEY_KP_5: return SDL_SCANCODE_KP_5;
+        case KEY_KP_6: return SDL_SCANCODE_KP_6;
+        case KEY_KP_7: return SDL_SCANCODE_KP_7;
+        case KEY_KP_8: return SDL_SCANCODE_KP_8;
+        case KEY_KP_9: return SDL_SCANCODE_KP_9;
+        case KEY_KP_DECIMAL: return SDL_SCANCODE_KP_DECIMAL;
+        case KEY_KP_DIVIDE: return SDL_SCANCODE_KP_DIVIDE;
+        case KEY_KP_MULTIPLY: return SDL_SCANCODE_KP_MULTIPLY;
+        case KEY_KP_SUBTRACT: return SDL_SCANCODE_KP_MINUS;
+        case KEY_KP_ADD: return SDL_SCANCODE_KP_PLUS;
+        case KEY_KP_ENTER: return SDL_SCANCODE_KP_ENTER;
+        case KEY_KP_EQUAL: return SDL_SCANCODE_KP_EQUALS;
+        case KEY_BACK: return SDL_SCANCODE_AC_BACK;
+        case KEY_MENU: return SDL_SCANCODE_MENU;
+        case KEY_VOLUME_UP: return SDL_SCANCODE_VOLUMEUP;
+        case KEY_VOLUME_DOWN: return SDL_SCANCODE_VOLUMEDOWN;
+        default: return SDL_SCANCODE_UNKNOWN;
+    }
+}
+
 bool IsKeyDown(KeyboardKey key) {
     EnsureInitialized();
-    const auto i = static_cast<std::size_t>(key);
+    const auto scancode = ToSDLScancode(key);
+    if (scancode == SDL_SCANCODE_UNKNOWN) return false;
+    const auto i = static_cast<std::size_t>(scancode);
     return i < gWin.currentKeys.size() ? gWin.currentKeys[i] : false;
 }
 
 bool IsKeyPressed(KeyboardKey key) {
     EnsureInitialized();
-    const auto i = static_cast<std::size_t>(key);
+    const auto scancode = ToSDLScancode(key);
+    if (scancode == SDL_SCANCODE_UNKNOWN) return false;
+    const auto i = static_cast<std::size_t>(scancode);
     if (i >= gWin.currentKeys.size()) return false;
     return gWin.currentKeys[i] && !gWin.previousKeys[i];
 }
 
 bool IsKeyReleased(KeyboardKey key) {
     EnsureInitialized();
-    const auto i = static_cast<std::size_t>(key);
+    const auto scancode = ToSDLScancode(key);
+    if (scancode == SDL_SCANCODE_UNKNOWN) return false;
+    const auto i = static_cast<std::size_t>(scancode);
     if (i >= gWin.currentKeys.size()) return false;
     return !gWin.currentKeys[i] && gWin.previousKeys[i];
 }
@@ -2385,33 +2482,35 @@ void SetMouseCursor(MouseCursor cursor) {
 
     SDL_SystemCursor sdl;
     switch (cursor) {
-        case MouseCursor::Ibeam:
+        case MOUSE_CURSOR_IBEAM:
             sdl = SDL_SYSTEM_CURSOR_TEXT;
             break;
-        case MouseCursor::Crosshair:
+        case MOUSE_CURSOR_CROSSHAIR:
             sdl = SDL_SYSTEM_CURSOR_CROSSHAIR;
             break;
-        case MouseCursor::PointingHand:
+        case MOUSE_CURSOR_POINTING_HAND:
             sdl = SDL_SYSTEM_CURSOR_POINTER;
             break;
-        case MouseCursor::ResizeEW:
+        case MOUSE_CURSOR_RESIZE_EW:
             sdl = SDL_SYSTEM_CURSOR_EW_RESIZE;
             break;
-        case MouseCursor::ResizeNS:
+        case MOUSE_CURSOR_RESIZE_NS:
             sdl = SDL_SYSTEM_CURSOR_NS_RESIZE;
             break;
-        case MouseCursor::ResizeNWSE:
+        case MOUSE_CURSOR_RESIZE_NWSE:
             sdl = SDL_SYSTEM_CURSOR_NWSE_RESIZE;
             break;
-        case MouseCursor::ResizeNESW:
+        case MOUSE_CURSOR_RESIZE_NESW:
             sdl = SDL_SYSTEM_CURSOR_NESW_RESIZE;
             break;
-        case MouseCursor::ResizeAll:
+        case MOUSE_CURSOR_RESIZE_ALL:
             sdl = SDL_SYSTEM_CURSOR_MOVE;
             break;
-        case MouseCursor::NotAllowed:
+        case MOUSE_CURSOR_NOT_ALLOWED:
             sdl = SDL_SYSTEM_CURSOR_NOT_ALLOWED;
             break;
+        case MOUSE_CURSOR_DEFAULT:
+        case MOUSE_CURSOR_ARROW:
         default:
             sdl = SDL_SYSTEM_CURSOR_DEFAULT;
             break;
@@ -3416,13 +3515,123 @@ Texture2D LoadTextureFromImage(Image image) {
     return Texture2D{ it.id, it.width, it.height, it.mipmaps, it.format, it.valid };
 }
 
-TextureCubemap LoadTextureCubemap(Image image, int layout) {
-    const int cubemapLayout = layout;
-    if (cubemapLayout < 0 || cubemapLayout > 3) {
-        TraceLog(LogLevel::Warn, "TEXTURE",
-                 TextFormat("LoadTextureCubemap: unsupported cubemap layout %d, falling back to default layout", cubemapLayout));
+static bool PrepareCubemapFaces(Image image, CubemapLayout requestedLayout,
+                                std::vector<unsigned char>& faces, int& faceSize) {
+    if (!IsImageValid(image)) {
+        TraceLog(LogLevel::Error, "TEXTURE", "LoadTextureCubemap: invalid source image");
+        return false;
     }
-    return LoadTextureFromImage(image);
+
+    CubemapLayout layout = requestedLayout;
+    if (layout == CUBEMAP_LAYOUT_AUTO_DETECT) {
+        if (static_cast<int64_t>(image.width) == static_cast<int64_t>(image.height) * 6) {
+            layout = CUBEMAP_LAYOUT_LINE_HORIZONTAL;
+        } else if (static_cast<int64_t>(image.height) == static_cast<int64_t>(image.width) * 6) {
+            layout = CUBEMAP_LAYOUT_LINE_VERTICAL;
+        } else if (image.width % 3 == 0 && image.height % 4 == 0 &&
+                   image.width / 3 == image.height / 4) {
+            layout = CUBEMAP_LAYOUT_CROSS_THREE_BY_FOUR;
+        } else if (image.width % 4 == 0 && image.height % 3 == 0 &&
+                   image.width / 4 == image.height / 3) {
+            layout = CUBEMAP_LAYOUT_CROSS_FOUR_BY_THREE;
+        } else {
+            TraceLog(LogLevel::Error, "TEXTURE", "LoadTextureCubemap: cannot detect cubemap layout from image dimensions");
+            return false;
+        }
+    }
+
+    int columns = 0;
+    int rows = 0;
+    switch (layout) {
+        case CUBEMAP_LAYOUT_LINE_VERTICAL:
+            columns = 1;
+            rows = 6;
+            break;
+        case CUBEMAP_LAYOUT_LINE_HORIZONTAL:
+            columns = 6;
+            rows = 1;
+            break;
+        case CUBEMAP_LAYOUT_CROSS_THREE_BY_FOUR:
+            columns = 3;
+            rows = 4;
+            break;
+        case CUBEMAP_LAYOUT_CROSS_FOUR_BY_THREE:
+            columns = 4;
+            rows = 3;
+            break;
+        default:
+            TraceLog(LogLevel::Error, "TEXTURE", TextFormat("LoadTextureCubemap: invalid layout value %d",
+                     static_cast<int>(requestedLayout)));
+            return false;
+    }
+
+    if (image.width % columns != 0 || image.height % rows != 0 ||
+        image.width / columns != image.height / rows) {
+        TraceLog(LogLevel::Error, "TEXTURE", TextFormat("LoadTextureCubemap: image dimensions %dx%d do not match layout %d",
+                 image.width, image.height, static_cast<int>(layout)));
+        return false;
+    }
+
+    faceSize = image.width / columns;
+    const size_t facePixels = static_cast<size_t>(faceSize) * static_cast<size_t>(faceSize);
+    if (facePixels > std::numeric_limits<size_t>::max() / 24) {
+        TraceLog(LogLevel::Error, "TEXTURE", "LoadTextureCubemap: image dimensions are too large");
+        return false;
+    }
+
+    Image rgbaImage = ImageCopy(image);
+    if (!rgbaImage.data) {
+        TraceLog(LogLevel::Error, "TEXTURE", "LoadTextureCubemap: failed to copy source image");
+        return false;
+    }
+    ImageFormat(&rgbaImage, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    if (rgbaImage.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
+        UnloadImage(rgbaImage);
+        TraceLog(LogLevel::Error, "TEXTURE", "LoadTextureCubemap: source image cannot be converted to RGBA8");
+        return false;
+    }
+
+    std::array<std::array<int, 2>, 6> faceOrigins{};
+    if (layout == CUBEMAP_LAYOUT_LINE_HORIZONTAL) {
+        for (int face = 0; face < 6; ++face) faceOrigins[face] = {face, 0};
+    } else if (layout == CUBEMAP_LAYOUT_LINE_VERTICAL) {
+        for (int face = 0; face < 6; ++face) faceOrigins[face] = {0, face};
+    } else if (layout == CUBEMAP_LAYOUT_CROSS_THREE_BY_FOUR) {
+        faceOrigins = {{{1, 1}, {1, 3}, {1, 0}, {1, 2}, {0, 1}, {2, 1}}};
+    } else {
+        faceOrigins = {{{2, 1}, {0, 1}, {1, 0}, {1, 2}, {1, 1}, {3, 1}}};
+    }
+
+    faces.resize(facePixels * 24);
+    const auto* source = static_cast<const unsigned char*>(rgbaImage.data);
+    const size_t rowBytes = static_cast<size_t>(rgbaImage.width) * 4;
+    const size_t faceBytes = facePixels * 4;
+    for (size_t face = 0; face < faceOrigins.size(); ++face) {
+        const size_t sourceX = static_cast<size_t>(faceOrigins[face][0]) * faceSize;
+        const size_t sourceY = static_cast<size_t>(faceOrigins[face][1]) * faceSize;
+        for (int y = 0; y < faceSize; ++y) {
+            const unsigned char* sourceRow =
+                source + (sourceY + static_cast<size_t>(y)) * rowBytes + sourceX * 4;
+            unsigned char* destinationRow =
+                faces.data() + face * faceBytes + static_cast<size_t>(y) * faceSize * 4;
+            std::memcpy(destinationRow, sourceRow, static_cast<size_t>(faceSize) * 4);
+        }
+    }
+    UnloadImage(rgbaImage);
+    return true;
+}
+
+TextureCubemap LoadTextureCubemap(Image image, CubemapLayout layout) {
+    std::vector<unsigned char> faces;
+    int faceSize = 0;
+    if (!PrepareCubemapFaces(image, layout, faces, faceSize)) {
+        return {};
+    }
+
+    EnsureInitialized();
+    const ITexture texture = gRenderer.LoadTextureCubemap(faces.data(), faceSize);
+    return TextureCubemap{texture.id, texture.width, texture.height, texture.mipmaps,
+                          texture.format, texture.valid};
 }
 
 void UpdateTexture(Texture2D texture, const void* pixels) {
@@ -3575,7 +3784,7 @@ void EndTextureMode() {
 Font LoadFont(const char* fileName) {
     EnsureInitialized();
     const int defaultFontSize = 32;
-    IFont iFont = gRenderer.LoadFont(fileName, defaultFontSize, nullptr, 0);
+    qci::IFont iFont = gRenderer.LoadFont(fileName, defaultFontSize, nullptr, 0);
     Font f;
     gRenderer.FillFont(iFont, f);
     return f;
@@ -3583,7 +3792,7 @@ Font LoadFont(const char* fileName) {
 
 void UnloadFont(Font font) {
     if (font._rendererFontId != 0) {
-        IFont iFont{ font._rendererFontId };
+        qci::IFont iFont{ font._rendererFontId };
         gRenderer.UnloadFont(iFont);
     }
     delete[] font.glyphs;
@@ -3594,7 +3803,7 @@ void UnloadFont(Font font) {
 
 Font GetDefaultFont() {
     EnsureInitialized();
-    IFont iFont = gRenderer.LoadFont(nullptr, 32, nullptr, 0);
+    qci::IFont iFont = gRenderer.LoadFont(nullptr, 32, nullptr, 0);
     Font f;
     gRenderer.FillFont(iFont, f);
     return f;
@@ -3611,7 +3820,7 @@ static std::vector<int> DefaultCodepointsAPI()
 Font LoadFontEx(const char* fileName, int fontSize, const int* codepoints, int codepointCount)
 {
     EnsureInitialized();
-    IFont iFont = gRenderer.LoadFont(fileName, fontSize, codepoints, codepointCount);
+    qci::IFont iFont = gRenderer.LoadFont(fileName, fontSize, codepoints, codepointCount);
     Font f;
     gRenderer.FillFont(iFont, f);
     return f;
@@ -3621,7 +3830,7 @@ Font LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int
                         int fontSize, const int* codepoints, int codepointCount)
 {
     EnsureInitialized();
-    IFont iFont = gRenderer.LoadFontFromMemory(fileType, fileData, dataSize, fontSize, codepoints, codepointCount);
+    qci::IFont iFont = gRenderer.LoadFontFromMemory(fileType, fileData, dataSize, fontSize, codepoints, codepointCount);
     Font f;
     gRenderer.FillFont(iFont, f);
     return f;
@@ -4041,12 +4250,12 @@ void DrawDebugText(const char* text, int x, int y, int fontSize, Color color) {
 
 void DrawTextEx(Font font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) {
     EnsureInitialized();
-    IFont iFont{ font._rendererFontId };
+    qci::IFont iFont{ font._rendererFontId };
     gRenderer.DrawTextEx(iFont, text, position, fontSize, spacing, tint);
 }
 
 Vec2 MeasureTextEx(Font font, const char* text, float fontSize, float spacing) {
-    IFont iFont{ font._rendererFontId };
+    qci::IFont iFont{ font._rendererFontId };
     return gRenderer.MeasureTextEx(iFont, text, fontSize, spacing);
 }
 
@@ -7212,5 +7421,3 @@ void UpdateModelAnimationEx(Model model, ModelAnimation animA, float frameA,
     ApplyPoseToModel(model, model.skeleton, locals, animA, f0);
     ApplySkinningToAllMeshes(model);
 }
-
-} // namespace qc

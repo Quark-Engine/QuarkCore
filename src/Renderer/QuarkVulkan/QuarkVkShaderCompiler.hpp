@@ -7,9 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 struct VkShaderProgramData {
     VkShaderModule vertexModule   = VK_NULL_HANDLE;
     VkShaderModule fragmentModule = VK_NULL_HANDLE;
@@ -61,7 +59,5 @@ private:
     uint32_t m_currentProgramId = 0;
     std::unordered_map<uint32_t, VkShaderProgramData> m_programs;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_SHADER_COMPILER__

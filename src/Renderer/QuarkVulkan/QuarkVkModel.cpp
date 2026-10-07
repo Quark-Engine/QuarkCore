@@ -1,5 +1,6 @@
 #include "QuarkVkRenderer.hpp"
 
+#include "../QuarkAssimpTexture.hpp"
 #include "../../QuarkModelAnim.hpp"
 
 #include <assimp/Importer.hpp>
@@ -9,12 +10,11 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <exception>
 #include <set>
 #include <string>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 namespace {
 
 static float NormalizeColorComponent(std::uint8_t value) {
@@ -162,7 +162,8 @@ static std::string GetModelDirectory(const char* filePath) {
     return path.substr(0, slash + 1);
 }
 
-static Material LoadAssimpMaterial(QuarkVkRenderer& renderer, const char* filePath, aiMaterial* source) {
+static Material LoadAssimpMaterial(QuarkVkRenderer& renderer, const aiScene& scene,
+                                   const char* filePath, aiMaterial* source) {
     Material material{};
     material.maps = new MaterialMap[MATERIAL_MAP_BRDF + 1]{};
     material.maps[MATERIAL_MAP_ALBEDO].color = WHITE;
@@ -196,10 +197,25 @@ static Material LoadAssimpMaterial(QuarkVkRenderer& renderer, const char* filePa
         aiString texturePath;
         if (AI_SUCCESS != source->GetTexture(textureType, 0, &texturePath)) continue;
 
+        const std::string textureReference = texturePath.C_Str();
         std::string resolvedPath = GetModelDirectory(filePath);
-        resolvedPath += texturePath.C_Str();
+        resolvedPath += textureReference;
         TraceLog(LogLevel::Trace, "MODEL", TextFormat("[Vulkan] Model material map %d: %s", mapIndex, resolvedPath.c_str()));
-        ITexture loadedTex = renderer.LoadTexture(resolvedPath.c_str());
+
+        ITexture loadedTex{};
+        if (!textureReference.empty() && textureReference.front() == '*') {
+            Image embeddedImage{};
+            std::vector<unsigned char> rawPixels;
+            bool ownsImage = false;
+            if (DecodeEmbeddedAssimpTexture(scene, texturePath, embeddedImage, rawPixels, ownsImage)) {
+                loadedTex = renderer.LoadTextureFromImage(embeddedImage);
+                ReleaseEmbeddedAssimpTexture(embeddedImage, ownsImage);
+            } else {
+                TraceLog(LogLevel::Error, "MODEL", TextFormat("[Vulkan] Failed to decode embedded texture: %s", textureReference.c_str()));
+            }
+        } else {
+            loadedTex = renderer.LoadTexture(resolvedPath.c_str());
+        }
         if (loadedTex.valid) {
             material.maps[mapIndex].texture.id = loadedTex.id;
             material.maps[mapIndex].texture.width = loadedTex.width;
@@ -261,11 +277,18 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
     TraceLog(LogLevel::Info, "MODEL", TextFormat("[Vulkan] Loading 3D model: %s", filePath ? filePath : "<null>"));
 
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(
-        filePath,
-        aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs |
-            aiProcess_PopulateArmatureData
-    );
+    const aiScene* scene = nullptr;
+    try {
+        scene = importer.ReadFile(
+            filePath,
+            aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_FlipUVs |
+                aiProcess_PopulateArmatureData
+        );
+    } catch (const std::exception& error) {
+        TraceLog(LogLevel::Error, "MODEL", TextFormat("[Vulkan] Exception while loading model %s: %s",
+            filePath ? filePath : "<null>", error.what()));
+        return Model{};
+    }
 
     if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || !scene->mRootNode) {
         TraceLog(LogLevel::Error, "MODEL", TextFormat("[Vulkan] Failed to load model %s: %s",
@@ -285,7 +308,7 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
     model.meshMaterial = (model.meshCount > 0) ? new int[model.meshCount]{} : nullptr;
 
     for (int i = 0; i < model.materialCount; ++i) {
-        model.materials[i] = LoadAssimpMaterial(*this, filePath, scene->mMaterials[i]);
+        model.materials[i] = LoadAssimpMaterial(*this, *scene, filePath, scene->mMaterials[i]);
     }
 
     qcPopulateModelSkeleton(scene, model);
@@ -380,8 +403,10 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
 }
 
 void QuarkVkRenderer::UnloadModel(Model& model) {
+    const int meshCount = model.meshCount;
+    const int materialCount = model.materialCount;
     if (model.meshes) {
-        for (int i = 0; i < model.meshCount; ++i) {
+        for (int i = 0; i < meshCount; ++i) {
             UnloadMesh(model.meshes[i]);
         }
         delete[] model.meshes;
@@ -389,7 +414,7 @@ void QuarkVkRenderer::UnloadModel(Model& model) {
     }
 
     if (model.materials) {
-        for (int i = 0; i < model.materialCount; ++i) {
+        for (int i = 0; i < materialCount; ++i) {
             Material& material = model.materials[i];
             if (material.maps) {
                 std::set<uint32_t> unloadedTextures;
@@ -413,13 +438,8 @@ void QuarkVkRenderer::UnloadModel(Model& model) {
 
     qcFreeModelSkeleton(model);
 
-    TraceLog(LogLevel::Info, "MODEL", TextFormat("[Vulkan] Model unloaded (%d meshes, %d materials)", model.meshCount, model.materialCount));
-
-    model.meshCount = 0;
-    model.materialCount = 0;
-    model.directory.clear();
-    model.id = 0;
-    model.transform = Mat4::identity();
+    TraceLog(LogLevel::Info, "MODEL", TextFormat("[Vulkan] Model unloaded (%d meshes, %d materials)", meshCount, materialCount));
+    model = {};
 }
 
 void QuarkVkRenderer::DrawModel(const Model& model, const Vec3& position, float scale,
@@ -664,5 +684,4 @@ void QuarkVkRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& materi
         DrawMesh(mesh, material, transforms[i]);
     }
 }
-
-}; // namespace qc
+} // namespace qci

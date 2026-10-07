@@ -55,9 +55,7 @@
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 class QuarkGLRenderer final : public IRenderer {
 public:
     QuarkGLRenderer() = default;
@@ -115,6 +113,7 @@ public:
     void           DrawTextureNPatch(ITexture texture, NPatchInfo nPatchInfo, Rectangle dest, Vec2 origin, float rotation, Color tint) override;
     ITexture       LoadTexture(const char* filePath) override;
     ITexture       LoadTextureFromImage(const Image& image) override;
+    ITexture       LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize) override;
     ITexture       GetRenderTextureTexture(IRenderTexture target) override;
     void           UnloadTexture(ITexture& texture) override;
     bool           UpdateTexture(const ITexture& texture, const void* pixels) override;
@@ -129,9 +128,10 @@ public:
 
     void BeginTextureMode(IRenderTexture target) override;
     void EndTextureMode() override;
-    void SetTextureFilterMode(TextureFilterMode mode) override;
-    void SetTextureFilter(int filter) override;
+    void SetTextureFilterMode(TextureFilter mode) override;
+    void SetTextureFilter(TextureFilter filter) override;
     void SetTextureWrap(int wrap) override;
+    void SetTextureWrap(uint32_t textureId, int wrap) override;
     void BeginScissorMode(int x, int y, int width, int height) override;
     void EndScissorMode() override;
     void SetBlendMode(int mode) override;
@@ -154,9 +154,9 @@ public:
     void   SetShaderValue(const Shader& shader, int locIndex, float value) override;
     void   SetShaderValue(const Shader& shader, int locIndex, int value) override;
     void   SetShaderValue(const Shader& shader, int locIndex, const Color& value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const qc::Vec2& value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const qc::Vec4& value) override;
+    void   SetShaderValue(const Shader& shader, int locIndex, const Vec2& value) override;
+    void   SetShaderValue(const Shader& shader, int locIndex, const Vec3& value) override;
+    void   SetShaderValue(const Shader& shader, int locIndex, const Vec4& value) override;
     void   SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat) override;
     void   SetShaderValueSampler(const Shader& sfhader, int locIndex, int textureUnit) override;
     void   SetShaderValue(const Shader& shader, int locIndex, const void* value, int uniformType) override;
@@ -213,30 +213,8 @@ private:
         float x, y, u, v, r, g, b, a;
     };
 
-    struct GlyphData {
-        int       value   = 0;
-        Rectangle uv{};
-        Rectangle rec{};
-        Image     image{};
-        float     advanceX = 0.f;
-        float     offsetX  = 0.f;
-        float     offsetY  = 0.f;
-        int       width    = 0;
-        int       height   = 0;
-    };
-
-    struct FontData {
-        GLuint    atlasTexture = 0;
-        int       atlasWidth   = 0;
-        int       atlasHeight  = 0;
-        int       baseSize    = 0;
-        int       ascent      = 0;
-        int       descent     = 0;
-        int       lineHeight  = 0;
-        int       lineGap     = 0;
-        int       glyphCount  = 0;
-        std::vector<GlyphData> glyphs;
-    };
+    using GlyphData = qci::GlyphData;
+    using FontData = qci::FontData;
 
     struct CachedTexture {
         ITexture texture{};
@@ -322,7 +300,5 @@ private:
     std::unordered_map<std::string, CachedTexture> m_textureCache;
     std::unordered_map<GLuint, std::string> m_textureCacheKeys;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_GL_RENDERER__

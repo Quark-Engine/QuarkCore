@@ -4,9 +4,7 @@
 #if defined(_WIN32)
 #include "QuarkD3D11Common.hpp"
 #include <wrl/client.h>
-
-namespace qc {
-
+namespace qci {
 class D3D11Device {
 public:
     void Initialize();
@@ -19,8 +17,6 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Device> m_device;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_context;
 };
-
-} // namespace qc
+} // namespace qci
 #endif
-
 #endif // __QUARK_D3D11_DEVICE__

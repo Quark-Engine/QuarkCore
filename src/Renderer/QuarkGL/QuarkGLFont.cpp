@@ -12,9 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-
-namespace qc {
-
+namespace qci {
 int QuarkGLFont::DecodeUTF8(const char*& p) {
     const unsigned char lead = static_cast<unsigned char>(*p);
     int cp = 0;
@@ -305,5 +303,4 @@ Vec2 QuarkGLFont::MeasureTextWithFontData(const FontData& fontData, const char* 
 
     return {std::max(maxW, x), lineHeight * static_cast<float>(lines)};
 }
-
-} // namespace qc
+} // namespace qci

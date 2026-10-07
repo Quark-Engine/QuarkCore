@@ -2,9 +2,7 @@
 #define __QUARK_VK_PIPELINE__
 
 #include "QuarkVkCommon.hpp"
-
-namespace qc {
-
+namespace qci {
 struct VkBatchVertex {
     float x, y;
     float u, v;
@@ -88,7 +86,5 @@ private:
     VkPipeline m_offscreenPipeline3DTri    = VK_NULL_HANDLE;
     VkPipeline m_offscreenPipeline3DLines  = VK_NULL_HANDLE;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_PIPELINE__

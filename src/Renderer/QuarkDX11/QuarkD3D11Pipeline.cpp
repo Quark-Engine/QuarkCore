@@ -1,8 +1,7 @@
 #include "QuarkD3D11Pipeline.hpp"
 
 #if defined(_WIN32)
-namespace qc {
-
+namespace qci {
 void D3D11Pipeline::Initialize(ID3D11Device *device, D3D11ShaderCompiler &compiler,
                                D3D11Resources &resources)
 {
@@ -464,13 +463,13 @@ void D3D11Pipeline::UpdateLights(ID3D11DeviceContext *context,
     context->UpdateSubresource(m_lightConstantBuffer.Get(), 0, nullptr, &lights, 0, 0);
 }
 
-void D3D11Pipeline::CreateSamplerState(TextureFilterMode mode)
+void D3D11Pipeline::CreateSamplerState(TextureFilter mode)
 {
     if (!m_device) {
         return;
     }
 
-    const bool point = (mode == TextureFilterMode::Nearest);
+    const bool point = (mode == TEXTURE_FILTER_POINT);
 
     D3D11_TEXTURE_ADDRESS_MODE addressU = D3D11_TEXTURE_ADDRESS_WRAP;
     D3D11_TEXTURE_ADDRESS_MODE addressV = D3D11_TEXTURE_ADDRESS_WRAP;
@@ -515,7 +514,7 @@ void D3D11Pipeline::CreateSamplerState(TextureFilterMode mode)
                          "ID3D11Device::CreateSamplerState");
 }
 
-void D3D11Pipeline::SetTextureFilterMode(TextureFilterMode mode)
+void D3D11Pipeline::SetTextureFilterMode(TextureFilter mode)
 {
     if (mode == m_textureFilterMode) {
         return;
@@ -525,7 +524,7 @@ void D3D11Pipeline::SetTextureFilterMode(TextureFilterMode mode)
     CreateSamplerState(mode);
     TraceLog(LogLevel::Info, "D3D11",
              TextFormat("Texture filter mode set to %s.",
-                        mode == TextureFilterMode::Nearest ? "Nearest (point)" : "Bilinear"));
+                        mode == TEXTURE_FILTER_POINT ? "Nearest (point)" : "Bilinear"));
 }
 
 void D3D11Pipeline::SetTextureWrapMode(int wrap)
@@ -557,11 +556,10 @@ void D3D11Pipeline::Shutdown()
     m_rasterizerStateCull.Reset();
     m_lightConstantBuffer.Reset();
     m_backfaceCullingEnabled = false;
-    m_textureFilterMode = TextureFilterMode::Linear;
+    m_textureFilterMode = TEXTURE_FILTER_BILINEAR;
     m_device = nullptr;
 
     TraceLog(LogLevel::Trace, "D3D11", "Built-in pipeline state released.");
 }
-
-} // namespace qc
 #endif
+} // namespace qci

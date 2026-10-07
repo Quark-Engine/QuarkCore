@@ -6,9 +6,7 @@
 #include "QuarkD3D11Resources.hpp"
 #include "QuarkD3D11ShaderCompiler.hpp"
 #include <wrl/client.h>
-
-namespace qc {
-
+namespace qci {
 struct D3D11LightConstantData {
     float ambientColor[4];
     float viewPosition[4];
@@ -36,9 +34,9 @@ public:
                    ID3D11Buffer *indexBuffer) const;
     void SetBackfaceCulling(bool enabled) { m_backfaceCullingEnabled = enabled; }
     bool BackfaceCulling() const { return m_backfaceCullingEnabled; }
-    void SetTextureFilterMode(TextureFilterMode mode);
+    void SetTextureFilterMode(TextureFilter mode);
     void SetTextureWrapMode(int wrap);
-    TextureFilterMode GetTextureFilterMode() const { return m_textureFilterMode; }
+    TextureFilter GetTextureFilterMode() const { return m_textureFilterMode; }
     int GetTextureWrapMode() const { return m_textureWrapMode; }
     ID3D11Buffer *VertexBuffer() const { return m_vertexBuffer; }
     ID3D11Buffer *VertexBuffer3D() const { return m_vertexBuffer3D; }
@@ -54,7 +52,7 @@ public:
     }
 
 private:
-    void CreateSamplerState(TextureFilterMode mode);
+    void CreateSamplerState(TextureFilter mode);
     ID3D11Device *m_device = nullptr;
     ID3D11Buffer *m_vertexBuffer = nullptr;
     ID3D11Buffer *m_vertexBuffer3D = nullptr;
@@ -75,13 +73,11 @@ private:
     Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_rasterizerStateCull;
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_lightConstantBuffer;
     bool m_backfaceCullingEnabled = false;
-    TextureFilterMode m_textureFilterMode = TextureFilterMode::Linear;
+    TextureFilter m_textureFilterMode = TEXTURE_FILTER_BILINEAR;
     int m_textureWrapMode = TEXTURE_WRAP_REPEAT;
 };
 
 using D3D11PipelineState = D3D11Pipeline;
-
-} // namespace qc
+} // namespace qci
 #endif
-
 #endif // __QUARK_D3D11_PIPELINE__

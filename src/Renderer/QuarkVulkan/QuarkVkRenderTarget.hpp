@@ -5,9 +5,7 @@
 #include "QuarkVkGpuAllocator.hpp"
 
 #include <unordered_map>
-
-namespace qc {
-
+namespace qci {
 class QuarkVkRenderTarget {
 public:
     void Initialize(VkDevice device, QuarkVkGpuAllocator& allocator,
@@ -48,7 +46,5 @@ private:
     VkRenderPass         m_renderPass = VK_NULL_HANDLE;
     std::unordered_map<uint32_t, TargetData> m_targets;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_RENDER_TARGET__

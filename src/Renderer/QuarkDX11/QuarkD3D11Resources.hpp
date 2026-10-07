@@ -6,9 +6,7 @@
 #include "../QuarkTexture.hpp"
 #include <wrl/client.h>
 #include <unordered_map>
-
-namespace qc {
-
+namespace qci {
 class D3D11Resources {
 public:
     void Initialize(ID3D11Device *device);
@@ -19,6 +17,7 @@ public:
     ID3D11Buffer *VertexBuffer() const { return m_triangleVertexBuffer.Get(); }
     ID3D11Buffer *VertexBuffer3D() const { return m_vertexBuffer3D.Get(); }
     ITexture CreateTexture(ID3D11Device *device, const uint8_t *pixels, int width, int height);
+    ITexture CreateCubemap(ID3D11Device *device, const uint8_t *rgbaFaces, int faceSize);
     IRenderTexture CreateRenderTexture(ID3D11Device *device, int width, int height);
     bool UpdateTexture(ID3D11DeviceContext *context, uint32_t id, const uint8_t *pixels,
                        int width, int height);
@@ -49,8 +48,6 @@ private:
     std::unordered_map<uint32_t, TextureResource> m_renderTextures;
     uint32_t m_nextTextureId = 1;
 };
-
-} // namespace qc
+} // namespace qci
 #endif
-
 #endif // __QUARK_D3D11_RESOURCES__

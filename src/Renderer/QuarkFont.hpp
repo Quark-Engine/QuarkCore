@@ -1,9 +1,7 @@
 #ifndef __QUARK_FONT__
 #define __QUARK_FONT__
 #include <cstdint>
-
-namespace qc {
-
+namespace qci {
 struct IFont {
     uint32_t id = 0;
 
@@ -19,6 +17,5 @@ struct FontMetrics {
     float pixelSize = 0.0f;
 };
 
-}
-
+} // namespace qci
 #endif // __QUARK_FONT__

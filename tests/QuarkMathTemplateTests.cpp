@@ -3,9 +3,6 @@
 #include <cassert>
 #include <cmath>
 #include <type_traits>
-
-using namespace qc;
-
 static_assert(std::is_same_v<decltype(Vec2i{}.x), int>);
 static_assert(std::is_same_v<decltype(Vec2f{}.x), float>);
 static_assert(std::is_same_v<decltype(Vec2d{}.x), double>);

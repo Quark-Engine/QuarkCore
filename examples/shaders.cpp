@@ -79,27 +79,27 @@ void main() {
 )";
 
 int main() {
-    qc::InitWindow(1280, 720, "Shader Effects Demo", qc::RendererType::OpenGL);
-    qc::SetTargetFPS(60);
+    InitWindow(1280, 720, "Shader Effects Demo", RendererType::OpenGL);
+    SetTargetFPS(60);
 
-    qc::Texture2D checker = qc::GenCheckerTexture(
+    Texture2D checker = GenCheckerTexture(
         512, 512, 32,
-        qc::Color{220, 80, 80, 255},
-        qc::Color{80, 80, 220, 255}
+        Color{220, 80, 80, 255},
+        Color{80, 80, 220, 255}
     );
 
-    qc::Shader shaderChromatic = qc::LoadShaderFromMemory(qc::kVertexShaderSource, CHROMATIC_FRAG);
-    qc::Shader shaderPixelate  = qc::LoadShaderFromMemory(qc::kVertexShaderSource, PIXELATE_FRAG);
-    qc::Shader shaderVignette  = qc::LoadShaderFromMemory(qc::kVertexShaderSource, VIGNETTE_FRAG);
-    qc::Shader shaderScanlines = qc::LoadShaderFromMemory(qc::kVertexShaderSource, SCANLINES_FRAG);
+    Shader shaderChromatic = LoadShaderFromMemory(kVertexShaderSource, CHROMATIC_FRAG);
+    Shader shaderPixelate  = LoadShaderFromMemory(kVertexShaderSource, PIXELATE_FRAG);
+    Shader shaderVignette  = LoadShaderFromMemory(kVertexShaderSource, VIGNETTE_FRAG);
+    Shader shaderScanlines = LoadShaderFromMemory(kVertexShaderSource, SCANLINES_FRAG);
 
-    int locStrength   = qc::GetShaderLocation(shaderChromatic, "uStrength");
-    int locPixelSize  = qc::GetShaderLocation(shaderPixelate,  "uPixelSize");
-    int locPixelScreen= qc::GetShaderLocation(shaderPixelate,  "uScreenSize");
-    int locVigRadius  = qc::GetShaderLocation(shaderVignette,  "uRadius");
-    int locVigSoft    = qc::GetShaderLocation(shaderVignette,  "uSoftness");
-    int locScanScreen = qc::GetShaderLocation(shaderScanlines, "uScreenSize");
-    int locScanIntens = qc::GetShaderLocation(shaderScanlines, "uIntensity");
+    int locStrength   = GetShaderLocation(shaderChromatic, "uStrength");
+    int locPixelSize  = GetShaderLocation(shaderPixelate,  "uPixelSize");
+    int locPixelScreen= GetShaderLocation(shaderPixelate,  "uScreenSize");
+    int locVigRadius  = GetShaderLocation(shaderVignette,  "uRadius");
+    int locVigSoft    = GetShaderLocation(shaderVignette,  "uSoftness");
+    int locScanScreen = GetShaderLocation(shaderScanlines, "uScreenSize");
+    int locScanIntens = GetShaderLocation(shaderScanlines, "uIntensity");
 
     float chromaStrength = 0.005f;
     float pixelSize      = 8.0f;
@@ -110,27 +110,20 @@ int main() {
 
     const char* names[] = { "none", "chromatic aberration", "pixelate", "vignette", "scanlines" };
 
-    while (!qc::WindowShouldClose()) {
-        qc::Event ev;
-        while (qc::PollEvent(ev)) {
-            if (ev.type == qc::EventType::KeyDown) {
-                switch (ev.key) {
-                    case 49: activeShader = 0; break;  // '1' - no shader
-                    case 50: activeShader = 1; break;  // '2' - chromatic
-                    case 51: activeShader = 2; break;  // '3' - pixelate
-                    case 52: activeShader = 3; break;  // '4' - vignette
-                    case 53: activeShader = 4; break;  // '5' - scanlines
-                }
-            }
-        }
+    while (!WindowShouldClose()) {
+        if (IsKeyPressed(KEY_ONE)) activeShader = 0;
+        else if (IsKeyPressed(KEY_TWO)) activeShader = 1;
+        else if (IsKeyPressed(KEY_THREE)) activeShader = 2;
+        else if (IsKeyPressed(KEY_FOUR)) activeShader = 3;
+        else if (IsKeyPressed(KEY_FIVE)) activeShader = 4;
 
-        if (qc::IsKeyDown(qc::KeyboardKey::Up)) {
+        if (IsKeyDown(KEY_UP)) {
             if (activeShader == 1) chromaStrength += 0.001f;
             if (activeShader == 2) pixelSize      += 0.5f;
             if (activeShader == 3) vigRadius      += 0.01f;
             if (activeShader == 4) scanIntensity  += 0.02f;
         }
-        if (qc::IsKeyDown(qc::KeyboardKey::Down)) {
+        if (IsKeyDown(KEY_DOWN)) {
             if (activeShader == 1) chromaStrength -= 0.001f;
             if (activeShader == 2) pixelSize      -= 0.5f;
             if (activeShader == 3) vigRadius      -= 0.01f;
@@ -142,51 +135,51 @@ int main() {
         vigRadius      = std::max(0.1f, std::min(1.0f,   vigRadius));
         scanIntensity  = std::max(0.0f, std::min(1.0f,   scanIntensity));
 
-        float sw = (float)qc::GetScreenWidth();
-        float sh = (float)qc::GetScreenHeight();
+        float sw = (float)GetScreenWidth();
+        float sh = (float)GetScreenHeight();
 
         switch (activeShader) {
             case 1:
-                qc::BeginShaderMode(shaderChromatic);
-                qc::SetShaderValue(shaderChromatic, locStrength, chromaStrength);
+                BeginShaderMode(shaderChromatic);
+                SetShaderValue(shaderChromatic, locStrength, chromaStrength);
                 break;
             case 2:
-                qc::BeginShaderMode(shaderPixelate);
-                qc::SetShaderValue(shaderPixelate, locPixelScreen, qc::Vec2{sw, sh});
-                qc::SetShaderValue(shaderPixelate, locPixelSize,   pixelSize);
+                BeginShaderMode(shaderPixelate);
+                SetShaderValue(shaderPixelate, locPixelScreen, Vec2{sw, sh});
+                SetShaderValue(shaderPixelate, locPixelSize,   pixelSize);
                 break;
             case 3:
-                qc::BeginShaderMode(shaderVignette);
-                qc::SetShaderValue(shaderVignette, locVigRadius, vigRadius);
-                qc::SetShaderValue(shaderVignette, locVigSoft,   0.3f);
+                BeginShaderMode(shaderVignette);
+                SetShaderValue(shaderVignette, locVigRadius, vigRadius);
+                SetShaderValue(shaderVignette, locVigSoft,   0.3f);
                 break;
             case 4:
-                qc::BeginShaderMode(shaderScanlines);
-                qc::SetShaderValue(shaderScanlines, locScanScreen, qc::Vec2{sw, sh});
-                qc::SetShaderValue(shaderScanlines, locScanIntens, scanIntensity);
+                BeginShaderMode(shaderScanlines);
+                SetShaderValue(shaderScanlines, locScanScreen, Vec2{sw, sh});
+                SetShaderValue(shaderScanlines, locScanIntens, scanIntensity);
                 break;
             default:
                 break;
         }
 
-        qc::BeginDrawing();
-        qc::ClearBackground(qc::Color{20, 20, 30, 255});
+        BeginDrawing();
+        ClearBackground(Color{20, 20, 30, 255});
 
-        qc::DrawTexture(checker, 384, 104, qc::WHITE);
-        qc::DrawRectangle(100, 150, 250, 400, qc::Color{200, 160, 60, 255});
-        qc::DrawCircle(950, 360, 150, qc::Color{60, 180, 160, 255});
+        DrawTexture(checker, 384, 104, WHITE);
+        DrawRectangle(100, 150, 250, 400, Color{200, 160, 60, 255});
+        DrawCircle(950, 360, 150, Color{60, 180, 160, 255});
 
         if (activeShader != 0)
-            qc::EndShaderMode();
+            EndShaderMode();
 
-        qc::DrawRectangle(10, 10, 420, 130, qc::Color{0, 0, 0, 180});
+        DrawRectangle(10, 10, 420, 130, Color{0, 0, 0, 180});
 
-        qc::TraceLog(qc::LogLevel::Info, "HUD",
-            qc::TextFormat("Shader : %s", names[activeShader]));
-        qc::TraceLog(qc::LogLevel::Info, "HUD",
-            qc::TextFormat("Keys   : 1=none  2=chroma  3=pixel  4=vignette  5=scan"));
-        qc::TraceLog(qc::LogLevel::Info, "HUD",
-            qc::TextFormat("Up/Down: adjust parameter"));
+        TraceLog(LogLevel::Info, "HUD",
+            TextFormat("Shader : %s", names[activeShader]));
+        TraceLog(LogLevel::Info, "HUD",
+            TextFormat("Keys   : 1=none  2=chroma  3=pixel  4=vignette  5=scan"));
+        TraceLog(LogLevel::Info, "HUD",
+            TextFormat("Up/Down: adjust parameter"));
 
         float param = 0.0f;
         const char* paramName = "";
@@ -196,17 +189,17 @@ int main() {
         if (activeShader == 4) { param = scanIntensity;  paramName = "intensity"; }
 
         if (activeShader != 0)
-            qc::TraceLog(qc::LogLevel::Info, "HUD",
-                qc::TextFormat("%-12s: %.3f", paramName, param));
+            TraceLog(LogLevel::Info, "HUD",
+                TextFormat("%-12s: %.3f", paramName, param));
 
-        qc::EndDrawing();
+        EndDrawing();
     }
 
-    qc::UnloadTexture(checker);
-    qc::UnloadShader(shaderChromatic);
-    qc::UnloadShader(shaderPixelate);
-    qc::UnloadShader(shaderVignette);
-    qc::UnloadShader(shaderScanlines);
-    qc::CloseWindow();
+    UnloadTexture(checker);
+    UnloadShader(shaderChromatic);
+    UnloadShader(shaderPixelate);
+    UnloadShader(shaderVignette);
+    UnloadShader(shaderScanlines);
+    CloseWindow();
     return 0;
 }

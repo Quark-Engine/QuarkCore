@@ -5,22 +5,22 @@
 #include <algorithm>
 
 int main() {
-    qc::InitWindow(1280, 720, "QuarkCore Audio Demo", qc::RendererType::OpenGL);
-    qc::SetTargetFPS(60);
+    InitWindow(1280, 720, "QuarkCore Audio Demo", RendererType::OpenGL);
+    SetTargetFPS(60);
 
-    qc::InitAudioDevice();
-    qc::SetMasterVolume(0.8f);
+    InitAudioDevice();
+    SetMasterVolume(0.8f);
 
-    qc::Sound beep = qc::LoadSound("resources/test.wav");
+    Sound beep = LoadSound("resources/test.wav");
     if (beep.stream.buffer == nullptr) {
-        qc::TraceLog(qc::LogLevel::Warn, "AUDIO", "resources/test.wav not found; generating a simple tone instead");
+        TraceLog(LogLevel::Warn, "AUDIO", "resources/test.wav not found; generating a simple tone instead");
 
-        qc::Wave wave{};
+        Wave wave{};
         wave.frameCount = 22050;
         wave.sampleRate = 44100;
         wave.sampleSize = 16;
         wave.channels = 1;
-        wave.data = qc::MemAlloc(static_cast<size_t>(wave.frameCount) * 2u);
+        wave.data = MemAlloc(static_cast<size_t>(wave.frameCount) * 2u);
 
         auto* samples = static_cast<std::int16_t*>(wave.data);
         for (unsigned int i = 0; i < wave.frameCount; ++i) {
@@ -29,11 +29,11 @@ int main() {
             samples[i] = static_cast<std::int16_t>(tone * 32767.0f);
         }
 
-        beep = qc::LoadSoundFromWave(wave);
-        qc::UnloadWave(wave);
+        beep = LoadSoundFromWave(wave);
+        UnloadWave(wave);
     }
 
-    qc::Font font = qc::GetDefaultFont();
+    Font font = GetDefaultFont();
     bool playing = false;
     float volume = 0.8f;
 
@@ -44,51 +44,51 @@ int main() {
     const float infoSpacing = 2.0f;
     const float infoPadding = 20.0f;
 
-    while (!qc::WindowShouldClose()) {
-        if (qc::IsKeyPressed(qc::KeyboardKey::Space)) {
+    while (!WindowShouldClose()) {
+        if (IsKeyPressed(KEY_SPACE)) {
             if (playing) {
-                qc::StopSound(beep);
+                StopSound(beep);
                 playing = false;
             } else {
-                qc::PlaySound(beep);
+                PlaySound(beep);
                 playing = true;
             }
         }
 
-        if (qc::IsKeyPressed(qc::KeyboardKey::Right)) {
+        if (IsKeyPressed(KEY_RIGHT)) {
             volume = std::clamp(volume + 0.1f, 0.0f, 1.0f);
-            qc::SetSoundVolume(beep, volume);
+            SetSoundVolume(beep, volume);
         }
-        if (qc::IsKeyPressed(qc::KeyboardKey::Left)) {
+        if (IsKeyPressed(KEY_LEFT)) {
             volume = std::clamp(volume - 0.1f, 0.0f, 1.0f);
-            qc::SetSoundVolume(beep, volume);
+            SetSoundVolume(beep, volume);
         }
 
-        qc::Vec2 infoSize1 = qc::MeasureTextEx(font, infoLine1, infoFontSize1, infoSpacing);
-        qc::Vec2 infoSize2 = qc::MeasureTextEx(font, infoLine2, infoFontSize2, infoSpacing);
+        Vec2 infoSize1 = MeasureTextEx(font, infoLine1, infoFontSize1, infoSpacing);
+        Vec2 infoSize2 = MeasureTextEx(font, infoLine2, infoFontSize2, infoSpacing);
         float infoBoxWidth = std::max(infoSize1.x, infoSize2.x) + infoPadding * 2.0f;
 
-        qc::BeginDrawing();
-        qc::ClearBackground(qc::Color{18, 22, 35, 255});
+        BeginDrawing();
+        ClearBackground(Color{18, 22, 35, 255});
 
-        qc::DrawText("QuarkCore Audio Demo", 40, 32, 32, qc::WHITE);
-        qc::DrawText("Space = play/stop", 40, 88, 24, qc::LIGHTGRAY);
-        qc::DrawText("Left/Right = volume", 40, 122, 24, qc::LIGHTGRAY);
+        DrawText("QuarkCore Audio Demo", 40, 32, 32, WHITE);
+        DrawText("Space = play/stop", 40, 88, 24, LIGHTGRAY);
+        DrawText("Left/Right = volume", 40, 122, 24, LIGHTGRAY);
 
-        qc::DrawRectangle(40, 180, 420, 28, qc::Color{60, 60, 80, 255});
-        qc::DrawRectangle(40, 180, static_cast<int>(volume * 420.0f), 28, qc::GREEN);
-        qc::DrawText(qc::TextFormat("Volume: %.2f", volume), 40, 220, 22, qc::WHITE);
+        DrawRectangle(40, 180, 420, 28, Color{60, 60, 80, 255});
+        DrawRectangle(40, 180, static_cast<int>(volume * 420.0f), 28, GREEN);
+        DrawText(TextFormat("Volume: %.2f", volume), 40, 220, 22, WHITE);
 
-        qc::DrawRectangle(40, 320, static_cast<int>(infoBoxWidth), 180, qc::Color{35, 42, 60, 220});
-        qc::DrawTextEx(font, infoLine1, qc::Vec2{40.0f + infoPadding, 350.0f}, infoFontSize1, infoSpacing, qc::WHITE);
-        qc::DrawTextEx(font, infoLine2, qc::Vec2{40.0f + infoPadding, 390.0f}, infoFontSize2, infoSpacing, qc::LIGHTGRAY);
+        DrawRectangle(40, 320, static_cast<int>(infoBoxWidth), 180, Color{35, 42, 60, 220});
+        DrawTextEx(font, infoLine1, Vec2{40.0f + infoPadding, 350.0f}, infoFontSize1, infoSpacing, WHITE);
+        DrawTextEx(font, infoLine2, Vec2{40.0f + infoPadding, 390.0f}, infoFontSize2, infoSpacing, LIGHTGRAY);
 
-        qc::EndDrawing();
+        EndDrawing();
     }
 
-    qc::StopSound(beep);
-    qc::UnloadSound(beep);
-    qc::CloseAudioDevice();
-    qc::CloseWindow();
+    StopSound(beep);
+    UnloadSound(beep);
+    CloseAudioDevice();
+    CloseWindow();
     return 0;
 }

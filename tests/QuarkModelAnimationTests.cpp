@@ -4,9 +4,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-
-using namespace qc;
-
 namespace {
 
 bool NearlyEqual(float a, float b, float eps = 1e-4f) {

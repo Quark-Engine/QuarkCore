@@ -1,9 +1,7 @@
 #include "QuarkVkRenderTarget.hpp"
 
 #include <array>
-
-namespace qc {
-
+namespace qci {
 void QuarkVkRenderTarget::Initialize(VkDevice device, QuarkVkGpuAllocator& allocator,
                                      VkFormat colorFormat, VkFormat depthFormat) {
     m_device = device;
@@ -247,5 +245,4 @@ VkFramebuffer QuarkVkRenderTarget::Framebuffer(uint32_t renderTargetId) const {
     auto it = m_targets.find(renderTargetId);
     return it == m_targets.end() ? VK_NULL_HANDLE : it->second.framebuffer;
 }
-
-} // namespace qc
+} // namespace qci

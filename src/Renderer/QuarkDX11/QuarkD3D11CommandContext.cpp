@@ -6,8 +6,7 @@
 #include <vector>
 
 #if defined(_WIN32)
-namespace qc {
-
+namespace qci {
 void D3D11CommandContext::Initialize(const D3D11Device &device, D3D11SwapChain &swapChain,
                                      D3D11Pipeline &pipeline, D3D11Resources &resources,
                                      int width, int height)
@@ -683,6 +682,5 @@ void D3D11CommandContext::Shutdown()
     m_batchIndices.clear();
     m_batchDrawItems.clear();
 }
-
-} // namespace qc
 #endif
+} // namespace qci

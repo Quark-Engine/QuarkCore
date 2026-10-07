@@ -10,9 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 struct VkQueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
@@ -39,7 +37,5 @@ inline void ThrowIfVulkanFailed(VkResult result, const char* operation) {
         throw std::runtime_error(message);
     }
 }
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_COMMON__

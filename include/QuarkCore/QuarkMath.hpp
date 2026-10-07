@@ -24,9 +24,6 @@
 #define EPSILON 0.000001f
 #define DEG2RAD (PI/180.0f)
 #define RAD2DEG (180.0f/PI)
-
-namespace qc {
-
 /**
  * @brief Clamp value to range.
  */
@@ -2342,7 +2339,5 @@ inline Mat4 Mat4PolarRotation(const Mat4& matrix) {
     }
     return result;
 }
-
-}; // namespace qc
 
 #endif // __QUARK_MATH__

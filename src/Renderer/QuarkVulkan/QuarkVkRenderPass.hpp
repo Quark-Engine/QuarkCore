@@ -2,9 +2,7 @@
 #define __QUARK_VK_RENDER_PASS__
 
 #include "QuarkVkCommon.hpp"
-
-namespace qc {
-
+namespace qci {
 class QuarkVkRenderPass {
 public:
     void Initialize(VkDevice device, VkFormat colorFormat, VkFormat depthFormat, bool multisampled = false, bool offscreen = false);
@@ -16,7 +14,5 @@ private:
     VkDevice     m_device = VK_NULL_HANDLE;
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_RENDER_PASS__

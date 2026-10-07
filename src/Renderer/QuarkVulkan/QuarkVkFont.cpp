@@ -1,4 +1,4 @@
-﻿#include "QuarkVkRenderer.hpp"
+#include "QuarkVkRenderer.hpp"
 #include "../DebugFont.h"
 #include "../DefaultFont.h"
 
@@ -15,8 +15,7 @@
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
-
-namespace qc {
+namespace qci {
 namespace {
 
 std::vector<int> DefaultCodepoints() {
@@ -526,5 +525,4 @@ void QuarkVkRenderer::FillFont(IFont font, Font& out) {
         out.glyphs[i].image     = g.image;
     }
 }
-
-}; // namespace qc
+} // namespace qci

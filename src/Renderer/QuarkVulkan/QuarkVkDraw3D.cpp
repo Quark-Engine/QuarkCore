@@ -1,9 +1,7 @@
 #include "QuarkVkRenderer.hpp"
 
 #include <cmath>
-
-namespace qc {
-
+namespace qci {
 std::vector<Vk3DVertex>& QuarkVkRenderer::GetActive3DTriangleVertices() {
     if (m_activeRenderTargetId != 0) {
         auto it = m_renderTargets.find(m_activeRenderTargetId);
@@ -405,5 +403,4 @@ void QuarkVkRenderer::DrawGrid(int slices, float spacing, Color color) {
         DrawLine3D({-half, 0.0f, f}, {half, 0.0f, f}, color);
     }
 }
-
-}; // namespace qc
+} // namespace qci

@@ -11,9 +11,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 namespace {
 
 const char* kRuntime2DVertexShader = R"glsl(
@@ -785,5 +783,4 @@ VkPipeline QuarkVkPipeline::Create3DPipeline(VkRenderPass renderPass,
     if (ownsVertexModule) vkDestroyShaderModule(m_device, vertexModule, nullptr);
     return pipeline;
 }
-
-} // namespace qc
+} // namespace qci

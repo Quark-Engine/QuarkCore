@@ -9,9 +9,7 @@
 #include <set>
 #include <stdexcept>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 static constexpr float kPi = 3.14159265358979323846f;
 
 static float NormalizeColorComponent(std::uint8_t value) {
@@ -239,5 +237,4 @@ void QuarkVkRenderer::DrawPoly(Vec2 center, int sides, float radius, float rotat
         DrawTriangle(center, p0, p1, color);
     }
 }
-    
-}; // namespace qc
+} // namespace qci

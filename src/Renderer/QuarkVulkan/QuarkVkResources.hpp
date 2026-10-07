@@ -6,9 +6,7 @@
 
 #include <functional>
 #include <unordered_map>
-
-namespace qc {
-
+namespace qci {
 struct VkTextureData {
     VkImage         image         = VK_NULL_HANDLE;
     VkDeviceMemory  memory        = VK_NULL_HANDLE;
@@ -33,7 +31,8 @@ public:
     bool IsInitialized() const { return m_device != VK_NULL_HANDLE; }
 
     uint32_t CreateTextureFromRGBA(const unsigned char* rgba, uint32_t width, uint32_t height);
-    void     SetTextureSamplingMode(TextureFilterMode filterMode, int wrapMode);
+    uint32_t CreateCubemapFromRGBA(const unsigned char* rgbaFaces, uint32_t faceSize);
+    void     SetTextureSamplingMode(TextureFilter filterMode, int wrapMode);
     void     DestroyTexture(uint32_t textureId);
     bool     Contains(uint32_t textureId) const { return m_textures.find(textureId) != m_textures.end(); }
     const VkTextureData* Get(uint32_t textureId) const;
@@ -44,7 +43,8 @@ public:
 
     uint32_t Import(VkTextureData tex);
     bool     TransitionImageLayout(VkImage image, VkFormat format,
-                                   VkImageLayout oldLayout, VkImageLayout newLayout);
+                                   VkImageLayout oldLayout, VkImageLayout newLayout,
+                                   uint32_t layerCount = 1);
     bool     ReadImageToRGBA(VkImage image, VkFormat format, uint32_t width, uint32_t height,
                              VkImageLayout sourceLayout, void* outPixels);
 
@@ -53,7 +53,10 @@ private:
     bool WriteTextureDescriptorSet(VkTextureData& tex);
     VkCommandBuffer BeginSingleTimeCommands();
     void            EndSingleTimeCommands(VkCommandBuffer cmd);
-    bool CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+    uint32_t CreateTextureFromRGBAImpl(const unsigned char* rgba, uint32_t width,
+                                       uint32_t height, uint32_t layers, bool cubemap);
+    bool CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height,
+                          uint32_t layerCount = 1);
 
     VkDevice             m_device = VK_NULL_HANDLE;
     QuarkVkGpuAllocator* m_allocator = nullptr;
@@ -64,7 +67,5 @@ private:
     std::unordered_map<uint32_t, VkTextureData> m_textures;
     uint32_t m_nextTextureId = 1;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_RESOURCES__

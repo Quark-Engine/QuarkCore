@@ -4,10 +4,7 @@
 #include "Renderer/QuarkIRenderer.hpp"
 
 #include <cstring>
-
-namespace qc {
-
-extern IRenderer* gRendererPtr;
+extern qci::IRenderer* gRendererPtr;
 
 static bool CheckWindowCall(bool result, const char* operation) {
     if (!result) {
@@ -223,8 +220,7 @@ void SetWindowIcon(Image image) {
 
 bool IsWindowResized() {
     EnsureInitialized();
-    return gWin.nativeEvent.type == SDL_EVENT_WINDOW_RESIZED ||
-           gWin.nativeEvent.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED;
+    return gWin.windowResized;
 }
 
 bool IsWindowState(unsigned int flag) {
@@ -436,12 +432,6 @@ Image GetClipboardImage() {
     return Image{};
 }
 
-void EnableEventWaiting() {
-}
-
-void DisableEventWaiting() {
-}
-
 void SetConfigFlags(unsigned int flags) {
     if ((flags & FLAG_VSYNC_HINT) != 0u) {
         SetVSync(true);
@@ -479,7 +469,7 @@ void SwapScreenBuffer() {
 void PollInputEvents() {
     EnsureInitialized();
     SDL_PumpEvents();
-    PumpSystemEvents();
+    PumpInput();
 }
 
 void TakeScreenshot(const char* fileName) {
@@ -555,6 +545,4 @@ bool StartTextInput() {
 bool StopTextInput() {
     EnsureInitialized();
     return CheckWindowCall(SDL_StopTextInput(gWin.window), "SDL_StopTextInput");
-}
-
 }

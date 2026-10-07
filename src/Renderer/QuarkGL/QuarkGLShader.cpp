@@ -4,9 +4,7 @@
 
 #include <stdexcept>
 #include <string>
-
-namespace qc {
-
+namespace qci {
 const char* QuarkGLShader::kVS2D = R"(
 #version 330 core
 
@@ -117,5 +115,4 @@ int QuarkGLShader::GetUniformLocation(GLuint program, const char* name) {
     if (!program || !name) return -1;
     return glGetUniformLocation(program, name);
 }
-
-} // namespace qc
+} // namespace qci

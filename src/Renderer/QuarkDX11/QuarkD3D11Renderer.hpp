@@ -56,9 +56,7 @@
 #include <unordered_map>
 #include <string>
 #include <fstream>
-
-namespace qc {
-
+namespace qci {
 class QuarkD3D11Renderer final : public IRenderer {
 public:
     QuarkD3D11Renderer() = default;
@@ -116,6 +114,7 @@ public:
     void DrawTextureNPatch(ITexture, NPatchInfo, Rectangle, Vec2, float, Color) override;
     ITexture LoadTexture(const char *) override;
     ITexture LoadTextureFromImage(const Image& image) override;
+    ITexture LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize) override;
     ITexture GetRenderTextureTexture(IRenderTexture) override;
     void UnloadTexture(ITexture &) override;
     bool UpdateTexture(const ITexture& texture, const void* pixels) override;
@@ -199,8 +198,8 @@ public:
 
     void BeginTextureMode(IRenderTexture target) override;
     void EndTextureMode() override;
-    void SetTextureFilterMode(TextureFilterMode mode) override;
-    void SetTextureFilter(int filter) override;
+    void SetTextureFilterMode(TextureFilter mode) override;
+    void SetTextureFilter(TextureFilter filter) override;
     void SetTextureWrap(int wrap) override;
     void BeginScissorMode(int x, int y, int width, int height) override;
     void EndScissorMode() override;
@@ -337,7 +336,7 @@ private:
     int m_height = 0;
     int m_targetFps = 60;
     int m_requestedMsaaSamples = 1;
-    TextureFilterMode m_textureFilterMode = TextureFilterMode::Linear;
+    TextureFilter m_textureFilterMode = TEXTURE_FILTER_BILINEAR;
     bool m_vsync = true;
     bool m_vsyncExplicitlySet = false;
     std::uint64_t m_lastFrameCounter = 0;
@@ -371,8 +370,6 @@ private:
         Light3D{Vec3{ 3.0f, 3.0f, -3.0f}, Vec3{0, 0, 0}, Vec3{0.0f, 0.0f, 1.0f}, 0.08f, 1, false}
     }};
 };
-
-} // namespace qc
+} // namespace qci
 #endif
-
 #endif // __QUARK_D3D11_RENDERER__

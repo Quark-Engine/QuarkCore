@@ -13,9 +13,7 @@
 #include <set>
 #include <stdexcept>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 static float NormalizeColorComponent(std::uint8_t value) {
     return static_cast<float>(value) / 255.0f;
 }
@@ -293,6 +291,22 @@ ITexture QuarkVkRenderer::LoadTextureFromImage(const Image& image) {
     return texture;
 }
 
+ITexture QuarkVkRenderer::LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize) {
+    if (!rgbaFaces || faceSize <= 0) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] LoadTextureCubemap: invalid face data");
+        return {};
+    }
+
+    const uint32_t textureId = m_vkResources.CreateCubemapFromRGBA(
+        rgbaFaces, static_cast<uint32_t>(faceSize));
+    if (textureId == 0) {
+        TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] LoadTextureCubemap: upload failed");
+        return {};
+    }
+
+    return ITexture{textureId, faceSize, faceSize, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true};
+}
+
 ITexture QuarkVkRenderer::GetRenderTextureTexture(IRenderTexture target) {
     auto itRt = m_renderTargets.find(target.id);
     if (itRt == m_renderTargets.end()) {
@@ -473,5 +487,4 @@ Image QuarkVkRenderer::ReadScreenImage() {
     TraceLog(LogLevel::Info, "IMAGE", TextFormat("[Vulkan] Read backbuffer pixels to CPU: %ux%u", w, h));
     return img;
 }
-
-}; // namespace qc
+} // namespace qci

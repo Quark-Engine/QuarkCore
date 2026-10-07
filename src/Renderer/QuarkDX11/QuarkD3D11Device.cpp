@@ -2,9 +2,7 @@
 
 #if defined(_WIN32)
 #include <string>
-
-namespace qc {
-
+namespace qci {
 namespace {
 
 const char* FeatureLevelName(D3D_FEATURE_LEVEL level) {
@@ -156,6 +154,5 @@ void D3D11Device::Shutdown()
 
     TraceLog(LogLevel::Info, "D3D11", "Direct3D 11 device shut down successfully.");
 }
-
-} // namespace qc
 #endif
+} // namespace qci

@@ -3,9 +3,7 @@
 #include "../../QuarkInternal.hpp"
 
 #include <stdexcept>
-
-namespace qc {
-
+namespace qci {
 void QuarkVkCommandContext::Initialize(VkDevice device, uint32_t queueFamilyIndex) {
     m_device = device;
 
@@ -28,5 +26,4 @@ void QuarkVkCommandContext::Shutdown() {
     }
     m_device = VK_NULL_HANDLE;
 }
-
-} // namespace qc
+} // namespace qci

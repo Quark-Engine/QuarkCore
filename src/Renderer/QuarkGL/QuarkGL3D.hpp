@@ -7,9 +7,7 @@
 #include <glad/glad.h>
 
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 struct Model3DState {
     bool initialized = false;
     GLuint shader3D = 0;
@@ -49,7 +47,5 @@ public:
     static void DrawTriangle3DImpl(Model3DState& state, const Mat4& currentMatrix, Vertex3D v1, Vertex3D v2, Vertex3D v3, Color color);
     static void DrawLine3D(Model3DState& state, const Mat4& currentMatrix, Vec3 start, Vec3 end, Color color);
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_GL_3D__

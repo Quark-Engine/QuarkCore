@@ -1,7 +1,4 @@
 #include "QuarkCore/QuarkLights.hpp"
-
-namespace qc {
-
 static int s_lightsCount = 0;
 
 Light CreateLight(int type, Vec3 position, Vec3 target, Color color, Shader shader)
@@ -44,5 +41,3 @@ void UpdateLightValues(Shader shader, const Light& light)
     if (light.attenuationLoc >= 0)
         SetShaderValue(shader, light.attenuationLoc, light.attenuation);
 }
-
-} // namespace qc

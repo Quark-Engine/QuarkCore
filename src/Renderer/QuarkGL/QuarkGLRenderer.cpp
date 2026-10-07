@@ -1,6 +1,7 @@
 #include "QuarkGLRenderer.hpp"
 #include "../DebugFont.h"
 #include "../DefaultFont.h"
+#include "../QuarkAssimpTexture.hpp"
 #include "../../QuarkInternal.hpp"
 #include "../../QuarkModelAnim.hpp"
 #include "QuarkCore/QuarkImage.hpp"
@@ -65,9 +66,7 @@ void main() {
     FragColor     = vec4(result, tex.a * uColor.a);
 }
 )";
-
-namespace qc {
-
+namespace qci {
 static Mat4 TransposeMat4(const Mat4& matrix) {
     Mat4 result{};
     for (int row = 0; row < 4; ++row) {
@@ -108,6 +107,37 @@ static void ApplyMaterialShaderUniforms(const Shader& shader, const Mat4& model,
 static const Shader* ResolveMaterialShader(const Material* material) {
     if (material && material->shader && material->shader->id != 0) return material->shader;
     return nullptr;
+}
+
+static GLenum ToGLTextureWrapMode(int wrap) {
+    switch (wrap) {
+        case TEXTURE_WRAP_CLAMP:
+            return GL_CLAMP_TO_EDGE;
+        case TEXTURE_WRAP_MIRROR_REPEAT:
+            return GL_MIRRORED_REPEAT;
+        case TEXTURE_WRAP_MIRROR_CLAMP: {
+            int majorVersion = 0;
+            int minorVersion = 0;
+            const bool coreSupport =
+                SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &majorVersion) &&
+                SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &minorVersion) &&
+                (majorVersion > 4 || (majorVersion == 4 && minorVersion >= 4));
+            if (coreSupport || GLAD_GL_ARB_texture_mirror_clamp_to_edge) {
+                return GL_MIRROR_CLAMP_TO_EDGE;
+            }
+
+            static bool warned = false;
+            if (!warned) {
+                TraceLog(LogLevel::Warn, "OPENGL",
+                    "MIRROR_CLAMP requires OpenGL 4.4 or ARB_texture_mirror_clamp_to_edge; falling back to CLAMP_TO_EDGE.");
+                warned = true;
+            }
+            return GL_CLAMP_TO_EDGE;
+        }
+        case TEXTURE_WRAP_REPEAT:
+        default:
+            return GL_REPEAT;
+    }
 }
 
 template <typename Fn>
@@ -342,6 +372,15 @@ void QuarkGLRenderer::Shutdown() {
 void QuarkGLRenderer::InitGL() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+#if !defined(__ANDROID__)
+    int multisampleBuffers = 0;
+    SDL_GL_GetAttribute(SDL_GL_MULTISAMPLEBUFFERS, &multisampleBuffers);
+    if (multisampleBuffers > 0) {
+        glEnable(GL_MULTISAMPLE);
+    } else {
+        glDisable(GL_MULTISAMPLE);
+    }
+#endif
 
     m_program       = CreateDefaultProgram();
     m_defaultShader = m_program;
@@ -691,6 +730,10 @@ ITexture QuarkGLRenderer::LoadTexture(const char* path) {
 
 ITexture QuarkGLRenderer::LoadTextureFromImage(const Image& image) {
     return m_texture.LoadTextureFromImage(image);
+}
+
+ITexture QuarkGLRenderer::LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize) {
+    return m_texture.LoadTextureCubemap(rgbaFaces, faceSize);
 }
 
 void QuarkGLRenderer::UnloadTexture(ITexture& t) {
@@ -1090,7 +1133,7 @@ IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize,
         return handle;
     }
 
-    qc::FontData fd{};
+    FontData fd{};
     if (!m_font.LoadFontInternal(filePath, nullptr, 0, fontSize, codepoints, codepointCount, fd)) {
         return IFont{};
     }
@@ -1107,7 +1150,7 @@ IFont QuarkGLRenderer::LoadFontFromMemory(const char* fileType, const unsigned c
         return IFont{};
     }
 
-    qc::FontData fd{};
+    FontData fd{};
     if (!m_font.LoadFontInternal(fileType, fileData, dataSize, fontSize, codepoints, codepointCount, fd)) {
         return IFont{};
     }
@@ -1500,51 +1543,59 @@ void QuarkGLRenderer::SetShaderValueMatrix(const Shader& s, int loc, const Matri
 void QuarkGLRenderer::SetShaderValueTexture(const Shader& s, int loc, const ITexture& texture) {
     if (loc < 0) return;
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture.id);
+    const GLenum target = m_texture.IsCubemap(texture.id) ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D;
+    glBindTexture(target, texture.id);
     SetShaderValueSampler(s, loc, 0);
 }
 
 void QuarkGLRenderer::SetShaderValueTextureUnit(const Shader& s, int loc, const ITexture& texture, int textureUnit) {
     if (loc < 0 || textureUnit < 0) return;
     glActiveTexture(GL_TEXTURE0 + textureUnit);
-    glBindTexture(GL_TEXTURE_2D, texture.id);
+    const GLenum target = m_texture.IsCubemap(texture.id) ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D;
+    glBindTexture(target, texture.id);
     SetShaderValueSampler(s, loc, textureUnit);
     glActiveTexture(GL_TEXTURE0);
 }
 
-void QuarkGLRenderer::SetTextureFilterMode(TextureFilterMode mode) {
-    gTextureFilterMode = mode;
+void QuarkGLRenderer::SetTextureFilterMode(TextureFilter mode) {
+    gTextureFilter = mode;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-        (mode == TextureFilterMode::Nearest) ? GL_NEAREST : GL_LINEAR);
+        (mode == TEXTURE_FILTER_POINT) ? GL_NEAREST : GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
-        (mode == TextureFilterMode::Nearest) ? GL_NEAREST : GL_LINEAR);
+        (mode == TEXTURE_FILTER_POINT) ? GL_NEAREST : GL_LINEAR);
 }
 
-void QuarkGLRenderer::SetTextureFilter(int filter) {
+void QuarkGLRenderer::SetTextureFilter(TextureFilter filter) {
     const bool point = (filter == TEXTURE_FILTER_POINT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, point ? GL_NEAREST : GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, point ? GL_NEAREST : GL_LINEAR);
 }
 
 void QuarkGLRenderer::SetTextureWrap(int wrap) {
-    GLenum glWrap = GL_REPEAT;
-    switch (wrap) {
-        case TEXTURE_WRAP_CLAMP:
-            glWrap = GL_CLAMP_TO_EDGE;
-            break;
-        case TEXTURE_WRAP_MIRROR_REPEAT:
-            glWrap = GL_MIRRORED_REPEAT;
-            break;
-        case TEXTURE_WRAP_MIRROR_CLAMP:
-            glWrap = GL_MIRRORED_REPEAT;
-            break;
-        case TEXTURE_WRAP_REPEAT:
-        default:
-            glWrap = GL_REPEAT;
-            break;
-    }
+    const GLenum glWrap = ToGLTextureWrapMode(wrap);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glWrap);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, glWrap);
+}
+
+void QuarkGLRenderer::SetTextureWrap(uint32_t textureId, int wrap) {
+    if (textureId == 0) {
+        return;
+    }
+
+    const GLenum target = m_texture.IsCubemap(textureId) ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D;
+    GLint previousBinding = 0;
+    glGetIntegerv(target == GL_TEXTURE_CUBE_MAP
+        ? GL_TEXTURE_BINDING_CUBE_MAP
+        : GL_TEXTURE_BINDING_2D, &previousBinding);
+
+    glBindTexture(target, textureId);
+    const GLenum glWrap = ToGLTextureWrapMode(wrap);
+    glTexParameteri(target, GL_TEXTURE_WRAP_S, glWrap);
+    glTexParameteri(target, GL_TEXTURE_WRAP_T, glWrap);
+    if (target == GL_TEXTURE_CUBE_MAP) {
+        glTexParameteri(target, GL_TEXTURE_WRAP_R, glWrap);
+    }
+    glBindTexture(target, static_cast<GLuint>(previousBinding));
 }
 
 void QuarkGLRenderer::BeginScissorMode(int x, int y, int width, int height) {
@@ -2375,46 +2426,18 @@ Model QuarkGLRenderer::LoadModel(const char* filePath) {
             ITexture loadedTex{};
             std::string texturePath = materialDirectory + textureReference;
             if (!textureReference.empty() && textureReference[0] == '*') {
-                unsigned long embeddedIndex = 0;
-                try {
-                    embeddedIndex = std::stoul(textureReference.substr(1));
-                } catch (const std::exception&) {
-                    embeddedIndex = scene->mNumTextures;
+                Image embeddedImage{};
+                std::vector<unsigned char> rawPixels;
+                bool ownsImage = false;
+                if (DecodeEmbeddedAssimpTexture(*scene, path, embeddedImage, rawPixels, ownsImage)) {
+                    loadedTex = this->LoadTextureFromImage(embeddedImage);
+                    ReleaseEmbeddedAssimpTexture(embeddedImage, ownsImage);
+                } else {
+                    TraceLog(LogLevel::Error, "MODEL",
+                             TextFormat("[OpenGL] Failed to decode embedded texture: %s",
+                                        textureReference.c_str()));
                 }
-
-                if (embeddedIndex < scene->mNumTextures && scene->mTextures[embeddedIndex]) {
-                    const aiTexture* embeddedTexture = scene->mTextures[embeddedIndex];
-                    Image image{};
-                    std::vector<unsigned char> rawPixels;
-
-                    if (embeddedTexture->mHeight == 0) {
-                        std::string fileType = embeddedTexture->achFormatHint;
-                        if (!fileType.empty() && fileType.front() != '.') fileType.insert(fileType.begin(), '.');
-                        image = LoadImageFromMemory(
-                            fileType.empty() ? ".bin" : fileType.c_str(),
-                            reinterpret_cast<const unsigned char*>(embeddedTexture->pcData),
-                            static_cast<int>(embeddedTexture->mWidth));
-                    } else {
-                        const size_t pixelCount = static_cast<size_t>(embeddedTexture->mWidth) * embeddedTexture->mHeight;
-                        rawPixels.resize(pixelCount * 4u);
-                        for (size_t pixelIndex = 0; pixelIndex < pixelCount; ++pixelIndex) {
-                            const aiTexel& source = embeddedTexture->pcData[pixelIndex];
-                            rawPixels[pixelIndex * 4u + 0] = source.r;
-                            rawPixels[pixelIndex * 4u + 1] = source.g;
-                            rawPixels[pixelIndex * 4u + 2] = source.b;
-                            rawPixels[pixelIndex * 4u + 3] = source.a;
-                        }
-                        image.data = rawPixels.data();
-                        image.width = static_cast<int>(embeddedTexture->mWidth);
-                        image.height = static_cast<int>(embeddedTexture->mHeight);
-                        image.mipmaps = 1;
-                        image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-                    }
-
-                    if (IsImageValid(image)) loadedTex = this->LoadTextureFromImage(image);
-                    if (embeddedTexture->mHeight == 0) UnloadImage(image);
-                    texturePath = std::string("embedded ") + textureReference;
-                }
+                texturePath = std::string("embedded ") + textureReference;
             } else {
                 loadedTex = this->LoadTexture(texturePath.c_str());
             }
@@ -2614,15 +2637,23 @@ void  QuarkGLRenderer::UnloadModel(Model& model) {
     for (int i = 0; i < model.materialCount; ++i) {
         Material& mat = model.materials[i];
 
-        if (mat.maps && mat.maps[MATERIAL_MAP_ALBEDO].texture.valid) {
-            ITexture tempTex;
-            tempTex.id = mat.maps[MATERIAL_MAP_ALBEDO].texture.id;
-            tempTex.width = mat.maps[MATERIAL_MAP_ALBEDO].texture.width;
-            tempTex.height = mat.maps[MATERIAL_MAP_ALBEDO].texture.height;
-            tempTex.mipmaps = mat.maps[MATERIAL_MAP_ALBEDO].texture.mipmaps;
-            tempTex.format = mat.maps[MATERIAL_MAP_ALBEDO].texture.format;
-            tempTex.valid = mat.maps[MATERIAL_MAP_ALBEDO].texture.valid;
-            this->UnloadTexture(tempTex);
+        if (mat.maps) {
+            for (int mapIndex = 0; mapIndex <= MATERIAL_MAP_BRDF; ++mapIndex) {
+                const Texture2D& mapTexture = mat.maps[mapIndex].texture;
+                if (!mapTexture.valid) {
+                    continue;
+                }
+
+                ITexture texture{
+                    mapTexture.id,
+                    mapTexture.width,
+                    mapTexture.height,
+                    mapTexture.mipmaps,
+                    mapTexture.format,
+                    mapTexture.valid
+                };
+                this->UnloadTexture(texture);
+            }
         }
 
         delete[] mat.maps;
@@ -3106,5 +3137,4 @@ bool QuarkGLRenderer::UpdateTextureRegion(const ITexture& texture, Rectangle reg
     glBindTexture(GL_TEXTURE_2D, 0);
     return true;
 }
-
-} // namespace qc
+} // namespace qci

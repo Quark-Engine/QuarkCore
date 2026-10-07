@@ -2,9 +2,7 @@
 #define __QUARK_VK_DEVICE__
 
 #include "QuarkVkCommon.hpp"
-
-namespace qc {
-
+namespace qci {
 class QuarkVkDevice {
 public:
     void Initialize(VkInstance instance, VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
@@ -29,7 +27,5 @@ private:
     VkQueue m_presentQueue = VK_NULL_HANDLE;
     uint32_t m_graphicsQueueFamily = UINT32_MAX;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_DEVICE__

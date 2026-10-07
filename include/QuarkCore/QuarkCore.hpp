@@ -9,10 +9,8 @@
     Core module of Quark Engine.
 
     This file contains:
-        * Basic math structures
         * Window management
         * Input handling
-        * Event system
         * Rendering API
         * Texture management
         * Logging and timing utilities
@@ -23,14 +21,15 @@
         * Vulkan
         * Direct3D 11
 
-    Language:
-        * Modern C++
-
     ========================================================
 */
 
 #ifndef __QUARK_CORE__
 #define __QUARK_CORE__
+
+#if defined(_WIN32) && !defined(NOGDI)
+    #define NOGDI
+#endif
 
 #if defined(_WIN32)
     #if defined(QUARKCORE_STATIC)
@@ -54,9 +53,6 @@ struct ID3D11Device;
 struct ID3D11DeviceContext;
 struct ID3D11ShaderResourceView;
 #endif
-
-namespace qc {
-
 /** 
  * @brief Renderer type enumeration.
  */
@@ -82,7 +78,13 @@ struct Texture {
 using Texture2D = Texture;
 using TextureCubemap = Texture;
 
-} // namespace qc
+typedef enum {
+    CUBEMAP_LAYOUT_AUTO_DETECT = 0,         // Automatically detect layout type
+    CUBEMAP_LAYOUT_LINE_VERTICAL,           // Layout is defined by a vertical line with faces
+    CUBEMAP_LAYOUT_LINE_HORIZONTAL,         // Layout is defined by a horizontal line with faces
+    CUBEMAP_LAYOUT_CROSS_THREE_BY_FOUR,     // Layout is defined by a 3x4 cross with cubemap faces
+    CUBEMAP_LAYOUT_CROSS_FOUR_BY_THREE      // Layout is defined by a 4x3 cross with cubemap faces
+} CubemapLayout;
 
 #include "Quark3D.hpp"
 
@@ -91,13 +93,6 @@ using TextureCubemap = Texture;
 #define QC_VERSION_PATCH 0
 #define QC_VERSION_STRING "1.0.0"
 #define QC_VERSION (QC_VERSION_MAJOR * 10000 + QC_VERSION_MINOR * 100 + QC_VERSION_PATCH)
-
-namespace qc {
-
-struct RendererState;
-class IRenderer;
-extern IRenderer* gRendererPtr;
-
 /**
  * @brief Render texture structure.
  */
@@ -140,40 +135,31 @@ struct Font {
 /**
  * @brief Shader uniform data type enumeration.
  */
-enum class ShaderUniformDataType {
-    Float = 0,         // float
-    Vec2,              // vec2
-    Vec3,              // vec3
-    Vec4,              // vec4
-    Int,               // int
-    IVec2,             // ivec2
-    IVec3,             // ivec3
-    IVec4,             // ivec4
-    Sampler2D,         // sampler2D
-};
-
-/**
- * @brief Shader uniform data type constants for C compatibility.
- */
-#define SHADER_UNIFORM_FLOAT      0
-#define SHADER_UNIFORM_VEC2       1
-#define SHADER_UNIFORM_VEC3       2
-#define SHADER_UNIFORM_VEC4       3
-#define SHADER_UNIFORM_INT        4
-#define SHADER_UNIFORM_IVEC2      5
-#define SHADER_UNIFORM_IVEC3      6
-#define SHADER_UNIFORM_IVEC4      7
-#define SHADER_UNIFORM_SAMPLER2D  8
+typedef enum {
+    SHADER_UNIFORM_FLOAT = 0,       // float
+    SHADER_UNIFORM_VEC2,            // vec2 (2 float)
+    SHADER_UNIFORM_VEC3,            // vec3 (3 float)
+    SHADER_UNIFORM_VEC4,            // vec4 (4 float)
+    SHADER_UNIFORM_INT,             // int
+    SHADER_UNIFORM_IVEC2,           // ivec2 (2 int)
+    SHADER_UNIFORM_IVEC3,           // ivec3 (3 int)
+    SHADER_UNIFORM_IVEC4,           // ivec4 (4 int)
+    SHADER_UNIFORM_UINT,            // unsigned int
+    SHADER_UNIFORM_UIVEC2,          // uivec2 (2 unsigned int)
+    SHADER_UNIFORM_UIVEC3,          // uivec3 (3 unsigned int)
+    SHADER_UNIFORM_UIVEC4,          // uivec4 (4 unsigned int)
+    SHADER_UNIFORM_SAMPLER2D        // sampler2D
+} ShaderUniformDataType;
 
 /**
  * @brief Shader attribute data type enumeration.
  */
-enum class ShaderAttributeDataType {
-    Float = 0,
-    Vec2,
-    Vec3,
-    Vec4,
-};
+typedef enum {
+    SHADER_ATTRIB_FLOAT = 0,        // float
+    SHADER_ATTRIB_VEC2,             // vec2 (2 float)
+    SHADER_ATTRIB_VEC3,             // vec3 (3 float)
+    SHADER_ATTRIB_VEC4              // vec4 (4 float)
+} ShaderAttributeDataType;
 
 /**
  * @brief Shader location index enumeration.
@@ -223,10 +209,10 @@ struct Shader {
 /**
  * @brief Camera projection type.
  */
-enum CameraProjection {
+typedef enum {
     CAMERA_PERSPECTIVE = 0,
     CAMERA_ORTHOGRAPHIC
-};
+} CameraProjection;
 
 /**
  * @brief 2D Camera for orthographic projection.
@@ -320,215 +306,147 @@ enum class LogLevel {
     None,
 };
 
-/**
- * @brief Keyboard key type enumeration.
- */
-enum class KeyboardKey {
-    Unknown = 0,
+typedef enum {
+    KEY_NULL = 0,
+    KEY_APOSTROPHE = 39,
+    KEY_COMMA = 44,
+    KEY_MINUS = 45,
+    KEY_PERIOD = 46,
+    KEY_SLASH = 47,
+    KEY_ZERO = 48,
+    KEY_ONE = 49,
+    KEY_TWO = 50,
+    KEY_THREE = 51,
+    KEY_FOUR = 52,
+    KEY_FIVE = 53,
+    KEY_SIX = 54,
+    KEY_SEVEN = 55,
+    KEY_EIGHT = 56,
+    KEY_NINE = 57,
+    KEY_SEMICOLON = 59,
+    KEY_EQUAL = 61,
+    KEY_A = 65,
+    KEY_B = 66,
+    KEY_C = 67,
+    KEY_D = 68,
+    KEY_E = 69,
+    KEY_F = 70,
+    KEY_G = 71,
+    KEY_H = 72,
+    KEY_I = 73,
+    KEY_J = 74,
+    KEY_K = 75,
+    KEY_L = 76,
+    KEY_M = 77,
+    KEY_N = 78,
+    KEY_O = 79,
+    KEY_P = 80,
+    KEY_Q = 81,
+    KEY_R = 82,
+    KEY_S = 83,
+    KEY_T = 84,
+    KEY_U = 85,
+    KEY_V = 86,
+    KEY_W = 87,
+    KEY_X = 88,
+    KEY_Y = 89,
+    KEY_Z = 90,
+    KEY_LEFT_BRACKET = 91,
+    KEY_BACKSLASH = 92,
+    KEY_RIGHT_BRACKET = 93,
+    KEY_GRAVE = 96,
+    KEY_SPACE = 32,
+    KEY_ESCAPE = 256,
+    KEY_ENTER = 257,
+    KEY_TAB = 258,
+    KEY_BACKSPACE = 259,
+    KEY_INSERT = 260,
+    KEY_DELETE = 261,
+    KEY_RIGHT = 262,
+    KEY_LEFT = 263,
+    KEY_DOWN = 264,
+    KEY_UP = 265,
+    KEY_PAGE_UP = 266,
+    KEY_PAGE_DOWN = 267,
+    KEY_HOME = 268,
+    KEY_END = 269,
+    KEY_CAPS_LOCK = 280,
+    KEY_SCROLL_LOCK = 281,
+    KEY_NUM_LOCK = 282,
+    KEY_PRINT_SCREEN = 283,
+    KEY_PAUSE = 284,
+    KEY_F1 = 290,
+    KEY_F2 = 291,
+    KEY_F3 = 292,
+    KEY_F4 = 293,
+    KEY_F5 = 294,
+    KEY_F6 = 295,
+    KEY_F7 = 296,
+    KEY_F8 = 297,
+    KEY_F9 = 298,
+    KEY_F10 = 299,
+    KEY_F11 = 300,
+    KEY_F12 = 301,
+    KEY_LEFT_SHIFT = 340,
+    KEY_LEFT_CONTROL = 341,
+    KEY_LEFT_ALT = 342,
+    KEY_LEFT_SUPER = 343,
+    KEY_RIGHT_SHIFT = 344,
+    KEY_RIGHT_CONTROL = 345,
+    KEY_RIGHT_ALT = 346,
+    KEY_RIGHT_SUPER = 347,
+    KEY_KB_MENU = 348,
+    KEY_KP_0 = 320,
+    KEY_KP_1 = 321,
+    KEY_KP_2 = 322,
+    KEY_KP_3 = 323,
+    KEY_KP_4 = 324,
+    KEY_KP_5 = 325,
+    KEY_KP_6 = 326,
+    KEY_KP_7 = 327,
+    KEY_KP_8 = 328,
+    KEY_KP_9 = 329,
+    KEY_KP_DECIMAL = 330,
+    KEY_KP_DIVIDE = 331,
+    KEY_KP_MULTIPLY = 332,
+    KEY_KP_SUBTRACT = 333,
+    KEY_KP_ADD = 334,
+    KEY_KP_ENTER = 335,
+    KEY_KP_EQUAL = 336,
+    KEY_BACK = 4,
+    KEY_MENU = 5,
+    KEY_VOLUME_UP = 24,
+    KEY_VOLUME_DOWN = 25
+} KeyboardKey;
 
-    A = 4,
-    B = 5,
-    C = 6,
-    D = 7,
-    E = 8,
-    F = 9,
-    G = 10,
-    H = 11,
-    I = 12,
-    J = 13,
-    K = 14,
-    L = 15,
-    M = 16,
-    N = 17,
-    O = 18,
-    P = 19,
-    Q = 20,
-    R = 21,
-    S = 22,
-    T = 23,
-    U = 24,
-    V = 25,
-    W = 26,
-    X = 27,
-    Y = 28,
-    Z = 29,
-
-    Num1 = 30,
-    Num2 = 31,
-    Num3 = 32,
-    Num4 = 33,
-    Num5 = 34,
-    Num6 = 35,
-    Num7 = 36,
-    Num8 = 37,
-    Num9 = 38,
-    Num0 = 39,
-
-    Enter = 40,
-    Escape = 41,
-    Backspace = 42,
-    Tab = 43,
-    Space = 44,
-
-    Minus = 45,
-    Equals = 46,
-    LeftBracket = 47,
-    RightBracket = 48,
-    Backslash = 49,
-    NonUSHash = 50,
-    Semicolon = 51,
-    Apostrophe = 52,
-    Grave = 53,
-    Comma = 54,
-    Period = 55,
-    Slash = 56,
-
-    CapsLock = 57,
-
-    F1 = 58,
-    F2 = 59,
-    F3 = 60,
-    F4 = 61,
-    F5 = 62,
-    F6 = 63,
-    F7 = 64,
-    F8 = 65,
-    F9 = 66,
-    F10 = 67,
-    F11 = 68,
-    F12 = 69,
-
-    PrintScreen = 70,
-    ScrollLock = 71,
-    Pause = 72,
-    Insert = 73,
-    Home = 74,
-    PageUp = 75,
-    Delete = 76,
-    End = 77,
-    PageDown = 78,
-
-    Right = 79,
-    Left = 80,
-    Down = 81,
-    Up = 82,
-
-    NumLock = 83,
-
-    KeypadDivide = 84,
-    KeypadMultiply = 85,
-    KeypadMinus = 86,
-    KeypadPlus = 87,
-    KeypadEnter = 88,
-
-    Keypad1 = 89,
-    Keypad2 = 90,
-    Keypad3 = 91,
-    Keypad4 = 92,
-    Keypad5 = 93,
-    Keypad6 = 94,
-    Keypad7 = 95,
-    Keypad8 = 96,
-    Keypad9 = 97,
-    Keypad0 = 98,
-    KeypadPeriod = 99,
-
-    NonUSBackslash = 100,
-    Application = 101,
-    Power = 102,
-    KeypadEquals = 103,
-
-    F13 = 104,
-    F14 = 105,
-    F15 = 106,
-    F16 = 107,
-    F17 = 108,
-    F18 = 109,
-    F19 = 110,
-    F20 = 111,
-    F21 = 112,
-    F22 = 113,
-    F23 = 114,
-    F24 = 115,
-
-    Execute = 116,
-    Help = 117,
-    Menu = 118,
-    Select = 119,
-    Stop = 120,
-    Again = 121,
-    Undo = 122,
-    Cut = 123,
-    Copy = 124,
-    Paste = 125,
-    Find = 126,
-    Mute = 127,
-    VolumeUp = 128,
-    VolumeDown = 129,
-
-    LeftControl = 224,
-    LeftShift = 225,
-    LeftAlt = 226,
-    LeftSuper = 227,
-
-    RightControl = 228,
-    RightShift = 229,
-    RightAlt = 230,
-    RightSuper = 231
-};
-
-/**
- * @brief Mouse button type enumeration.
- */
-enum class MouseButton {
-    Left = 1,
-    Middle = 2,
-    Right = 3,
-};
-
-inline constexpr MouseButton MOUSE_BUTTON_LEFT = MouseButton::Left;
-inline constexpr MouseButton MOUSE_BUTTON_MIDDLE = MouseButton::Middle;
-inline constexpr MouseButton MOUSE_BUTTON_RIGHT = MouseButton::Right;
-inline constexpr MouseButton MOUSE_LEFT_BUTTON = MouseButton::Left;
-inline constexpr MouseButton MOUSE_MIDDLE_BUTTON = MouseButton::Middle;
-inline constexpr MouseButton MOUSE_RIGHT_BUTTON = MouseButton::Right;
-
-inline constexpr KeyboardKey KEY_NULL = KeyboardKey::Unknown;
-inline constexpr KeyboardKey KEY_LEFT = KeyboardKey::Left;
-inline constexpr KeyboardKey KEY_RIGHT = KeyboardKey::Right;
-inline constexpr KeyboardKey KEY_UP = KeyboardKey::Up;
-inline constexpr KeyboardKey KEY_DOWN = KeyboardKey::Down;
-inline constexpr KeyboardKey KEY_SPACE = KeyboardKey::Space;
-inline constexpr KeyboardKey KEY_ENTER = KeyboardKey::Enter;
-inline constexpr KeyboardKey KEY_ESCAPE = KeyboardKey::Escape;
-inline constexpr KeyboardKey KEY_BACKSPACE = KeyboardKey::Backspace;
-inline constexpr KeyboardKey KEY_LEFT_CONTROL = KeyboardKey::LeftControl;
-inline constexpr KeyboardKey KEY_RIGHT_CONTROL = KeyboardKey::RightControl;
-inline constexpr KeyboardKey KEY_LEFT_SHIFT = KeyboardKey::LeftShift;
-inline constexpr KeyboardKey KEY_RIGHT_SHIFT = KeyboardKey::RightShift;
-inline constexpr KeyboardKey KEY_LEFT_ALT = KeyboardKey::LeftAlt;
-inline constexpr KeyboardKey KEY_RIGHT_ALT = KeyboardKey::RightAlt;
-inline constexpr KeyboardKey KEY_LEFT_SUPER = KeyboardKey::LeftSuper;
-inline constexpr KeyboardKey KEY_RIGHT_SUPER = KeyboardKey::RightSuper;
+typedef enum {
+    MOUSE_BUTTON_LEFT = 0,
+    MOUSE_BUTTON_RIGHT = 1,
+    MOUSE_BUTTON_MIDDLE = 2,
+    MOUSE_BUTTON_SIDE = 3,
+    MOUSE_BUTTON_EXTRA = 4,
+    MOUSE_BUTTON_FORWARD = 5,
+    MOUSE_BUTTON_BACK = 6
+} MouseButton;
 
 /**
  * @brief Mouse cursor type enumeration.
  */
-enum class MouseCursor {
-    Default = 0,
-    Arrow,
-    Ibeam,
-    Crosshair,
-    PointingHand,
-    ResizeEW,
-    ResizeNS,
-    ResizeNWSE,
-    ResizeNESW,
-    ResizeAll,
-    NotAllowed,
-};
+typedef enum {
+    MOUSE_CURSOR_DEFAULT       = 0,     // Default pointer shape
+    MOUSE_CURSOR_ARROW         = 1,     // Arrow shape
+    MOUSE_CURSOR_IBEAM         = 2,     // Text writing cursor shape
+    MOUSE_CURSOR_CROSSHAIR     = 3,     // Cross shape
+    MOUSE_CURSOR_POINTING_HAND = 4,     // Pointing hand cursor
+    MOUSE_CURSOR_RESIZE_EW     = 5,     // Horizontal resize/move arrow shape
+    MOUSE_CURSOR_RESIZE_NS     = 6,     // Vertical resize/move arrow shape
+    MOUSE_CURSOR_RESIZE_NWSE   = 7,     // Top-left to bottom-right diagonal resize/move arrow shape
+    MOUSE_CURSOR_RESIZE_NESW   = 8,     // The top-right to bottom-left diagonal resize/move arrow shape
+    MOUSE_CURSOR_RESIZE_ALL    = 9,     // The omnidirectional resize/move cursor shape
+    MOUSE_CURSOR_NOT_ALLOWED   = 10    // The operation-not-allowed shape
+} MouseCursor;
 
-enum ConfigFlags {
+typedef enum {
     FLAG_VSYNC_HINT = 0x00000040,
     FLAG_FULLSCREEN_MODE = 0x00000002,
     FLAG_WINDOW_RESIZABLE = 0x00000004,
@@ -541,34 +459,34 @@ enum ConfigFlags {
     FLAG_WINDOW_MAXIMIZED = 0x00000800,
     FLAG_WINDOW_TOPMOST = 0x00001000,
     FLAG_WINDOW_ALWAYS_RUN = 0x00002000,
-};
+} ConfigFlags;
 
-enum TextureFilter {
-    TEXTURE_FILTER_POINT = 0,
-    TEXTURE_FILTER_BILINEAR = 1,
-    TEXTURE_FILTER_TRILINEAR = 2,
-    TEXTURE_FILTER_ANISOTROPIC_4X = 3,
-    TEXTURE_FILTER_ANISOTROPIC_8X = 4,
-    TEXTURE_FILTER_ANISOTROPIC_16X = 5,
-};
+typedef enum {
+    TEXTURE_FILTER_POINT = 0,               // No filter, pixel approximation
+    TEXTURE_FILTER_BILINEAR,                // Linear filtering
+    TEXTURE_FILTER_TRILINEAR,               // Trilinear filtering (linear with mipmaps)
+    TEXTURE_FILTER_ANISOTROPIC_4X,          // Anisotropic filtering 4x
+    TEXTURE_FILTER_ANISOTROPIC_8X,          // Anisotropic filtering 8x
+    TEXTURE_FILTER_ANISOTROPIC_16X,         // Anisotropic filtering 16x
+} TextureFilter;
 
-enum TextureWrap {
+typedef enum {
     TEXTURE_WRAP_REPEAT = 0,
     TEXTURE_WRAP_CLAMP = 1,
     TEXTURE_WRAP_MIRROR_REPEAT = 2,
     TEXTURE_WRAP_MIRROR_CLAMP = 3,
-};
+} TextureWrap;
 
-enum BlendMode {
+typedef enum {
     BLEND_ALPHA = 0,
     BLEND_ADDITIVE = 1,
     BLEND_MULTIPLIED = 2,
     BLEND_ADD_COLORS = 3,
     BLEND_SUBTRACT_COLORS = 4,
     BLEND_MOD_COLOR = 5,
-};
+} BlendMode;
 
-enum Gesture {
+typedef enum {
     GESTURE_NONE = 0,
     GESTURE_TAP = 1,
     GESTURE_DOUBLETAP = 2,
@@ -580,167 +498,21 @@ enum Gesture {
     GESTURE_SWIPE_DOWN = 128,
     GESTURE_PINCH_IN = 256,
     GESTURE_PINCH_OUT = 512,
-};
+} Gesture;
 
-enum CameraMode {
+typedef enum {
     CAMERA_CUSTOM = 0,
     CAMERA_FREE = 1,
     CAMERA_ORBITAL = 2,
     CAMERA_FIRST_PERSON = 3,
     CAMERA_THIRD_PERSON = 4,
-};
+} CameraMode;
 
-enum FontType {
+typedef enum {
     FONT_DEFAULT = 0,
     FONT_BITMAP = 1,
     FONT_SDF = 2,
-};
-
-/**
- * @brief Event type enumeration.
- */
-enum class EventType {
-    None = 0,
-    Quit,
-    Terminating,
-    LowMemory,
-    WillEnterBackground,
-    DidEnterBackground,
-    WillEnterForeground,
-    DidEnterForeground,
-    LocaleChanged,
-    SystemThemeChanged,
-    DisplayOrientation,
-    DisplayAdded,
-    DisplayRemoved,
-    DisplayMoved,
-    DisplayDesktopModeChanged,
-    DisplayCurrentModeChanged,
-    DisplayContentScaleChanged,
-    DisplayUsableBoundsChanged,
-    WindowShown,
-    WindowHidden,
-    WindowExposed,
-    WindowMoved,
-    WindowResized,
-    WindowPixelSizeChanged,
-    WindowMetalViewResized,
-    WindowMinimized,
-    WindowMaximized,
-    WindowRestored,
-    WindowMouseEnter,
-    WindowMouseLeave,
-    WindowFocusGained,
-    WindowFocusLost,
-    WindowCloseRequested,
-    WindowHitTest,
-    WindowIccProfileChanged,
-    WindowDisplayChanged,
-    WindowDisplayScaleChanged,
-    WindowSafeAreaChanged,
-    WindowOccluded,
-    WindowEnterFullscreen,
-    WindowLeaveFullscreen,
-    WindowDestroyed,
-    WindowHdrStateChanged,
-    KeyDown,
-    KeyUp,
-    TextEditing,
-    TextInput,
-    KeymapChanged,
-    KeyboardAdded,
-    KeyboardRemoved,
-    TextEditingCandidates,
-    ScreenKeyboardShown,
-    ScreenKeyboardHidden,
-    MouseMotion,
-    MouseButtonDown,
-    MouseButtonUp,
-    MouseWheel,
-    MouseAdded,
-    MouseRemoved,
-    JoystickAxisMotion,
-    JoystickBallMotion,
-    JoystickHatMotion,
-    JoystickButtonDown,
-    JoystickButtonUp,
-    JoystickAdded,
-    JoystickRemoved,
-    JoystickBatteryUpdated,
-    JoystickUpdateComplete,
-    GamepadAxisMotion,
-    GamepadButtonDown,
-    GamepadButtonUp,
-    GamepadAdded,
-    GamepadRemoved,
-    GamepadRemapped,
-    GamepadTouchpadDown,
-    GamepadTouchpadMotion,
-    GamepadTouchpadUp,
-    GamepadSensorUpdate,
-    GamepadUpdateComplete,
-    GamepadSteamHandleUpdated,
-    FingerDown,
-    FingerUp,
-    FingerMotion,
-    FingerCanceled,
-    PinchBegin,
-    PinchUpdate,
-    PinchEnd,
-    ClipboardUpdate,
-    DropFile,
-    DropText,
-    DropBegin,
-    DropComplete,
-    DropPosition,
-    AudioDeviceAdded,
-    AudioDeviceRemoved,
-    AudioDeviceFormatChanged,
-    SensorUpdate,
-    PenProximityIn,
-    PenProximityOut,
-    PenDown,
-    PenUp,
-    PenButtonDown,
-    PenButtonUp,
-    PenMotion,
-    PenAxis,
-    CameraDeviceAdded,
-    CameraDeviceRemoved,
-    CameraDeviceApproved,
-    CameraDeviceDenied,
-    RenderTargetsReset,
-    RenderDeviceReset,
-    RenderDeviceLost,
-    Unknown,
-};
-
-/**
- * @brief Event structure.
- */
-struct Event {
-    EventType type = EventType::None;
-    SDL_Event nativeEvent{};
-    std::uint64_t timestamp = 0;
-    std::uint32_t windowId = 0;
-    std::uint64_t which = 0;
-    std::int32_t data1 = 0;
-    std::int32_t data2 = 0;
-    float x = 0.0f;
-    float y = 0.0f;
-    float dx = 0.0f;
-    float dy = 0.0f;
-    float pressure = 0.0f;
-    float scale = 0.0f;
-    std::uint32_t key = 0;
-    std::uint32_t scancode = 0;
-    std::uint32_t modifiers = 0;
-    std::uint32_t button = 0;
-    std::uint32_t clicks = 0;
-    bool down = false;
-    bool repeat = false;
-    char text[256]{};
-};
+} FontType;
 
 /**
  * @brief Initialize the main application window.
@@ -750,11 +522,6 @@ struct Event {
  * @param title Window title text.
  */
 QCAPI void InitWindow(int width, int height, const char* title, RendererType rendererType = RendererType::Auto);
-
-enum class TextureFilterMode {
-    Nearest,
-    Linear
-};
 
 struct rAudioBuffer;
 struct rAudioProcessor;
@@ -851,7 +618,11 @@ QCAPI void*           MemRealloc(void* ptr, unsigned int size);
 QCAPI void            MemFree(void* ptr);
 
 /**
- * @brief Set the requested multisample anti-aliasing sample count.
+ * @brief Set the requested multisample anti-aliasing sample count (2, 4 or 8; other values disable MSAA).
+ *
+ * For OpenGL, call this before InitWindow because the sample count is part of the window's pixel format.
+ * Vulkan and D3D11 can also apply the setting after initialization.
+ *
  * @param samples Requested sample count.
  */
 QCAPI void SetMSAASamples(int samples);
@@ -859,7 +630,7 @@ QCAPI void SetMSAASamples(int samples);
  * @brief Set the default texture filtering mode.
  * @param mode Texture filtering mode.
  */
-QCAPI void SetTextureFilterMode(TextureFilterMode mode);
+QCAPI void SetTextureFilterMode(TextureFilter mode);
 
 /**
  * @brief Get the currently active rendering backend.
@@ -979,48 +750,8 @@ QCAPI void SetD3D11RenderCallback(D3D11RenderCallback callback);
 QCAPI D3D11RenderCallback GetD3D11RenderCallback();
 #endif
 
-/**
- * @brief Poll the next available event.
- *
- * @param event Reference to event structure that will receive event data.
- * @return true if an event was received.
- * @return false if no events are available.
- */
-QCAPI bool PollEvent(Event& event);
-/**
- * @brief Wait until an event is received.
- *
- * @param event Reference to event structure that will receive event data.
- * @return true if an event was received.
- * @return false on failure.
- */
-QCAPI bool WaitEvent(Event& event);
-
-/**
- * @brief Wait for an event with timeout.
- *
- * @param event Reference to event structure that will receive event data.
- * @param timeoutMs Timeout duration in milliseconds.
- * @return true if an event was received.
- * @return false if timeout was reached.
- */
-QCAPI bool WaitEventTimeout(Event& event, int timeoutMs);
-
 using NativeEventCallback = void(*)(const SDL_Event* event);
-
-/**
- * @brief Set a callback that receives each native SDL event.
- * @param callback Callback function, or nullptr to clear it.
- */
 QCAPI void SetNativeEventCallback(NativeEventCallback callback);
-
-/**
- * @brief Get event type name as string.
- *
- * @param type Event type enum value.
- * @return Pointer to event type name string.
- */
-QCAPI const char* GetEventTypeName(EventType type);
 
 /**
  * @brief Set window title text.
@@ -1376,14 +1107,6 @@ QCAPI const char* GetClipboardText();
  */
 QCAPI Image GetClipboardImage();
 /**
- * @brief Enable event waiting.
- */
-QCAPI void EnableEventWaiting();
-/**
- * @brief Disable event waiting.
- */
-QCAPI void DisableEventWaiting();
-/**
  * @brief Set config flags that apply to the current window.
  * @param flags Flag bitmask.
  */
@@ -1520,13 +1243,6 @@ inline void SetTraceLogLevel(int logLevel) {
  * @return Pointer to the SDL GL context.
  */
 QCAPI SDL_GLContext GetNativeContext();
-
-/**
- * @brief Get the underlying SDL event.
- *
- * @return SDL_Event structure with event data.
-*/
-QCAPI SDL_Event GetNativeEvent();
 
 /**
  * @brief Start text input.
@@ -2029,7 +1745,7 @@ QCAPI void EndScissorMode(void);
  * @param texture Texture to configure.
  * @param filter Texture filter identifier.
  */
-QCAPI void SetTextureFilter(Texture2D texture, int filter);
+QCAPI void SetTextureFilter(Texture2D texture, TextureFilter filter);
 /**
  * @brief Set the wrapping mode for a texture.
  * @param texture Texture to configure.
@@ -2970,10 +2686,10 @@ QCAPI Texture2D LoadTextureFromImage(Image image);
 /**
  * @brief Create a cubemap texture from image data.
  * @param image Source image.
- * @param layout Cubemap image layout identifier.
- * @return Created cubemap texture.
+ * @param layout Image arrangement: auto-detect, horizontal/vertical strip, or 3x4/4x3 cross.
+ * @return Created cubemap texture, or an empty texture if the image/layout is invalid.
  */
-QCAPI TextureCubemap LoadTextureCubemap(Image image, int layout);
+QCAPI TextureCubemap LoadTextureCubemap(Image image, CubemapLayout layout);
 /**
  * @brief Replace the pixel data of a texture.
  * @param texture Texture to update.
@@ -3131,7 +2847,7 @@ QCAPI void SetShaderValue(const Shader& shader, int locIndex, const Vec2& value)
  * @param locIndex Uniform location index.
  * @param value Vec3 value to set.
  */
-QCAPI void SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value);
+QCAPI void SetShaderValue(const Shader& shader, int locIndex, const Vec3& value);
 
 /**
  * @brief Set shader Vec4 uniform value.
@@ -3139,7 +2855,7 @@ QCAPI void SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& va
  * @param locIndex Uniform location index.
  * @param value Vec4 value to set.
  */
-QCAPI void SetShaderValue(const Shader& shader, int locIndex, const qc::Vec4& value);
+QCAPI void SetShaderValue(const Shader& shader, int locIndex, const Vec4& value);
 
 /**
  * @brief Set shader Vec4 uniform value (color).
@@ -3494,7 +3210,7 @@ QCAPI bool IsGamepadAvailable(int gamepad);
 /**
  * @brief Standard QuarkCore gamepad buttons.
  */
-enum GamepadButton {
+typedef enum {
     GAMEPAD_BUTTON_UNKNOWN = 0,
     GAMEPAD_BUTTON_LEFT_FACE_UP,
     GAMEPAD_BUTTON_LEFT_FACE_RIGHT,
@@ -3514,7 +3230,7 @@ enum GamepadButton {
     GAMEPAD_BUTTON_LEFT_THUMB,
     GAMEPAD_BUTTON_RIGHT_THUMB,
     GAMEPAD_BUTTON_COUNT
-};
+} GamepadButton;
 
 using GamepadAxis = SDL_GamepadAxis;
 
@@ -4726,7 +4442,4 @@ QCAPI unsigned int GetDirectoryFileCount(const char* dirPath);
  * @return Entry count.
  */
 QCAPI unsigned int GetDirectoryFileCountEx(const char* basePath, const char* filter, bool scanSubdirs);
-
-}  // namespace qc
-
 #endif // __QUARK_CORE__

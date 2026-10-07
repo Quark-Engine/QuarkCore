@@ -2,9 +2,7 @@
 #define __QUARK_VK_SWAPCHAIN__
 
 #include "QuarkVkCommon.hpp"
-
-namespace qc {
-
+namespace qci {
 class QuarkVkGpuAllocator;
 
 class QuarkVkSwapChain {
@@ -69,7 +67,5 @@ private:
     VmaAllocation m_msaaColorAllocation = VK_NULL_HANDLE;
     VkImageView m_msaaColorImageView = VK_NULL_HANDLE;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_SWAPCHAIN__

@@ -4,9 +4,7 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkFont.hpp"
 #include "QuarkTexture.hpp"
-
-namespace qc {
-
+namespace qci {
 class QCAPI IRenderer {
 public:
     virtual ~IRenderer() = default;
@@ -112,14 +110,19 @@ public:
     // Texture
     virtual void BeginTextureMode(IRenderTexture target)                                                = 0;
     virtual void EndTextureMode()                                                                       = 0;
-    virtual void SetTextureFilterMode(TextureFilterMode mode) { (void)mode; }
-    virtual void SetTextureFilter(int filter) { (void)filter; }
+    virtual void SetTextureFilterMode(TextureFilter mode) { (void)mode; }
+    virtual void SetTextureFilter(TextureFilter filter) { (void)filter; }
     virtual void SetTextureWrap(int wrap) { (void)wrap; }
+    virtual void SetTextureWrap(uint32_t textureId, int wrap) {
+        (void)textureId;
+        SetTextureWrap(wrap);
+    }
     virtual void BeginScissorMode(int x, int y, int width, int height) { (void)x; (void)y; (void)width; (void)height; }
     virtual void EndScissorMode() { }
     virtual void SetBlendMode(int mode) { (void)mode; }
     virtual ITexture LoadTexture(const char* filePath)                                                  = 0;
     virtual ITexture LoadTextureFromImage(const Image& image)                                            = 0;
+    virtual ITexture LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize)                    = 0;
     virtual ITexture GetRenderTextureTexture(IRenderTexture target)                                     = 0;
     virtual void UnloadTexture(ITexture& texture)                                                       = 0;
     virtual bool UpdateTexture(const ITexture& texture, const void* pixels)                             = 0;
@@ -154,9 +157,9 @@ public:
     virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, float value)           = 0;
     virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, int value)             = 0;
     virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Color& value)    = 0;
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const qc::Vec2& value) = 0;
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const qc::Vec3& value) = 0;
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const qc::Vec4& value) = 0;
+    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Vec2& value) = 0;
+    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Vec3& value) = 0;
+    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Vec4& value) = 0;
 
     virtual void SetShaderValueMatrix([[maybe_unused]] const Shader& shader, int locIndex, const float* mat) = 0;
     virtual void SetShaderValueSampler([[maybe_unused]] const Shader& shader, int locIndex, int textureUnit) = 0;
@@ -172,6 +175,5 @@ public:
     virtual RendererType GetType() const = 0;
 };
 
-}
-
+} // namespace qci
 #endif // __QUARK_I_RENDERER__

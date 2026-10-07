@@ -4,9 +4,7 @@
 
 #include <array>
 #include <stdexcept>
-
-namespace qc {
-
+namespace qci {
 void QuarkVkSwapChain::Initialize(VkDevice device,
                                  VkPhysicalDevice physicalDevice,
                                  VkSurfaceKHR surface,
@@ -325,5 +323,4 @@ void QuarkVkSwapChain::Shutdown(VkDevice device) {
     m_extent = {0, 0};
     m_minImageCount = 0;
 }
-
-} // namespace qc
+} // namespace qci

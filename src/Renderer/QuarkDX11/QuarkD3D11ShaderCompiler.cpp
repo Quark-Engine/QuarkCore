@@ -3,8 +3,7 @@
 #include <cstring>
 
 #if defined(_WIN32)
-namespace qc {
-
+namespace qci {
 Microsoft::WRL::ComPtr<ID3DBlob> D3D11ShaderCompiler::Compile(const char *source,
                                                               const char *entryPoint,
                                                               const char *profile) const
@@ -37,6 +36,5 @@ Microsoft::WRL::ComPtr<ID3DBlob> D3D11ShaderCompiler::Compile(const char *source
 
     return bytecode;
 }
-
-} // namespace qc
 #endif
+} // namespace qci

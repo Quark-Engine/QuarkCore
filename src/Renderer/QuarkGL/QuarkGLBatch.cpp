@@ -3,9 +3,7 @@
 #include "QuarkGLDevice.hpp"
 
 #include <cmath>
-
-namespace qc {
-
+namespace qci {
 QuarkGLBatch::~QuarkGLBatch() {
     Shutdown();
 }
@@ -121,7 +119,7 @@ void QuarkGLBatch::PushVertex(const BatchVertex& vtx) {
 
     BatchVertex v = vtx;
     if (m_camera2DActive) {
-        Vec2 screen = qc::GetWorldToScreen2D({v.x, v.y}, m_camera2D);
+        Vec2 screen = GetWorldToScreen2D({v.x, v.y}, m_camera2D);
         v.x = screen.x;
         v.y = screen.y;
     }
@@ -172,5 +170,4 @@ void QuarkGLBatch::PushCircleImpl(float cx, float cy, float r, Color color) {
         PushVertex({cx + std::cos(a1) * r, cy + std::sin(a1) * r, 0.0f, 1.0f, n[0], n[1], n[2], n[3]});
     }
 }
-
-} // namespace qc
+} // namespace qci

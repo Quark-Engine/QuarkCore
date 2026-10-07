@@ -5,15 +5,13 @@
 #include <fstream>
 #include <vector>
 #include <cstring>
-
-namespace qc {
-
+namespace qci {
 GLuint QuarkGLTexture::CreateTextureFromRgba(const uint8_t* pixels, int width, int height) {
     GLuint id = 0;
     glGenTextures(1, &id);
     glBindTexture(GL_TEXTURE_2D, id);
 
-    const GLint textureFilter = gTextureFilterMode == TextureFilterMode::Nearest ? GL_NEAREST : GL_LINEAR;
+    const GLint textureFilter = gTextureFilter == TEXTURE_FILTER_POINT ? GL_NEAREST : GL_LINEAR;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, textureFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, textureFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -90,6 +88,42 @@ ITexture QuarkGLTexture::LoadTextureFromImage(const Image& image) {
     return texture;
 }
 
+ITexture QuarkGLTexture::LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize) {
+    if (!rgbaFaces || faceSize <= 0) {
+        return {};
+    }
+
+    GLuint id = 0;
+    glGenTextures(1, &id);
+    if (id == 0) {
+        return {};
+    }
+    glBindTexture(GL_TEXTURE_CUBE_MAP, id);
+
+    const GLint textureFilter = gTextureFilter == TEXTURE_FILTER_POINT ? GL_NEAREST : GL_LINEAR;
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, textureFilter);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, textureFilter);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    const size_t faceBytes = static_cast<size_t>(faceSize) * faceSize * 4;
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    for (GLuint face = 0; face < 6; ++face) {
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGBA8,
+                     faceSize, faceSize, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                     rgbaFaces + face * faceBytes);
+    }
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+    m_cubemapTextureIds.insert(id);
+
+    return ITexture{id, faceSize, faceSize, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true};
+}
+
+bool QuarkGLTexture::IsCubemap(uint32_t textureId) const {
+    return m_cubemapTextureIds.find(static_cast<GLuint>(textureId)) != m_cubemapTextureIds.end();
+}
+
 void QuarkGLTexture::UnloadTexture(ITexture& texture) {
     if (texture.id) {
         const auto cacheKey = m_textureCacheKeys.find(texture.id);
@@ -109,6 +143,7 @@ void QuarkGLTexture::UnloadTexture(ITexture& texture) {
             return;
         }
 
+        m_cubemapTextureIds.erase(texture.id);
         glDeleteTextures(1, &texture.id);
     }
     texture = {};
@@ -128,7 +163,7 @@ IRenderTexture QuarkGLTexture::LoadRenderTexture(int width, int height) {
     glBindTexture(GL_TEXTURE_2D, target.texture.id);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
-    const GLint textureFilter = gTextureFilterMode == TextureFilterMode::Nearest ? GL_NEAREST : GL_LINEAR;
+    const GLint textureFilter = gTextureFilter == TEXTURE_FILTER_POINT ? GL_NEAREST : GL_LINEAR;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, textureFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, textureFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -236,5 +271,4 @@ Image QuarkGLTexture::ReadScreenImage(int width, int height, GLuint currentFbo) 
     image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
     return image;
 }
-
-} // namespace qc
+} // namespace qci

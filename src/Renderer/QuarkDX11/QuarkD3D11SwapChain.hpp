@@ -6,9 +6,7 @@
 #include "QuarkD3D11Device.hpp"
 #include <SDL3/SDL_video.h>
 #include <wrl/client.h>
-
-namespace qc {
-
+namespace qci {
 class D3D11SwapChain {
 public:
     void Initialize(const D3D11Device &device, SDL_Window *window, int width, int height);
@@ -53,8 +51,6 @@ private:
     UINT m_width = 0;
     UINT m_height = 0;
 };
-
-} // namespace qc
+} // namespace qci
 #endif
-
 #endif // __QUARK_D3D11_SWAP_CHAIN__

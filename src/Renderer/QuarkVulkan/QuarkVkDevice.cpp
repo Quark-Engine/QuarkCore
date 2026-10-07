@@ -3,9 +3,7 @@
 #include <set>
 #include <stdexcept>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 void QuarkVkDevice::Initialize(VkInstance instance, VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
     m_instance = instance;
     m_physicalDevice = physicalDevice;
@@ -75,5 +73,4 @@ void QuarkVkDevice::Shutdown() {
     m_presentQueue = VK_NULL_HANDLE;
     m_graphicsQueueFamily = UINT32_MAX;
 }
-
-} // namespace qc
+} // namespace qci

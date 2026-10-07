@@ -23,9 +23,7 @@
 #if defined(_WIN32)
 #include <windows.h>
 #endif
-
-namespace qc {
-
+namespace qci {
 static const std::vector<const char*> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
@@ -415,15 +413,15 @@ void QuarkVkRenderer::ClearBackground(Color color) {
     m_clearColor = color;
 }
 
-void QuarkVkRenderer::SetTextureFilterMode(TextureFilterMode mode) {
-    gTextureFilterMode = mode;
+void QuarkVkRenderer::SetTextureFilterMode(TextureFilter mode) {
+    gTextureFilter = mode;
     m_textureFilterMode = mode;
     m_vkResources.SetTextureSamplingMode(mode, m_textureWrapMode);
 }
 
-void QuarkVkRenderer::SetTextureFilter(int filter) {
-    gTextureFilterMode = (filter == TEXTURE_FILTER_POINT) ? TextureFilterMode::Nearest : TextureFilterMode::Linear;
-    m_textureFilterMode = gTextureFilterMode;
+void QuarkVkRenderer::SetTextureFilter(TextureFilter filter) {
+    gTextureFilter = filter;
+    m_textureFilterMode = gTextureFilter;
     m_vkResources.SetTextureSamplingMode(m_textureFilterMode, m_textureWrapMode);
 }
 
@@ -2089,5 +2087,4 @@ bool QuarkVkRenderer::UpdateTextureRegion(const ITexture& texture, Rectangle reg
                                                  static_cast<uint32_t>(region.width),
                                                  static_cast<uint32_t>(region.height));
 }
-
-} // namespace qc
+} // namespace qci

@@ -16,9 +16,6 @@
 #define __QUARK_LIGHTS__
 
 #include "QuarkCore.hpp"
-
-namespace qc {
-
 #define QC_MAX_LIGHTS 4
 
 typedef enum {
@@ -45,7 +42,4 @@ struct Light {
 QCAPI Light CreateLight(int type, Vec3 position, Vec3 target, Color color, Shader shader);
 
 QCAPI void UpdateLightValues(Shader shader, const Light& light);
-
-} // namespace qc
-
 #endif // __QUARK_LIGHTS__

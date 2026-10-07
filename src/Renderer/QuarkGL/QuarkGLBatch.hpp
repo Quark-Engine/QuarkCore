@@ -6,9 +6,7 @@
 #include <glad/glad.h>
 
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 class QuarkGLBatch {
 public:
     struct BatchVertex {
@@ -59,7 +57,5 @@ private:
     Camera2D m_camera2D{};
     std::vector<BatchVertex> m_batchVertices;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_GL_BATCH__

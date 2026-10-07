@@ -24,9 +24,6 @@
 #include <vector>
 #include <string>
 #include <memory>
-
-namespace qc {
-
 // Forward declarations
 struct Shader;
 struct Camera3D;
@@ -661,7 +658,4 @@ QCAPI void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom,
  * @param color Cylinder color.
  */
 QCAPI void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color);
-
-}  // namespace qc
-
 #endif // __QUARK_3D__

@@ -1,116 +1,116 @@
 #include "QuarkCore/QuarkCore.hpp"
 
 int main() {
-    qc::InitWindow(1280, 720, "QuarkCore D3D11 Sandbox", qc::RendererType::D3D11);
-    qc::SetWindowMinimumSize(800, 450);
-    qc::StartTextInput();
-    qc::SetLogLevel(qc::LogLevel::Trace);
-    qc::SetTargetFPS(0);
-    qc::TraceLog(qc::LogLevel::Info, "CORE", "Sandbox booted");
-    qc::TraceLog(
-        qc::LogLevel::Info,
+    InitWindow(1280, 720, "QuarkCore D3D11 Sandbox", RendererType::D3D11);
+    SetWindowMinimumSize(800, 450);
+    StartTextInput();
+    SetLogLevel(LogLevel::Trace);
+    SetTargetFPS(0);
+    TraceLog(LogLevel::Info, "CORE", "Sandbox booted");
+    TraceLog(
+        LogLevel::Info,
         "CORE",
-        qc::TextFormat("Current monitor refresh rate: %.2f Hz", qc::GetCurrentMonitorRefreshRate())
+        TextFormat("Current monitor refresh rate: %.2f Hz", GetCurrentMonitorRefreshRate())
     );
 
-    qc::Texture2D checker = qc::GenCheckerTexture(
+    Texture2D checker = GenCheckerTexture(
         160,
         160,
         20,
-        qc::Color{245, 245, 245, 255},
-        qc::Color{40, 120, 210, 255}
+        Color{245, 245, 245, 255},
+        Color{40, 120, 210, 255}
     );
-    qc::Texture2D directx11 = qc::LoadTexture("resources/directx11.png");
+    Texture2D directx11 = LoadTexture("resources/directx11.png");
 
-    qc::Camera2D camera2d;
+    Camera2D camera2d;
     camera2d.target = { 220.0f, 340.0f };
     camera2d.offset = { 1280 / 2.0f, 720 / 2.0f };
     camera2d.zoom = 1.0f;
 
-    qc::Camera3D camera3d;
+    Camera3D camera3d;
     camera3d.position = { 0.0f, 10.0f, 10.0f };
     camera3d.target = { 0.0f, 0.0f, 0.0f };
     camera3d.up = { 0.0f, 1.0f, 0.0f };
     camera3d.fovy = 45.0f;
-    camera3d.projection = qc::CAMERA_PERSPECTIVE;
+    camera3d.projection = CAMERA_PERSPECTIVE;
 
-    qc::Model model = qc::LoadModel("resources/lantern.obj");
+    Model model = LoadModel("resources/lantern.obj");
 
-    qc::RenderTexture2D target = qc::LoadRenderTexture(320, 240);
+    RenderTexture2D target = LoadRenderTexture(320, 240);
 
-    qc::Font defaultFont = qc::GetDefaultFont();
+    Font defaultFont = GetDefaultFont();
 
-    while (!qc::WindowShouldClose()) {
-        if (qc::IsKeyPressed(qc::KeyboardKey::Space)) {
-            qc::TraceLog(
-                qc::LogLevel::Info,
+    while (!WindowShouldClose()) {
+        if (IsKeyPressed(KEY_SPACE)) {
+            TraceLog(
+                LogLevel::Info,
                 "INPUT",
-                qc::TextFormat("Space pressed | fps=%d dt=%.4f", qc::GetFPS(), qc::GetDeltaTime())
+                TextFormat("Space pressed | fps=%d dt=%.4f", GetFPS(), GetDeltaTime())
             );
         }
 
-        qc::BeginDrawing();
-        qc::ClearBackground(qc::Color{20, 24, 32, 255});
+        BeginDrawing();
+        ClearBackground(Color{20, 24, 32, 255});
 
-        qc::BeginTextureMode(target);
-            qc::ClearBackground(qc::WHITE);
-            qc::DrawRectangle(10, 10, 100, 100, qc::RED);
-            qc::DrawCircle(160, 120, 40, qc::BLUE);
-        qc::EndTextureMode();
+        BeginTextureMode(target);
+            ClearBackground(WHITE);
+            DrawRectangle(10, 10, 100, 100, RED);
+            DrawCircle(160, 120, 40, BLUE);
+        EndTextureMode();
 
-        qc::BeginMode2D(camera2d);
-            qc::DrawGrid(100, 64);
-            qc::DrawRectangleV(camera2d.target, { 50, 50 }, qc::RED);
-            qc::DrawCircle(600, 400, 40, qc::BLUE);
-            qc::DrawRectangle(800, 200, 120, 80, qc::GREEN);
-        qc::EndMode2D();
+        BeginMode2D(camera2d);
+            DrawGrid(100, 64);
+            DrawRectangleV(camera2d.target, { 50, 50 }, RED);
+            DrawCircle(600, 400, 40, BLUE);
+            DrawRectangle(800, 200, 120, 80, GREEN);
+        EndMode2D();
 
-        qc::BeginMode3D(camera3d);
-            qc::DrawPlane({ 0, 0, 0 }, { 32, 32 }, qc::LIGHTGRAY);
-            qc::DrawCube({ 0, 1, 0 }, 2, 2, 2, qc::RED);
-            qc::DrawGrid(20, 1.0f);
-            qc::DrawModelEx(model, qc::Mat4::rotationZ(qc::GetTime()));
-            qc::DrawModel(model, { 3, 0, 0 }, 1.0f, qc::GREEN);
-        qc::EndMode3D();
+        BeginMode3D(camera3d);
+            DrawPlane({ 0, 0, 0 }, { 32, 32 }, LIGHTGRAY);
+            DrawCube({ 0, 1, 0 }, 2, 2, 2, RED);
+            DrawGrid(20, 1.0f);
+            DrawModelEx(model, Mat4::rotationZ(GetTime()));
+            DrawModel(model, { 3, 0, 0 }, 1.0f, GREEN);
+        EndMode3D();
 
         constexpr float directx11Scale = 0.25f;
         constexpr float directx11TopMargin = 20.0f;
-        qc::DrawTextureEx(
+        DrawTextureEx(
             directx11,
-            qc::Vec2{
-                static_cast<float>(qc::GetScreenWidth()) - directx11.width * directx11Scale,
+            Vec2{
+                static_cast<float>(GetScreenWidth()) - directx11.width * directx11Scale,
                 directx11TopMargin
             },
             0.0f,
             directx11Scale,
-            qc::WHITE
+            WHITE
         );
 
-        qc::DrawTexturePro(
+        DrawTexturePro(
             target.texture,
-            qc::Rectangle{ 0, (float)target.texture.height, (float)target.texture.width, -(float)target.texture.height },
-            qc::Rectangle{ 20, 20, 320, 240 },
-            qc::Vec2{ 0, 0 },
+            Rectangle{ 0, (float)target.texture.height, (float)target.texture.width, -(float)target.texture.height },
+            Rectangle{ 20, 20, 320, 240 },
+            Vec2{ 0, 0 },
             0.0f,
-            qc::WHITE
+            WHITE
         );
 
-        qc::DrawText("Hello, QuarkCore!", 360, 40, 32, qc::WHITE);
+        DrawText("Hello, QuarkCore!", 360, 40, 32, WHITE);
 
-        qc::Vec2 textSize = qc::MeasureTextEx(defaultFont, "DrawTextEx example", 24.0f, 2.0f);
-        qc::DrawRectangle(360.0f, 80.0f, textSize.x + 16.0f, textSize.y + 12.0f, qc::Color{20, 20, 40, 180});
-        qc::DrawTextEx(defaultFont, "DrawTextEx example", qc::Vec2{372.0f, 88.0f}, 24.0f, 2.0f, qc::YELLOW);
+        Vec2 textSize = MeasureTextEx(defaultFont, "DrawTextEx example", 24.0f, 2.0f);
+        DrawRectangle(360.0f, 80.0f, textSize.x + 16.0f, textSize.y + 12.0f, Color{20, 20, 40, 180});
+        DrawTextEx(defaultFont, "DrawTextEx example", Vec2{372.0f, 88.0f}, 24.0f, 2.0f, YELLOW);
 
-        int measuredWidth = qc::MeasureText("Measured text", 20);
-        qc::DrawText(qc::TextFormat("Measured width: %d", measuredWidth), 360, 140, 20, qc::LIGHTGRAY);
+        int measuredWidth = MeasureText("Measured text", 20);
+        DrawText(TextFormat("Measured width: %d", measuredWidth), 360, 140, 20, LIGHTGRAY);
 
-        qc::EndDrawing();
+        EndDrawing();
     }
 
-    qc::StopTextInput();
-    qc::UnloadTexture(checker);
-    qc::UnloadTexture(directx11);
-    qc::UnloadRenderTexture(target);
-    qc::CloseWindow();
+    StopTextInput();
+    UnloadTexture(checker);
+    UnloadTexture(directx11);
+    UnloadRenderTexture(target);
+    CloseWindow();
     return 0;
 }

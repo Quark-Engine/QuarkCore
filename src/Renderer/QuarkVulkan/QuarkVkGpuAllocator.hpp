@@ -5,9 +5,7 @@
 
 #include <cstdint>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 struct VkGpuBufferAllocation {
     VkBuffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
@@ -46,7 +44,5 @@ public:
 private:
     VmaAllocator m_allocator = VK_NULL_HANDLE;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_GPU_ALLOCATOR__

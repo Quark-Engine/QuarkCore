@@ -1,9 +1,7 @@
 #include "QuarkVkRenderPass.hpp"
 
 #include <array>
-
-namespace qc {
-
+namespace qci {
 void QuarkVkRenderPass::Initialize(VkDevice device, VkFormat colorFormat, VkFormat depthFormat, bool multisampled, bool offscreen) {
     if (m_renderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(m_device, m_renderPass, nullptr);
@@ -74,5 +72,4 @@ void QuarkVkRenderPass::Shutdown() {
     }
     m_renderPass = VK_NULL_HANDLE;
 }
-
-} // namespace qc
+} // namespace qci

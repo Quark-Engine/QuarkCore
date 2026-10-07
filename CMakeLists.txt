@@ -415,7 +415,7 @@ else()
 endif()
 
 add_library(QuarkCore STATIC
-    src/QuarkEvent.cpp
+    src/QuarkInput.cpp
     src/QuarkLights.cpp
     src/QuarkWindow.cpp
     src/QuarkImage.cpp
@@ -790,6 +790,16 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
     add_test(NAME QuarkModelAnimation COMMAND quark_model_animation_tests)
+
+    add_executable(quark_embedded_texture_tests
+        tests/QuarkEmbeddedTextureTests.cpp
+    )
+    target_link_libraries(quark_embedded_texture_tests PRIVATE QuarkCore-OpenGL)
+    target_include_directories(quark_embedded_texture_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME QuarkEmbeddedTextures COMMAND quark_embedded_texture_tests)
 
     add_executable(quark_vr_stereo_tests
         tests/QuarkModelAnimationTests.cpp

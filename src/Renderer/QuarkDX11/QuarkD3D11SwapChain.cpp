@@ -3,8 +3,7 @@
 #include <cstring>
 
 #if defined(_WIN32)
-namespace qc {
-
+namespace qci {
 void D3D11SwapChain::Initialize(const D3D11Device &device, SDL_Window *window, int width,
                                 int height)
 {
@@ -294,6 +293,5 @@ void D3D11SwapChain::Shutdown()
 
     TraceLog(LogLevel::Info, "D3D11", "Swap chain shut down successfully.");
 }
-
-} // namespace qc
 #endif
+} // namespace qci

@@ -7,9 +7,7 @@
 
 #include <vector>
 #include <unordered_map>
-
-namespace qc {
-
+namespace qci {
 struct GlyphData {
     int value = 0;
     Rectangle uv{};
@@ -67,7 +65,5 @@ private:
     uint32_t m_nextFontId = 1;
     uint32_t m_defaultFontId = 0;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_GL_FONT__

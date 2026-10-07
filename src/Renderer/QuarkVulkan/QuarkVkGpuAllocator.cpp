@@ -4,9 +4,7 @@
 #include "QuarkCore/QuarkCore.hpp"
 
 #include <stdexcept>
-
-namespace qc {
-
+namespace qci {
 QuarkVkGpuAllocator::~QuarkVkGpuAllocator() {
     Shutdown();
 }
@@ -147,5 +145,4 @@ VmaAllocatorInfo QuarkVkGpuAllocator::GetInfo() const {
     }
     return info;
 }
-
-} // namespace qc
+} // namespace qci

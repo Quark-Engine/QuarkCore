@@ -2,9 +2,7 @@
 #define __QUARK_VK_COMMAND_CONTEXT__
 
 #include "QuarkVkCommon.hpp"
-
-namespace qc {
-
+namespace qci {
 class QuarkVkCommandContext {
 public:
     void Initialize(VkDevice device, uint32_t queueFamilyIndex);
@@ -17,7 +15,5 @@ private:
     VkDevice      m_device      = VK_NULL_HANDLE;
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_COMMAND_CONTEXT__

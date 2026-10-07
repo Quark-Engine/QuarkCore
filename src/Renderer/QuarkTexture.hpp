@@ -1,9 +1,7 @@
 #ifndef __QUARK_TEXTURE__
 #define __QUARK_TEXTURE__
 #include <cstdint>
-
-namespace qc {
-
+namespace qci {
 struct ITexture {
     uint32_t id = 0;
     int width = 0;
@@ -23,6 +21,5 @@ struct IRenderTexture {
     unsigned int depthId = 0;
 };
 
-}
-
+} // namespace qci
 #endif // __QUARK_TEXTURE__

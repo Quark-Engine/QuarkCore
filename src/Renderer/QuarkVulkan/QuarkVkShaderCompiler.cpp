@@ -1,7 +1,8 @@
+#include <spirv_cross/spirv_glsl.hpp>
+
 #include "QuarkVkShaderCompiler.hpp"
 
 #include <shaderc/shaderc.hpp>
-#include <spirv_cross/spirv_glsl.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -11,8 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-namespace qc {
+namespace qci {
 namespace {
 
 static const char* shaderLocationNames[SHADER_LOC_COUNT] = {
@@ -437,5 +437,4 @@ VkShaderModule QuarkVkShaderCompiler::CreateModule(const std::vector<uint32_t>& 
         spirv.size(), createInfo.codeSize, (void*)module));
     return module;
 }
-
-} // namespace qc
+} // namespace qci

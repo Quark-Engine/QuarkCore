@@ -4,9 +4,7 @@
 #include "QuarkVkCommon.hpp"
 
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 struct VkFrameDataExt {
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
@@ -39,7 +37,5 @@ private:
     VkCommandPool             m_commandPool = VK_NULL_HANDLE;
     std::vector<VkFrameDataExt> m_frames;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_FRAME_MANAGER__

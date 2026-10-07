@@ -1,7 +1,5 @@
 #include "QuarkVkDescriptorSetManager.hpp"
-
-namespace qc {
-
+namespace qci {
 void QuarkVkDescriptorSetManager::Initialize(VkDevice device) {
     m_device = device;
     if (m_descriptorSetLayout == VK_NULL_HANDLE || m_descriptorSetLayout3D == VK_NULL_HANDLE) {
@@ -179,5 +177,4 @@ void QuarkVkDescriptorSetManager::FreeDescriptorSet(VkDevice device, VkDescripto
     }
     vkFreeDescriptorSets(device, pool, 1, &set);
 }
-
-} // namespace qc
+} // namespace qci

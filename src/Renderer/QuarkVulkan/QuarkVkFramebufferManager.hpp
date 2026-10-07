@@ -4,9 +4,7 @@
 #include "QuarkVkCommon.hpp"
 
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 class QuarkVkFramebufferManager {
 public:
     void Initialize(VkDevice device);
@@ -27,7 +25,5 @@ private:
     VkDevice m_device = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> m_framebuffers;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_FRAMEBUFFER_MANAGER__

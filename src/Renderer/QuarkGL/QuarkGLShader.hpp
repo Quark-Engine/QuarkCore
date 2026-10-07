@@ -4,9 +4,7 @@
 #include "../QuarkIRenderer.hpp"
 
 #include <glad/glad.h>
-
-namespace qc {
-
+namespace qci {
 class QuarkGLShader {
 public:
     QuarkGLShader() = default;
@@ -23,7 +21,5 @@ private:
     static const char* kVS2D;
     static const char* kFS2D;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_GL_SHADER__

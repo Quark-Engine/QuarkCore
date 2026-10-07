@@ -5,9 +5,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <utility>
-
-namespace qc {
-
+namespace qci {
 void QuarkVkResources::Initialize(VkDevice device, QuarkVkGpuAllocator& allocator,
                                   VkCommandPool commandPool, VkQueue graphicsQueue,
                                   DescriptorAllocator descriptorAllocator) {
@@ -60,12 +58,12 @@ bool QuarkVkResources::AllocateDescriptorSet(VkDescriptorSet& outSet) {
     return m_descriptorAllocator(outSet);
 }
 
-void QuarkVkResources::SetTextureSamplingMode(TextureFilterMode filterMode, int wrapMode) {
+void QuarkVkResources::SetTextureSamplingMode(TextureFilter filterMode, int wrapMode) {
     if (m_device == VK_NULL_HANDLE) {
         return;
     }
 
-    const VkFilter filter = (filterMode == TextureFilterMode::Nearest)
+    const VkFilter filter = (filterMode == TEXTURE_FILTER_POINT)
         ? VK_FILTER_NEAREST
         : VK_FILTER_LINEAR;
 
@@ -135,12 +133,23 @@ bool QuarkVkResources::WriteTextureDescriptorSet(VkTextureData& tex) {
 
 uint32_t QuarkVkResources::CreateTextureFromRGBA(const unsigned char* rgba,
                                                  uint32_t width, uint32_t height) {
+    return CreateTextureFromRGBAImpl(rgba, width, height, 1, false);
+}
+
+uint32_t QuarkVkResources::CreateCubemapFromRGBA(const unsigned char* rgbaFaces,
+                                                 uint32_t faceSize) {
+    return CreateTextureFromRGBAImpl(rgbaFaces, faceSize, faceSize, 6, true);
+}
+
+uint32_t QuarkVkResources::CreateTextureFromRGBAImpl(const unsigned char* rgba,
+                                                     uint32_t width, uint32_t height,
+                                                     uint32_t layers, bool cubemap) {
     if (!rgba || width == 0 || height == 0 || m_device == VK_NULL_HANDLE || m_allocator == nullptr) {
         TraceLog(LogLevel::Warn, "TEXTURE", "[Vulkan] Cannot create texture: invalid parameters (null data or zero size)");
         return 0u;
     }
 
-    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4u;
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4u * layers;
     TraceLog(LogLevel::Trace, "TEXTURE", TextFormat("[Vulkan] Creating GPU texture: %ux%u (%llu bytes RGBA8)",
         width, height, static_cast<unsigned long long>(imageSize)));
 
@@ -172,11 +181,12 @@ uint32_t QuarkVkResources::CreateTextureFromRGBA(const unsigned char* rgba,
     VkImageCreateInfo imageInfo{};
     imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType     = VK_IMAGE_TYPE_2D;
+    imageInfo.flags         = cubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
     imageInfo.extent.width  = width;
     imageInfo.extent.height = height;
     imageInfo.extent.depth  = 1;
     imageInfo.mipLevels     = 1;
-    imageInfo.arrayLayers   = 1;
+    imageInfo.arrayLayers   = layers;
     imageInfo.format        = VK_FORMAT_R8G8B8A8_UNORM;
     imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -201,11 +211,11 @@ uint32_t QuarkVkResources::CreateTextureFromRGBA(const unsigned char* rgba,
 
     if (!TransitionImageLayout(tex.image, imageInfo.format,
                                VK_IMAGE_LAYOUT_UNDEFINED,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) ||
-        !CopyBufferToImage(stagingBuffer, tex.image, width, height) ||
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, layers) ||
+    !CopyBufferToImage(stagingBuffer, tex.image, width, height, layers) ||
         !TransitionImageLayout(tex.image, imageInfo.format,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, layers)) {
         TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed image transitions or buffer copy for texture");
         m_allocator->DestroyImage(tex.image, tex.allocation);
         tex.image = VK_NULL_HANDLE;
@@ -220,13 +230,13 @@ uint32_t QuarkVkResources::CreateTextureFromRGBA(const unsigned char* rgba,
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image                           = tex.image;
-    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.viewType                        = cubemap ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format                          = VK_FORMAT_R8G8B8A8_UNORM;
     viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel   = 0;
     viewInfo.subresourceRange.levelCount     = 1;
     viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount     = 1;
+    viewInfo.subresourceRange.layerCount     = layers;
 
     if (vkCreateImageView(m_device, &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
         TraceLog(LogLevel::Error, "TEXTURE", "[Vulkan] Failed to create VkImageView");
@@ -239,8 +249,8 @@ uint32_t QuarkVkResources::CreateTextureFromRGBA(const unsigned char* rgba,
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter    = (gTextureFilterMode == TextureFilterMode::Nearest) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
-    samplerInfo.minFilter    = (gTextureFilterMode == TextureFilterMode::Nearest) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+    samplerInfo.magFilter    = (gTextureFilter == TEXTURE_FILTER_POINT) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+    samplerInfo.minFilter    = (gTextureFilter == TEXTURE_FILTER_POINT) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
     samplerInfo.mipmapMode   = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -332,7 +342,8 @@ void QuarkVkResources::EndSingleTimeCommands(VkCommandBuffer cmd) {
 }
 
 bool QuarkVkResources::TransitionImageLayout(VkImage image, VkFormat /*format*/,
-                                             VkImageLayout oldLayout, VkImageLayout newLayout) {
+                                             VkImageLayout oldLayout, VkImageLayout newLayout,
+                                             uint32_t layerCount) {
     VkCommandBuffer cmd = BeginSingleTimeCommands();
     if (cmd == VK_NULL_HANDLE) return false;
 
@@ -347,7 +358,7 @@ bool QuarkVkResources::TransitionImageLayout(VkImage image, VkFormat /*format*/,
     barrier.subresourceRange.baseMipLevel   = 0;
     barrier.subresourceRange.levelCount     = 1;
     barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount     = 1;
+    barrier.subresourceRange.layerCount     = layerCount;
 
     VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -414,7 +425,8 @@ bool QuarkVkResources::TransitionImageLayout(VkImage image, VkFormat /*format*/,
     return true;
 }
 
-bool QuarkVkResources::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
+bool QuarkVkResources::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width,
+                                         uint32_t height, uint32_t layerCount) {
     VkCommandBuffer cmd = BeginSingleTimeCommands();
     if (cmd == VK_NULL_HANDLE) return false;
 
@@ -425,7 +437,7 @@ bool QuarkVkResources::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_
     region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.mipLevel       = 0;
     region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount     = 1;
+    region.imageSubresource.layerCount     = layerCount;
     region.imageOffset                     = {0, 0, 0};
     region.imageExtent                     = {width, height, 1};
 
@@ -695,5 +707,4 @@ bool QuarkVkResources::UpdateTextureRegionRGBA(uint32_t textureId, const unsigne
         textureId, offsetX, offsetY, width, height));
     return true;
 }
-
-} // namespace qc
+} // namespace qci

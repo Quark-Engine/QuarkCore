@@ -4,9 +4,7 @@
 
 #include <stdexcept>
 #include <string>
-
-namespace qc {
-
+namespace qci {
 QuarkGLDevice::~QuarkGLDevice() {
     Shutdown();
 }
@@ -118,5 +116,4 @@ std::array<float, 4> QuarkGLDevice::ToNormColor(Color color) {
     constexpr float inv = 1.0f / 255.0f;
     return { color.r * inv, color.g * inv, color.b * inv, color.a * inv };
 }
-
-} // namespace qc
+} // namespace qci

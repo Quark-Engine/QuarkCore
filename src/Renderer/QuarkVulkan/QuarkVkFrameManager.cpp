@@ -3,9 +3,7 @@
 #include "../../QuarkInternal.hpp"
 
 #include <stdexcept>
-
-namespace qc {
-
+namespace qci {
 void QuarkVkFrameManager::Initialize(VkDevice device, VkCommandPool commandPool, uint32_t frameCount) {
     if (device == VK_NULL_HANDLE || commandPool == VK_NULL_HANDLE || frameCount == 0) {
         throw std::runtime_error("Invalid parameters for QuarkVkFrameManager::Initialize.");
@@ -131,5 +129,4 @@ VkResult QuarkVkFrameManager::Present(VkSwapchainKHR swapchain, uint32_t frameIn
     }
     return presentResult;
 }
-
-} // namespace qc
+} // namespace qci

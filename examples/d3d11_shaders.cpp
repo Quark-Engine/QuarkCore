@@ -1,9 +1,6 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include <algorithm>
 #include <cmath>
-
-using namespace qc;
-
 constexpr const char* D3D11_VS = R"(
 struct VSInput {
     float2 position : POSITION;
@@ -192,23 +189,20 @@ int main() {
     const char* names[] = { "none", "chromatic aberration", "pixelate", "vignette", "scanlines", "tint (time)" };
 
     while (!WindowShouldClose()) {
-        Event ev;
-        while (PollEvent(ev)) { }
+        if (IsKeyDown(KEY_ONE)) activeShader = 0;
+        else if (IsKeyDown(KEY_TWO)) activeShader = 1;
+        else if (IsKeyDown(KEY_THREE)) activeShader = 2;
+        else if (IsKeyDown(KEY_FOUR)) activeShader = 3;
+        else if (IsKeyDown(KEY_FIVE)) activeShader = 4;
+        else if (IsKeyDown(KEY_SIX)) activeShader = 5;
 
-        if (IsKeyDown(KeyboardKey::Num1)) activeShader = 0;
-        else if (IsKeyDown(KeyboardKey::Num2)) activeShader = 1;
-        else if (IsKeyDown(KeyboardKey::Num3)) activeShader = 2;
-        else if (IsKeyDown(KeyboardKey::Num4)) activeShader = 3;
-        else if (IsKeyDown(KeyboardKey::Num5)) activeShader = 4;
-        else if (IsKeyDown(KeyboardKey::Num6)) activeShader = 5;
-
-        if (IsKeyDown(KeyboardKey::Up)) {
+        if (IsKeyDown(KEY_UP)) {
             if (activeShader == 1) chromaStrength += 0.001f;
             if (activeShader == 2) pixelSize      += 0.5f;
             if (activeShader == 3) vigRadius      += 0.01f;
             if (activeShader == 4) scanIntensity  += 0.02f;
         }
-        if (IsKeyDown(KeyboardKey::Down)) {
+        if (IsKeyDown(KEY_DOWN)) {
             if (activeShader == 1) chromaStrength -= 0.001f;
             if (activeShader == 2) pixelSize      -= 0.5f;
             if (activeShader == 3) vigRadius      -= 0.01f;

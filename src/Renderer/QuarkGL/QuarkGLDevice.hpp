@@ -6,9 +6,7 @@
 #include <SDL3/SDL.h>
 #include <array>
 #include <cstdint>
-
-namespace qc {
-
+namespace qci {
 class QuarkGLDevice {
 public:
     QuarkGLDevice() = default;
@@ -49,7 +47,5 @@ private:
     bool m_shouldClose = false;
     std::uint64_t m_lastFrameCounter = 0;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_GL_DEVICE__

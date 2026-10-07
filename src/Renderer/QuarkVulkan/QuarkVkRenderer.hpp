@@ -63,9 +63,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 static constexpr int    kVkMaxFramesInFlight  = 2;
 static constexpr size_t kVkMaxBatchQuads      = 4096;
 static constexpr size_t kVkMaxBatchVertices   = kVkMaxBatchQuads * 4;
@@ -214,6 +212,7 @@ public:
     void           DrawTextureNPatch(ITexture texture, NPatchInfo nPatchInfo, Rectangle dest, Vec2 origin, float rotation, Color tint) override;
     ITexture       LoadTexture(const char* filePath) override;
     ITexture       LoadTextureFromImage(const Image& image) override;
+    ITexture       LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize) override;
     ITexture       GetRenderTextureTexture(IRenderTexture target) override;
     void           UnloadTexture(ITexture& texture) override;
     bool           UpdateTexture(const ITexture& texture, const void* pixels) override;
@@ -228,8 +227,8 @@ public:
 
     void BeginTextureMode(IRenderTexture target) override;
     void EndTextureMode() override;
-    void SetTextureFilterMode(TextureFilterMode mode) override;
-    void SetTextureFilter(int filter) override;
+    void SetTextureFilterMode(TextureFilter mode) override;
+    void SetTextureFilter(TextureFilter filter) override;
     void SetTextureWrap(int wrap) override;
     void BeginScissorMode(int x, int y, int width, int height) override;
     void EndScissorMode() override;
@@ -254,9 +253,9 @@ public:
     void   SetShaderValue(const Shader& shader, int locIndex, float value) override;
     void   SetShaderValue(const Shader& shader, int locIndex, int value) override;
     void   SetShaderValue(const Shader& shader, int locIndex, const Color& value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const qc::Vec2& value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const qc::Vec4& value) override;
+    void   SetShaderValue(const Shader& shader, int locIndex, const Vec2& value) override;
+    void   SetShaderValue(const Shader& shader, int locIndex, const Vec3& value) override;
+    void   SetShaderValue(const Shader& shader, int locIndex, const Vec4& value) override;
     void   SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat) override;
     void   SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit) override;
     void   SetShaderValue(const Shader& shader, int locIndex, const void* value, int uniformType) override;
@@ -321,7 +320,7 @@ public:
     VkSampleCountFlagBits GetVulkanMSAASamples() const { return m_msaaSamples; }
     VkDescriptorSet       GetTextureDescriptorSet(uint32_t textureId) const;
 
-    TextureFilterMode m_textureFilterMode = TextureFilterMode::Linear;
+    TextureFilter m_textureFilterMode = TEXTURE_FILTER_BILINEAR;
     int m_textureWrapMode = TEXTURE_WRAP_REPEAT;
     bool m_scissorEnabled = false;
     VkRect2D m_scissorRect{{0, 0}, {0, 0}};
@@ -575,7 +574,5 @@ private:
     Camera2D m_camera2D{};
     bool     m_camera2DActive = false;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_RENDERER__

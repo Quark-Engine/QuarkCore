@@ -1,9 +1,7 @@
 #include "QuarkGL3D.hpp"
 
 #include <glad/glad.h>
-
-namespace qc {
-
+namespace qci {
 namespace {
 
 static const char* kVS3D = R"(
@@ -362,5 +360,4 @@ void QuarkGL3D::DrawLine3D(Model3DState& state, const Mat4& currentMatrix,
     state.lineVertices.push_back({TransformPoint(currentMatrix, start), {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}});
     state.lineVertices.push_back({TransformPoint(currentMatrix, end), {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}});
 }
-
-} // namespace qc
+} // namespace qci

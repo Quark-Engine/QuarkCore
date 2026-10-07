@@ -5,9 +5,7 @@
 
 #include <array>
 #include <vector>
-
-namespace qc {
-
+namespace qci {
 class QuarkVkDescriptorSetManager {
 public:
     static constexpr uint32_t kDescriptorPoolSlabSize = 256;
@@ -34,7 +32,5 @@ private:
     std::vector<VkDescriptorPool> m_descriptorPools;
     VkDescriptorPool m_imguiDescriptorPool = VK_NULL_HANDLE;
 };
-
-} // namespace qc
-
+} // namespace qci
 #endif // __QUARK_VK_DESCRIPTOR_SET_MANAGER__

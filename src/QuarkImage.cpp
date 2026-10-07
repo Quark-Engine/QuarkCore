@@ -22,9 +22,6 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-namespace qc {
-
 bool LoadImageFile(const char* path, ImageFileData& out, int desiredChannels) {
     out = {};
 
@@ -2330,5 +2327,3 @@ Color GetImageColor(Image image, int x, int y) {
     const std::uint8_t* src = static_cast<const std::uint8_t*>(image.data);
     return GetPixelColor(src + (static_cast<size_t>(y) * image.width + x) * bpp, image.format);
 }
-
-} // namespace qc

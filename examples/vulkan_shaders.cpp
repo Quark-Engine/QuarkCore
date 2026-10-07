@@ -42,31 +42,23 @@ void main() {
 } // namespace
 
 int main() {
-    qc::InitWindow(1280, 720, "QuarkCore Vulkan Shader Example", qc::RendererType::Vulkan);
-    qc::SetTargetFPS(60);
+    InitWindow(1280, 720, "QuarkCore Vulkan Shader Example", RendererType::Vulkan);
+    SetTargetFPS(60);
 
-    qc::Shader shader = qc::LoadShaderFromMemory(kVkSimpleVert, kVkSimpleFrag);
+    Shader shader = LoadShaderFromMemory(kVkSimpleVert, kVkSimpleFrag);
 
-    while (!qc::WindowShouldClose()) {
-        qc::Event ev;
-        while (qc::PollEvent(ev)) {
-            if (ev.type == qc::EventType::KeyDown && ev.key == static_cast<int>(qc::KeyboardKey::Escape)) {
-                qc::CloseWindow();
-                break;
-            }
-        }
+    while (!WindowShouldClose()) {
+        BeginDrawing();
+        ClearBackground(Color{20, 20, 30, 255});
 
-        qc::BeginDrawing();
-        qc::ClearBackground(qc::Color{20, 20, 30, 255});
-
-        qc::BeginShaderMode(shader);
-        qc::DrawRectangle(180, 110, 260, 260, qc::Color{180, 120, 220, 255});
-        qc::DrawCircle(940, 390, 120, qc::Color{80, 200, 160, 255});
-        qc::EndShaderMode();
-        qc::EndDrawing();
+        BeginShaderMode(shader);
+        DrawRectangle(180, 110, 260, 260, Color{180, 120, 220, 255});
+        DrawCircle(940, 390, 120, Color{80, 200, 160, 255});
+        EndShaderMode();
+        EndDrawing();
     }
 
-    qc::UnloadShader(shader);
-    qc::CloseWindow();
+    UnloadShader(shader);
+    CloseWindow();
     return 0;
 }

@@ -5,8 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-
-namespace qc {
+namespace qci {
 namespace {
 
 int NormalizeIntValue(const void* data) {
@@ -157,7 +156,7 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const C
     Write3DShaderUniform(shader.id, locIndex, rgba, sizeof(rgba));
 }
 
-void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const qc::Vec2& value) {
+void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const Vec2& value) {
     if (shader.id == 0 || locIndex < 0 || !m_vkShaderCompiler.IsProgramValid(shader.id)) {
         return;
     }
@@ -166,7 +165,7 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const q
     Write3DShaderUniform(shader.id, locIndex, vec, sizeof(vec));
 }
 
-void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const qc::Vec3& value) {
+void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const Vec3& value) {
     if (shader.id == 0 || locIndex < 0 || !m_vkShaderCompiler.IsProgramValid(shader.id)) {
         return;
     }
@@ -175,7 +174,7 @@ void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const q
     Write3DShaderUniform(shader.id, locIndex, vec, sizeof(vec));
 }
 
-void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const qc::Vec4& value) {
+void QuarkVkRenderer::SetShaderValue(const Shader& shader, int locIndex, const Vec4& value) {
     if (shader.id == 0 || locIndex < 0 || !m_vkShaderCompiler.IsProgramValid(shader.id)) {
         return;
     }
@@ -483,5 +482,4 @@ void QuarkVkRenderer::Write3DShaderUniform(uint32_t shaderId, int locIndex, cons
         return;
     }
 }
-
-} // namespace qc
+} // namespace qci

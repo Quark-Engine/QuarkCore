@@ -7,9 +7,7 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
-
-namespace qc::d3d11 {
-
+namespace qci::d3d11 {
 inline void ThrowIfFailed(HRESULT result, const char *operation) {
     if (FAILED(result)) {
         std::ostringstream message;
@@ -19,8 +17,6 @@ inline void ThrowIfFailed(HRESULT result, const char *operation) {
         throw std::runtime_error(message.str());
     }
 }
-
-} // namespace qc::d3d11
+} // namespace qci::d3d11
 #endif
-
 #endif // __QUARK_D3D11_COMMON__
