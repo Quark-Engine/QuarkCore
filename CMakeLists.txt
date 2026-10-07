@@ -414,6 +414,108 @@ else()
     )
 endif()
 
+set(CURL_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/curl")
+set(OPENSSL_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/openssl")
+
+if(WIN32 OR APPLE)
+    add_library(OpenSSL::Crypto SHARED IMPORTED GLOBAL)
+    add_library(OpenSSL::SSL SHARED IMPORTED GLOBAL)
+    target_include_directories(OpenSSL::Crypto INTERFACE "${OPENSSL_EXTERNAL_DIR}/include")
+    target_include_directories(OpenSSL::SSL INTERFACE "${OPENSSL_EXTERNAL_DIR}/include")
+
+    if(WIN32)
+        set_target_properties(OpenSSL::Crypto PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_IMPLIB_DEBUG   "${OPENSSL_EXTERNAL_DIR}/lib/debug/libcrypto.lib"
+            IMPORTED_IMPLIB_RELEASE "${OPENSSL_EXTERNAL_DIR}/lib/release/libcrypto.lib"
+            IMPORTED_LOCATION_DEBUG   "${OPENSSL_EXTERNAL_DIR}/lib/debug/libcrypto-3-x64.dll"
+            IMPORTED_LOCATION_RELEASE "${OPENSSL_EXTERNAL_DIR}/lib/release/libcrypto-3-x64.dll"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+        set_target_properties(OpenSSL::SSL PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_IMPLIB_DEBUG   "${OPENSSL_EXTERNAL_DIR}/lib/debug/libssl.lib"
+            IMPORTED_IMPLIB_RELEASE "${OPENSSL_EXTERNAL_DIR}/lib/release/libssl.lib"
+            IMPORTED_LOCATION_DEBUG   "${OPENSSL_EXTERNAL_DIR}/lib/debug/libssl-3-x64.dll"
+            IMPORTED_LOCATION_RELEASE "${OPENSSL_EXTERNAL_DIR}/lib/release/libssl-3-x64.dll"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    else()
+        set_target_properties(OpenSSL::Crypto PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION_DEBUG   "${OPENSSL_EXTERNAL_DIR}/lib/debug/libcrypto.3.dylib"
+            IMPORTED_LOCATION_RELEASE "${OPENSSL_EXTERNAL_DIR}/lib/release/libcrypto.3.dylib"
+            IMPORTED_LOCATION "${OPENSSL_EXTERNAL_DIR}/lib/release/libcrypto.3.dylib"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+        set_target_properties(OpenSSL::SSL PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION_DEBUG   "${OPENSSL_EXTERNAL_DIR}/lib/debug/libssl.3.dylib"
+            IMPORTED_LOCATION_RELEASE "${OPENSSL_EXTERNAL_DIR}/lib/release/libssl.3.dylib"
+            IMPORTED_LOCATION "${OPENSSL_EXTERNAL_DIR}/lib/release/libssl.3.dylib"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    endif()
+    target_link_libraries(OpenSSL::SSL INTERFACE OpenSSL::Crypto)
+    if(APPLE)
+        add_library(nghttp2::nghttp2 SHARED IMPORTED GLOBAL)
+        set_target_properties(nghttp2::nghttp2 PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION_DEBUG   "${CURL_EXTERNAL_DIR}/lib/debug/libnghttp2.14.dylib"
+            IMPORTED_LOCATION_RELEASE "${CURL_EXTERNAL_DIR}/lib/release/libnghttp2.14.dylib"
+            IMPORTED_LOCATION "${CURL_EXTERNAL_DIR}/lib/release/libnghttp2.14.dylib"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    endif()
+elseif(UNIX AND NOT ANDROID)
+    find_package(OpenSSL REQUIRED)
+endif()
+
+if(NOT ANDROID)
+    add_library(CURL::libcurl SHARED IMPORTED GLOBAL)
+    target_include_directories(CURL::libcurl INTERFACE "${CURL_EXTERNAL_DIR}/include")
+    if(WIN32)
+        set_target_properties(CURL::libcurl PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_IMPLIB_DEBUG   "${CURL_EXTERNAL_DIR}/lib/debug/libcurl-d_imp.lib"
+            IMPORTED_IMPLIB_RELEASE "${CURL_EXTERNAL_DIR}/lib/release/libcurl_imp.lib"
+            IMPORTED_LOCATION_DEBUG   "${CURL_EXTERNAL_DIR}/lib/debug/libcurl-d.dll"
+            IMPORTED_LOCATION_RELEASE "${CURL_EXTERNAL_DIR}/lib/release/libcurl.dll"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    elseif(APPLE)
+        set_target_properties(CURL::libcurl PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION_DEBUG   "${CURL_EXTERNAL_DIR}/lib/debug/libcurl-d.4.8.0.dylib"
+            IMPORTED_LOCATION_RELEASE "${CURL_EXTERNAL_DIR}/lib/release/libcurl.4.8.0.dylib"
+            IMPORTED_LOCATION "${CURL_EXTERNAL_DIR}/lib/release/libcurl.4.8.0.dylib"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    else()
+        set_target_properties(CURL::libcurl PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION_DEBUG   "${CURL_EXTERNAL_DIR}/lib/debug/libcurl-d.so.4.8.0"
+            IMPORTED_LOCATION_RELEASE "${CURL_EXTERNAL_DIR}/lib/release/libcurl.so.4.8.0"
+            IMPORTED_LOCATION "${CURL_EXTERNAL_DIR}/lib/release/libcurl.so.4.8.0"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    endif()
+    if(TARGET OpenSSL::SSL)
+        target_link_libraries(CURL::libcurl INTERFACE OpenSSL::SSL)
+    endif()
+    if(TARGET nghttp2::nghttp2)
+        target_link_libraries(CURL::libcurl INTERFACE nghttp2::nghttp2)
+    endif()
+endif()
+
 add_library(QuarkCore STATIC
     src/QuarkInput.cpp
     src/QuarkLights.cpp
@@ -464,6 +566,9 @@ else()
             ZLIB::ZLIB
             OpenAL::OpenAL
     )
+endif()
+if(TARGET CURL::libcurl)
+    target_link_libraries(QuarkCore PUBLIC CURL::libcurl)
 endif()
 
 set_target_properties(QuarkCore PROPERTIES UNITY_BUILD OFF)
@@ -852,6 +957,9 @@ if(QC_BUILD_EXAMPLES)
             $<IF:$<CONFIG:Debug>,${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll,${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.dll>
             $<IF:$<CONFIG:Debug>,${FREETYPE_EXTERNAL_DIR}/lib/debug/freetyped.dll,${FREETYPE_EXTERNAL_DIR}/lib/release/freetype.dll>
             $<IF:$<CONFIG:Debug>,${OPENAL_EXTERNAL_DIR}/lib/debug/OpenAL32.dll,${OPENAL_EXTERNAL_DIR}/lib/release/OpenAL32.dll>
+            $<IF:$<CONFIG:Debug>,${CURL_EXTERNAL_DIR}/lib/debug/libcurl-d.dll,${CURL_EXTERNAL_DIR}/lib/release/libcurl.dll>
+            $<IF:$<CONFIG:Debug>,${OPENSSL_EXTERNAL_DIR}/lib/debug/libssl-3-x64.dll,${OPENSSL_EXTERNAL_DIR}/lib/release/libssl-3-x64.dll>
+            $<IF:$<CONFIG:Debug>,${OPENSSL_EXTERNAL_DIR}/lib/debug/libcrypto-3-x64.dll,${OPENSSL_EXTERNAL_DIR}/lib/release/libcrypto-3-x64.dll>
             $<IF:$<CONFIG:Debug>,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Toolsd.dll,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools.dll>
             $<IF:$<CONFIG:Debug>,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-optd.dll,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-opt.dll>
             "${VULKAN_RUNTIME_DLL}"
@@ -965,6 +1073,9 @@ if(QC_BUILD_EXAMPLES)
             $<TARGET_FILE:SDL3::SDL3>
             $<TARGET_FILE:OpenAL::OpenAL>
         )
+        if(TARGET CURL::libcurl)
+            list(APPEND _RUNTIME_LIBS $<TARGET_FILE:CURL::libcurl>)
+        endif()
 
         if(NOT APPLE)
             add_custom_command(TARGET QuarkCore POST_BUILD
@@ -981,6 +1092,35 @@ if(QC_BUILD_EXAMPLES)
                 COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:OpenAL::OpenAL> $<TARGET_FILE_DIR:QuarkCore>/$<IF:$<CONFIG:Debug>,libopenal.so.1,libopenal.so.1>
                 COMMENT "Creating shared library symlinks next to QuarkCore (Linux)..."
             )
+            if(TARGET CURL::libcurl)
+                add_custom_command(TARGET QuarkCore POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:QuarkCore>/libcurl.so.4
+                    COMMAND ${CMAKE_COMMAND} -E create_symlink
+                        $<TARGET_FILE_NAME:CURL::libcurl>
+                        $<TARGET_FILE_DIR:QuarkCore>/libcurl.so.4
+                    COMMENT "Creating libcurl symlink next to QuarkCore (Linux)..."
+                )
+            endif()
+        elseif(APPLE)
+            set(_CURL_DYLIB_NAME "$<IF:$<CONFIG:Debug>,libcurl-d.4.dylib,libcurl.4.dylib>")
+            add_custom_command(TARGET QuarkCore POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:CURL::libcurl>
+                    $<TARGET_FILE:OpenSSL::SSL>
+                    $<TARGET_FILE:OpenSSL::Crypto>
+                    $<TARGET_FILE:nghttp2::nghttp2>
+                    $<TARGET_FILE_DIR:QuarkCore>
+                COMMAND install_name_tool -change
+                    "/opt/homebrew/opt/libnghttp2/lib/libnghttp2.14.dylib"
+                    "@rpath/libnghttp2.14.dylib"
+                    "$<TARGET_FILE_DIR:QuarkCore>/$<TARGET_FILE_NAME:CURL::libcurl>"
+                COMMAND ${CMAKE_COMMAND} -E rm -f
+                    "$<TARGET_FILE_DIR:QuarkCore>/${_CURL_DYLIB_NAME}"
+                COMMAND ${CMAKE_COMMAND} -E create_symlink
+                    $<TARGET_FILE_NAME:CURL::libcurl>
+                    "$<TARGET_FILE_DIR:QuarkCore>/${_CURL_DYLIB_NAME}"
+                COMMENT "Copying curl and OpenSSL runtimes next to QuarkCore (macOS)..."
+            )
         endif()
 
         foreach(i RANGE ${_last})
@@ -995,10 +1135,17 @@ if(QC_BUILD_EXAMPLES)
             add_executable(${_target} ${_source})
             target_link_libraries(${_target} PRIVATE ${_backend_target})
 
-            set_target_properties(${_target} PROPERTIES
-                BUILD_RPATH "$ORIGIN"
-                INSTALL_RPATH "$ORIGIN"
-            )
+            if(APPLE)
+                set_target_properties(${_target} PROPERTIES
+                    BUILD_RPATH "@loader_path"
+                    INSTALL_RPATH "@loader_path"
+                )
+            else()
+                set_target_properties(${_target} PROPERTIES
+                    BUILD_RPATH "$ORIGIN"
+                    INSTALL_RPATH "$ORIGIN"
+                )
+            endif()
         endforeach()
     endif()
 endif()
