@@ -519,6 +519,7 @@ endif()
 add_library(QuarkCore STATIC
     src/QuarkInput.cpp
     src/QuarkLights.cpp
+    src/QuarkNetwork.cpp
     src/QuarkWindow.cpp
     src/QuarkImage.cpp
     src/QuarkUtils.cpp
@@ -548,6 +549,8 @@ target_include_directories(QuarkCore PUBLIC
 
 target_compile_definitions(QuarkCore PRIVATE QUARKCORE_BUILD_DLL NOMINMAX)
 
+find_package(Threads REQUIRED)
+
 if(WIN32)
     target_link_libraries(QuarkCore
         PUBLIC
@@ -556,6 +559,7 @@ if(WIN32)
             freetype
             ZLIB::ZLIB
             OpenAL::OpenAL
+            Threads::Threads
     )
 else()
     target_link_libraries(QuarkCore
@@ -565,10 +569,12 @@ else()
             freetype
             ZLIB::ZLIB
             OpenAL::OpenAL
+            Threads::Threads
     )
 endif()
 if(TARGET CURL::libcurl)
     target_link_libraries(QuarkCore PUBLIC CURL::libcurl)
+    target_compile_definitions(QuarkCore PRIVATE QC_HAS_CURL)
 endif()
 
 set_target_properties(QuarkCore PROPERTIES UNITY_BUILD OFF)
@@ -860,6 +866,16 @@ if(WIN32)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(quark_network_tests
+        tests/QuarkNetworkTests.cpp
+    )
+    target_link_libraries(quark_network_tests PRIVATE QuarkCore)
+    if(WIN32)
+        target_link_libraries(quark_network_tests PRIVATE ws2_32)
+    endif()
+    target_compile_definitions(quark_network_tests PRIVATE QUARKCORE_STATIC)
+    add_test(NAME QuarkNetwork COMMAND quark_network_tests)
+
     add_executable(quark_math_template_tests
         tests/QuarkMathTemplateTests.cpp
     )
