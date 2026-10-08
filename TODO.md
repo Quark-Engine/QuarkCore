@@ -2,7 +2,6 @@
 
 ### Todo
 
-- [ ] Network API
 - [ ] QuarkSL for multibackend shaders
 - [ ] OpenGL ES backend for mobile devices
 - [ ] DirectX 9 Backend
@@ -10,7 +9,7 @@
 
 ### In Progress
 
-- [ ] Full compatibility with Raylib
+- [ ] Network API
 
 ### Done ✓
 
