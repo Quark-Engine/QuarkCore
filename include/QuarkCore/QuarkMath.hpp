@@ -363,24 +363,24 @@ using Vec2 = Vec2f;
 using Vector2 = Vec2f;
 
 template <typename T>
-struct Rect {
+struct RectT {
     T x = T{};
     T y = T{};
     T width = T{};
     T height = T{};
 
-    bool operator==(const Rect& r) const {
+    bool operator==(const RectT& r) const {
         return x == r.x && y == r.y && width == r.width && height == r.height;
     }
-    bool operator!=(const Rect& r) const {
+    bool operator!=(const RectT& r) const {
         return !(*this == r);
     }
 };
 
-using Recti = Rect<int>;
-using Rectf = Rect<float>;
-using Rectd = Rect<double>;
-using Rectu = Rect<unsigned int>;
+using Recti = RectT<int>;
+using Rectf = RectT<float>;
+using Rectd = RectT<double>;
+using Rectu = RectT<unsigned int>;
 using Rectangle = Rectf;
 
 /**
