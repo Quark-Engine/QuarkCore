@@ -86,6 +86,7 @@ std::array<std::array<float, SDL_GAMEPAD_AXIS_COUNT>, 16> gGamepadDeadZones{};
 #define gRenderer (*gRendererPtr)
 
 int gTextLineSpacing = 0;
+static TraceLogCallback gTraceLogCallback = nullptr;
 
 WindowState gWin;
 int   gLastKeyPressed   = 0;
@@ -203,11 +204,17 @@ static bool InitD3D11Backend(int width, int height, const char* title) {
 
 void WriteLog(LogLevel level, const char* type, const std::string& message) {
     if (level < gWin.minimumLogLevel || level == LogLevel::None) return;
-    std::cout
+    std::ostringstream logMessage;
+    logMessage
         << '[' << FormatTimeNow() << ']'
         << '[' << ToString(level) << ']'
         << '[' << type << "] "
-        << message << '\n';
+        << message;
+    const std::string formattedMessage = logMessage.str();
+    std::cout << formattedMessage << '\n';
+    if (gTraceLogCallback != nullptr) {
+        gTraceLogCallback(level, formattedMessage.c_str());
+    }
 }
 
 void CopyText(char* dst, size_t size, const char* src) {
@@ -774,6 +781,10 @@ bool WindowShouldClose() {
     return gWin.shouldClose;
 }
 
+void RequestWindowClose() {
+    gWin.shouldClose = true;
+}
+
 bool IsWindowReady() {
     return gWin.window != nullptr;
 }
@@ -802,6 +813,13 @@ double GetTime() {
 }
 
 void SetLogLevel(LogLevel level) { gWin.minimumLogLevel = level; }
+
+void SetTraceLogCallback(TraceLogCallback callback) {
+    gTraceLogCallback = callback;
+    if (callback != nullptr) {
+        TraceLog(LogLevel::Info, "WINDOW", "Trace log callback registered");
+    }
+}
 
 void TraceLog(LogLevel level, const char* type, const char* message) {
     WriteLog(level, type, message ? message : "");

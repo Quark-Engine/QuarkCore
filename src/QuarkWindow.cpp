@@ -490,15 +490,6 @@ bool OpenURL(const char* url) {
     return SDL_OpenURL(url);
 }
 
-void SetTraceLogCallback(TraceLogCallback callback) {
-    static TraceLogCallback gCallback = nullptr;
-    gCallback = callback;
-    (void)gCallback;
-    if (callback != nullptr) {
-        TraceLog(LogLevel::Info, "WINDOW", "Trace log callback registered");
-    }
-}
-
 SDL_Window* GetNativeWindow() {
     EnsureInitialized();
     return gWin.window;

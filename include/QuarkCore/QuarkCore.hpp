@@ -644,6 +644,10 @@ QCAPI RendererType GetCurrentBackend();
  */
 QCAPI bool WindowShouldClose();
 /**
+ * @brief Request that the application close the window on its normal shutdown path.
+ */
+QCAPI void RequestWindowClose();
+/**
  * @brief Close and destroy the application window.
  */
 QCAPI void CloseWindow();
