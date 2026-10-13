@@ -1757,6 +1757,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                                 m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
                         vkCmdDraw(cmd, item.firstVertex - cursor, 1, cursor, 0);
+                        RecordDebugRenderDraw(item.firstVertex - cursor);
                     }
                     const VkDescriptorSet descriptorSet = item.descriptorSet != VK_NULL_HANDLE
                         ? item.descriptorSet : whiteDescriptorSet;
@@ -1772,6 +1773,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                             m_vkPipeline.GetLayout3D(), 0, 1, &descriptorSet, 0, nullptr);
                     vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
+                    RecordDebugRenderDraw(item.vertexCount);
                     cursor = std::max(cursor, item.firstVertex + item.vertexCount);
                 }
                 const uint32_t triEnd = pass.triFirstVertex + pass.triVertexCount;
@@ -1780,15 +1782,18 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                             m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
                     vkCmdDraw(cmd, triEnd - cursor, 1, cursor, 0);
+                    RecordDebugRenderDraw(triEnd - cursor);
                 }
             } else if (pass.triVertexCount > 0 && m_vkPipeline.GetOffscreen3DTri() != VK_NULL_HANDLE) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DTri());
                 vkCmdDraw(cmd, pass.triVertexCount, 1, pass.triFirstVertex, 0);
+                RecordDebugRenderDraw(pass.triVertexCount);
             }
             if (pass.lineVertexCount > 0 && m_vkPipeline.GetOffscreen3DLines() != VK_NULL_HANDLE) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DLines());
                 vkCmdDraw(cmd, pass.lineVertexCount, 1,
                           static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + pass.lineFirstVertex, 0);
+                RecordDebugRenderDraw(pass.lineVertexCount);
             }
         }
 
@@ -1811,6 +1816,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     m_vkPipeline.GetLayout2D(), 0, 1, &item.descriptorSet, 0, nullptr);
             vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
+            RecordDebugRenderDraw(item.indexCount);
         }
 
         vkCmdEndRenderPass(cmd);
@@ -1953,6 +1959,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                             m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
                     vkCmdDraw(cmd, item.firstVertex - cursor, 1, cursor, 0);
+                    RecordDebugRenderDraw(item.firstVertex - cursor);
                 }
                 VkPipeline pipeline = m_vkPipeline.Get3DTri();
                 VkPipelineLayout layout = m_vkPipeline.GetLayout3D();
@@ -1970,6 +1977,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                         layout, 0, 1, &descriptorSet, 0, nullptr);
                 vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
+                RecordDebugRenderDraw(item.vertexCount);
                 cursor = std::max(cursor, item.firstVertex + item.vertexCount);
             }
             const uint32_t triEnd = mainPass->triFirstVertex + mainPass->triVertexCount;
@@ -1978,11 +1986,13 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                         m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
                 vkCmdDraw(cmd, triEnd - cursor, 1, cursor, 0);
+                RecordDebugRenderDraw(triEnd - cursor);
             }
         } else {
             if (mainPass->triVertexCount > 0 && custom3DPipeline != VK_NULL_HANDLE) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, custom3DPipeline);
                 vkCmdDraw(cmd, mainPass->triVertexCount, 1, mainPass->triFirstVertex, 0);
+                RecordDebugRenderDraw(mainPass->triVertexCount);
             }
         }
 
@@ -1992,6 +2002,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get3DLines());
             vkCmdDraw(cmd, mainPass->lineVertexCount, 1,
                       static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + mainPass->lineFirstVertex, 0);
+            RecordDebugRenderDraw(mainPass->lineVertexCount);
         }
     }
 
@@ -2038,6 +2049,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     m_vkPipeline.GetLayout2D(), 0, 1, &item.descriptorSet, 0, nullptr);
             vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
+            RecordDebugRenderDraw(item.indexCount);
         }
     }
 

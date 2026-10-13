@@ -97,6 +97,7 @@ void QuarkGLBatch::Flush() {
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(m_batchVertices.size() * sizeof(BatchVertex)),
                  m_batchVertices.data(), GL_DYNAMIC_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_batchVertices.size()));
+    RecordDebugRenderDraw(m_batchVertices.size());
 
     m_batchVertices.clear();
 }

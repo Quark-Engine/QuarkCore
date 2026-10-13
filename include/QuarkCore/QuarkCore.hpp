@@ -2271,6 +2271,13 @@ QCAPI float GetMouseWheelMove();
  */
 QCAPI void BeginDrawing();
 /**
+ * @brief Enable or disable the on-screen renderer debug interface.
+ *
+ * When enabled, the interface is drawn automatically before each frame is presented.
+ * @param enabled Whether to show the debug interface.
+ */
+QCAPI void EnableDebugInterface(bool enabled = true);
+/**
  * @brief End drawing and present the frame.
  *
  * @return true on success.

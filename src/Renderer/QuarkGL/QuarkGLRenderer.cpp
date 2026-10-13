@@ -2023,6 +2023,7 @@ void QuarkGLRenderer::FlushLines3D() {
     );
 
     glDrawArrays(GL_LINES, 0, (GLsizei)m_3d.lineVertices.size());
+    RecordDebugRenderDraw(m_3d.lineVertices.size());
 
     glBindVertexArray(0);
     m_3d.lineVertices.clear();
@@ -2056,6 +2057,7 @@ void QuarkGLRenderer::FlushTriangles3D() {
     );
 
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)m_3d.triVertices.size());
+    RecordDebugRenderDraw(m_3d.triVertices.size());
 
     glBindVertexArray(0);
     m_3d.triVertices.clear();
@@ -2143,6 +2145,7 @@ void QuarkGLRenderer::DrawPlane(Vec3 c,Vec2 size,Color color){
 
     glBindVertexArray(m_3d.planeVAO);
     glDrawElements(GL_TRIANGLES, m_3d.planeIndexCount, GL_UNSIGNED_INT, nullptr);
+    RecordDebugRenderDraw(static_cast<std::uint64_t>(m_3d.planeIndexCount));
     glBindVertexArray(0);
 }
 
@@ -2156,6 +2159,7 @@ void QuarkGLRenderer::DrawCube(Vec3 pos,float w,float h,float l,Color color){
 
     glBindVertexArray(m_3d.cubeVAO);
     glDrawElements(GL_TRIANGLES, m_3d.cubeIndexCount, GL_UNSIGNED_INT, nullptr);
+    RecordDebugRenderDraw(static_cast<std::uint64_t>(m_3d.cubeIndexCount));
     glBindVertexArray(0);
 }
 
@@ -2210,6 +2214,7 @@ void QuarkGLRenderer::DrawSphere(Vec3 pos, float r, Color color) {
 
     glBindVertexArray(m_3d.sphereVAO);
     glDrawElements(GL_TRIANGLES, m_3d.sphereIndexCount, GL_UNSIGNED_INT, nullptr);
+    RecordDebugRenderDraw(static_cast<std::uint64_t>(m_3d.sphereIndexCount));
     glBindVertexArray(0);
 }
 
@@ -2989,8 +2994,10 @@ void QuarkGLRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
 
     if (mesh.eboId) {
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.triangleCount * 3), GL_UNSIGNED_SHORT, nullptr);
+        RecordDebugRenderDraw(static_cast<std::uint64_t>(mesh.triangleCount) * 3);
     } else {
         glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
+        RecordDebugRenderDraw(static_cast<std::uint64_t>(mesh.vertexCount));
     }
 
     glBindVertexArray(0);
@@ -3057,8 +3064,10 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
 
         if (mesh.eboId) {
             glDrawElements(GL_TRIANGLES, (GLsizei)(mesh.triangleCount * 3), GL_UNSIGNED_SHORT, nullptr);
+            RecordDebugRenderDraw(static_cast<std::uint64_t>(mesh.triangleCount) * 3);
         } else {
             glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
+            RecordDebugRenderDraw(static_cast<std::uint64_t>(mesh.vertexCount));
         }
         glBindVertexArray(0);
     }
@@ -3113,8 +3122,10 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Col
 
         if (mesh.eboId) {
             glDrawElements(GL_TRIANGLES, (GLsizei)(mesh.triangleCount * 3), GL_UNSIGNED_SHORT, nullptr);
+            RecordDebugRenderDraw(static_cast<std::uint64_t>(mesh.triangleCount) * 3);
         } else {
             glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
+            RecordDebugRenderDraw(static_cast<std::uint64_t>(mesh.vertexCount));
         }
         glBindVertexArray(0);
     }

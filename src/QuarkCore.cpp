@@ -96,6 +96,22 @@ Vec2  gMouseOffset{};
 Vec2  gMouseScale{1.0f, 1.0f};
 bool  gCursorHidden     = false;
 
+struct DebugRenderStats {
+    std::uint64_t vertices = 0;
+    std::uint64_t calls = 0;
+};
+
+DebugRenderStats gCurrentDebugRenderStats;
+DebugRenderStats gPreviousDebugRenderStats;
+bool gDebugInterfaceEnabled = false;
+
+namespace qci {
+void RecordDebugRenderDraw(std::uint64_t vertexCount) {
+    gCurrentDebugRenderStats.vertices += vertexCount;
+    ++gCurrentDebugRenderStats.calls;
+}
+} // namespace qci
+
 struct rAudioProcessor {
     AudioCallback callback = nullptr;
     rAudioProcessor* next = nullptr;
@@ -131,7 +147,6 @@ bool gVrStereoEnabled = false;
 VrStereoConfig gCurrentVrStereoConfig{};
 Texture2D gShapesTexture{};
 Rectangle gShapesTextureRect{};
-
 
 const char* ToString(LogLevel level) {
     switch (level) {
@@ -2780,12 +2795,48 @@ static void DrawModelWireframe(const Model& model, const Mat4& transform, Color 
 void BeginDrawing()
 {
     EnsureInitialized();
+    gPreviousDebugRenderStats = gCurrentDebugRenderStats;
+    gCurrentDebugRenderStats = {};
     gRenderer.BeginDrawing();
+}
+
+void EnableDebugInterface(bool enabled)
+{
+    gDebugInterfaceEnabled = enabled;
 }
 
 void EndDrawing()
 {
     EnsureInitialized();
+    if (gDebugInterfaceEnabled)
+    {
+        const RendererType backend = GetCurrentBackend();
+        const int lineCount = 3;
+        const int fontSize = 20;
+        const int lineHeight = 24;
+        const int firstY = std::max(0, GetScreenHeight() - lineCount * lineHeight - 12);
+        char line[128];
+        const char* prefix = backend == RendererType::OpenGL ? "OGL"
+            : backend == RendererType::Vulkan
+#if defined(__APPLE__)
+                ? "MVK"
+#else
+                ? "VK"
+#endif
+            : backend == RendererType::D3D11 ? "D3D11" : "Renderer";
+
+        std::snprintf(line, sizeof(line), "%s Verts: %llu", prefix,
+            static_cast<unsigned long long>(gPreviousDebugRenderStats.vertices));
+        DrawDebugText(line, 10, firstY, fontSize, WHITE);
+
+        std::snprintf(line, sizeof(line), "%s Calls: %llu", prefix,
+            static_cast<unsigned long long>(gPreviousDebugRenderStats.calls));
+        DrawDebugText(line, 10, firstY + lineHeight, fontSize, WHITE);
+
+        std::snprintf(line, sizeof(line), "FPS: %d / DT: %.2f ms",
+            GetFPS(), static_cast<double>(GetFrameTime()) * 1000.0);
+        DrawDebugText(line, 10, firstY + 2 * lineHeight, fontSize, WHITE);
+    }
     gRenderer.EndDrawing();
 }
 

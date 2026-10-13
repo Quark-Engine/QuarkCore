@@ -1,4 +1,5 @@
 #include "QuarkD3D11CommandContext.hpp"
+#include "../QuarkIRenderer.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -189,6 +190,7 @@ void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
         m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), cursor,
                                          static_cast<size_t>(chunk) * strideBytes);
         m_context->Draw(chunk, 0);
+        RecordDebugRenderDraw(chunk);
 
         remaining -= chunk;
         cursor += static_cast<size_t>(chunk) * kStrideFloats;
@@ -218,6 +220,7 @@ void D3D11CommandContext::Draw3DTextured(const float *vertices, UINT vertexCount
         m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), cursor,
                                          static_cast<size_t>(chunk) * strideBytes);
         m_context->Draw(chunk, 0);
+        RecordDebugRenderDraw(chunk);
 
         remaining -= chunk;
         cursor += static_cast<size_t>(chunk) * kStrideFloats;
@@ -283,6 +286,7 @@ void D3D11CommandContext::Draw3DShader(const float *vertices, UINT vertexCount,
         m_resources->UpdateDynamicBuffer(m_context, m_pipeline->VertexBuffer3D(), cursor,
                                          static_cast<size_t>(chunk) * shaderOverride.strideBytes);
         m_context->Draw(chunk, 0);
+        RecordDebugRenderDraw(chunk);
 
         remaining -= chunk;
         cursor += static_cast<size_t>(chunk) * (shaderOverride.strideBytes / sizeof(float));
@@ -336,6 +340,7 @@ void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, i
                                          static_cast<UINT>(vertices.size() * sizeof(float)));
         BindOverride(nullptr);
         m_context->Draw(3, 0);
+        RecordDebugRenderDraw(3);
         return;
     }
 
@@ -443,6 +448,7 @@ void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
             static_cast<UINT>(vertices.size() * sizeof(float)));
         BindOverride(shaderResource);
         m_context->Draw(6, 0);
+        RecordDebugRenderDraw(6);
         return;
     }
 
@@ -557,6 +563,7 @@ void D3D11CommandContext::FlushBatch()
             boundSRV = srv;
         }
         m_context->DrawIndexed(item.indexCount, item.indexStart, 0);
+        RecordDebugRenderDraw(item.indexCount);
     }
 
     m_batchVertices.clear();

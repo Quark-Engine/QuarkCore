@@ -1,4 +1,5 @@
 #include "QuarkGL3D.hpp"
+#include "../QuarkIRenderer.hpp"
 
 #include <glad/glad.h>
 namespace qci {
@@ -306,6 +307,7 @@ void QuarkGL3D::FlushLines3D(Model3DState& state) {
     glBindBuffer(GL_ARRAY_BUFFER, state.lineVBO);
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(state.lineVertices.size() * sizeof(Vertex3D)), state.lineVertices.data(), GL_DYNAMIC_DRAW);
     glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(state.lineVertices.size()));
+    RecordDebugRenderDraw(state.lineVertices.size());
     glBindVertexArray(0);
     state.lineVertices.clear();
 }
@@ -324,6 +326,7 @@ void QuarkGL3D::FlushTriangles3D(Model3DState& state) {
     glBindBuffer(GL_ARRAY_BUFFER, state.triVBO);
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(state.triVertices.size() * sizeof(Vertex3D)), state.triVertices.data(), GL_DYNAMIC_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(state.triVertices.size()));
+    RecordDebugRenderDraw(state.triVertices.size());
     glBindVertexArray(0);
     state.triVertices.clear();
 }

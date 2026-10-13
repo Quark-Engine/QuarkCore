@@ -4,7 +4,10 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkFont.hpp"
 #include "QuarkTexture.hpp"
+#include <cstdint>
 namespace qci {
+void RecordDebugRenderDraw(std::uint64_t vertexCount);
+
 class QCAPI IRenderer {
 public:
     virtual ~IRenderer() = default;
