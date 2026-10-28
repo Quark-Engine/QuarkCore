@@ -350,6 +350,10 @@ void QuarkVkRenderer::UnloadTexture(ITexture& texture) {
     }
 
     TraceLog(LogLevel::Info, "TEXTURE", TextFormat("[Vulkan] Texture unloaded (ID: %u, %dx%d)", texture.id, texture.width, texture.height));
+    if (m_device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(m_device);
+    }
+    ReplaceMaterialTextureReferences(texture.id);
     m_vkResources.DestroyTexture(texture.id);
     texture = ITexture{};
 }

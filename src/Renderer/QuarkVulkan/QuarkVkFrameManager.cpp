@@ -38,7 +38,6 @@ void QuarkVkFrameManager::Initialize(VkDevice device, VkCommandPool commandPool,
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
         if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &frame.imageAvailable) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &frame.renderFinished) != VK_SUCCESS ||
             vkCreateFence(device, &fenceInfo, nullptr, &frame.inFlightFence) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create Vulkan synchronization objects.");
         }
@@ -47,15 +46,29 @@ void QuarkVkFrameManager::Initialize(VkDevice device, VkCommandPool commandPool,
     TraceLog(LogLevel::Trace, "VULKAN", TextFormat("Allocated %u frame command buffers and synchronization objects.", frameCount));
 }
 
+void QuarkVkFrameManager::SetSwapchainImageCount(uint32_t imageCount) {
+    for (VkSemaphore semaphore : m_renderFinishedByImage) {
+        if (semaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore(m_device, semaphore, nullptr);
+        }
+    }
+    m_renderFinishedByImage.clear();
+    m_renderFinishedByImage.resize(imageCount, VK_NULL_HANDLE);
+
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    for (VkSemaphore& semaphore : m_renderFinishedByImage) {
+        if (vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create Vulkan presentation semaphore.");
+        }
+    }
+}
+
 void QuarkVkFrameManager::Shutdown() {
     for (VkFrameDataExt& frame : m_frames) {
         if (frame.commandBuffer  != VK_NULL_HANDLE) {
             vkFreeCommandBuffers(m_device, m_commandPool, 1, &frame.commandBuffer);
             frame.commandBuffer = VK_NULL_HANDLE;
-        }
-        if (frame.renderFinished != VK_NULL_HANDLE) {
-            vkDestroySemaphore(m_device, frame.renderFinished, nullptr);
-            frame.renderFinished = VK_NULL_HANDLE;
         }
         if (frame.imageAvailable != VK_NULL_HANDLE) {
             vkDestroySemaphore(m_device, frame.imageAvailable, nullptr);
@@ -66,6 +79,12 @@ void QuarkVkFrameManager::Shutdown() {
             frame.inFlightFence = VK_NULL_HANDLE;
         }
     }
+    for (VkSemaphore semaphore : m_renderFinishedByImage) {
+        if (semaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore(m_device, semaphore, nullptr);
+        }
+    }
+    m_renderFinishedByImage.clear();
     m_frames.clear();
     m_commandPool = VK_NULL_HANDLE;
     m_device      = VK_NULL_HANDLE;
@@ -91,12 +110,14 @@ void QuarkVkFrameManager::ResetFrame(uint32_t frameIndex) {
     }
 }
 
-bool QuarkVkFrameManager::Submit(uint32_t frameIndex, VkQueue graphicsQueue) {
+bool QuarkVkFrameManager::Submit(uint32_t frameIndex, uint32_t imageIndex, VkQueue graphicsQueue) {
+    if (imageIndex >= m_renderFinishedByImage.size()) return false;
     const VkFrameDataExt& frame = m_frames[frameIndex];
+    const VkSemaphore renderFinished = m_renderFinishedByImage[imageIndex];
 
     VkSemaphore waitSemaphores[]   = { frame.imageAvailable };
     VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-    VkSemaphore signalSemaphores[] = { frame.renderFinished };
+    VkSemaphore signalSemaphores[] = { renderFinished };
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -113,20 +134,18 @@ bool QuarkVkFrameManager::Submit(uint32_t frameIndex, VkQueue graphicsQueue) {
 
 VkResult QuarkVkFrameManager::Present(VkSwapchainKHR swapchain, uint32_t frameIndex,
                                       uint32_t imageIndex, VkQueue presentQueue) {
-    const VkFrameDataExt& frame = m_frames[frameIndex];
+    (void)frameIndex;
+    if (imageIndex >= m_renderFinishedByImage.size()) return VK_ERROR_INITIALIZATION_FAILED;
+    const VkSemaphore renderFinished = m_renderFinishedByImage[imageIndex];
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores    = &frame.renderFinished;
+    presentInfo.pWaitSemaphores    = &renderFinished;
     presentInfo.swapchainCount     = 1;
     presentInfo.pSwapchains        = &swapchain;
     presentInfo.pImageIndices      = &imageIndex;
 
-    const VkResult presentResult = vkQueuePresentKHR(presentQueue, &presentInfo);
-    if (presentResult == VK_SUCCESS) {
-        vkQueueWaitIdle(presentQueue);
-    }
-    return presentResult;
+    return vkQueuePresentKHR(presentQueue, &presentInfo);
 }
 } // namespace qci

@@ -60,7 +60,8 @@ void main() {
     gl_Position = aPosition;
     vTexCoord = aTexCoord;
     vColor = aColor;
-    vNormal = normalize(aNormal.xyz);
+    float normalLength = length(aNormal.xyz);
+    vNormal = normalLength > 0.0001 ? aNormal.xyz / normalLength : vec3(0.0);
     vWorldPosition = aWorldPosition.xyz;
     vTangent = vec4(normalize(aTangent.xyz), aTangent.w);
 }
@@ -118,10 +119,30 @@ void main() {
         normal = normalize(t * mapNormal.x + b * mapNormal.y + n * z);
     }
     vec3 lit = baseColor;
-    if (length(normal) > 0.001) {
+    if (dot(normal, normal) > 0.000001) {
         lit = ApplyLights(vWorldPosition, normal, baseColor);
     }
     outColor = vec4(lit, texel.a * vColor.a);
+}
+)glsl";
+
+const char* kRuntime3DLineVertexShader = R"glsl(
+#version 450
+layout(location = 0) in vec4 aPosition;
+layout(location = 2) in vec4 aColor;
+layout(location = 0) out vec4 vColor;
+void main() {
+    gl_Position = aPosition;
+    vColor = aColor;
+}
+)glsl";
+
+const char* kRuntime3DLineFragmentShader = R"glsl(
+#version 450
+layout(location = 0) in vec4 vColor;
+layout(location = 0) out vec4 outColor;
+void main() {
+    outColor = vColor;
 }
 )glsl";
 
@@ -578,7 +599,8 @@ VkPipeline QuarkVkPipeline::Create2DPipeline(VkRenderPass renderPass,
 VkPipeline QuarkVkPipeline::Create3DPipeline(VkRenderPass renderPass,
                                              VkPrimitiveTopology topology,
                                              VkShaderModule vertexModule,
-                                             VkShaderModule fragmentModule) {
+                                             VkShaderModule fragmentModule,
+                                             bool gpuMeshTransform) {
     if (m_device == VK_NULL_HANDLE || renderPass == VK_NULL_HANDLE) {
         return VK_NULL_HANDLE;
     }
@@ -587,14 +609,20 @@ VkPipeline QuarkVkPipeline::Create3DPipeline(VkRenderPass renderPass,
 
     const bool ownsVertexModule = vertexModule == VK_NULL_HANDLE;
     const bool ownsFragmentModule = fragmentModule == VK_NULL_HANDLE;
+    const bool unlitLinePipeline = topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST &&
+                                   ownsVertexModule && ownsFragmentModule;
     if (ownsVertexModule) {
         const std::vector<uint32_t> vertCode = CompileBuiltInShader(
-            kRuntime3DVertexShader, shaderc_vertex_shader, "built-in 3D vertex shader");
+            unlitLinePipeline ? kRuntime3DLineVertexShader : kRuntime3DVertexShader,
+            shaderc_vertex_shader,
+            unlitLinePipeline ? "built-in unlit 3D line vertex shader" : "built-in 3D vertex shader");
         vertexModule = CreateShaderModule(m_device, vertCode);
     }
     if (ownsFragmentModule) {
         const std::vector<uint32_t> fragCode = CompileBuiltInShader(
-            kRuntime3DFragmentShader, shaderc_fragment_shader, "built-in 3D fragment shader");
+            unlitLinePipeline ? kRuntime3DLineFragmentShader : kRuntime3DFragmentShader,
+            shaderc_fragment_shader,
+            unlitLinePipeline ? "built-in unlit 3D line fragment shader" : "built-in 3D fragment shader");
         fragmentModule = CreateShaderModule(m_device, fragCode);
     }
 
@@ -612,7 +640,7 @@ VkPipeline QuarkVkPipeline::Create3DPipeline(VkRenderPass renderPass,
 
     VkVertexInputBindingDescription bindingDesc{};
     bindingDesc.binding   = 0;
-    bindingDesc.stride    = sizeof(Vk3DVertex);
+    bindingDesc.stride    = gpuMeshTransform ? sizeof(VkGpuMeshVertex) : sizeof(Vk3DVertex);
     bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     std::array<VkVertexInputAttributeDescription, 6> attributes{};
@@ -639,12 +667,12 @@ VkPipeline QuarkVkPipeline::Create3DPipeline(VkRenderPass renderPass,
     attributes[4].binding  = 0;
     attributes[4].location = 4;
     attributes[4].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attributes[4].offset   = offsetof(Vk3DVertex, wx);
+    attributes[4].offset   = gpuMeshTransform ? offsetof(VkGpuMeshVertex, wx) : offsetof(Vk3DVertex, wx);
 
     attributes[5].binding  = 0;
     attributes[5].location = 5;
     attributes[5].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attributes[5].offset   = offsetof(Vk3DVertex, tx);
+    attributes[5].offset   = gpuMeshTransform ? offsetof(VkGpuMeshVertex, tx) : offsetof(Vk3DVertex, tx);
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType                          = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

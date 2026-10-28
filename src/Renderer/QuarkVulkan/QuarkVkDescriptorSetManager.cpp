@@ -40,26 +40,20 @@ void QuarkVkDescriptorSetManager::CreateLayouts(VkDevice device) {
     samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     samplerBinding.pImmutableSamplers = nullptr;
 
-    std::array<VkDescriptorSetLayoutBinding, 7> material2DBindings{};
-    material2DBindings[0] = samplerBinding;
-    for (uint32_t binding = 5; binding <= 10; ++binding) {
-        material2DBindings[binding - 4] = { binding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-                                            VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
-    }
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(material2DBindings.size());
-    layoutInfo.pBindings = material2DBindings.data();
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &samplerBinding;
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create Vulkan descriptor set layout.");
     }
 
     std::array<VkDescriptorSetLayoutBinding, 11> bindings3D{};
-    bindings3D[0] = { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr };
+    bindings3D[0] = { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr };
     bindings3D[1] = { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
     bindings3D[2] = { 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
-    bindings3D[3] = { 3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
-    bindings3D[4] = { 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+    bindings3D[3] = { 3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+    bindings3D[4] = { 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
     for (uint32_t binding = 5; binding <= 10; ++binding) {
         bindings3D[binding] = { binding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
                                 VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
@@ -109,7 +103,7 @@ void QuarkVkDescriptorSetManager::CreateLayouts(VkDevice device) {
 bool QuarkVkDescriptorSetManager::CreateDescriptorPoolSlab(uint32_t maxSets, VkDescriptorPool& outPool) {
     std::array<VkDescriptorPoolSize, 2> poolSizes = {{
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, maxSets * 11 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, maxSets * 3 }
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, maxSets * 3 }
     }};
 
     VkDescriptorPoolCreateInfo poolInfo{};

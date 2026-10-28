@@ -62,6 +62,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 namespace qci {
 static constexpr int    kVkMaxFramesInFlight  = 2;
@@ -71,6 +72,7 @@ static constexpr size_t kVkMaxBatchIndices    = kVkMaxBatchQuads * 6;
 
 static constexpr size_t kVkMaxVerticesPerFrame = kVkMaxBatchVertices * 16;
 static constexpr size_t kVkMaxIndicesPerFrame  = kVkMaxBatchIndices  * 16;
+static constexpr VkDeviceSize kVk3DUniformFrameStride = 4096;
 
 struct VkFrameData {
     VkBuffer       vertexBuffer = VK_NULL_HANDLE;
@@ -103,6 +105,7 @@ struct VkDrawItem {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     uint32_t firstIndex  = 0;
     uint32_t indexCount  = 0;
+    bool debugOverlay = false;
 };
 
 struct Vk3DDrawItem {
@@ -110,6 +113,23 @@ struct Vk3DDrawItem {
     uint32_t shaderProgramId = 0;
     uint32_t firstVertex = 0;
     uint32_t vertexCount = 0;
+    uint32_t firstIndex = 0;
+    uint32_t indexCount = 0;
+    bool indexed = false;
+    bool gpuMesh = false;
+    VkBuffer gpuVertexBuffer = VK_NULL_HANDLE;
+    VkBuffer gpuIndexBuffer = VK_NULL_HANDLE;
+    Mat4 modelViewProjection = Mat4::identity();
+    Mat4 model = Mat4::identity();
+    std::array<float, 4> materialColor{1.0f, 1.0f, 1.0f, 1.0f};
+};
+
+struct VkGpuMeshData {
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VmaAllocation vertexAllocation = VK_NULL_HANDLE;
+    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VmaAllocation indexAllocation = VK_NULL_HANDLE;
+    uint32_t indexCount = 0;
 };
 
 struct VkLight3D {
@@ -145,6 +165,7 @@ struct VkRenderTargetData {
     std::vector<uint32_t>      indices;
     std::vector<VkDrawItem>    drawItems;
     std::vector<Vk3DVertex>    triangleVertices3D;
+    std::vector<uint32_t>      triangleIndices3D;
     std::vector<Vk3DVertex>    lineVertices3D;
     std::vector<Vk3DDrawItem>  drawItems3D;
 };
@@ -337,12 +358,15 @@ private:
     void CreateFramebuffers();
     void CreateFrameVertexIndexBuffers();
     void CreateWhiteTexture();
+    bool UploadStaticGpuMesh(const Mesh& mesh);
+    void DestroyStaticGpuMesh(const Mesh& mesh);
 
     bool AllocateTextureDescriptorSet(VkDescriptorSet& outSet);
     bool Allocate3DDescriptorSet(VkDescriptorSet& outSet, VkDescriptorPool& outPool);
     uint64_t ComputeMaterialCacheKey(const Material& material) const;
     VkDescriptorSet CreateMaterialDescriptorSet(const Material& material);
     void ClearMaterialDescriptorCache();
+    void ReplaceMaterialTextureReferences(uint32_t textureId);
     void Update3DDescriptorSet(VkShaderProgramData& program);
     void Write3DShaderUniform(uint32_t shaderId, int locIndex, float value);
     void Write3DShaderUniform(uint32_t shaderId, int locIndex, int value);
@@ -434,6 +458,7 @@ private:
     void EnsureBatchTexture(VkDescriptorSet ds);
     struct Vk3DGeometryBatch {
         std::vector<Vk3DVertex> triangleVertices;
+        std::vector<uint32_t> triangleIndices;
         std::vector<Vk3DVertex> lineVertices;
         std::vector<Vk3DDrawItem> drawItems;
         uint32_t shaderProgramId = 0;
@@ -441,6 +466,7 @@ private:
 
     std::vector<Vk3DVertex>&       GetActive3DTriangleVertices();
     const std::vector<Vk3DVertex>& GetActive3DTriangleVertices() const;
+    std::vector<uint32_t>&         GetActive3DTriangleIndices();
     std::vector<Vk3DVertex>&       GetActive3DLineVertices();
     const std::vector<Vk3DVertex>& GetActive3DLineVertices() const;
     Vk3DVertex               Transform3DVertex(Vec3 position, Color color) const;
@@ -514,8 +540,11 @@ private:
     VkBuffer                      m_3DDummyBuffer = VK_NULL_HANDLE;
     VkDeviceMemory                m_3DDummyMemory = VK_NULL_HANDLE;
     VmaAllocation                 m_3DDummyAllocation = VK_NULL_HANDLE;
+    void*                         m_3DDummyBaseMapped = nullptr;
     void*                         m_3DDummyMapped = nullptr;
     QuarkVkGpuAllocator           m_gpuAllocator;
+    std::unordered_map<const float*, VkGpuMeshData> m_gpuMeshes;
+    std::unordered_set<const float*> m_dynamicMeshes;
 
     std::array<VkFrameData, kVkMaxFramesInFlight> m_frames{};
     uint32_t m_currentFrame = 0;
@@ -563,6 +592,7 @@ private:
     uint32_t                        m_frame3DShaderProgramId = 0;
 
     VkDescriptorSet m_currentDescriptorSet = VK_NULL_HANDLE;
+    bool m_drawingDebugOverlay = false;
     Color           m_clearColor           = {0, 0, 0, 255};
 
     Mat4              m_currentMatrix    = Mat4::identity();

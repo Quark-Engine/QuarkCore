@@ -22,6 +22,16 @@ const std::vector<Vk3DVertex>& QuarkVkRenderer::GetActive3DTriangleVertices() co
     return m_main3DBatch.triangleVertices;
 }
 
+std::vector<uint32_t>& QuarkVkRenderer::GetActive3DTriangleIndices() {
+    if (m_activeRenderTargetId != 0) {
+        auto it = m_renderTargets.find(m_activeRenderTargetId);
+        if (it != m_renderTargets.end()) {
+            return it->second.triangleIndices3D;
+        }
+    }
+    return m_main3DBatch.triangleIndices;
+}
+
 std::vector<Vk3DVertex>& QuarkVkRenderer::GetActive3DLineVertices() {
     if (m_activeRenderTargetId != 0) {
         auto it = m_renderTargets.find(m_activeRenderTargetId);
@@ -43,7 +53,9 @@ const std::vector<Vk3DVertex>& QuarkVkRenderer::GetActive3DLineVertices() const 
 }
 
 Vk3DVertex QuarkVkRenderer::Transform3DVertex(Vec3 position, Color color) const {
-    const Vec4 clip = m_projectionMatrix * (m_viewMatrix * (m_currentMatrix * Vec4{ position.x, position.y, position.z, 1.0f }));
+    const Vec4 local{ position.x, position.y, position.z, 1.0f };
+    const Vec4 world = m_currentMatrix * local;
+    const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
     return {
         clip.x, clip.y, clip.z, clip.w,
         0.0f, 0.0f,
@@ -51,8 +63,8 @@ Vk3DVertex QuarkVkRenderer::Transform3DVertex(Vec3 position, Color color) const 
         static_cast<float>(color.g) / 255.0f,
         static_cast<float>(color.b) / 255.0f,
         static_cast<float>(color.a) / 255.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        position.x, position.y, position.z, 1.0f,
+        0.0f, 0.0f, 0.0f, 0.0f,
+        world.x, world.y, world.z, world.w,
         0.0f, 0.0f, 0.0f, 0.0f
     };
 }
@@ -60,8 +72,9 @@ Vk3DVertex QuarkVkRenderer::Transform3DVertex(Vec3 position, Color color) const 
 void QuarkVkRenderer::AppendTriangle3D(std::vector<Vk3DVertex>& vertices,
                                        Vec3 a, Vec3 b, Vec3 c, Color color) {
     const uint32_t firstVertex = static_cast<uint32_t>(vertices.size());
+    const uint32_t drawProgramId = m_vkShaderCompiler.CurrentProgramId();
     if (vertices.empty() && m_activeRenderTargetId == 0) {
-        m_main3DBatch.shaderProgramId = m_vkShaderCompiler.CurrentProgramId();
+        m_main3DBatch.shaderProgramId = drawProgramId;
     }
     vertices.push_back(Transform3DVertex(a, color));
     vertices.push_back(Transform3DVertex(b, color));
@@ -84,11 +97,11 @@ void QuarkVkRenderer::AppendTriangle3D(std::vector<Vk3DVertex>& vertices,
     }
 
     VkDescriptorSet descriptorSet = m_white3DDescriptorSet;
-    const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(m_vkShaderCompiler.CurrentProgramId());
+    const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(drawProgramId);
     if (shaderProgram != nullptr && shaderProgram->supports3D) {
         descriptorSet = shaderProgram->descriptorSet3D;
     }
-    drawItems->push_back({ descriptorSet, m_vkShaderCompiler.CurrentProgramId(), firstVertex, 3 });
+    drawItems->push_back({ descriptorSet, drawProgramId, firstVertex, 3 });
 }
 
 void QuarkVkRenderer::AppendLine3D(std::vector<Vk3DVertex>& vertices,

@@ -11,12 +11,6 @@ namespace {
 int NormalizeIntValue(const void* data) {
     int intValue = 0;
     std::memcpy(&intValue, data, sizeof(int));
-    float floatValue = 0.0f;
-    std::memcpy(&floatValue, data, sizeof(float));
-    if (floatValue >= -16384.0f && floatValue <= 16384.0f &&
-        floatValue == static_cast<float>(static_cast<int>(floatValue))) {
-        return static_cast<int>(floatValue);
-    }
     return intValue;
 }
 
@@ -51,12 +45,14 @@ Shader QuarkVkRenderer::FinishShaderProgram(uint32_t shaderId) {
         programData.pipeline3D = m_vkPipeline.Create3DPipeline(m_vkRenderPass.Get(),
                                                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                programData.vertexModule,
-                                                               programData.fragmentModule);
+                                                               programData.fragmentModule,
+                                                               programData.supportsGpuMeshTransform);
         if (m_vkRenderTarget.RenderPass() != VK_NULL_HANDLE) {
             programData.pipeline3DOffscreen = m_vkPipeline.Create3DPipeline(m_vkRenderTarget.RenderPass(),
                                                                             VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                             programData.vertexModule,
-                                                                            programData.fragmentModule);
+                                                                            programData.fragmentModule,
+                                                                            programData.supportsGpuMeshTransform);
         }
         VkDescriptorPool descriptorPool3D = VK_NULL_HANDLE;
         if (Allocate3DDescriptorSet(programData.descriptorSet3D, descriptorPool3D)) {
@@ -79,15 +75,15 @@ Shader QuarkVkRenderer::FinishShaderProgram(uint32_t shaderId) {
                 lightBufferInfo.range = 320;
                 std::array<VkWriteDescriptorSet, 5> writes{};
                 writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, programData.descriptorSet3D, 0, 0, 1,
-                              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &bufferInfo, nullptr };
+                              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &bufferInfo, nullptr };
                 writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, programData.descriptorSet3D, 1, 0, 1,
                               VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &imageInfo, nullptr, nullptr };
                 writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, programData.descriptorSet3D, 2, 0, 4,
                               VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowImages.data(), nullptr, nullptr };
                 writes[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, programData.descriptorSet3D, 3, 0, 1,
-                              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &shadowBufferInfo, nullptr };
+                              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &shadowBufferInfo, nullptr };
                 writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, programData.descriptorSet3D, 4, 0, 1,
-                              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &lightBufferInfo, nullptr };
+                              VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &lightBufferInfo, nullptr };
                 vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
             }
         }
@@ -106,6 +102,9 @@ void QuarkVkRenderer::UnloadShader(Shader& shader) {
         return;
     }
 
+    if (m_device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(m_device);
+    }
     m_vkShaderCompiler.DestroyProgram(shader.id);
     shader = Shader{};
 }

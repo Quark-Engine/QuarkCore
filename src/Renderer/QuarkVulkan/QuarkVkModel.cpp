@@ -30,8 +30,9 @@ static Color MultiplyColor(Color lhs, Color rhs) {
     };
 }
 
-static void ensure_mesh_tangents(Mesh& mesh) {
+static void ensure_mesh_tangents(Mesh& mesh, bool forceRebuild = false) {
     if (!mesh.vertices || mesh.vertexCount <= 0) return;
+    if (mesh.tangents && !forceRebuild) return;
     if (!mesh.tangents)
         mesh.tangents = new float[static_cast<size_t>(mesh.vertexCount) * 3u];
 
@@ -389,6 +390,9 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
             dst.indices[f * 3 + 2] = static_cast<unsigned short>(face.mIndices[2]);
         }
 
+        ensure_mesh_tangents(dst);
+        UploadMesh(dst, false);
+
         model.meshMaterial[i] = static_cast<int>(sourceMesh->mMaterialIndex);
 
         const char* meshName = sourceMesh->mName.length > 0 ? sourceMesh->mName.C_Str() : "unnamed";
@@ -405,6 +409,9 @@ Model QuarkVkRenderer::LoadModel(const char* filePath) {
 void QuarkVkRenderer::UnloadModel(Model& model) {
     const int meshCount = model.meshCount;
     const int materialCount = model.materialCount;
+    if (m_device != VK_NULL_HANDLE && (model.meshes != nullptr || model.materials != nullptr)) {
+        vkDeviceWaitIdle(m_device);
+    }
     if (model.meshes) {
         for (int i = 0; i < meshCount; ++i) {
             UnloadMesh(model.meshes[i]);
@@ -495,21 +502,39 @@ void QuarkVkRenderer::DrawModelEx(const Model& model, const Mat4& transform, Col
 }
 
 void QuarkVkRenderer::UploadMesh(Mesh& mesh, bool dynamic) {
-    (void)dynamic;
-
     mesh.vaoId = 0;
     mesh.vboId = 0;
     mesh.eboId = 0;
 
     if (mesh.vertexCount < 0) mesh.vertexCount = 0;
     if (mesh.triangleCount < 0) mesh.triangleCount = 0;
+    ensure_mesh_tangents(mesh);
 
-    TraceLog(LogLevel::Trace, "MESH", TextFormat("[Vulkan] Uploaded mesh to CPU staging (%d vertices, %d triangles)", mesh.vertexCount, mesh.triangleCount));
+    if (m_gpuMeshes.find(mesh.vertices) != m_gpuMeshes.end()) {
+        if (m_device != VK_NULL_HANDLE) vkDeviceWaitIdle(m_device);
+        DestroyStaticGpuMesh(mesh);
+    }
+    if (dynamic) {
+        m_dynamicMeshes.insert(mesh.vertices);
+    } else {
+        m_dynamicMeshes.erase(mesh.vertices);
+        if (mesh.vertices && !UploadStaticGpuMesh(mesh)) {
+            TraceLog(LogLevel::Warn, "MESH", "[Vulkan] Static mesh GPU upload failed; CPU transform path will be used.");
+        }
+    }
+
+    TraceLog(LogLevel::Trace, "MESH", TextFormat("[Vulkan] Uploaded mesh (%d vertices, %d triangles)", mesh.vertexCount, mesh.triangleCount));
 }
 
 void QuarkVkRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) {
     if (!data || dataSize <= 0 || offset < 0) {
         return;
+    }
+
+    const bool hadStaticGpuMesh = m_gpuMeshes.find(mesh.vertices) != m_gpuMeshes.end();
+    if (hadStaticGpuMesh && m_device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(m_device);
+        DestroyStaticGpuMesh(mesh);
     }
 
     auto copyBytes = [&](void* dst, std::size_t dstBytes) {
@@ -539,9 +564,22 @@ void QuarkVkRenderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* data, 
     default:
         break;
     }
+
+    if (index == 0 || index == 1 || index == 2 || index == 6) {
+        ensure_mesh_tangents(mesh, true);
+        if (hadStaticGpuMesh && m_dynamicMeshes.find(mesh.vertices) == m_dynamicMeshes.end() &&
+            !UploadStaticGpuMesh(mesh)) {
+            TraceLog(LogLevel::Warn, "MESH", "[Vulkan] Updated static mesh GPU upload failed; CPU transform path will be used.");
+        }
+    }
 }
 
 void QuarkVkRenderer::UnloadMesh(Mesh& mesh) {
+    if (m_gpuMeshes.find(mesh.vertices) != m_gpuMeshes.end() && m_device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(m_device);
+    }
+    DestroyStaticGpuMesh(mesh);
+    m_dynamicMeshes.erase(mesh.vertices);
     TraceLog(LogLevel::Trace, "MESH", TextFormat("[Vulkan] Unloaded mesh (%d vertices, %d triangles)", mesh.vertexCount, mesh.triangleCount));
     FreeMeshCpuData(mesh);
     mesh.vaoId = 0;
@@ -549,12 +587,202 @@ void QuarkVkRenderer::UnloadMesh(Mesh& mesh) {
     mesh.eboId = 0;
 }
 
+bool QuarkVkRenderer::UploadStaticGpuMesh(const Mesh& mesh) {
+    if (!mesh.vertices || mesh.vertexCount <= 0 || m_device == VK_NULL_HANDLE ||
+        !m_vkCommandContext.IsInitialized() || m_graphicsQueue == VK_NULL_HANDLE) {
+        return false;
+    }
+
+    std::vector<VkGpuMeshVertex> vertices(static_cast<size_t>(mesh.vertexCount));
+    for (int i = 0; i < mesh.vertexCount; ++i) {
+        const Color color = ReadVertexColor(mesh, i, WHITE);
+        VkGpuMeshVertex& vertex = vertices[static_cast<size_t>(i)];
+        vertex.x = mesh.vertices[i * 3 + 0];
+        vertex.y = mesh.vertices[i * 3 + 1];
+        vertex.z = mesh.vertices[i * 3 + 2];
+        vertex.w = 1.0f;
+        vertex.u = mesh.texcoords ? mesh.texcoords[i * 2 + 0] : 0.0f;
+        vertex.v = mesh.texcoords ? mesh.texcoords[i * 2 + 1] : 0.0f;
+        vertex.r = NormalizeColorComponent(color.r);
+        vertex.g = NormalizeColorComponent(color.g);
+        vertex.b = NormalizeColorComponent(color.b);
+        vertex.a = NormalizeColorComponent(color.a);
+        vertex.nx = mesh.normals ? mesh.normals[i * 3 + 0] : 0.0f;
+        vertex.ny = mesh.normals ? mesh.normals[i * 3 + 1] : 1.0f;
+        vertex.nz = mesh.normals ? mesh.normals[i * 3 + 2] : 0.0f;
+        vertex.nw = 0.0f;
+        vertex.wx = 0.0f;
+        vertex.wy = 0.0f;
+        vertex.wz = 0.0f;
+        vertex.ww = 1.0f;
+        vertex.tx = mesh.tangents ? mesh.tangents[i * 3 + 0] : 0.0f;
+        vertex.ty = mesh.tangents ? mesh.tangents[i * 3 + 1] : 0.0f;
+        vertex.tz = mesh.tangents ? mesh.tangents[i * 3 + 2] : 0.0f;
+        vertex.tw = mesh.tangents ? 1.0f : 0.0f;
+    }
+
+    std::vector<uint32_t> indices;
+    const size_t requestedIndexCount = mesh.indices && mesh.triangleCount > 0
+        ? static_cast<size_t>(mesh.triangleCount) * 3u
+        : static_cast<size_t>(mesh.vertexCount / 3) * 3u;
+    indices.reserve(requestedIndexCount);
+    if (mesh.indices && mesh.triangleCount > 0) {
+        for (size_t i = 0; i + 2 < requestedIndexCount; i += 3) {
+            const uint32_t i0 = mesh.indices[i + 0];
+            const uint32_t i1 = mesh.indices[i + 1];
+            const uint32_t i2 = mesh.indices[i + 2];
+            if (i0 >= static_cast<uint32_t>(mesh.vertexCount) ||
+                i1 >= static_cast<uint32_t>(mesh.vertexCount) ||
+                i2 >= static_cast<uint32_t>(mesh.vertexCount)) {
+                continue;
+            }
+            indices.push_back(i0);
+            indices.push_back(i1);
+            indices.push_back(i2);
+        }
+    } else {
+        for (uint32_t i = 0; i + 2 < static_cast<uint32_t>(mesh.vertexCount); i += 3) {
+            indices.push_back(i + 0);
+            indices.push_back(i + 1);
+            indices.push_back(i + 2);
+        }
+    }
+    if (indices.empty()) return false;
+
+    VkGpuMeshData gpuMesh{};
+    VkBuffer vertexStaging = VK_NULL_HANDLE;
+    VmaAllocation vertexStagingAllocation = VK_NULL_HANDLE;
+    VkBuffer indexStaging = VK_NULL_HANDLE;
+    VmaAllocation indexStagingAllocation = VK_NULL_HANDLE;
+    VkCommandBuffer uploadCommandBuffer = VK_NULL_HANDLE;
+    auto cleanupStaging = [&]() {
+        if (vertexStaging != VK_NULL_HANDLE) {
+            m_gpuAllocator.DestroyBuffer(vertexStaging, vertexStagingAllocation);
+            vertexStaging = VK_NULL_HANDLE;
+        }
+        if (indexStaging != VK_NULL_HANDLE) {
+            m_gpuAllocator.DestroyBuffer(indexStaging, indexStagingAllocation);
+            indexStaging = VK_NULL_HANDLE;
+        }
+    };
+    auto cleanupGpuMesh = [&]() {
+        if (gpuMesh.vertexBuffer != VK_NULL_HANDLE)
+            m_gpuAllocator.DestroyBuffer(gpuMesh.vertexBuffer, gpuMesh.vertexAllocation);
+        if (gpuMesh.indexBuffer != VK_NULL_HANDLE)
+            m_gpuAllocator.DestroyBuffer(gpuMesh.indexBuffer, gpuMesh.indexAllocation);
+    };
+
+    const VkDeviceSize vertexBytes = vertices.size() * sizeof(VkGpuMeshVertex);
+    const VkDeviceSize indexBytes = indices.size() * sizeof(uint32_t);
+    const VmaAllocationCreateFlags stagingFlags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+        VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    if (!m_gpuAllocator.CreateBuffer(vertexBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                     VMA_MEMORY_USAGE_AUTO, vertexStaging, vertexStagingAllocation, stagingFlags) ||
+        !m_gpuAllocator.CreateBuffer(indexBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                     VMA_MEMORY_USAGE_AUTO, indexStaging, indexStagingAllocation, stagingFlags) ||
+        !m_gpuAllocator.CreateBuffer(vertexBytes,
+                                     VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                     VMA_MEMORY_USAGE_GPU_ONLY, gpuMesh.vertexBuffer, gpuMesh.vertexAllocation) ||
+        !m_gpuAllocator.CreateBuffer(indexBytes,
+                                     VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                     VMA_MEMORY_USAGE_GPU_ONLY, gpuMesh.indexBuffer, gpuMesh.indexAllocation)) {
+        cleanupStaging();
+        cleanupGpuMesh();
+        return false;
+    }
+
+    VmaAllocationInfo vertexStagingInfo{};
+    VmaAllocationInfo indexStagingInfo{};
+    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), vertexStagingAllocation, &vertexStagingInfo);
+    vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), indexStagingAllocation, &indexStagingInfo);
+    if (!vertexStagingInfo.pMappedData || !indexStagingInfo.pMappedData) {
+        cleanupStaging();
+        cleanupGpuMesh();
+        return false;
+    }
+    std::memcpy(vertexStagingInfo.pMappedData, vertices.data(), static_cast<size_t>(vertexBytes));
+    std::memcpy(indexStagingInfo.pMappedData, indices.data(), static_cast<size_t>(indexBytes));
+    vmaFlushAllocation(m_gpuAllocator.GetAllocator(), vertexStagingAllocation, 0, vertexBytes);
+    vmaFlushAllocation(m_gpuAllocator.GetAllocator(), indexStagingAllocation, 0, indexBytes);
+
+    VkCommandBufferAllocateInfo allocateInfo{};
+    allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocateInfo.commandPool = m_vkCommandContext.Pool();
+    allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocateInfo.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(m_device, &allocateInfo, &uploadCommandBuffer) != VK_SUCCESS) {
+        cleanupStaging();
+        cleanupGpuMesh();
+        return false;
+    }
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    bool uploadSucceeded = vkBeginCommandBuffer(uploadCommandBuffer, &beginInfo) == VK_SUCCESS;
+    if (uploadSucceeded) {
+        VkBufferCopy vertexCopy{};
+        vertexCopy.size = vertexBytes;
+        vkCmdCopyBuffer(uploadCommandBuffer, vertexStaging, gpuMesh.vertexBuffer, 1, &vertexCopy);
+        VkBufferCopy indexCopy{};
+        indexCopy.size = indexBytes;
+        vkCmdCopyBuffer(uploadCommandBuffer, indexStaging, gpuMesh.indexBuffer, 1, &indexCopy);
+
+        std::array<VkBufferMemoryBarrier, 2> barriers{};
+        barriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barriers[0].dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[0].buffer = gpuMesh.vertexBuffer;
+        barriers[0].size = VK_WHOLE_SIZE;
+        barriers[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barriers[1].dstAccessMask = VK_ACCESS_INDEX_READ_BIT;
+        barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[1].buffer = gpuMesh.indexBuffer;
+        barriers[1].size = VK_WHOLE_SIZE;
+        vkCmdPipelineBarrier(uploadCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, nullptr,
+                             static_cast<uint32_t>(barriers.size()), barriers.data(), 0, nullptr);
+        uploadSucceeded = vkEndCommandBuffer(uploadCommandBuffer) == VK_SUCCESS;
+    }
+
+    if (uploadSucceeded) {
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &uploadCommandBuffer;
+        uploadSucceeded = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) == VK_SUCCESS &&
+                          vkQueueWaitIdle(m_graphicsQueue) == VK_SUCCESS;
+    }
+    vkFreeCommandBuffers(m_device, m_vkCommandContext.Pool(), 1, &uploadCommandBuffer);
+    cleanupStaging();
+    if (!uploadSucceeded) {
+        cleanupGpuMesh();
+        return false;
+    }
+
+    gpuMesh.indexCount = static_cast<uint32_t>(indices.size());
+    m_gpuMeshes[mesh.vertices] = gpuMesh;
+    return true;
+}
+
+void QuarkVkRenderer::DestroyStaticGpuMesh(const Mesh& mesh) {
+    const auto it = m_gpuMeshes.find(mesh.vertices);
+    if (it == m_gpuMeshes.end()) return;
+    if (it->second.vertexBuffer != VK_NULL_HANDLE)
+        m_gpuAllocator.DestroyBuffer(it->second.vertexBuffer, it->second.vertexAllocation);
+    if (it->second.indexBuffer != VK_NULL_HANDLE)
+        m_gpuAllocator.DestroyBuffer(it->second.indexBuffer, it->second.indexAllocation);
+    m_gpuMeshes.erase(it);
+}
+
 void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) {
     if (!mesh.vertices || mesh.vertexCount <= 0) {
         return;
     }
-    ensure_mesh_tangents(const_cast<Mesh&>(mesh));
-
     const MaterialMap* albedoMap = (material.maps != nullptr) ? &material.maps[MATERIAL_MAP_ALBEDO] : nullptr;
     Color baseColor = WHITE;
     if (albedoMap) {
@@ -562,7 +790,9 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
     }
 
     const Mat4 finalTransform = m_currentMatrix * transform;
+    const Mat4 modelViewProjection = m_projectionMatrix * m_viewMatrix * finalTransform;
     auto& vertices = GetActive3DTriangleVertices();
+    auto& indices = GetActive3DTriangleIndices();
     auto* drawItems = &m_main3DBatch.drawItems;
     if (m_activeRenderTargetId != 0) {
         auto renderTargetIt = m_renderTargets.find(m_activeRenderTargetId);
@@ -570,23 +800,50 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
             drawItems = &renderTargetIt->second.drawItems3D;
         }
     }
+    const bool startsMain3DGeometry = vertices.empty() && m_activeRenderTargetId == 0;
     const uint32_t firstVertex = static_cast<uint32_t>(vertices.size());
+    const uint32_t firstIndex = static_cast<uint32_t>(indices.size());
     const VkDescriptorSet materialDescriptorSet = CreateMaterialDescriptorSet(material);
-    const auto finishDraw = [&]() {
-        const uint32_t vertexCount = static_cast<uint32_t>(vertices.size()) - firstVertex;
-        if (vertexCount > 0) {
-            drawItems->push_back({ materialDescriptorSet, m_vkShaderCompiler.CurrentProgramId(), firstVertex, vertexCount });
+    const uint32_t shaderProgramId = m_vkShaderCompiler.CurrentProgramId();
+    const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(shaderProgramId);
+    const uint32_t drawShaderProgramId = shaderProgramId;
+    const auto gpuMeshIt = m_gpuMeshes.find(mesh.vertices);
+    if (shaderProgram && shaderProgram->supportsGpuMeshTransform &&
+        gpuMeshIt != m_gpuMeshes.end() && gpuMeshIt->second.indexCount > 0 &&
+        materialDescriptorSet != VK_NULL_HANDLE) {
+        if (startsMain3DGeometry) {
+            m_main3DBatch.shaderProgramId = shaderProgramId;
         }
-    };
+        Vk3DDrawItem drawItem{};
+        drawItem.descriptorSet = materialDescriptorSet;
+        drawItem.shaderProgramId = shaderProgramId;
+        drawItem.firstVertex = firstVertex;
+        drawItem.indexCount = gpuMeshIt->second.indexCount;
+        drawItem.indexed = true;
+        drawItem.gpuMesh = true;
+        drawItem.gpuVertexBuffer = gpuMeshIt->second.vertexBuffer;
+        drawItem.gpuIndexBuffer = gpuMeshIt->second.indexBuffer;
+        drawItem.modelViewProjection = modelViewProjection;
+        drawItem.model = finalTransform;
+        drawItem.materialColor = {
+            NormalizeColorComponent(baseColor.r),
+            NormalizeColorComponent(baseColor.g),
+            NormalizeColorComponent(baseColor.b),
+            NormalizeColorComponent(baseColor.a)
+        };
+        drawItems->push_back(drawItem);
+        return;
+    }
 
-    auto pushVertex = [&](int vertexIndex, Color color) {
-        const Vec4 world = finalTransform * Vec4{
+    auto transformVertex = [&](int vertexIndex, Color color) {
+        const Vec4 localPosition{
             mesh.vertices[vertexIndex * 3 + 0],
             mesh.vertices[vertexIndex * 3 + 1],
             mesh.vertices[vertexIndex * 3 + 2],
             1.0f
         };
-        const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
+        const Vec4 world = finalTransform * localPosition;
+        const Vec4 clip = modelViewProjection * localPosition;
         Vec4 normal = finalTransform * Vec4{
             mesh.normals ? mesh.normals[vertexIndex * 3 + 0] : 0.0f,
             mesh.normals ? mesh.normals[vertexIndex * 3 + 1] : 1.0f,
@@ -615,7 +872,7 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
                 tangent.w = 1.0f;
             }
         }
-        vertices.push_back(Vk3DVertex{
+        return Vk3DVertex{
             clip.x,
             clip.y,
             clip.z,
@@ -635,44 +892,47 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
             tangent.y,
             tangent.z,
             tangent.w
-        });
+        };
     };
 
-    if (vertices.empty() && m_activeRenderTargetId == 0) {
-        m_main3DBatch.shaderProgramId = m_vkShaderCompiler.CurrentProgramId();
+    for (int vertexIndex = 0; vertexIndex < mesh.vertexCount; ++vertexIndex) {
+        const Color vertexColor = MultiplyColor(baseColor,
+            ReadVertexColor(mesh, vertexIndex, WHITE));
+        vertices.push_back(transformVertex(vertexIndex, vertexColor));
     }
-
-    auto pushTriangle = [&](int i0, int i1, int i2) {
-        if (i0 < 0 || i1 < 0 || i2 < 0 ||
-            i0 >= mesh.vertexCount || i1 >= mesh.vertexCount || i2 >= mesh.vertexCount) {
-            return;
-        }
-
-        const Color c0 = MultiplyColor(baseColor, ReadVertexColor(mesh, i0, WHITE));
-        const Color c1 = MultiplyColor(baseColor, ReadVertexColor(mesh, i1, WHITE));
-        const Color c2 = MultiplyColor(baseColor, ReadVertexColor(mesh, i2, WHITE));
-
-        pushVertex(i0, c0);
-        pushVertex(i1, c1);
-        pushVertex(i2, c2);
-    };
 
     if (mesh.indices && mesh.triangleCount > 0) {
         for (int tri = 0; tri < mesh.triangleCount; ++tri) {
             const int i0 = static_cast<int>(mesh.indices[tri * 3 + 0]);
             const int i1 = static_cast<int>(mesh.indices[tri * 3 + 1]);
             const int i2 = static_cast<int>(mesh.indices[tri * 3 + 2]);
-            pushTriangle(i0, i1, i2);
+            if (i0 < 0 || i1 < 0 || i2 < 0 ||
+                i0 >= mesh.vertexCount || i1 >= mesh.vertexCount || i2 >= mesh.vertexCount) {
+                continue;
+            }
+            indices.push_back(static_cast<uint32_t>(i0));
+            indices.push_back(static_cast<uint32_t>(i1));
+            indices.push_back(static_cast<uint32_t>(i2));
         }
-        finishDraw();
+    } else {
+        for (int index = 0; index + 2 < mesh.vertexCount; index += 3) {
+            indices.push_back(static_cast<uint32_t>(index));
+            indices.push_back(static_cast<uint32_t>(index + 1));
+            indices.push_back(static_cast<uint32_t>(index + 2));
+        }
+    }
+
+    const uint32_t indexCount = static_cast<uint32_t>(indices.size()) - firstIndex;
+    if (indexCount == 0) {
+        vertices.resize(firstVertex);
+        indices.resize(firstIndex);
         return;
     }
-
-    for (int i = 0; i + 2 < mesh.vertexCount; i += 3) {
-        pushTriangle(i, i + 1, i + 2);
+    if (startsMain3DGeometry) {
+        m_main3DBatch.shaderProgramId = drawShaderProgramId;
     }
-
-    finishDraw();
+    drawItems->push_back({ materialDescriptorSet, drawShaderProgramId,
+        firstVertex, static_cast<uint32_t>(mesh.vertexCount), firstIndex, indexCount, true });
 }
 
 void QuarkVkRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) {

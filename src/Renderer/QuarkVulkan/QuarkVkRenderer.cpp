@@ -131,6 +131,7 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     m_msaaSamples = GetSampleCountForSamples(m_requestedMsaaSamples);
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateLogicalDevice");
     CreateLogicalDevice();
+    m_vkShaderCompiler.Initialize(m_device);
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateSwapChain");
     CreateSwapChain();
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateRenderPass");
@@ -159,6 +160,7 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     m_frameTriangleVertices3D.reserve(kVkMaxVerticesPerFrame);
     m_frameLineVertices3D.reserve(kVkMaxVerticesPerFrame);
     m_vkFrameManager.Initialize(m_device, m_vkCommandContext.Pool(), kVkMaxFramesInFlight);
+    m_vkFrameManager.SetSwapchainImageCount(m_vkSwapChain.GetImageCount());
     m_vkResources.Initialize(m_device, m_gpuAllocator, m_vkCommandContext.Pool(), m_graphicsQueue,
                              [this](VkDescriptorSet& set) { return AllocateTextureDescriptorSet(set); });
     CreateWhiteTexture();
@@ -176,6 +178,16 @@ void QuarkVkRenderer::Shutdown() {
     if (m_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_device);
     }
+
+    for (auto& [vertices, mesh] : m_gpuMeshes) {
+        (void)vertices;
+        if (mesh.vertexBuffer != VK_NULL_HANDLE)
+            m_gpuAllocator.DestroyBuffer(mesh.vertexBuffer, mesh.vertexAllocation);
+        if (mesh.indexBuffer != VK_NULL_HANDLE)
+            m_gpuAllocator.DestroyBuffer(mesh.indexBuffer, mesh.indexAllocation);
+    }
+    m_gpuMeshes.clear();
+    m_dynamicMeshes.clear();
 
     {
         std::vector<uint32_t> ids;
@@ -248,8 +260,9 @@ void QuarkVkRenderer::Shutdown() {
     m_vkDescriptorSetManager.Shutdown(m_device);
 
     if (m_3DDummyBuffer != VK_NULL_HANDLE) {
-        if (m_3DDummyMapped != nullptr) {
+        if (m_3DDummyBaseMapped != nullptr) {
             vmaUnmapMemory(m_gpuAllocator.GetAllocator(), m_3DDummyAllocation);
+            m_3DDummyBaseMapped = nullptr;
             m_3DDummyMapped = nullptr;
         }
         m_gpuAllocator.DestroyBuffer(m_3DDummyBuffer, m_3DDummyAllocation);
@@ -314,6 +327,10 @@ void QuarkVkRenderer::BeginDrawing() {
     }
 
     m_vkFrameManager.BeginFrame(m_currentFrame);
+    if (m_3DDummyBaseMapped != nullptr) {
+        m_3DDummyMapped = static_cast<char*>(m_3DDummyBaseMapped) +
+            static_cast<size_t>(m_currentFrame) * kVk3DUniformFrameStride;
+    }
 
     VkResult result = m_vkFrameManager.AcquireNextImage(m_vkSwapChain.Get(), m_currentFrame, m_imageIndex);
 
@@ -346,10 +363,12 @@ void QuarkVkRenderer::EndDrawing() {
         rt.indices.clear();
         rt.drawItems.clear();
         rt.triangleVertices3D.clear();
+        rt.triangleIndices3D.clear();
         rt.lineVertices3D.clear();
         rt.drawItems3D.clear();
     }
     m_main3DBatch.triangleVertices.clear();
+    m_main3DBatch.triangleIndices.clear();
     m_main3DBatch.lineVertices.clear();
     m_main3DBatch.drawItems.clear();
 
@@ -362,12 +381,12 @@ void QuarkVkRenderer::EndDrawing() {
         return;
     }
 
-    if (!m_vkFrameManager.Submit(m_currentFrame, m_graphicsQueue)) {
+    if (!m_vkFrameManager.Submit(m_currentFrame, m_imageIndex, m_graphicsQueue)) {
         throw std::runtime_error("Failed to submit Vulkan command buffer.");
     }
 
     const std::uint64_t freq = SDL_GetPerformanceFrequency();
-    if (m_targetFps > 0) {
+    if (m_targetFps > 0 && !m_vsync) {
         const std::uint64_t targetTicks = freq / static_cast<std::uint64_t>(m_targetFps);
         while (true) {
             const std::uint64_t now = SDL_GetPerformanceCounter();
@@ -382,10 +401,6 @@ void QuarkVkRenderer::EndDrawing() {
         }
     }
 
-    const std::uint64_t frameEnd = SDL_GetPerformanceCounter();
-    m_frameTime = static_cast<float>(frameEnd - m_lastFrameCounter) / static_cast<float>(freq);
-    m_lastFrameCounter = frameEnd;
-
     VkResult presentResult = m_vkFrameManager.Present(m_vkSwapChain.Get(), m_currentFrame, m_imageIndex, m_presentQueue);
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR ||
         presentResult == VK_SUBOPTIMAL_KHR ||
@@ -396,6 +411,10 @@ void QuarkVkRenderer::EndDrawing() {
     } else if (presentResult != VK_SUCCESS) {
         throw std::runtime_error("Failed to present Vulkan swapchain image.");
     }
+
+    const std::uint64_t frameEnd = SDL_GetPerformanceCounter();
+    m_frameTime = static_cast<float>(frameEnd - m_lastFrameCounter) / static_cast<float>(freq);
+    m_lastFrameCounter = frameEnd;
 
     m_currentFrame = (m_currentFrame + 1) % kVkMaxFramesInFlight;
     m_drawing = false;
@@ -511,6 +530,15 @@ void QuarkVkRenderer::DisableBackfaceCulling() {
 }
 
 void QuarkVkRenderer::RefreshViewport() {
+    if (m_window != nullptr) {
+        int width = 0;
+        int height = 0;
+        SDL_GetWindowSizeInPixels(m_window, &width, &height);
+        if (width > 0 && height > 0) {
+            m_width = width;
+            m_height = height;
+        }
+    }
     m_framebufferResized = true;
 }
 
@@ -539,9 +567,25 @@ void QuarkVkRenderer::CreateInstance() {
 #endif
 
 
+    const char* validationLayer = "VK_LAYER_KHRONOS_validation";
+    bool enableValidationLayer = false;
 #ifdef _DEBUG
-    const char* validationLayer =
-        "VK_LAYER_KHRONOS_validation";
+    uint32_t layerCount = 0;
+    VkResult layerResult = vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+    if (layerResult == VK_SUCCESS && layerCount > 0) {
+        std::vector<VkLayerProperties> layers(layerCount);
+        layerResult = vkEnumerateInstanceLayerProperties(&layerCount, layers.data());
+        if (layerResult == VK_SUCCESS) {
+            enableValidationLayer = std::any_of(layers.begin(), layers.end(),
+                [validationLayer](const VkLayerProperties& layer) {
+                    return std::strcmp(layer.layerName, validationLayer) == 0;
+                });
+        }
+    }
+    if (!enableValidationLayer) {
+        TraceLog(LogLevel::Warn, "VULKAN",
+            "VK_LAYER_KHRONOS_validation is unavailable; continuing without validation.");
+    }
 #endif
 
     VkApplicationInfo appInfo{};
@@ -559,8 +603,8 @@ void QuarkVkRenderer::CreateInstance() {
     createInfo.ppEnabledExtensionNames = extensions.data();
 
 #ifdef _DEBUG
-    createInfo.enabledLayerCount = 1;
-    createInfo.ppEnabledLayerNames = &validationLayer;
+    createInfo.enabledLayerCount = enableValidationLayer ? 1u : 0u;
+    createInfo.ppEnabledLayerNames = enableValidationLayer ? &validationLayer : nullptr;
 #else
     createInfo.enabledLayerCount = 0;
 #endif
@@ -570,8 +614,14 @@ void QuarkVkRenderer::CreateInstance() {
         VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 #endif
 
-    if (vkCreateInstance(&createInfo, nullptr, &m_instance) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan instance.");
+    const VkResult instanceResult = vkCreateInstance(&createInfo, nullptr, &m_instance);
+    if (instanceResult != VK_SUCCESS) {
+        TraceLog(LogLevel::Error, "VULKAN", TextFormat(
+            "vkCreateInstance failed with VkResult %d (SDL error: %s).",
+            static_cast<int>(instanceResult), SDL_GetError()));
+        throw std::runtime_error(TextFormat(
+            "Failed to create Vulkan instance (VkResult %d).",
+            static_cast<int>(instanceResult)));
     }
     TraceLog(LogLevel::Info, "VULKAN", TextFormat("Vulkan %d.%d.%d instance created.", VK_VERSION_MAJOR(appInfo.apiVersion), VK_VERSION_MINOR(appInfo.apiVersion), VK_VERSION_PATCH(appInfo.apiVersion)));
 
@@ -687,9 +737,14 @@ void QuarkVkRenderer::CreateSwapChain() {
 
     m_vkSwapChain.Initialize(m_device, m_physicalDevice, m_surface,
                              m_width, m_height, details, indices, surfaceFormat, presentMode);
+    if (m_vkFrameManager.IsInitialized()) {
+        m_vkFrameManager.SetSwapchainImageCount(m_vkSwapChain.GetImageCount());
+    }
 
     m_swapChainImageFormat = m_vkSwapChain.GetImageFormat();
     m_swapChainExtent = m_vkSwapChain.GetExtent();
+    m_width = static_cast<int>(m_swapChainExtent.width);
+    m_height = static_cast<int>(m_swapChainExtent.height);
 
     TraceLog(LogLevel::Info, "VULKAN", TextFormat("Swapchain created: %ux%u, Images: %u, Format: %s (%d), PresentMode: %s, MSAA: %dx",
         m_swapChainExtent.width, m_swapChainExtent.height, m_vkSwapChain.GetImageCount(),
@@ -706,7 +761,7 @@ void QuarkVkRenderer::CreateRenderPass() {
 void QuarkVkRenderer::Create3DUniformBuffer() {
     {
         VkDeviceMemory dummyMemory = VK_NULL_HANDLE;
-        if (!CreateBuffer(4096,
+        if (!CreateBuffer(kVk3DUniformFrameStride * kVkMaxFramesInFlight,
                           VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                           VMA_MEMORY_USAGE_AUTO,
                           m_3DDummyBuffer, m_3DDummyAllocation, dummyMemory,
@@ -718,14 +773,20 @@ void QuarkVkRenderer::Create3DUniformBuffer() {
     VmaAllocationInfo allocInfo{};
     vmaGetAllocationInfo(m_gpuAllocator.GetAllocator(), m_3DDummyAllocation, &allocInfo);
     m_3DDummyMemory = allocInfo.deviceMemory;
-    if (vmaMapMemory(m_gpuAllocator.GetAllocator(), m_3DDummyAllocation, &m_3DDummyMapped) != VK_SUCCESS) {
+    if (vmaMapMemory(m_gpuAllocator.GetAllocator(), m_3DDummyAllocation, &m_3DDummyBaseMapped) != VK_SUCCESS) {
         throw std::runtime_error("Failed to map Vulkan 3D uniform buffer.");
     }
-    std::memset(m_3DDummyMapped, 0, 4096);
+    m_3DDummyMapped = m_3DDummyBaseMapped;
+    std::memset(m_3DDummyBaseMapped, 0,
+        static_cast<size_t>(kVk3DUniformFrameStride * kVkMaxFramesInFlight));
     const Mat4 identity = Mat4::identity();
-    std::memcpy(static_cast<char*>(m_3DDummyMapped) + 0, identity.m, sizeof(identity.m));
-    std::memcpy(static_cast<char*>(m_3DDummyMapped) + 64, identity.m, sizeof(identity.m));
-    std::memcpy(static_cast<char*>(m_3DDummyMapped) + 128, identity.m, sizeof(identity.m));
+    for (uint32_t frame = 0; frame < kVkMaxFramesInFlight; ++frame) {
+        char* frameData = static_cast<char*>(m_3DDummyBaseMapped) +
+            static_cast<size_t>(frame) * kVk3DUniformFrameStride;
+        std::memcpy(frameData + 0, identity.m, sizeof(identity.m));
+        std::memcpy(frameData + 64, identity.m, sizeof(identity.m));
+        std::memcpy(frameData + 128, identity.m, sizeof(identity.m));
+    }
 }
 
 bool QuarkVkRenderer::Allocate3DDescriptorSet(VkDescriptorSet& outSet, VkDescriptorPool& outPool) {
@@ -841,15 +902,15 @@ VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& mat
 
     std::array<VkWriteDescriptorSet, 11> writes{};
     writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 0, 0, 1,
-                  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &matrices, nullptr };
+                  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &matrices, nullptr };
     writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 1, 0, 1,
                   VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &images[0], nullptr, nullptr };
     writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 2, 0, 4,
                   VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowImages.data(), nullptr, nullptr };
     writes[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 3, 0, 1,
-                  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &shadowBuffer, nullptr };
+                  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &shadowBuffer, nullptr };
     writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 4, 0, 1,
-                  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, nullptr, &lightBuffer, nullptr };
+                  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &lightBuffer, nullptr };
     for (uint32_t i = 0; i < 6; ++i) {
         writes[5 + i] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 5 + i, 0, 1,
                           VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &images[i + 1], nullptr, nullptr };
@@ -876,6 +937,54 @@ void QuarkVkRenderer::ClearMaterialDescriptorCache() {
         }
     }
     m_materialCache.clear();
+}
+
+void QuarkVkRenderer::ReplaceMaterialTextureReferences(uint32_t textureId) {
+    if (textureId == 0 || m_device == VK_NULL_HANDLE) return;
+
+    const std::array<uint32_t, MATERIAL_MAP_BRDF + 1> fallbackTextureIds = {
+        m_whiteTextureId, m_blackTextureId, m_flatNormalTextureId,
+        m_whiteTextureId, m_whiteTextureId, m_blackTextureId,
+        m_whiteTextureId, m_whiteTextureId, m_whiteTextureId,
+        m_whiteTextureId, m_whiteTextureId
+    };
+    const std::array<uint32_t, MATERIAL_MAP_BRDF + 1> descriptorBindings = {
+        1, 5, 6, 7, 8, 9, 2, 2, 2, 2, 10
+    };
+
+    for (auto& [key, entry] : m_materialCache) {
+        (void)key;
+        if (entry.descriptorSet == VK_NULL_HANDLE) continue;
+
+        std::array<VkDescriptorImageInfo, MATERIAL_MAP_BRDF + 1> imageInfos{};
+        std::array<VkWriteDescriptorSet, MATERIAL_MAP_BRDF + 1> writes{};
+        uint32_t writeCount = 0;
+        const size_t mapCount = std::min(entry.textureIds.size(), fallbackTextureIds.size());
+        for (size_t mapIndex = 0; mapIndex < mapCount; ++mapIndex) {
+            if (entry.textureIds[mapIndex] != textureId) continue;
+
+            const VkTextureData* fallback = m_vkResources.Get(fallbackTextureIds[mapIndex]);
+            if (fallback == nullptr) continue;
+            VkDescriptorImageInfo& image = imageInfos[writeCount];
+            image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            image.imageView = fallback->view;
+            image.sampler = fallback->sampler;
+
+            VkWriteDescriptorSet& write = writes[writeCount++];
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = entry.descriptorSet;
+            write.dstBinding = descriptorBindings[mapIndex];
+            write.dstArrayElement = mapIndex >= MATERIAL_MAP_HEIGHT && mapIndex < MATERIAL_MAP_BRDF
+                ? static_cast<uint32_t>(mapIndex - MATERIAL_MAP_HEIGHT) : 0u;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &image;
+            entry.textureIds[mapIndex] = fallbackTextureIds[mapIndex];
+        }
+        if (writeCount > 0) {
+            vkUpdateDescriptorSets(m_device, writeCount, writes.data(), 0, nullptr);
+        }
+    }
 }
 
 bool QuarkVkRenderer::AllocateTextureDescriptorSet(VkDescriptorSet& outSet) {
@@ -1011,12 +1120,14 @@ void QuarkVkRenderer::CreateShaderPipelines() {
             program.pipeline3D = m_vkPipeline.Create3DPipeline(m_vkRenderPass.Get(),
                                                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                program.vertexModule,
-                                                               program.fragmentModule);
+                                                               program.fragmentModule,
+                                                               program.supportsGpuMeshTransform);
             if (m_vkRenderTarget.RenderPass() != VK_NULL_HANDLE) {
                 program.pipeline3DOffscreen = m_vkPipeline.Create3DPipeline(m_vkRenderTarget.RenderPass(),
                                                                             VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                             program.vertexModule,
-                                                                            program.fragmentModule);
+                                                                            program.fragmentModule,
+                                                                            program.supportsGpuMeshTransform);
             }
         }
     }
@@ -1450,11 +1561,16 @@ IRenderTexture QuarkVkRenderer::CreateRenderTargetInternal(int width, int height
 void QuarkVkRenderer::DestroyRenderTargetInternal(uint32_t renderTargetId) {
     auto it = m_renderTargets.find(renderTargetId);
     if (it == m_renderTargets.end()) return;
+    
+    if (m_device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(m_device);
+    }
 
     TraceLog(LogLevel::Info, "RENDER_TARGET", TextFormat("[Vulkan] Render target destroyed (Target ID: %u, %ux%u)",
         renderTargetId, it->second.width, it->second.height));
 
     const uint32_t textureId = it->second.textureId;
+    ReplaceMaterialTextureReferences(textureId);
     m_vkRenderTarget.DestroyTarget(renderTargetId);
     m_renderTargets.erase(it);
 
@@ -1485,7 +1601,8 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
 
     for (auto& [id, rt] : m_renderTargets) {
         const bool has2D = !rt.drawItems.empty();
-        const bool has3D = !rt.triangleVertices3D.empty() || !rt.lineVertices3D.empty();
+        const bool has3D = !rt.triangleVertices3D.empty() || !rt.triangleIndices3D.empty() ||
+            !rt.lineVertices3D.empty() || !rt.drawItems3D.empty();
         if (!has2D && !has3D) continue;
 
         const uint32_t baseVertex = static_cast<uint32_t>(m_frameVertices.size());
@@ -1503,6 +1620,9 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
             item.firstIndex += baseIndex;
             m_frameDrawItems.push_back(item);
         }
+        const uint32_t base3DIndex = static_cast<uint32_t>(m_frameIndices.size());
+        m_frameIndices.insert(m_frameIndices.end(),
+            rt.triangleIndices3D.begin(), rt.triangleIndices3D.end());
 
         m_frameTriangleVertices3D.insert(m_frameTriangleVertices3D.end(),
                                          rt.triangleVertices3D.begin(), rt.triangleVertices3D.end());
@@ -1510,6 +1630,7 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
                                      rt.lineVertices3D.begin(), rt.lineVertices3D.end());
         for (Vk3DDrawItem item : rt.drawItems3D) {
             item.firstVertex += triFirst;
+            if (!item.gpuMesh) item.firstIndex += base3DIndex;
             m_frame3DDrawItems.push_back(item);
         }
 
@@ -1544,6 +1665,9 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
             item.firstIndex += baseIndex;
             m_frameDrawItems.push_back(item);
         }
+        const uint32_t base3DIndex = static_cast<uint32_t>(m_frameIndices.size());
+        m_frameIndices.insert(m_frameIndices.end(),
+            m_main3DBatch.triangleIndices.begin(), m_main3DBatch.triangleIndices.end());
 
         m_frameTriangleVertices3D.insert(m_frameTriangleVertices3D.end(),
                                          m_main3DBatch.triangleVertices.begin(),
@@ -1553,6 +1677,7 @@ void QuarkVkRenderer::BuildCombinedFrameGeometry() {
                                      m_main3DBatch.lineVertices.end());
         for (Vk3DDrawItem item : m_main3DBatch.drawItems) {
             item.firstVertex += triFirst;
+            if (!item.gpuMesh) item.firstIndex += base3DIndex;
             m_frame3DDrawItems.push_back(item);
         }
         m_frame3DShaderProgramId = m_main3DBatch.shaderProgramId;
@@ -1647,10 +1772,12 @@ void QuarkVkRenderer::AppendQuadToBatch(
     if (!drawItems.empty() &&
         drawItems.back().descriptorSet == ds &&
         drawItems.back().shaderProgramId == m_vkShaderCompiler.CurrentProgramId() &&
+        drawItems.back().debugOverlay == m_drawingDebugOverlay &&
         drawItems.back().firstIndex + drawItems.back().indexCount == firstIndex) {
         drawItems.back().indexCount += 6;
     } else {
-        drawItems.push_back({ 0, m_vkShaderCompiler.CurrentProgramId(), ds, firstIndex, 6 });
+        drawItems.push_back({ 0, m_vkShaderCompiler.CurrentProgramId(), ds, firstIndex, 6,
+                              m_drawingDebugOverlay });
     }
 }
 
@@ -1685,12 +1812,46 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
 
     const VkFrameData& frame = m_frames[m_currentFrame];
     VkDeviceSize offsets[] = { 0 };
+    const uint32_t frameUniformOffset = static_cast<uint32_t>(
+        static_cast<VkDeviceSize>(m_currentFrame) * kVk3DUniformFrameStride);
+    const uint32_t uniformDynamicOffsets[] = {
+        frameUniformOffset, frameUniformOffset, frameUniformOffset
+    };
     VkDescriptorSet whiteDescriptorSet = m_white3DDescriptorSet;
     VkDescriptorSet white2DDescriptorSet = VK_NULL_HANDLE;
     const VkTextureData* whiteTex = m_vkResources.Get(m_whiteTextureId);
     if (whiteTex != nullptr) {
         white2DDescriptorSet = whiteTex->descriptorSet;
     }
+    auto pushCurrent3DLighting = [this, cmd](VkPipelineLayout layout) {
+        Vk3DPushConstants lighting{};
+        for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
+            const VkLight3D& light = m_lights[static_cast<size_t>(lightIndex)];
+            lighting.lightPositions[lightIndex][0] = light.position.x;
+            lighting.lightPositions[lightIndex][1] = light.position.y;
+            lighting.lightPositions[lightIndex][2] = light.position.z;
+            lighting.lightPositions[lightIndex][3] = 1.0f;
+            lighting.lightColors[lightIndex][0] = light.color.x;
+            lighting.lightColors[lightIndex][1] = light.color.y;
+            lighting.lightColors[lightIndex][2] = light.color.z;
+            lighting.lightColors[lightIndex][3] = 1.0f;
+            lighting.lightEnabled[lightIndex] = light.enabled ? 1.0f : 0.0f;
+        }
+        lighting.timeData[0] = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+        vkCmdPushConstants(cmd, layout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(lighting), &lighting);
+    };
+    auto pushGpuMeshTransform = [cmd](VkPipelineLayout layout, const Vk3DDrawItem& item) {
+        VkGpuMeshPushConstants transform{};
+        std::memcpy(transform.modelViewProjection, item.modelViewProjection.m, sizeof(transform.modelViewProjection));
+        std::memcpy(transform.model, item.model.m, sizeof(transform.model));
+        std::copy(item.materialColor.begin(), item.materialColor.end(), transform.materialColor);
+        transform.objectSpaceTransform = item.gpuMesh ? 1u : 0u;
+        vkCmdPushConstants(cmd, layout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(transform), &transform);
+    };
     
     for (const VkFramePass& pass : m_framePasses) {
         if (pass.renderTargetId == 0) continue;
@@ -1742,20 +1903,34 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         }
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        if ((pass.triVertexCount + pass.lineVertexCount) > 0 &&
+        if (((pass.triVertexCount + pass.lineVertexCount) > 0 || pass.drawItemCount3D > 0) &&
             whiteDescriptorSet != VK_NULL_HANDLE) {
             vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+            vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                    m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
+                                    3, uniformDynamicOffsets);
+            pushCurrent3DLighting(m_vkPipeline.GetLayout3D());
 
             if (pass.drawItemCount3D > 0) {
                 uint32_t cursor = pass.triFirstVertex;
+                bool gpuTransformPushActive = false;
                 for (uint32_t i = 0; i < pass.drawItemCount3D; ++i) {
                     const Vk3DDrawItem& item = m_frame3DDrawItems[pass.first3DDrawItem + i];
+                    const VkShaderProgramData* itemShaderProgram = item.shaderProgramId != 0
+                        ? m_vkShaderCompiler.GetProgram(item.shaderProgramId) : nullptr;
+                    const bool usesGpuMeshShader = itemShaderProgram && itemShaderProgram->supportsGpuMeshTransform;
+                    if (!usesGpuMeshShader && gpuTransformPushActive) {
+                        pushCurrent3DLighting(m_vkPipeline.GetLayout3D());
+                        gpuTransformPushActive = false;
+                    }
                     if (item.firstVertex > cursor && m_vkPipeline.GetOffscreen3DTri() != VK_NULL_HANDLE) {
+                        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                        vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
                         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DTri());
                         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                                m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
+                                                3, uniformDynamicOffsets);
                         vkCmdDraw(cmd, item.firstVertex - cursor, 1, cursor, 0);
                         RecordDebugRenderDraw(item.firstVertex - cursor);
                     }
@@ -1763,24 +1938,52 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                         ? item.descriptorSet : whiteDescriptorSet;
                     VkPipeline itemPipeline = m_vkPipeline.GetOffscreen3DTri();
                     if (item.shaderProgramId != 0) {
-                        const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(item.shaderProgramId);
-                        if (shaderProgram != nullptr && shaderProgram->pipeline3DOffscreen != VK_NULL_HANDLE) {
-                            itemPipeline = shaderProgram->pipeline3DOffscreen;
+                        if (itemShaderProgram != nullptr && itemShaderProgram->pipeline3DOffscreen != VK_NULL_HANDLE) {
+                            itemPipeline = itemShaderProgram->pipeline3DOffscreen;
                         }
                     }
                     if (itemPipeline == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE) continue;
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, itemPipeline);
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            m_vkPipeline.GetLayout3D(), 0, 1, &descriptorSet, 0, nullptr);
-                    vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
-                    RecordDebugRenderDraw(item.vertexCount);
-                    cursor = std::max(cursor, item.firstVertex + item.vertexCount);
+                                            m_vkPipeline.GetLayout3D(), 0, 1, &descriptorSet,
+                                            3, uniformDynamicOffsets);
+                    if (item.indexed) {
+                        if (item.gpuMesh) {
+                            vkCmdBindVertexBuffers(cmd, 0, 1, &item.gpuVertexBuffer, offsets);
+                            vkCmdBindIndexBuffer(cmd, item.gpuIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                            pushGpuMeshTransform(m_vkPipeline.GetLayout3D(), item);
+                            vkCmdDrawIndexed(cmd, item.indexCount, 1, 0, 0, 0);
+                            gpuTransformPushActive = true;
+                        } else {
+                            vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                            vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                            if (usesGpuMeshShader) {
+                                pushGpuMeshTransform(m_vkPipeline.GetLayout3D(), item);
+                                gpuTransformPushActive = true;
+                            }
+                            vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex,
+                                             static_cast<int32_t>(item.firstVertex), 0);
+                        }
+                        RecordDebugRenderDraw(item.indexCount);
+                    } else {
+                        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                        if (usesGpuMeshShader) {
+                            pushGpuMeshTransform(m_vkPipeline.GetLayout3D(), item);
+                            gpuTransformPushActive = true;
+                        }
+                        vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
+                        RecordDebugRenderDraw(item.vertexCount);
+                    }
+                    cursor = std::max(cursor, item.firstVertex + (item.gpuMesh ? 0u : item.vertexCount));
                 }
                 const uint32_t triEnd = pass.triFirstVertex + pass.triVertexCount;
                 if (cursor < triEnd && m_vkPipeline.GetOffscreen3DTri() != VK_NULL_HANDLE) {
+                    vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                    vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DTri());
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                            m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
+                                            3, uniformDynamicOffsets);
                     vkCmdDraw(cmd, triEnd - cursor, 1, cursor, 0);
                     RecordDebugRenderDraw(triEnd - cursor);
                 }
@@ -1790,6 +1993,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                 RecordDebugRenderDraw(pass.triVertexCount);
             }
             if (pass.lineVertexCount > 0 && m_vkPipeline.GetOffscreen3DLines() != VK_NULL_HANDLE) {
+                vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DLines());
                 vkCmdDraw(cmd, pass.lineVertexCount, 1,
                           static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + pass.lineFirstVertex, 0);
@@ -1812,7 +2016,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
 
         for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
             const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
-            if (item.descriptorSet == VK_NULL_HANDLE) continue;
+            if (item.descriptorSet == VK_NULL_HANDLE || item.debugOverlay) continue;
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     m_vkPipeline.GetLayout2D(), 0, 1, &item.descriptorSet, 0, nullptr);
             vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
@@ -1867,9 +2071,10 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     }
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    if (mainPass && (mainPass->triVertexCount + mainPass->lineVertexCount) > 0 &&
+    if (mainPass && ((mainPass->triVertexCount + mainPass->lineVertexCount) > 0 || mainPass->drawItemCount3D > 0) &&
         whiteDescriptorSet != VK_NULL_HANDLE) {
         vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+        vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         VkPipeline custom3DPipeline = m_vkPipeline.Get3DTri();
         VkPipelineLayout custom3DLayout = m_vkPipeline.GetLayout3D();
         VkDescriptorSet custom3DSet = whiteDescriptorSet;
@@ -1883,7 +2088,8 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         }
 
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                custom3DLayout, 0, 1, &custom3DSet, 0, nullptr);
+                                custom3DLayout, 0, 1, &custom3DSet,
+                                3, uniformDynamicOffsets);
 
         {
             if (m_3DDummyMapped != nullptr) {
@@ -1952,19 +2158,29 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
 
         if (mainPass->drawItemCount3D > 0) {
             uint32_t cursor = mainPass->triFirstVertex;
+            bool gpuTransformPushActive = false;
             for (uint32_t i = 0; i < mainPass->drawItemCount3D; ++i) {
                 const Vk3DDrawItem& item = m_frame3DDrawItems[mainPass->first3DDrawItem + i];
+                const VkShaderProgramData* shaderProgram = item.shaderProgramId != 0
+                    ? m_vkShaderCompiler.GetProgram(item.shaderProgramId) : nullptr;
+                const bool usesGpuMeshShader = shaderProgram && shaderProgram->supportsGpuMeshTransform;
+                if (!usesGpuMeshShader && gpuTransformPushActive) {
+                    pushCurrent3DLighting(m_vkPipeline.GetLayout3D());
+                    gpuTransformPushActive = false;
+                }
                 if (item.firstVertex > cursor && m_vkPipeline.Get3DTri() != VK_NULL_HANDLE) {
+                    vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                    vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get3DTri());
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                            m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
+                                            3, uniformDynamicOffsets);
                     vkCmdDraw(cmd, item.firstVertex - cursor, 1, cursor, 0);
                     RecordDebugRenderDraw(item.firstVertex - cursor);
                 }
                 VkPipeline pipeline = m_vkPipeline.Get3DTri();
                 VkPipelineLayout layout = m_vkPipeline.GetLayout3D();
                 VkDescriptorSet descriptorSet = whiteDescriptorSet;
-                const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(item.shaderProgramId);
                 if (shaderProgram != nullptr && shaderProgram->pipeline3D != VK_NULL_HANDLE) {
                     pipeline = shaderProgram->pipeline3D;
                     layout = m_vkPipeline.GetLayout3D();
@@ -1975,16 +2191,45 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                 if (pipeline == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE) continue;
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        layout, 0, 1, &descriptorSet, 0, nullptr);
-                vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
-                RecordDebugRenderDraw(item.vertexCount);
-                cursor = std::max(cursor, item.firstVertex + item.vertexCount);
+                                        layout, 0, 1, &descriptorSet,
+                                        3, uniformDynamicOffsets);
+                if (item.indexed) {
+                    if (item.gpuMesh) {
+                        vkCmdBindVertexBuffers(cmd, 0, 1, &item.gpuVertexBuffer, offsets);
+                        vkCmdBindIndexBuffer(cmd, item.gpuIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                        pushGpuMeshTransform(layout, item);
+                        vkCmdDrawIndexed(cmd, item.indexCount, 1, 0, 0, 0);
+                        gpuTransformPushActive = true;
+                    } else {
+                        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                        vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                        if (usesGpuMeshShader) {
+                            pushGpuMeshTransform(layout, item);
+                            gpuTransformPushActive = true;
+                        }
+                        vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex,
+                                         static_cast<int32_t>(item.firstVertex), 0);
+                    }
+                    RecordDebugRenderDraw(item.indexCount);
+                } else {
+                    vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                    if (usesGpuMeshShader) {
+                        pushGpuMeshTransform(layout, item);
+                        gpuTransformPushActive = true;
+                    }
+                    vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
+                    RecordDebugRenderDraw(item.vertexCount);
+                }
+                cursor = std::max(cursor, item.firstVertex + (item.gpuMesh ? 0u : item.vertexCount));
             }
             const uint32_t triEnd = mainPass->triFirstVertex + mainPass->triVertexCount;
             if (cursor < triEnd && m_vkPipeline.Get3DTri() != VK_NULL_HANDLE) {
+                vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get3DTri());
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                        m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
+                                        3, uniformDynamicOffsets);
                 vkCmdDraw(cmd, triEnd - cursor, 1, cursor, 0);
                 RecordDebugRenderDraw(triEnd - cursor);
             }
@@ -1997,8 +2242,11 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         }
 
         if (mainPass->lineVertexCount > 0 && m_vkPipeline.Get3DLines() != VK_NULL_HANDLE) {
+            vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
+            vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet, 0, nullptr);
+                                    m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
+                                    3, uniformDynamicOffsets);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get3DLines());
             vkCmdDraw(cmd, mainPass->lineVertexCount, 1,
                       static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + mainPass->lineFirstVertex, 0);
@@ -2055,6 +2303,46 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
 
     if (const VulkanRenderCallback callback = GetVulkanRenderCallback()) {
         callback(cmd);
+    }
+
+    bool hasDebugOverlay = false;
+    for (const VkFramePass& pass : m_framePasses) {
+        if (pass.renderTargetId != 0) continue;
+        for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
+            if (m_frameDrawItems[pass.firstDrawItem + i].debugOverlay) {
+                hasDebugOverlay = true;
+                break;
+            }
+        }
+    }
+    if (hasDebugOverlay && m_vkPipeline.Get2D() != VK_NULL_HANDLE) {
+        VkViewport overlayViewport{};
+        overlayViewport.width = static_cast<float>(m_swapChainExtent.width);
+        overlayViewport.height = static_cast<float>(m_swapChainExtent.height);
+        overlayViewport.minDepth = 0.0f;
+        overlayViewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cmd, 0, 1, &overlayViewport);
+
+        VkRect2D overlayScissor{};
+        overlayScissor.extent = m_swapChainExtent;
+        vkCmdSetScissor(cmd, 0, 1, &overlayScissor);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get2D());
+        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, offsets);
+        vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdPushConstants(cmd, m_vkPipeline.GetLayout2D(), VK_SHADER_STAGE_VERTEX_BIT,
+                           0, sizeof(screenPushConstants), &screenPushConstants);
+
+        for (const VkFramePass& pass : m_framePasses) {
+            if (pass.renderTargetId != 0) continue;
+            for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
+                const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
+                if (!item.debugOverlay || item.descriptorSet == VK_NULL_HANDLE) continue;
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        m_vkPipeline.GetLayout2D(), 0, 1,
+                                        &item.descriptorSet, 0, nullptr);
+                vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
+            }
+        }
     }
 
     vkCmdEndRenderPass(cmd);

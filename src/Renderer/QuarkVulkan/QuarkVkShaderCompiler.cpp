@@ -220,6 +220,8 @@ uint32_t QuarkVkShaderCompiler::CreateProgram(const char* vs, const char* fs) {
 
     const uint32_t shaderId = m_nextProgramId++;
     VkShaderProgramData programData{};
+    programData.supportsGpuMeshTransform = vs &&
+        std::string(vs).find("QUARK_VULKAN_GPU_MESH_TRANSFORM") != std::string::npos;
 
     try {
         if (vs) {

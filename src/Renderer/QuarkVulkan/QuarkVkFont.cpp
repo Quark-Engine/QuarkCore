@@ -342,10 +342,16 @@ void QuarkVkRenderer::DrawDebugText(const char* text, int x, int y, int fontSize
     static std::unordered_map<int, IFont> s_debugFonts;
     auto it = s_debugFonts.find(fontSize);
     if (it == s_debugFonts.end()) {
-        IFont font = LoadFontFromMemory("ttf", tahoma_ttf, static_cast<int>(tahoma_ttf_len), fontSize, nullptr, 0);
-        if (!font.IsValid()) {
+        FontData fontData{};
+        if (!LoadFontInternal(nullptr, tahoma_ttf, static_cast<int>(tahoma_ttf_len), fontSize,
+                              nullptr, 0, fontData)) {
+            TraceLog(LogLevel::Error, "FONT", TextFormat("[Vulkan] Failed to load Tahoma debug font at %d px.", fontSize));
             return;
         }
+
+        IFont font{};
+        font.id = m_nextFontId++;
+        m_fonts[font.id] = std::move(fontData);
         it = s_debugFonts.emplace(fontSize, font).first;
     }
 
@@ -356,6 +362,7 @@ void QuarkVkRenderer::DrawDebugText(const char* text, int x, int y, int fontSize
         Vec2{ -1.f, 1.f }, Vec2{ 0.f, 1.f }, Vec2{ 1.f, 1.f }
     };
 
+    m_drawingDebugOverlay = true;
     for (const Vec2& delta : offsets) {
         if (delta.x == 0.f && delta.y == 0.f) {
             continue;
@@ -368,6 +375,7 @@ void QuarkVkRenderer::DrawDebugText(const char* text, int x, int y, int fontSize
                static_cast<float>(fontSize), 0.f, shadow);
     DrawTextEx(it->second, text, Vec2{ static_cast<float>(x), static_cast<float>(y) },
                static_cast<float>(fontSize), 0.f, color);
+    m_drawingDebugOverlay = false;
 }
 
 void QuarkVkRenderer::DrawText(const char* text, int x, int y, int fontSize, Color color) {
@@ -475,6 +483,10 @@ void QuarkVkRenderer::UnloadFont(IFont& font) {
     if (it != m_fonts.end()) {
         const uint32_t atlasId = it->second.atlasTextureId;
         if (it->second.atlasTextureId != 0) {
+            if (m_device != VK_NULL_HANDLE) {
+                vkDeviceWaitIdle(m_device);
+            }
+            ReplaceMaterialTextureReferences(it->second.atlasTextureId);
             m_vkResources.DestroyTexture(it->second.atlasTextureId);
         }
         for (GlyphData& g : it->second.glyphs) {

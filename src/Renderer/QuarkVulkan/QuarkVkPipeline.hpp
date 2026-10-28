@@ -18,12 +18,33 @@ struct Vk3DVertex {
     float tx, ty, tz, tw;
 };
 
+struct VkGpuMeshVertex {
+    float x, y, z, w;
+    float u, v;
+    float r, g, b, a;
+    float nx, ny, nz, nw;
+    float wx, wy, wz, ww;
+    float tx, ty, tz, tw;
+};
+static_assert(sizeof(VkGpuMeshVertex) == sizeof(Vk3DVertex),
+              "GPU-resident and frame 3D vertices must share the same pipeline layout.");
+
 struct Vk3DPushConstants {
     float lightPositions[4][4];
     float lightColors[4][4];
     float timeData[4];
     float lightEnabled[4];
 };
+
+struct VkGpuMeshPushConstants {
+    float modelViewProjection[16];
+    float model[16];
+    float materialColor[4];
+    uint32_t objectSpaceTransform = 1;
+    uint32_t padding[3]{};
+};
+static_assert(sizeof(VkGpuMeshPushConstants) == sizeof(Vk3DPushConstants),
+              "GPU mesh push constants must fit the 3D pipeline layout range.");
 
 struct VkPushConstants2D {
     float screenWidth;
@@ -62,7 +83,8 @@ public:
     VkPipeline Create3DPipeline(VkRenderPass renderPass,
                                 VkPrimitiveTopology topology,
                                 VkShaderModule vertexModule = VK_NULL_HANDLE,
-                                VkShaderModule fragmentModule = VK_NULL_HANDLE);
+                                VkShaderModule fragmentModule = VK_NULL_HANDLE,
+                                bool gpuMeshTransform = false);
 
 private:
     void EnsureLayouts();

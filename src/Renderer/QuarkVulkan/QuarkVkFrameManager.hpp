@@ -8,13 +8,13 @@ namespace qci {
 struct VkFrameDataExt {
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
-    VkSemaphore renderFinished = VK_NULL_HANDLE;
     VkFence inFlightFence = VK_NULL_HANDLE;
 };
 
 class QuarkVkFrameManager {
 public:
     void Initialize(VkDevice device, VkCommandPool commandPool, uint32_t frameCount);
+    void SetSwapchainImageCount(uint32_t imageCount);
     void Shutdown();
 
     uint32_t FrameCount() const { return static_cast<uint32_t>(m_frames.size()); }
@@ -28,7 +28,7 @@ public:
     VkResult AcquireNextImage(VkSwapchainKHR swapchain, uint32_t frameIndex,
                               uint32_t& outImageIndex, uint64_t timeout = UINT64_MAX) const;
     void     ResetFrame(uint32_t frameIndex);
-    bool     Submit(uint32_t frameIndex, VkQueue graphicsQueue);
+    bool     Submit(uint32_t frameIndex, uint32_t imageIndex, VkQueue graphicsQueue);
     VkResult Present(VkSwapchainKHR swapchain, uint32_t frameIndex, uint32_t imageIndex,
                      VkQueue presentQueue);
 
@@ -36,6 +36,7 @@ private:
     VkDevice                  m_device      = VK_NULL_HANDLE;
     VkCommandPool             m_commandPool = VK_NULL_HANDLE;
     std::vector<VkFrameDataExt> m_frames;
+    std::vector<VkSemaphore> m_renderFinishedByImage;
 };
 } // namespace qci
 #endif // __QUARK_VK_FRAME_MANAGER__

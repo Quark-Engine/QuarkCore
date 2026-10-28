@@ -16,6 +16,7 @@ struct VkShaderProgramData {
     VkPipeline     pipeline3DOffscreen = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet3D = VK_NULL_HANDLE;
     bool            supports3D    = false;
+    bool            supportsGpuMeshTransform = false;
     std::unordered_map<std::string, int> uniforms;
     std::unordered_map<std::string, int> attributes;
     std::unordered_map<int, std::vector<uint8_t>> uniformValues;
