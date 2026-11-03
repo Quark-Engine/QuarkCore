@@ -895,11 +895,17 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
         };
     };
 
-    for (int vertexIndex = 0; vertexIndex < mesh.vertexCount; ++vertexIndex) {
-        const Color vertexColor = MultiplyColor(baseColor,
-            ReadVertexColor(mesh, vertexIndex, WHITE));
-        vertices.push_back(transformVertex(vertexIndex, vertexColor));
-    }
+    const size_t meshVertexCount = static_cast<size_t>(mesh.vertexCount);
+    vertices.resize(firstVertex + meshVertexCount);
+    Vk3DVertex* dstVertices = vertices.data() + firstVertex;
+    m_threadPool.ParallelFor(meshVertexCount, 512u, [&](uint32_t, size_t begin, size_t end) {
+        for (size_t vIdx = begin; vIdx < end; ++vIdx) {
+            const int vertexIndex = static_cast<int>(vIdx);
+            const Color vertexColor = MultiplyColor(baseColor,
+                ReadVertexColor(mesh, vertexIndex, WHITE));
+            dstVertices[vIdx] = transformVertex(vertexIndex, vertexColor);
+        }
+    });
 
     if (mesh.indices && mesh.triangleCount > 0) {
         for (int tri = 0; tri < mesh.triangleCount; ++tri) {

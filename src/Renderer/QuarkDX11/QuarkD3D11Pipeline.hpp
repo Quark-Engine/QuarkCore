@@ -40,6 +40,12 @@ public:
     int GetTextureWrapMode() const { return m_textureWrapMode; }
     ID3D11Buffer *VertexBuffer() const { return m_vertexBuffer; }
     ID3D11Buffer *VertexBuffer3D() const { return m_vertexBuffer3D; }
+    ID3D11VertexShader *VertexShader3D() const { return m_vertexShader3D.Get(); }
+    ID3D11PixelShader *PixelShader3D() const { return m_pixelShader3D.Get(); }
+    ID3D11InputLayout *InputLayout3D() const { return m_inputLayout3D.Get(); }
+    ID3D11VertexShader *TexturedVertexShader3D() const { return m_texturedVertexShader3D.Get(); }
+    ID3D11PixelShader *TexturedPixelShader3D() const { return m_texturedPixelShader3D.Get(); }
+    ID3D11InputLayout *TexturedInputLayout3D() const { return m_texturedInputLayout3D.Get(); }
     ID3D11RasterizerState *Rasterizer() const { return m_rasterizerState.Get(); }
     ID3D11RasterizerState *RasterizerCull() const { return m_rasterizerStateCull.Get(); }
     ID3D11DepthStencilState *DepthStencilState() const { return m_depthStencilState.Get(); }

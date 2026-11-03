@@ -147,7 +147,8 @@ void QuarkVkRenderer::Init(SDL_Window* window, int width, int height) {
     TraceLog(LogLevel::Info, "VULKAN", "Init step: CreateShaderPipelines");
     CreateShaderPipelines();
     CreateFramebuffers();
-    m_vkCommandContext.Initialize(m_device, FindQueueFamilies(m_physicalDevice).graphicsFamily.value());
+    m_threadPool.Initialize();
+    m_vkCommandContext.Initialize(m_device, FindQueueFamilies(m_physicalDevice).graphicsFamily.value(), m_threadPool.WorkerCount());
     CreateFrameVertexIndexBuffers();
     m_batchVertices.reserve(kVkMaxVerticesPerFrame);
     m_batchIndices.reserve(kVkMaxIndicesPerFrame);
@@ -174,6 +175,7 @@ void QuarkVkRenderer::Shutdown() {
     }
 
     TraceLog(LogLevel::Info, "VULKAN", "Shutting down Vulkan renderer...");
+    m_threadPool.Shutdown();
 
     if (m_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_device);
@@ -1715,22 +1717,36 @@ bool QuarkVkRenderer::UploadFrameGeometry(uint32_t frameIndex) {
         return false;
     }
 
+    auto parallelCopy = [this](void* dst, const void* src, size_t totalBytes) {
+        if (totalBytes == 0 || !dst || !src) return;
+        constexpr size_t kMinParallelCopyBytes = 128 * 1024;
+        if (totalBytes < kMinParallelCopyBytes || !m_threadPool.IsMultithreaded()) {
+            std::memcpy(dst, src, totalBytes);
+            return;
+        }
+        const size_t chunkSize = std::max<size_t>(64 * 1024,
+            (totalBytes + m_threadPool.WorkerCount() - 1) / m_threadPool.WorkerCount());
+        m_threadPool.ParallelFor(totalBytes, chunkSize, [dst, src](uint32_t, size_t begin, size_t end) {
+            std::memcpy(static_cast<char*>(dst) + begin, static_cast<const char*>(src) + begin, end - begin);
+        });
+    };
+
     if (!m_frameVertices.empty() && frame.vertexMapped) {
-        std::memcpy(frame.vertexMapped, m_frameVertices.data(),
-                    m_frameVertices.size() * sizeof(VkBatchVertex));
+        parallelCopy(frame.vertexMapped, m_frameVertices.data(),
+                     m_frameVertices.size() * sizeof(VkBatchVertex));
     }
     if (!m_frameIndices.empty() && frame.indexMapped) {
-        std::memcpy(frame.indexMapped, m_frameIndices.data(),
-                    m_frameIndices.size() * sizeof(uint32_t));
+        parallelCopy(frame.indexMapped, m_frameIndices.data(),
+                     m_frameIndices.size() * sizeof(uint32_t));
     }
     if (frame.vertexMapped3D) {
         const size_t triBytes = m_frameTriangleVertices3D.size() * sizeof(Vk3DVertex);
         const size_t lineBytes = m_frameLineVertices3D.size() * sizeof(Vk3DVertex);
         if (triBytes + lineBytes > 0) {
-            std::memcpy(frame.vertexMapped3D, m_frameTriangleVertices3D.data(), triBytes);
+            parallelCopy(frame.vertexMapped3D, m_frameTriangleVertices3D.data(), triBytes);
             if (lineBytes > 0) {
-                std::memcpy(static_cast<char*>(frame.vertexMapped3D) + triBytes,
-                            m_frameLineVertices3D.data(), lineBytes);
+                parallelCopy(static_cast<char*>(frame.vertexMapped3D) + triBytes,
+                             m_frameLineVertices3D.data(), lineBytes);
             }
         }
     }
@@ -1810,62 +1826,518 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) return false;
 
+    m_vkCommandContext.ResetFrameWorkerPools(m_currentFrame);
+
     const VkFrameData& frame = m_frames[m_currentFrame];
-    VkDeviceSize offsets[] = { 0 };
+    const VkDeviceSize offsets[] = { 0 };
     const uint32_t frameUniformOffset = static_cast<uint32_t>(
         static_cast<VkDeviceSize>(m_currentFrame) * kVk3DUniformFrameStride);
     const uint32_t uniformDynamicOffsets[] = {
         frameUniformOffset, frameUniformOffset, frameUniformOffset
     };
-    VkDescriptorSet whiteDescriptorSet = m_white3DDescriptorSet;
+    const VkDescriptorSet whiteDescriptorSet = m_white3DDescriptorSet;
     VkDescriptorSet white2DDescriptorSet = VK_NULL_HANDLE;
     const VkTextureData* whiteTex = m_vkResources.Get(m_whiteTextureId);
     if (whiteTex != nullptr) {
         white2DDescriptorSet = whiteTex->descriptorSet;
     }
-    auto pushCurrent3DLighting = [this, cmd](VkPipelineLayout layout) {
-        Vk3DPushConstants lighting{};
+
+    if (m_3DDummyMapped != nullptr) {
+        std::memcpy(static_cast<char*>(m_3DDummyMapped) + 0,
+                    m_currentMatrix.m, sizeof(m_currentMatrix.m));
+        std::memcpy(static_cast<char*>(m_3DDummyMapped) + 64,
+                    m_viewMatrix.m, sizeof(m_viewMatrix.m));
+        std::memcpy(static_cast<char*>(m_3DDummyMapped) + 128,
+                    m_projectionMatrix.m, sizeof(m_projectionMatrix.m));
+
+        float* lightData = static_cast<float*>(static_cast<void*>(static_cast<char*>(m_3DDummyMapped) + 1024));
+        std::fill(lightData, lightData + 80, 0.0f);
+        lightData[0] = 0.1f;
+        lightData[1] = 0.1f;
+        lightData[2] = 0.1f;
+        lightData[3] = 1.0f;
+        lightData[4] = 1.0f;
+        lightData[5] = 1.0f;
+        lightData[6] = 1.0f;
+        lightData[7] = 1.0f;
+        lightData[8] = m_viewPos.x;
+        lightData[9] = m_viewPos.y;
+        lightData[10] = m_viewPos.z;
+        lightData[11] = 1.0f;
         for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
             const VkLight3D& light = m_lights[static_cast<size_t>(lightIndex)];
-            lighting.lightPositions[lightIndex][0] = light.position.x;
-            lighting.lightPositions[lightIndex][1] = light.position.y;
-            lighting.lightPositions[lightIndex][2] = light.position.z;
-            lighting.lightPositions[lightIndex][3] = 1.0f;
-            lighting.lightColors[lightIndex][0] = light.color.x;
-            lighting.lightColors[lightIndex][1] = light.color.y;
-            lighting.lightColors[lightIndex][2] = light.color.z;
-            lighting.lightColors[lightIndex][3] = 1.0f;
-            lighting.lightEnabled[lightIndex] = light.enabled ? 1.0f : 0.0f;
+            const size_t base = 12 + static_cast<size_t>(lightIndex) * 16;
+            lightData[base + 0] = light.position.x;
+            lightData[base + 1] = light.position.y;
+            lightData[base + 2] = light.position.z;
+            lightData[base + 3] = 1.0f;
+            lightData[base + 4] = light.target.x;
+            lightData[base + 5] = light.target.y;
+            lightData[base + 6] = light.target.z;
+            lightData[base + 7] = 1.0f;
+            lightData[base + 8] = light.color.x;
+            lightData[base + 9] = light.color.y;
+            lightData[base + 10] = light.color.z;
+            lightData[base + 11] = 1.0f;
+            lightData[base + 12] = light.attenuation;
+            const int enabledValue = light.enabled ? 1 : 0;
+            std::memcpy(lightData + base + 13, &enabledValue, sizeof(int));
+            const int typeValue = light.type;
+            std::memcpy(lightData + base + 14, &typeValue, sizeof(int));
         }
-        lighting.timeData[0] = static_cast<float>(SDL_GetTicks()) / 1000.0f;
-        vkCmdPushConstants(cmd, layout,
+    }
+
+    Vk3DPushConstants lightingConstants{};
+    for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
+        const VkLight3D& light = m_lights[static_cast<size_t>(lightIndex)];
+        lightingConstants.lightPositions[lightIndex][0] = light.position.x;
+        lightingConstants.lightPositions[lightIndex][1] = light.position.y;
+        lightingConstants.lightPositions[lightIndex][2] = light.position.z;
+        lightingConstants.lightPositions[lightIndex][3] = 1.0f;
+        lightingConstants.lightColors[lightIndex][0] = light.color.x;
+        lightingConstants.lightColors[lightIndex][1] = light.color.y;
+        lightingConstants.lightColors[lightIndex][2] = light.color.z;
+        lightingConstants.lightColors[lightIndex][3] = 1.0f;
+        lightingConstants.lightEnabled[lightIndex] = light.enabled ? 1.0f : 0.0f;
+    }
+    lightingConstants.timeData[0] = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+
+    auto pushLightingToCmd = [&lightingConstants](VkCommandBuffer targetCmd, VkPipelineLayout layout) {
+        vkCmdPushConstants(targetCmd, layout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(lighting), &lighting);
+                           0, sizeof(lightingConstants), &lightingConstants);
     };
-    auto pushGpuMeshTransform = [cmd](VkPipelineLayout layout, const Vk3DDrawItem& item) {
+    auto pushGpuMeshTransformToCmd = [](VkCommandBuffer targetCmd, VkPipelineLayout layout, const Vk3DDrawItem& item) {
         VkGpuMeshPushConstants transform{};
         std::memcpy(transform.modelViewProjection, item.modelViewProjection.m, sizeof(transform.modelViewProjection));
         std::memcpy(transform.model, item.model.m, sizeof(transform.model));
         std::copy(item.materialColor.begin(), item.materialColor.end(), transform.materialColor);
         transform.objectSpaceTransform = item.gpuMesh ? 1u : 0u;
-        vkCmdPushConstants(cmd, layout,
+        vkCmdPushConstants(targetCmd, layout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(transform), &transform);
     };
-    
-    for (const VkFramePass& pass : m_framePasses) {
-        if (pass.renderTargetId == 0) continue;
 
-        auto itRt  = m_renderTargets.find(pass.renderTargetId);
-        if (itRt == m_renderTargets.end()) continue;
+    VkPipeline defaultMainPipeline2D = m_vkPipeline.Get2D();
+    if (m_vkShaderCompiler.CurrentProgramId() != 0) {
+        const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(m_vkShaderCompiler.CurrentProgramId());
+        if (shaderProgram != nullptr && shaderProgram->pipeline != VK_NULL_HANDLE) {
+            defaultMainPipeline2D = shaderProgram->pipeline;
+        }
+    }
 
-        Color passClearColor = m_clearColor;
-        if (pass.renderTargetId != 0) {
-            if (itRt != m_renderTargets.end()) {
-                passClearColor = itRt->second.clearColor;
+    enum class SecondaryTaskKind {
+        Draw3DChunk,
+        Draw2DChunk
+    };
+
+    struct SecondaryPassTask {
+        size_t passIndex = 0;
+        SecondaryTaskKind kind = SecondaryTaskKind::Draw3DChunk;
+        VkRenderPass renderPass = VK_NULL_HANDLE;
+        VkFramebuffer framebuffer = VK_NULL_HANDLE;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        bool isOffscreen = false;
+        uint32_t chunkBegin = 0;
+        uint32_t chunkEnd = 0;
+        bool isLast3DChunk = false;
+        VkCommandBuffer recordedCmd = VK_NULL_HANDLE;
+    };
+
+    const uint32_t workerCount = std::max(1u, m_threadPool.WorkerCount());
+    std::vector<SecondaryPassTask> secondaryTasks;
+    secondaryTasks.reserve(m_framePasses.size() * 4);
+
+    for (size_t passIdx = 0; passIdx < m_framePasses.size(); ++passIdx) {
+        const VkFramePass& pass = m_framePasses[passIdx];
+        const bool isOffscreen = (pass.renderTargetId != 0);
+        VkRenderPass targetRenderPass = VK_NULL_HANDLE;
+        VkFramebuffer targetFramebuffer = VK_NULL_HANDLE;
+        uint32_t passWidth = pass.width;
+        uint32_t passHeight = pass.height;
+
+        if (isOffscreen) {
+            if (m_renderTargets.find(pass.renderTargetId) == m_renderTargets.end()) {
+                continue;
+            }
+            targetRenderPass = m_vkRenderTarget.RenderPass();
+            targetFramebuffer = m_vkRenderTarget.Framebuffer(pass.renderTargetId);
+        } else {
+            targetRenderPass = m_vkRenderPass.Get();
+            targetFramebuffer = m_swapChainFramebuffers[imageIndex];
+            passWidth = m_swapChainExtent.width;
+            passHeight = m_swapChainExtent.height;
+        }
+
+        if (targetRenderPass == VK_NULL_HANDLE || targetFramebuffer == VK_NULL_HANDLE) {
+            continue;
+        }
+
+        if (((pass.triVertexCount + pass.lineVertexCount) > 0 || pass.drawItemCount3D > 0) &&
+            whiteDescriptorSet != VK_NULL_HANDLE) {
+            if (pass.drawItemCount3D > 0) {
+                const uint32_t chunkSize3D = std::max<uint32_t>(
+                    16u, (pass.drawItemCount3D + workerCount - 1) / workerCount);
+                for (uint32_t start = 0; start < pass.drawItemCount3D; start += chunkSize3D) {
+                    const uint32_t end = std::min(pass.drawItemCount3D, start + chunkSize3D);
+                    SecondaryPassTask task{};
+                    task.passIndex = passIdx;
+                    task.kind = SecondaryTaskKind::Draw3DChunk;
+                    task.renderPass = targetRenderPass;
+                    task.framebuffer = targetFramebuffer;
+                    task.width = passWidth;
+                    task.height = passHeight;
+                    task.isOffscreen = isOffscreen;
+                    task.chunkBegin = start;
+                    task.chunkEnd = end;
+                    task.isLast3DChunk = (end == pass.drawItemCount3D);
+                    secondaryTasks.push_back(task);
+                }
+            } else {
+                SecondaryPassTask task{};
+                task.passIndex = passIdx;
+                task.kind = SecondaryTaskKind::Draw3DChunk;
+                task.renderPass = targetRenderPass;
+                task.framebuffer = targetFramebuffer;
+                task.width = passWidth;
+                task.height = passHeight;
+                task.isOffscreen = isOffscreen;
+                task.chunkBegin = 0;
+                task.chunkEnd = 0;
+                task.isLast3DChunk = true;
+                secondaryTasks.push_back(task);
             }
         }
 
+        uint32_t nonOverlay2DCount = 0;
+        for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
+            const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
+            if (!item.debugOverlay && item.descriptorSet != VK_NULL_HANDLE) {
+                ++nonOverlay2DCount;
+            }
+        }
+        if (nonOverlay2DCount > 0) {
+            const uint32_t chunkSize2D = std::max<uint32_t>(
+                32u, (pass.drawItemCount + workerCount - 1) / workerCount);
+            for (uint32_t start = 0; start < pass.drawItemCount; start += chunkSize2D) {
+                const uint32_t end = std::min(pass.drawItemCount, start + chunkSize2D);
+                SecondaryPassTask task{};
+                task.passIndex = passIdx;
+                task.kind = SecondaryTaskKind::Draw2DChunk;
+                task.renderPass = targetRenderPass;
+                task.framebuffer = targetFramebuffer;
+                task.width = passWidth;
+                task.height = passHeight;
+                task.isOffscreen = isOffscreen;
+                task.chunkBegin = start;
+                task.chunkEnd = end;
+                task.isLast3DChunk = false;
+                secondaryTasks.push_back(task);
+            }
+        }
+    }
+
+    auto applyPassViewportAndScissor = [this](VkCommandBuffer targetCmd, uint32_t width, uint32_t height) {
+        VkViewport viewport{};
+        viewport.x        = 0.0f;
+        viewport.y        = 0.0f;
+        viewport.width    = static_cast<float>(width);
+        viewport.height   = static_cast<float>(height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(targetCmd, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = { width, height };
+        if (m_scissorEnabled) {
+            scissor = m_scissorRect;
+            scissor.offset.x = std::max(0, std::min(scissor.offset.x, static_cast<int32_t>(width)));
+            scissor.offset.y = std::max(0, std::min(scissor.offset.y, static_cast<int32_t>(height)));
+        }
+        vkCmdSetScissor(targetCmd, 0, 1, &scissor);
+    };
+
+    auto recordSecondaryTask = [&](uint32_t workerIndex, SecondaryPassTask& task) {
+        VkCommandBuffer secCmd = m_vkCommandContext.AcquireSecondaryCommandBuffer(m_currentFrame, workerIndex);
+        if (secCmd == VK_NULL_HANDLE) {
+            return;
+        }
+
+        VkCommandBufferInheritanceInfo inheritanceInfo{};
+        inheritanceInfo.sType       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+        inheritanceInfo.renderPass  = task.renderPass;
+        inheritanceInfo.subpass     = 0;
+        inheritanceInfo.framebuffer = task.framebuffer;
+
+        VkCommandBufferBeginInfo secBeginInfo{};
+        secBeginInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        secBeginInfo.flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
+                                        VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+        secBeginInfo.pInheritanceInfo = &inheritanceInfo;
+        if (vkBeginCommandBuffer(secCmd, &secBeginInfo) != VK_SUCCESS) {
+            return;
+        }
+
+        applyPassViewportAndScissor(secCmd, task.width, task.height);
+        const VkFramePass& pass = m_framePasses[task.passIndex];
+
+        if (task.kind == SecondaryTaskKind::Draw3DChunk) {
+            const VkPipeline defaultTriPipeline = task.isOffscreen
+                ? m_vkPipeline.GetOffscreen3DTri()
+                : m_vkPipeline.Get3DTri();
+            const VkPipeline defaultLinePipeline = task.isOffscreen
+                ? m_vkPipeline.GetOffscreen3DLines()
+                : m_vkPipeline.Get3DLines();
+            const VkPipelineLayout layout3D = m_vkPipeline.GetLayout3D();
+
+            VkPipeline custom3DPipeline = defaultTriPipeline;
+            VkDescriptorSet custom3DSet = whiteDescriptorSet;
+            if (!task.isOffscreen && m_frame3DShaderProgramId != 0) {
+                const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(m_frame3DShaderProgramId);
+                if (shaderProgram != nullptr && shaderProgram->pipeline3D != VK_NULL_HANDLE) {
+                    custom3DPipeline = shaderProgram->pipeline3D;
+                    custom3DSet = shaderProgram->descriptorSet3D;
+                }
+            }
+
+            vkCmdBindVertexBuffers(secCmd, 0, 1, &frame.vertexBuffer3D, offsets);
+            vkCmdBindIndexBuffer(secCmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindDescriptorSets(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    layout3D, 0, 1, &custom3DSet,
+                                    3, uniformDynamicOffsets);
+            pushLightingToCmd(secCmd, layout3D);
+
+            if (pass.drawItemCount3D > 0) {
+                uint32_t cursor = pass.triFirstVertex;
+                if (task.chunkBegin > 0) {
+                    const Vk3DDrawItem& prevItem = m_frame3DDrawItems[pass.first3DDrawItem + task.chunkBegin - 1];
+                    cursor = std::max(cursor, prevItem.firstVertex + (prevItem.gpuMesh ? 0u : prevItem.vertexCount));
+                }
+
+                bool gpuTransformPushActive = false;
+                VkPipeline boundPipeline = VK_NULL_HANDLE;
+                VkDescriptorSet boundDescriptorSet = VK_NULL_HANDLE;
+                VkBuffer boundVertexBuffer = frame.vertexBuffer3D;
+                VkBuffer boundIndexBuffer = frame.indexBuffer;
+
+                for (uint32_t i = task.chunkBegin; i < task.chunkEnd; ++i) {
+                    const Vk3DDrawItem& item = m_frame3DDrawItems[pass.first3DDrawItem + i];
+                    const VkShaderProgramData* itemShaderProgram = item.shaderProgramId != 0
+                        ? m_vkShaderCompiler.GetProgram(item.shaderProgramId) : nullptr;
+                    const bool usesGpuMeshShader = itemShaderProgram && itemShaderProgram->supportsGpuMeshTransform;
+                    if (!usesGpuMeshShader && gpuTransformPushActive) {
+                        pushLightingToCmd(secCmd, layout3D);
+                        gpuTransformPushActive = false;
+                    }
+                    if (item.firstVertex > cursor && defaultTriPipeline != VK_NULL_HANDLE) {
+                        if (boundVertexBuffer != frame.vertexBuffer3D) {
+                            vkCmdBindVertexBuffers(secCmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                            boundVertexBuffer = frame.vertexBuffer3D;
+                        }
+                        if (boundIndexBuffer != frame.indexBuffer) {
+                            vkCmdBindIndexBuffer(secCmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                            boundIndexBuffer = frame.indexBuffer;
+                        }
+                        if (boundPipeline != defaultTriPipeline) {
+                            vkCmdBindPipeline(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultTriPipeline);
+                            boundPipeline = defaultTriPipeline;
+                        }
+                        if (boundDescriptorSet != whiteDescriptorSet) {
+                            vkCmdBindDescriptorSets(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                    layout3D, 0, 1, &whiteDescriptorSet,
+                                                    3, uniformDynamicOffsets);
+                            boundDescriptorSet = whiteDescriptorSet;
+                        }
+                        vkCmdDraw(secCmd, item.firstVertex - cursor, 1, cursor, 0);
+                        RecordDebugRenderDraw(item.firstVertex - cursor);
+                    }
+
+                    VkPipeline itemPipeline = defaultTriPipeline;
+                    VkDescriptorSet descriptorSet = item.descriptorSet != VK_NULL_HANDLE
+                        ? item.descriptorSet : whiteDescriptorSet;
+                    if (itemShaderProgram != nullptr) {
+                        const VkPipeline shaderPipe = task.isOffscreen
+                            ? itemShaderProgram->pipeline3DOffscreen
+                            : itemShaderProgram->pipeline3D;
+                        if (shaderPipe != VK_NULL_HANDLE) {
+                            itemPipeline = shaderPipe;
+                        }
+                    }
+                    if (itemPipeline == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE) {
+                        cursor = std::max(cursor, item.firstVertex + (item.gpuMesh ? 0u : item.vertexCount));
+                        continue;
+                    }
+
+                    if (boundPipeline != itemPipeline) {
+                        vkCmdBindPipeline(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, itemPipeline);
+                        boundPipeline = itemPipeline;
+                    }
+                    if (boundDescriptorSet != descriptorSet) {
+                        vkCmdBindDescriptorSets(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                layout3D, 0, 1, &descriptorSet,
+                                                3, uniformDynamicOffsets);
+                        boundDescriptorSet = descriptorSet;
+                    }
+
+                    if (item.indexed) {
+                        if (item.gpuMesh) {
+                            if (boundVertexBuffer != item.gpuVertexBuffer) {
+                                vkCmdBindVertexBuffers(secCmd, 0, 1, &item.gpuVertexBuffer, offsets);
+                                boundVertexBuffer = item.gpuVertexBuffer;
+                            }
+                            if (boundIndexBuffer != item.gpuIndexBuffer) {
+                                vkCmdBindIndexBuffer(secCmd, item.gpuIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                                boundIndexBuffer = item.gpuIndexBuffer;
+                            }
+                            pushGpuMeshTransformToCmd(secCmd, layout3D, item);
+                            vkCmdDrawIndexed(secCmd, item.indexCount, 1, 0, 0, 0);
+                            gpuTransformPushActive = true;
+                        } else {
+                            if (boundVertexBuffer != frame.vertexBuffer3D) {
+                                vkCmdBindVertexBuffers(secCmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                                boundVertexBuffer = frame.vertexBuffer3D;
+                            }
+                            if (boundIndexBuffer != frame.indexBuffer) {
+                                vkCmdBindIndexBuffer(secCmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                                boundIndexBuffer = frame.indexBuffer;
+                            }
+                            if (usesGpuMeshShader) {
+                                pushGpuMeshTransformToCmd(secCmd, layout3D, item);
+                                gpuTransformPushActive = true;
+                            }
+                            vkCmdDrawIndexed(secCmd, item.indexCount, 1, item.firstIndex,
+                                             static_cast<int32_t>(item.firstVertex), 0);
+                        }
+                        RecordDebugRenderDraw(item.indexCount);
+                    } else {
+                        if (boundVertexBuffer != frame.vertexBuffer3D) {
+                            vkCmdBindVertexBuffers(secCmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                            boundVertexBuffer = frame.vertexBuffer3D;
+                        }
+                        if (usesGpuMeshShader) {
+                            pushGpuMeshTransformToCmd(secCmd, layout3D, item);
+                            gpuTransformPushActive = true;
+                        }
+                        vkCmdDraw(secCmd, item.vertexCount, 1, item.firstVertex, 0);
+                        RecordDebugRenderDraw(item.vertexCount);
+                    }
+                    cursor = std::max(cursor, item.firstVertex + (item.gpuMesh ? 0u : item.vertexCount));
+                }
+
+                if (task.isLast3DChunk) {
+                    const uint32_t triEnd = pass.triFirstVertex + pass.triVertexCount;
+                    if (cursor < triEnd && defaultTriPipeline != VK_NULL_HANDLE) {
+                        if (gpuTransformPushActive) {
+                            pushLightingToCmd(secCmd, layout3D);
+                            gpuTransformPushActive = false;
+                        }
+                        vkCmdBindVertexBuffers(secCmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                        vkCmdBindIndexBuffer(secCmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                        vkCmdBindPipeline(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultTriPipeline);
+                        vkCmdBindDescriptorSets(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                layout3D, 0, 1, &whiteDescriptorSet,
+                                                3, uniformDynamicOffsets);
+                        vkCmdDraw(secCmd, triEnd - cursor, 1, cursor, 0);
+                        RecordDebugRenderDraw(triEnd - cursor);
+                    }
+                }
+            } else if (task.isLast3DChunk && pass.triVertexCount > 0 && custom3DPipeline != VK_NULL_HANDLE) {
+                vkCmdBindPipeline(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, custom3DPipeline);
+                vkCmdDraw(secCmd, pass.triVertexCount, 1, pass.triFirstVertex, 0);
+                RecordDebugRenderDraw(pass.triVertexCount);
+            }
+
+            if (task.isLast3DChunk && pass.lineVertexCount > 0 && defaultLinePipeline != VK_NULL_HANDLE) {
+                pushLightingToCmd(secCmd, layout3D);
+                vkCmdBindVertexBuffers(secCmd, 0, 1, &frame.vertexBuffer3D, offsets);
+                vkCmdBindIndexBuffer(secCmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdBindDescriptorSets(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        layout3D, 0, 1, &whiteDescriptorSet,
+                                        3, uniformDynamicOffsets);
+                vkCmdBindPipeline(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultLinePipeline);
+                vkCmdDraw(secCmd, pass.lineVertexCount, 1,
+                          static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + pass.lineFirstVertex, 0);
+                RecordDebugRenderDraw(pass.lineVertexCount);
+            }
+        } else {
+            const VkPushConstants2D pushConstants2D{
+                static_cast<float>(task.width),
+                static_cast<float>(task.height)
+            };
+            vkCmdPushConstants(secCmd, m_vkPipeline.GetLayout2D(),
+                               VK_SHADER_STAGE_VERTEX_BIT,
+                               0, sizeof(pushConstants2D), &pushConstants2D);
+            vkCmdBindVertexBuffers(secCmd, 0, 1, &frame.vertexBuffer, offsets);
+            vkCmdBindIndexBuffer(secCmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+            if (task.isOffscreen) {
+                if (m_vkPipeline.GetOffscreen2D() != VK_NULL_HANDLE) {
+                    vkCmdBindPipeline(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen2D());
+                }
+                for (uint32_t i = task.chunkBegin; i < task.chunkEnd; ++i) {
+                    const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
+                    if (item.descriptorSet == VK_NULL_HANDLE || item.debugOverlay) continue;
+                    vkCmdBindDescriptorSets(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            m_vkPipeline.GetLayout2D(), 0, 1, &item.descriptorSet, 0, nullptr);
+                    vkCmdDrawIndexed(secCmd, item.indexCount, 1, item.firstIndex, 0, 0);
+                    RecordDebugRenderDraw(item.indexCount);
+                }
+            } else {
+                if (white2DDescriptorSet != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            m_vkPipeline.GetLayout2D(), 0, 1, &white2DDescriptorSet, 0, nullptr);
+                }
+                VkPipeline boundPipeline = VK_NULL_HANDLE;
+                for (uint32_t i = task.chunkBegin; i < task.chunkEnd; ++i) {
+                    const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
+                    if (item.descriptorSet == VK_NULL_HANDLE || item.debugOverlay) continue;
+
+                    VkPipeline itemPipeline = defaultMainPipeline2D;
+                    if (item.shaderProgramId != 0) {
+                        const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(item.shaderProgramId);
+                        if (shaderProgram != nullptr && shaderProgram->pipeline != VK_NULL_HANDLE) {
+                            itemPipeline = shaderProgram->pipeline;
+                        }
+                    }
+                    if (itemPipeline == VK_NULL_HANDLE) continue;
+                    if (itemPipeline != boundPipeline) {
+                        vkCmdBindPipeline(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, itemPipeline);
+                        boundPipeline = itemPipeline;
+                    }
+                    vkCmdBindDescriptorSets(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            m_vkPipeline.GetLayout2D(), 0, 1, &item.descriptorSet, 0, nullptr);
+                    vkCmdDrawIndexed(secCmd, item.indexCount, 1, item.firstIndex, 0, 0);
+                    RecordDebugRenderDraw(item.indexCount);
+                }
+            }
+        }
+
+        if (vkEndCommandBuffer(secCmd) == VK_SUCCESS) {
+            task.recordedCmd = secCmd;
+        }
+    };
+
+    if (!secondaryTasks.empty()) {
+        m_threadPool.ParallelFor(secondaryTasks.size(), 1u, [&](uint32_t workerIndex, size_t begin, size_t end) {
+            for (size_t idx = begin; idx < end; ++idx) {
+                recordSecondaryTask(workerIndex, secondaryTasks[idx]);
+            }
+        });
+    }
+
+    std::vector<VkCommandBuffer> passSecondaryCmds;
+    passSecondaryCmds.reserve(32);
+
+    for (size_t passIdx = 0; passIdx < m_framePasses.size(); ++passIdx) {
+        const VkFramePass& pass = m_framePasses[passIdx];
+        if (pass.renderTargetId == 0) continue;
+
+        auto itRt = m_renderTargets.find(pass.renderTargetId);
+        if (itRt == m_renderTargets.end()) continue;
+
+        const Color passClearColor = itRt->second.clearColor;
         std::array<VkClearValue, 2> clearValues{};
         clearValues[0].color = {{
             NormalizeColorComponent(passClearColor.r),
@@ -1875,6 +2347,13 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         }};
         clearValues[1].depthStencil = { 1.0f, 0 };
 
+        passSecondaryCmds.clear();
+        for (const SecondaryPassTask& task : secondaryTasks) {
+            if (task.passIndex == passIdx && task.recordedCmd != VK_NULL_HANDLE) {
+                passSecondaryCmds.push_back(task.recordedCmd);
+            }
+        }
+
         VkRenderPassBeginInfo rtPassInfo{};
         rtPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         rtPassInfo.renderPass        = m_vkRenderTarget.RenderPass();
@@ -1882,155 +2361,97 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         rtPassInfo.renderArea.extent = { pass.width, pass.height };
         rtPassInfo.clearValueCount   = static_cast<uint32_t>(clearValues.size());
         rtPassInfo.pClearValues      = clearValues.data();
-        vkCmdBeginRenderPass(cmd, &rtPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        VkViewport viewport{};
-        viewport.x        = 0.0f;
-        viewport.y        = 0.0f;
-        viewport.width    = static_cast<float>(pass.width);
-        viewport.height   = static_cast<float>(pass.height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-        VkRect2D scissor{};
-        scissor.offset = {0, 0};
-        scissor.extent = { pass.width, pass.height };
-        if (m_scissorEnabled) {
-            scissor = m_scissorRect;
-            scissor.offset.x = std::max(0, std::min(scissor.offset.x, static_cast<int32_t>(pass.width)));
-            scissor.offset.y = std::max(0, std::min(scissor.offset.y, static_cast<int32_t>(pass.height)));
+        vkCmdBeginRenderPass(cmd, &rtPassInfo,
+                             passSecondaryCmds.empty()
+                                 ? VK_SUBPASS_CONTENTS_INLINE
+                                 : VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+        if (!passSecondaryCmds.empty()) {
+            vkCmdExecuteCommands(cmd, static_cast<uint32_t>(passSecondaryCmds.size()), passSecondaryCmds.data());
         }
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-        if (((pass.triVertexCount + pass.lineVertexCount) > 0 || pass.drawItemCount3D > 0) &&
-            whiteDescriptorSet != VK_NULL_HANDLE) {
-            vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-            vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
-                                    3, uniformDynamicOffsets);
-            pushCurrent3DLighting(m_vkPipeline.GetLayout3D());
-
-            if (pass.drawItemCount3D > 0) {
-                uint32_t cursor = pass.triFirstVertex;
-                bool gpuTransformPushActive = false;
-                for (uint32_t i = 0; i < pass.drawItemCount3D; ++i) {
-                    const Vk3DDrawItem& item = m_frame3DDrawItems[pass.first3DDrawItem + i];
-                    const VkShaderProgramData* itemShaderProgram = item.shaderProgramId != 0
-                        ? m_vkShaderCompiler.GetProgram(item.shaderProgramId) : nullptr;
-                    const bool usesGpuMeshShader = itemShaderProgram && itemShaderProgram->supportsGpuMeshTransform;
-                    if (!usesGpuMeshShader && gpuTransformPushActive) {
-                        pushCurrent3DLighting(m_vkPipeline.GetLayout3D());
-                        gpuTransformPushActive = false;
-                    }
-                    if (item.firstVertex > cursor && m_vkPipeline.GetOffscreen3DTri() != VK_NULL_HANDLE) {
-                        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-                        vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DTri());
-                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
-                                                3, uniformDynamicOffsets);
-                        vkCmdDraw(cmd, item.firstVertex - cursor, 1, cursor, 0);
-                        RecordDebugRenderDraw(item.firstVertex - cursor);
-                    }
-                    const VkDescriptorSet descriptorSet = item.descriptorSet != VK_NULL_HANDLE
-                        ? item.descriptorSet : whiteDescriptorSet;
-                    VkPipeline itemPipeline = m_vkPipeline.GetOffscreen3DTri();
-                    if (item.shaderProgramId != 0) {
-                        if (itemShaderProgram != nullptr && itemShaderProgram->pipeline3DOffscreen != VK_NULL_HANDLE) {
-                            itemPipeline = itemShaderProgram->pipeline3DOffscreen;
-                        }
-                    }
-                    if (itemPipeline == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE) continue;
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, itemPipeline);
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            m_vkPipeline.GetLayout3D(), 0, 1, &descriptorSet,
-                                            3, uniformDynamicOffsets);
-                    if (item.indexed) {
-                        if (item.gpuMesh) {
-                            vkCmdBindVertexBuffers(cmd, 0, 1, &item.gpuVertexBuffer, offsets);
-                            vkCmdBindIndexBuffer(cmd, item.gpuIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                            pushGpuMeshTransform(m_vkPipeline.GetLayout3D(), item);
-                            vkCmdDrawIndexed(cmd, item.indexCount, 1, 0, 0, 0);
-                            gpuTransformPushActive = true;
-                        } else {
-                            vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-                            vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                            if (usesGpuMeshShader) {
-                                pushGpuMeshTransform(m_vkPipeline.GetLayout3D(), item);
-                                gpuTransformPushActive = true;
-                            }
-                            vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex,
-                                             static_cast<int32_t>(item.firstVertex), 0);
-                        }
-                        RecordDebugRenderDraw(item.indexCount);
-                    } else {
-                        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-                        if (usesGpuMeshShader) {
-                            pushGpuMeshTransform(m_vkPipeline.GetLayout3D(), item);
-                            gpuTransformPushActive = true;
-                        }
-                        vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
-                        RecordDebugRenderDraw(item.vertexCount);
-                    }
-                    cursor = std::max(cursor, item.firstVertex + (item.gpuMesh ? 0u : item.vertexCount));
-                }
-                const uint32_t triEnd = pass.triFirstVertex + pass.triVertexCount;
-                if (cursor < triEnd && m_vkPipeline.GetOffscreen3DTri() != VK_NULL_HANDLE) {
-                    vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-                    vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DTri());
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
-                                            3, uniformDynamicOffsets);
-                    vkCmdDraw(cmd, triEnd - cursor, 1, cursor, 0);
-                    RecordDebugRenderDraw(triEnd - cursor);
-                }
-            } else if (pass.triVertexCount > 0 && m_vkPipeline.GetOffscreen3DTri() != VK_NULL_HANDLE) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DTri());
-                vkCmdDraw(cmd, pass.triVertexCount, 1, pass.triFirstVertex, 0);
-                RecordDebugRenderDraw(pass.triVertexCount);
-            }
-            if (pass.lineVertexCount > 0 && m_vkPipeline.GetOffscreen3DLines() != VK_NULL_HANDLE) {
-                vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen3DLines());
-                vkCmdDraw(cmd, pass.lineVertexCount, 1,
-                          static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + pass.lineFirstVertex, 0);
-                RecordDebugRenderDraw(pass.lineVertexCount);
-            }
-        }
-
-        if (m_vkPipeline.GetOffscreen2D() != VK_NULL_HANDLE) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.GetOffscreen2D());
-        }
-        const VkPushConstants2D rtPushConstants{
-            static_cast<float>(pass.width),
-            static_cast<float>(pass.height)
-        };
-        vkCmdPushConstants(cmd, m_vkPipeline.GetLayout2D(),
-                   VK_SHADER_STAGE_VERTEX_BIT,
-                   0, sizeof(rtPushConstants), &rtPushConstants);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, offsets);
-        vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-        for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
-            const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
-            if (item.descriptorSet == VK_NULL_HANDLE || item.debugOverlay) continue;
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_vkPipeline.GetLayout2D(), 0, 1, &item.descriptorSet, 0, nullptr);
-            vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
-            RecordDebugRenderDraw(item.indexCount);
-        }
-
         vkCmdEndRenderPass(cmd);
     }
 
-    const VkFramePass* mainPass = nullptr;
+    passSecondaryCmds.clear();
+    for (const SecondaryPassTask& task : secondaryTasks) {
+        if (!task.isOffscreen && task.recordedCmd != VK_NULL_HANDLE) {
+            passSecondaryCmds.push_back(task.recordedCmd);
+        }
+    }
+
+    bool hasDebugOverlay = false;
     for (const VkFramePass& pass : m_framePasses) {
-        if (pass.renderTargetId == 0) {
-            mainPass = &pass;
-            break;
+        if (pass.renderTargetId != 0) continue;
+        for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
+            if (m_frameDrawItems[pass.firstDrawItem + i].debugOverlay) {
+                hasDebugOverlay = true;
+                break;
+            }
+        }
+    }
+
+    const VulkanRenderCallback callback = GetVulkanRenderCallback();
+    const VkPushConstants2D screenPushConstants{
+        static_cast<float>(m_swapChainExtent.width),
+        static_cast<float>(m_swapChainExtent.height)
+    };
+
+    auto recordOverlayCommands = [&](VkCommandBuffer targetCmd) {
+        if (callback) {
+            applyPassViewportAndScissor(targetCmd, m_swapChainExtent.width, m_swapChainExtent.height);
+            callback(targetCmd);
+        }
+        if (hasDebugOverlay && m_vkPipeline.Get2D() != VK_NULL_HANDLE) {
+            VkViewport overlayViewport{};
+            overlayViewport.width = static_cast<float>(m_swapChainExtent.width);
+            overlayViewport.height = static_cast<float>(m_swapChainExtent.height);
+            overlayViewport.minDepth = 0.0f;
+            overlayViewport.maxDepth = 1.0f;
+            vkCmdSetViewport(targetCmd, 0, 1, &overlayViewport);
+
+            VkRect2D overlayScissor{};
+            overlayScissor.extent = m_swapChainExtent;
+            vkCmdSetScissor(targetCmd, 0, 1, &overlayScissor);
+            vkCmdBindPipeline(targetCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get2D());
+            vkCmdBindVertexBuffers(targetCmd, 0, 1, &frame.vertexBuffer, offsets);
+            vkCmdBindIndexBuffer(targetCmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdPushConstants(targetCmd, m_vkPipeline.GetLayout2D(), VK_SHADER_STAGE_VERTEX_BIT,
+                               0, sizeof(screenPushConstants), &screenPushConstants);
+
+            for (const VkFramePass& pass : m_framePasses) {
+                if (pass.renderTargetId != 0) continue;
+                for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
+                    const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
+                    if (!item.debugOverlay || item.descriptorSet == VK_NULL_HANDLE) continue;
+                    vkCmdBindDescriptorSets(targetCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            m_vkPipeline.GetLayout2D(), 0, 1,
+                                            &item.descriptorSet, 0, nullptr);
+                    vkCmdDrawIndexed(targetCmd, item.indexCount, 1, item.firstIndex, 0, 0);
+                    RecordDebugRenderDraw(item.indexCount);
+                }
+            }
+        }
+    };
+
+    if (!passSecondaryCmds.empty() && (callback || hasDebugOverlay)) {
+        VkCommandBuffer overlaySecCmd = m_vkCommandContext.AcquireSecondaryCommandBuffer(m_currentFrame, 0);
+        if (overlaySecCmd != VK_NULL_HANDLE) {
+            VkCommandBufferInheritanceInfo inheritanceInfo{};
+            inheritanceInfo.sType       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+            inheritanceInfo.renderPass  = m_vkRenderPass.Get();
+            inheritanceInfo.subpass     = 0;
+            inheritanceInfo.framebuffer = m_swapChainFramebuffers[imageIndex];
+
+            VkCommandBufferBeginInfo secBeginInfo{};
+            secBeginInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            secBeginInfo.flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
+                                            VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+            secBeginInfo.pInheritanceInfo = &inheritanceInfo;
+            if (vkBeginCommandBuffer(overlaySecCmd, &secBeginInfo) == VK_SUCCESS) {
+                recordOverlayCommands(overlaySecCmd);
+                if (vkEndCommandBuffer(overlaySecCmd) == VK_SUCCESS) {
+                    passSecondaryCmds.push_back(overlaySecCmd);
+                }
+            }
         }
     }
 
@@ -2050,299 +2471,18 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
     renderPassInfo.renderArea.extent = m_swapChainExtent;
     renderPassInfo.clearValueCount   = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues      = clearValues.data();
-    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    VkViewport viewport{};
-    viewport.x        = 0.0f;
-    viewport.y        = 0.0f;
-    viewport.width    = static_cast<float>(m_swapChainExtent.width);
-    viewport.height   = static_cast<float>(m_swapChainExtent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
+    const bool useSecondaryForMainPass = !passSecondaryCmds.empty();
+    vkCmdBeginRenderPass(cmd, &renderPassInfo,
+                         useSecondaryForMainPass
+                             ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS
+                             : VK_SUBPASS_CONTENTS_INLINE);
 
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = m_swapChainExtent;
-    if (m_scissorEnabled) {
-        scissor = m_scissorRect;
-        scissor.offset.x = std::max(0, std::min(scissor.offset.x, static_cast<int32_t>(m_swapChainExtent.width)));
-        scissor.offset.y = std::max(0, std::min(scissor.offset.y, static_cast<int32_t>(m_swapChainExtent.height)));
-    }
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    if (mainPass && ((mainPass->triVertexCount + mainPass->lineVertexCount) > 0 || mainPass->drawItemCount3D > 0) &&
-        whiteDescriptorSet != VK_NULL_HANDLE) {
-        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-        vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        VkPipeline custom3DPipeline = m_vkPipeline.Get3DTri();
-        VkPipelineLayout custom3DLayout = m_vkPipeline.GetLayout3D();
-        VkDescriptorSet custom3DSet = whiteDescriptorSet;
-        if (m_frame3DShaderProgramId != 0) {
-            const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(m_frame3DShaderProgramId);
-            if (shaderProgram != nullptr && shaderProgram->pipeline3D != VK_NULL_HANDLE) {
-                custom3DPipeline = shaderProgram->pipeline3D;
-                custom3DLayout = m_vkPipeline.GetLayout3D();
-                custom3DSet = shaderProgram->descriptorSet3D;
-            }
-        }
-
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                custom3DLayout, 0, 1, &custom3DSet,
-                                3, uniformDynamicOffsets);
-
-        {
-            if (m_3DDummyMapped != nullptr) {
-                std::memcpy(static_cast<char*>(m_3DDummyMapped) + 0,
-                            m_currentMatrix.m, sizeof(m_currentMatrix.m));
-                std::memcpy(static_cast<char*>(m_3DDummyMapped) + 64,
-                            m_viewMatrix.m, sizeof(m_viewMatrix.m));
-                std::memcpy(static_cast<char*>(m_3DDummyMapped) + 128,
-                            m_projectionMatrix.m, sizeof(m_projectionMatrix.m));
-            }
-            Vk3DPushConstants lighting{};
-            for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
-                const VkLight3D& light = m_lights[static_cast<size_t>(lightIndex)];
-                lighting.lightPositions[lightIndex][0] = light.position.x;
-                lighting.lightPositions[lightIndex][1] = light.position.y;
-                lighting.lightPositions[lightIndex][2] = light.position.z;
-                lighting.lightPositions[lightIndex][3] = 1.0f;
-                lighting.lightColors[lightIndex][0] = light.color.x;
-                lighting.lightColors[lightIndex][1] = light.color.y;
-                lighting.lightColors[lightIndex][2] = light.color.z;
-                lighting.lightColors[lightIndex][3] = 1.0f;
-                lighting.lightEnabled[lightIndex] = light.enabled ? 1.0f : 0.0f;
-            }
-            lighting.timeData[0] = static_cast<float>(SDL_GetTicks()) / 1000.0f;
-            if (m_3DDummyMapped != nullptr) {
-                float* lightData = static_cast<float*>(static_cast<void*>(static_cast<char*>(m_3DDummyMapped) + 1024));
-                std::fill(lightData, lightData + 80, 0.0f);
-                lightData[0] = 0.1f;
-                lightData[1] = 0.1f;
-                lightData[2] = 0.1f;
-                lightData[3] = 1.0f;
-                lightData[4] = 1.0f;
-                lightData[5] = 1.0f;
-                lightData[6] = 1.0f;
-                lightData[7] = 1.0f;
-                lightData[8] = m_viewPos.x;
-                lightData[9] = m_viewPos.y;
-                lightData[10] = m_viewPos.z;
-                lightData[11] = 1.0f;
-                for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
-                    const VkLight3D& light = m_lights[static_cast<size_t>(lightIndex)];
-                    const size_t base = 12 + static_cast<size_t>(lightIndex) * 16;
-                    lightData[base + 0] = light.position.x;
-                    lightData[base + 1] = light.position.y;
-                    lightData[base + 2] = light.position.z;
-                    lightData[base + 3] = 1.0f;
-                    lightData[base + 4] = light.target.x;
-                    lightData[base + 5] = light.target.y;
-                    lightData[base + 6] = light.target.z;
-                    lightData[base + 7] = 1.0f;
-                    lightData[base + 8] = light.color.x;
-                    lightData[base + 9] = light.color.y;
-                    lightData[base + 10] = light.color.z;
-                    lightData[base + 11] = 1.0f;
-                    lightData[base + 12] = light.attenuation;
-                    const int enabledValue = light.enabled ? 1 : 0;
-                    std::memcpy(lightData + base + 13, &enabledValue, sizeof(int));
-                    const int typeValue = light.type;
-                    std::memcpy(lightData + base + 14, &typeValue, sizeof(int));
-                }
-            }
-            vkCmdPushConstants(cmd, custom3DLayout,
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(lighting), &lighting);
-        }
-
-        if (mainPass->drawItemCount3D > 0) {
-            uint32_t cursor = mainPass->triFirstVertex;
-            bool gpuTransformPushActive = false;
-            for (uint32_t i = 0; i < mainPass->drawItemCount3D; ++i) {
-                const Vk3DDrawItem& item = m_frame3DDrawItems[mainPass->first3DDrawItem + i];
-                const VkShaderProgramData* shaderProgram = item.shaderProgramId != 0
-                    ? m_vkShaderCompiler.GetProgram(item.shaderProgramId) : nullptr;
-                const bool usesGpuMeshShader = shaderProgram && shaderProgram->supportsGpuMeshTransform;
-                if (!usesGpuMeshShader && gpuTransformPushActive) {
-                    pushCurrent3DLighting(m_vkPipeline.GetLayout3D());
-                    gpuTransformPushActive = false;
-                }
-                if (item.firstVertex > cursor && m_vkPipeline.Get3DTri() != VK_NULL_HANDLE) {
-                    vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-                    vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get3DTri());
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
-                                            3, uniformDynamicOffsets);
-                    vkCmdDraw(cmd, item.firstVertex - cursor, 1, cursor, 0);
-                    RecordDebugRenderDraw(item.firstVertex - cursor);
-                }
-                VkPipeline pipeline = m_vkPipeline.Get3DTri();
-                VkPipelineLayout layout = m_vkPipeline.GetLayout3D();
-                VkDescriptorSet descriptorSet = whiteDescriptorSet;
-                if (shaderProgram != nullptr && shaderProgram->pipeline3D != VK_NULL_HANDLE) {
-                    pipeline = shaderProgram->pipeline3D;
-                    layout = m_vkPipeline.GetLayout3D();
-                    descriptorSet = item.descriptorSet;
-                } else if (item.descriptorSet != VK_NULL_HANDLE) {
-                    descriptorSet = item.descriptorSet;
-                }
-                if (pipeline == VK_NULL_HANDLE || descriptorSet == VK_NULL_HANDLE) continue;
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        layout, 0, 1, &descriptorSet,
-                                        3, uniformDynamicOffsets);
-                if (item.indexed) {
-                    if (item.gpuMesh) {
-                        vkCmdBindVertexBuffers(cmd, 0, 1, &item.gpuVertexBuffer, offsets);
-                        vkCmdBindIndexBuffer(cmd, item.gpuIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                        pushGpuMeshTransform(layout, item);
-                        vkCmdDrawIndexed(cmd, item.indexCount, 1, 0, 0, 0);
-                        gpuTransformPushActive = true;
-                    } else {
-                        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-                        vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                        if (usesGpuMeshShader) {
-                            pushGpuMeshTransform(layout, item);
-                            gpuTransformPushActive = true;
-                        }
-                        vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex,
-                                         static_cast<int32_t>(item.firstVertex), 0);
-                    }
-                    RecordDebugRenderDraw(item.indexCount);
-                } else {
-                    vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-                    if (usesGpuMeshShader) {
-                        pushGpuMeshTransform(layout, item);
-                        gpuTransformPushActive = true;
-                    }
-                    vkCmdDraw(cmd, item.vertexCount, 1, item.firstVertex, 0);
-                    RecordDebugRenderDraw(item.vertexCount);
-                }
-                cursor = std::max(cursor, item.firstVertex + (item.gpuMesh ? 0u : item.vertexCount));
-            }
-            const uint32_t triEnd = mainPass->triFirstVertex + mainPass->triVertexCount;
-            if (cursor < triEnd && m_vkPipeline.Get3DTri() != VK_NULL_HANDLE) {
-                vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-                vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get3DTri());
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
-                                        3, uniformDynamicOffsets);
-                vkCmdDraw(cmd, triEnd - cursor, 1, cursor, 0);
-                RecordDebugRenderDraw(triEnd - cursor);
-            }
-        } else {
-            if (mainPass->triVertexCount > 0 && custom3DPipeline != VK_NULL_HANDLE) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, custom3DPipeline);
-                vkCmdDraw(cmd, mainPass->triVertexCount, 1, mainPass->triFirstVertex, 0);
-                RecordDebugRenderDraw(mainPass->triVertexCount);
-            }
-        }
-
-        if (mainPass->lineVertexCount > 0 && m_vkPipeline.Get3DLines() != VK_NULL_HANDLE) {
-            vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer3D, offsets);
-            vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_vkPipeline.GetLayout3D(), 0, 1, &whiteDescriptorSet,
-                                    3, uniformDynamicOffsets);
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get3DLines());
-            vkCmdDraw(cmd, mainPass->lineVertexCount, 1,
-                      static_cast<uint32_t>(m_frameTriangleVertices3D.size()) + mainPass->lineFirstVertex, 0);
-            RecordDebugRenderDraw(mainPass->lineVertexCount);
-        }
-    }
-
-    if (white2DDescriptorSet != VK_NULL_HANDLE) {
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_vkPipeline.GetLayout2D(), 0, 1, &white2DDescriptorSet, 0, nullptr);
-    }
-
-    VkPipeline pipeline2D = m_vkPipeline.Get2D();
-    if (m_vkShaderCompiler.CurrentProgramId() != 0) {
-        const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(m_vkShaderCompiler.CurrentProgramId());
-        if (shaderProgram != nullptr && shaderProgram->pipeline != VK_NULL_HANDLE) {
-            pipeline2D = shaderProgram->pipeline;
-        }
-    }
-    const VkPushConstants2D screenPushConstants{
-        static_cast<float>(m_swapChainExtent.width),
-        static_cast<float>(m_swapChainExtent.height)
-    };
-    vkCmdPushConstants(cmd, m_vkPipeline.GetLayout2D(),
-                       VK_SHADER_STAGE_VERTEX_BIT,
-                       0, sizeof(screenPushConstants), &screenPushConstants);
-    vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, offsets);
-    vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-    VkPipeline boundPipeline = VK_NULL_HANDLE;
-    for (const VkFramePass& pass : m_framePasses) {
-        if (pass.renderTargetId != 0) continue;
-        for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
-            const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
-            if (item.descriptorSet == VK_NULL_HANDLE) continue;
-
-            VkPipeline itemPipeline = pipeline2D;
-            if (item.shaderProgramId != 0) {
-                const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(item.shaderProgramId);
-                if (shaderProgram != nullptr && shaderProgram->pipeline != VK_NULL_HANDLE) {
-                    itemPipeline = shaderProgram->pipeline;
-                }
-            }
-            if (itemPipeline != boundPipeline) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, itemPipeline);
-                boundPipeline = itemPipeline;
-            }
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_vkPipeline.GetLayout2D(), 0, 1, &item.descriptorSet, 0, nullptr);
-            vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
-            RecordDebugRenderDraw(item.indexCount);
-        }
-    }
-
-    if (const VulkanRenderCallback callback = GetVulkanRenderCallback()) {
-        callback(cmd);
-    }
-
-    bool hasDebugOverlay = false;
-    for (const VkFramePass& pass : m_framePasses) {
-        if (pass.renderTargetId != 0) continue;
-        for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
-            if (m_frameDrawItems[pass.firstDrawItem + i].debugOverlay) {
-                hasDebugOverlay = true;
-                break;
-            }
-        }
-    }
-    if (hasDebugOverlay && m_vkPipeline.Get2D() != VK_NULL_HANDLE) {
-        VkViewport overlayViewport{};
-        overlayViewport.width = static_cast<float>(m_swapChainExtent.width);
-        overlayViewport.height = static_cast<float>(m_swapChainExtent.height);
-        overlayViewport.minDepth = 0.0f;
-        overlayViewport.maxDepth = 1.0f;
-        vkCmdSetViewport(cmd, 0, 1, &overlayViewport);
-
-        VkRect2D overlayScissor{};
-        overlayScissor.extent = m_swapChainExtent;
-        vkCmdSetScissor(cmd, 0, 1, &overlayScissor);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vkPipeline.Get2D());
-        vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, offsets);
-        vkCmdBindIndexBuffer(cmd, frame.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdPushConstants(cmd, m_vkPipeline.GetLayout2D(), VK_SHADER_STAGE_VERTEX_BIT,
-                           0, sizeof(screenPushConstants), &screenPushConstants);
-
-        for (const VkFramePass& pass : m_framePasses) {
-            if (pass.renderTargetId != 0) continue;
-            for (uint32_t i = 0; i < pass.drawItemCount; ++i) {
-                const VkDrawItem& item = m_frameDrawItems[pass.firstDrawItem + i];
-                if (!item.debugOverlay || item.descriptorSet == VK_NULL_HANDLE) continue;
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        m_vkPipeline.GetLayout2D(), 0, 1,
-                                        &item.descriptorSet, 0, nullptr);
-                vkCmdDrawIndexed(cmd, item.indexCount, 1, item.firstIndex, 0, 0);
-            }
-        }
+    if (useSecondaryForMainPass) {
+        vkCmdExecuteCommands(cmd, static_cast<uint32_t>(passSecondaryCmds.size()), passSecondaryCmds.data());
+    } else {
+        applyPassViewportAndScissor(cmd, m_swapChainExtent.width, m_swapChainExtent.height);
+        recordOverlayCommands(cmd);
     }
 
     vkCmdEndRenderPass(cmd);

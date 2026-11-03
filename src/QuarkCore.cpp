@@ -21,6 +21,7 @@
 #include <d3d11.h>
 #endif
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <chrono>
 #include <cctype>
@@ -108,8 +109,8 @@ bool gDebugInterfaceEnabled = false;
 
 namespace qci {
 void RecordDebugRenderDraw(std::uint64_t vertexCount) {
-    gCurrentDebugRenderStats.vertices += vertexCount;
-    ++gCurrentDebugRenderStats.calls;
+    std::atomic_ref<std::uint64_t>(gCurrentDebugRenderStats.vertices).fetch_add(vertexCount, std::memory_order_relaxed);
+    std::atomic_ref<std::uint64_t>(gCurrentDebugRenderStats.calls).fetch_add(1, std::memory_order_relaxed);
 }
 } // namespace qci
 

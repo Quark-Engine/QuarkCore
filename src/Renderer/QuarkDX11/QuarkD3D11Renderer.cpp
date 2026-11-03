@@ -227,7 +227,9 @@ void QuarkD3D11Renderer::Init(SDL_Window *window, int width, int height)
     m_resources.Initialize(m_device.Get());
     m_swapChain.Initialize(m_device, window, m_width, m_height);
     m_pipeline.Initialize(m_device.Get(), m_shaderCompiler, m_resources);
-    m_commands.Initialize(m_device, m_swapChain, m_pipeline, m_resources, m_width, m_height);
+    m_threadPool.Initialize();
+    m_commands.Initialize(m_device, m_swapChain, m_pipeline, m_resources, m_width, m_height,
+                          &m_threadPool);
     {
         const uint8_t white[4] = {255, 255, 255, 255};
         m_whiteShaderTexture = m_resources.CreateTexture(m_device.Get(), white, 1, 1);
@@ -279,6 +281,7 @@ void QuarkD3D11Renderer::Shutdown()
     m_textureCache.clear();
     m_textureCacheKeys.clear();
     m_commands.Shutdown();
+    m_threadPool.Shutdown();
     m_pipeline.Shutdown();
     m_resources.Shutdown();
     m_swapChain.Shutdown();
@@ -316,6 +319,7 @@ void QuarkD3D11Renderer::SetTextureWrap(int wrap)
 
 void QuarkD3D11Renderer::BeginScissorMode(int x, int y, int width, int height)
 {
+    m_commands.FlushBatch();
     D3D11_RECT scissorRect{};
     scissorRect.left = static_cast<LONG>(x);
     scissorRect.top = static_cast<LONG>(y);
@@ -326,6 +330,7 @@ void QuarkD3D11Renderer::BeginScissorMode(int x, int y, int width, int height)
 
 void QuarkD3D11Renderer::EndScissorMode()
 {
+    m_commands.FlushBatch();
     D3D11_RECT scissorRect{};
     scissorRect.left = 0;
     scissorRect.top = 0;
@@ -339,6 +344,8 @@ void QuarkD3D11Renderer::SetBlendMode(int mode)
     if (!m_device.Get()) {
         return;
     }
+
+    m_commands.FlushBatch();
 
     const float blendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
     ID3D11BlendState* blendState = nullptr;
@@ -733,10 +740,14 @@ void QuarkD3D11Renderer::BeginMode3D(const Camera3D &camera)
     m_viewMatrix = Mat4::lookAt(camera.position, camera.target, camera.up);
     m_viewPos = camera.position;
 
+    const int activeWidth = m_commands.ActiveWidth() > 0 ? m_commands.ActiveWidth() : m_width;
+    const int activeHeight = m_commands.ActiveHeight() > 0 ? m_commands.ActiveHeight() : m_height;
+
     if (camera.projection == CAMERA_PERSPECTIVE)
     {
-        const float aspect = m_height > 0 ? static_cast<float>(m_width) / static_cast<float>(m_height)
-                                          : 1.0f;
+        const float aspect = activeHeight > 0
+                                 ? static_cast<float>(activeWidth) / static_cast<float>(activeHeight)
+                                 : 1.0f;
         if (camera.fovy > 0.0f && camera.fovy < 180.0f)
         {
             m_projectionMatrix = Mat4::perspective(camera.fovy * PI / 180.0f, aspect, 0.1f, 1000.0f);
@@ -748,10 +759,10 @@ void QuarkD3D11Renderer::BeginMode3D(const Camera3D &camera)
     }
     else
     {
-        m_projectionMatrix = Mat4::ortho(static_cast<float>(-m_width) * 0.5f,
-                                         static_cast<float>(m_width) * 0.5f,
-                                         static_cast<float>(-m_height) * 0.5f,
-                                         static_cast<float>(m_height) * 0.5f,
+        m_projectionMatrix = Mat4::ortho(static_cast<float>(-activeWidth) * 0.5f,
+                                         static_cast<float>(activeWidth) * 0.5f,
+                                         static_cast<float>(-activeHeight) * 0.5f,
+                                         static_cast<float>(activeHeight) * 0.5f,
                                          0.1f, 1000.0f);
     }
 }
@@ -871,48 +882,52 @@ void QuarkD3D11Renderer::DrawTris3D(const Vec3 *positions, const Vec3 *normals,
         return;
     }
 
-    std::vector<float> vertices(vertexCount * 16);
+    const size_t sliceOffset = m_commands.Allocate3DVertexSlice(static_cast<UINT>(vertexCount), 16);
+    float *vertices = m_commands.Get3DVertexPtr(sliceOffset);
     const float r = color.r / 255.0f;
     const float g = color.g / 255.0f;
     const float b = color.b / 255.0f;
     const float a = color.a / 255.0f;
 
-    for (size_t index = 0; index < vertexCount; ++index)
-    {
-        const Vec4 clip = mvp * Vec4{positions[index].x, positions[index].y,
-                                     positions[index].z, 1.0f};
-        float *vertex = vertices.data() + index * 16;
-        vertex[0] = clip.x;
-        vertex[1] = clip.y;
-        vertex[2] = clip.z;
-        vertex[3] = clip.w;
-        vertex[4] = r;
-        vertex[5] = g;
-        vertex[6] = b;
-        vertex[7] = a;
-        vertex[8] = positions[index].x;
-        vertex[9] = positions[index].y;
-        vertex[10] = positions[index].z;
-        vertex[11] = 1.0f;
+    m_threadPool.ParallelFor(
+        vertexCount, 256, [&](uint32_t, size_t begin, size_t end) {
+            for (size_t index = begin; index < end; ++index)
+            {
+                const Vec4 clip = mvp * Vec4{positions[index].x, positions[index].y,
+                                             positions[index].z, 1.0f};
+                float *vertex = vertices + index * 16;
+                vertex[0] = clip.x;
+                vertex[1] = clip.y;
+                vertex[2] = clip.z;
+                vertex[3] = clip.w;
+                vertex[4] = r;
+                vertex[5] = g;
+                vertex[6] = b;
+                vertex[7] = a;
+                vertex[8] = positions[index].x;
+                vertex[9] = positions[index].y;
+                vertex[10] = positions[index].z;
+                vertex[11] = 1.0f;
 
-        if (normals)
-        {
-            vertex[12] = normals[index].x;
-            vertex[13] = normals[index].y;
-            vertex[14] = normals[index].z;
-            vertex[15] = 1.0f;
-        }
-        else
-        {
-            vertex[12] = 0.0f;
-            vertex[13] = 0.0f;
-            vertex[14] = 0.0f;
-            vertex[15] = 0.0f;
-        }
-    }
+                if (normals)
+                {
+                    vertex[12] = normals[index].x;
+                    vertex[13] = normals[index].y;
+                    vertex[14] = normals[index].z;
+                    vertex[15] = 1.0f;
+                }
+                else
+                {
+                    vertex[12] = 0.0f;
+                    vertex[13] = 0.0f;
+                    vertex[14] = 0.0f;
+                    vertex[15] = 0.0f;
+                }
+            }
+        });
 
-    m_commands.Draw3D(vertices.data(), static_cast<UINT>(vertexCount),
-                      D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    m_commands.SubmitQueued3D(sliceOffset, static_cast<UINT>(vertexCount),
+                              D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }
 
 void QuarkD3D11Renderer::DrawLines3D(const Vec3 *positions, size_t vertexCount,
@@ -923,37 +938,41 @@ void QuarkD3D11Renderer::DrawLines3D(const Vec3 *positions, size_t vertexCount,
         return;
     }
 
-    std::vector<float> vertices(vertexCount * 16);
+    const size_t sliceOffset = m_commands.Allocate3DVertexSlice(static_cast<UINT>(vertexCount), 16);
+    float *vertices = m_commands.Get3DVertexPtr(sliceOffset);
     const float r = color.r / 255.0f;
     const float g = color.g / 255.0f;
     const float b = color.b / 255.0f;
     const float a = color.a / 255.0f;
 
-    for (size_t index = 0; index < vertexCount; ++index)
-    {
-        const Vec4 clip = mvp * Vec4{positions[index].x, positions[index].y,
-                                     positions[index].z, 1.0f};
-        float *vertex = vertices.data() + index * 16;
-        vertex[0] = clip.x;
-        vertex[1] = clip.y;
-        vertex[2] = clip.z;
-        vertex[3] = clip.w;
-        vertex[4] = r;
-        vertex[5] = g;
-        vertex[6] = b;
-        vertex[7] = a;
-        vertex[8] = 0.0f;
-        vertex[9] = 0.0f;
-        vertex[10] = 0.0f;
-        vertex[11] = 0.0f;
-        vertex[12] = 0.0f;
-        vertex[13] = 0.0f;
-        vertex[14] = 0.0f;
-        vertex[15] = 0.0f;
-    }
+    m_threadPool.ParallelFor(
+        vertexCount, 256, [&](uint32_t, size_t begin, size_t end) {
+            for (size_t index = begin; index < end; ++index)
+            {
+                const Vec4 clip = mvp * Vec4{positions[index].x, positions[index].y,
+                                             positions[index].z, 1.0f};
+                float *vertex = vertices + index * 16;
+                vertex[0] = clip.x;
+                vertex[1] = clip.y;
+                vertex[2] = clip.z;
+                vertex[3] = clip.w;
+                vertex[4] = r;
+                vertex[5] = g;
+                vertex[6] = b;
+                vertex[7] = a;
+                vertex[8] = 0.0f;
+                vertex[9] = 0.0f;
+                vertex[10] = 0.0f;
+                vertex[11] = 0.0f;
+                vertex[12] = 0.0f;
+                vertex[13] = 0.0f;
+                vertex[14] = 0.0f;
+                vertex[15] = 0.0f;
+            }
+        });
 
-    m_commands.Draw3D(vertices.data(), static_cast<UINT>(vertexCount),
-                      D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+    m_commands.SubmitQueued3D(sliceOffset, static_cast<UINT>(vertexCount),
+                              D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
 }
 
 void QuarkD3D11Renderer::Set3DView(const Mat4 &view, const Mat4 &projection)
@@ -1430,6 +1449,8 @@ std::string GetModelDirectory(const char* filePath)
 
 } // namespace
 
+static void ensure_mesh_tangents(Mesh& mesh, bool forceRecompute = false);
+
 Model QuarkD3D11Renderer::LoadModel(const char* filePath)
 {
     TraceLog(LogLevel::Info, "MODEL",
@@ -1670,6 +1691,7 @@ Model QuarkD3D11Renderer::LoadModel(const char* filePath)
             destinationMesh.indices[faceIndex * 3 + 2] = static_cast<unsigned short>(face.mIndices[2]);
         }
 
+        ensure_mesh_tangents(destinationMesh);
         model.meshMaterial[meshIndex] = static_cast<int>(sourceMesh->mMaterialIndex);
     }
 
@@ -1800,6 +1822,7 @@ void QuarkD3D11Renderer::DrawModelEx(const Model& model, const Mat4& transform, 
 void QuarkD3D11Renderer::UploadMesh(Mesh& mesh, bool dynamic)
 {
     (void)dynamic;
+    ensure_mesh_tangents(mesh);
     mesh.vaoId = 0;
     mesh.vboId = 0;
     mesh.eboId = 0;
@@ -1830,15 +1853,19 @@ void QuarkD3D11Renderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* dat
     {
     case 0:
         copyBytes(mesh.vertices, static_cast<std::size_t>(mesh.vertexCount) * 3u * sizeof(float));
+        ensure_mesh_tangents(mesh, true);
         break;
     case 1:
         copyBytes(mesh.normals, static_cast<std::size_t>(mesh.vertexCount) * 3u * sizeof(float));
+        ensure_mesh_tangents(mesh, true);
         break;
     case 2:
         copyBytes(mesh.texcoords, static_cast<std::size_t>(mesh.vertexCount) * 2u * sizeof(float));
+        ensure_mesh_tangents(mesh, true);
         break;
     case 6:
         copyBytes(mesh.indices, static_cast<std::size_t>(mesh.triangleCount) * 3u * sizeof(unsigned short));
+        ensure_mesh_tangents(mesh, true);
         break;
     default:
         break;
@@ -1880,8 +1907,9 @@ void QuarkD3D11Renderer::UnloadMesh(Mesh& mesh)
     mesh.eboId = 0;
 }
 
-static void ensure_mesh_tangents(Mesh& mesh) {
+static void ensure_mesh_tangents(Mesh& mesh, bool forceRecompute) {
     if (!mesh.vertices || mesh.vertexCount <= 0) return;
+    if (mesh.tangents && !forceRecompute) return;
     if (!mesh.tangents)
         mesh.tangents = new float[static_cast<size_t>(mesh.vertexCount) * 3u];
 
@@ -1972,7 +2000,10 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
     {
         return;
     }
-    ensure_mesh_tangents(const_cast<Mesh&>(mesh));
+    if (!mesh.tangents)
+    {
+        ensure_mesh_tangents(const_cast<Mesh&>(mesh));
+    }
 
     ShaderProgramData *customProgram = Resolve3DShaderProgram(material);
     if (customProgram != nullptr)
@@ -1986,7 +2017,7 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
     if (material.maps)
     {
         albedoMap = &material.maps[MATERIAL_MAP_ALBEDO];
-        if (albedoMap->texture.valid)
+        if (albedoMap->texture.valid || albedoMap->texture.id != 0)
         {
             textureResource = m_resources.ShaderResource(albedoMap->texture.id);
         }
@@ -1996,7 +2027,7 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
     if (material.maps)
     {
         const MaterialMap &normalMap = material.maps[MATERIAL_MAP_NORMAL];
-        if (normalMap.texture.valid)
+        if (normalMap.texture.valid || normalMap.texture.id != 0)
         {
             normalResource = m_resources.ShaderResource(normalMap.texture.id);
         }
@@ -2007,6 +2038,7 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
     }
 
     const Mat4 finalTransform = m_currentMatrix * transform;
+    const Mat4 viewProj = m_projectionMatrix * m_viewMatrix;
     const Color baseColor = albedoMap ? albedoMap->color : WHITE;
     const bool textured = textureResource != nullptr;
     const std::size_t floatsPerVertex = textured ? 22u : 16u;
@@ -2043,43 +2075,44 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
         return Vec3{0.0f, 0.0f, 0.0f};
     };
 
-    const auto appendVertex = [&](std::vector<float> &out, const Vec4 &world, const Vec3 &normal,
-                                  const Vec3 &tangent, Color color, float u, float v)
+    const auto writeVertex = [&](float *dst, const Vec4 &world, const Vec3 &normal,
+                                 const Vec3 &tangent, Color color, float u, float v)
     {
-        const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
-        out.push_back(clip.x);
-        out.push_back(clip.y);
-        out.push_back(clip.z);
-        out.push_back(clip.w);
+        const Vec4 clip = viewProj * world;
+        std::size_t idx = 0;
+        dst[idx++] = clip.x;
+        dst[idx++] = clip.y;
+        dst[idx++] = clip.z;
+        dst[idx++] = clip.w;
 
         if (textured)
         {
-            out.push_back(u);
-            out.push_back(v);
+            dst[idx++] = u;
+            dst[idx++] = v;
         }
 
-        out.push_back(color.r / 255.0f);
-        out.push_back(color.g / 255.0f);
-        out.push_back(color.b / 255.0f);
-        out.push_back(color.a / 255.0f);
+        dst[idx++] = color.r / 255.0f;
+        dst[idx++] = color.g / 255.0f;
+        dst[idx++] = color.b / 255.0f;
+        dst[idx++] = color.a / 255.0f;
 
-        out.push_back(world.x);
-        out.push_back(world.y);
-        out.push_back(world.z);
-        out.push_back(1.0f);
+        dst[idx++] = world.x;
+        dst[idx++] = world.y;
+        dst[idx++] = world.z;
+        dst[idx++] = 1.0f;
 
-        out.push_back(normal.x);
-        out.push_back(normal.y);
-        out.push_back(normal.z);
-        out.push_back(1.0f);
+        dst[idx++] = normal.x;
+        dst[idx++] = normal.y;
+        dst[idx++] = normal.z;
+        dst[idx++] = 1.0f;
 
         if (textured)
         {
             const bool hasTangent = (tangent.x != 0.0f || tangent.y != 0.0f || tangent.z != 0.0f);
-            out.push_back(tangent.x);
-            out.push_back(tangent.y);
-            out.push_back(tangent.z);
-            out.push_back(hasTangent ? 1.0f : 0.0f);
+            dst[idx++] = tangent.x;
+            dst[idx++] = tangent.y;
+            dst[idx++] = tangent.z;
+            dst[idx++] = hasTangent ? 1.0f : 0.0f;
         }
     };
 
@@ -2094,111 +2127,139 @@ void QuarkD3D11Renderer::DrawMesh(const Mesh& mesh, const Material& material, co
 
     if (mesh.indices && mesh.triangleCount > 0)
     {
-        std::vector<float> indexedVertices;
-        indexedVertices.reserve(static_cast<std::size_t>(mesh.triangleCount) * 3u * floatsPerVertex);
+        const UINT totalVertices = static_cast<UINT>(mesh.triangleCount) * 3u;
+        const size_t sliceOffset =
+            m_commands.Allocate3DVertexSlice(totalVertices, static_cast<UINT>(floatsPerVertex));
+        float *outBase = m_commands.Get3DVertexPtr(sliceOffset);
 
-        for (int triangleIndex = 0; triangleIndex < mesh.triangleCount; ++triangleIndex)
-        {
-            int vertexIndex[3] = {-1, -1, -1};
-            for (int localIndex = 0; localIndex < 3; ++localIndex)
-            {
-                const int index = mesh.indices[triangleIndex * 3 + localIndex];
-                if (index >= 0 && index < mesh.vertexCount)
+        m_threadPool.ParallelFor(
+            static_cast<size_t>(mesh.triangleCount), 256,
+            [&](uint32_t, size_t beginTri, size_t endTri) {
+                for (size_t t = beginTri; t < endTri; ++t)
                 {
-                    vertexIndex[localIndex] = index;
+                    const int triangleIndex = static_cast<int>(t);
+                    float *triDst = outBase + t * 3u * floatsPerVertex;
+                    int vertexIndex[3] = {-1, -1, -1};
+                    for (int localIndex = 0; localIndex < 3; ++localIndex)
+                    {
+                        const int index = mesh.indices[triangleIndex * 3 + localIndex];
+                        if (index >= 0 && index < mesh.vertexCount)
+                        {
+                            vertexIndex[localIndex] = index;
+                        }
+                    }
+                    if (vertexIndex[0] < 0 || vertexIndex[1] < 0 || vertexIndex[2] < 0)
+                    {
+                        std::memset(triDst, 0, 3u * floatsPerVertex * sizeof(float));
+                        continue;
+                    }
+
+                    const Vec4 worldVerts[3] = {
+                        worldPosAt(vertexIndex[0]),
+                        worldPosAt(vertexIndex[1]),
+                        worldPosAt(vertexIndex[2])
+                    };
+                    Vec3 faceNormal{0.0f, 1.0f, 0.0f};
+                    if (!mesh.normals)
+                    {
+                        faceNormal = SafeNormalized(
+                            (Vec3{worldVerts[1].x, worldVerts[1].y, worldVerts[1].z} -
+                             Vec3{worldVerts[0].x, worldVerts[0].y, worldVerts[0].z})
+                                .cross(Vec3{worldVerts[2].x, worldVerts[2].y, worldVerts[2].z} -
+                                       Vec3{worldVerts[0].x, worldVerts[0].y, worldVerts[0].z}),
+                            Vec3{0.0f, 1.0f, 0.0f});
+                    }
+
+                    for (int localIndex = 0; localIndex < 3; ++localIndex)
+                    {
+                        const int vi = vertexIndex[localIndex];
+                        const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
+                        const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
+                        const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
+                        const Color vertexColor =
+                            MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
+                        writeVertex(triDst + static_cast<size_t>(localIndex) * floatsPerVertex,
+                                    worldVerts[localIndex], normal, meshTangentAt(vi),
+                                    vertexColor, u, v);
+                    }
                 }
-            }
-            if (vertexIndex[0] < 0 || vertexIndex[1] < 0 || vertexIndex[2] < 0)
-            {
-                continue;
-            }
+            });
 
-            const Vec4 worldA = worldPosAt(vertexIndex[0]);
-            const Vec4 worldB = worldPosAt(vertexIndex[1]);
-            const Vec4 worldC = worldPosAt(vertexIndex[2]);
-            const Vec3 faceNormal = SafeNormalized(
-                (Vec3{worldB.x, worldB.y, worldB.z} - Vec3{worldA.x, worldA.y, worldA.z})
-                    .cross(Vec3{worldC.x, worldC.y, worldC.z} - Vec3{worldA.x, worldA.y, worldA.z}),
-                Vec3{0.0f, 1.0f, 0.0f});
-
-            for (int localIndex = 0; localIndex < 3; ++localIndex)
-            {
-                const int vi = vertexIndex[localIndex];
-                const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
-                const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
-                const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
-                const Color vertexColor =
-                    MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
-                appendVertex(indexedVertices, worldPosAt(vi), normal, meshTangentAt(vi),
-                             vertexColor, u, v);
-            }
-        }
-
-        if (!indexedVertices.empty())
+        if (textured)
         {
-            if (textured)
-            {
-                m_commands.Draw3DTextured(indexedVertices.data(),
-                                         static_cast<UINT>(indexedVertices.size() / 22),
-                                         const_cast<ID3D11ShaderResourceView *>(textureResource),
-                                         normalResource);
-            }
-            else
-            {
-                m_commands.Draw3D(indexedVertices.data(),
-                                  static_cast<UINT>(indexedVertices.size() / 16),
-                                  D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            }
+            m_commands.SubmitQueued3DTextured(sliceOffset, totalVertices,
+                                              const_cast<ID3D11ShaderResourceView *>(textureResource),
+                                              normalResource);
+        }
+        else
+        {
+            m_commands.SubmitQueued3D(sliceOffset, totalVertices,
+                                      D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         }
         return;
     }
 
-    std::vector<float> vertices;
-    vertices.reserve(static_cast<std::size_t>(mesh.vertexCount) * floatsPerVertex);
-
-    const int triangleCount = mesh.triangleCount > 0 ? mesh.triangleCount : mesh.vertexCount / 3;
-    for (int i = 0; i < triangleCount; ++i)
+    const int rawTriangleCount = mesh.triangleCount > 0 ? mesh.triangleCount : mesh.vertexCount / 3;
+    const int validTriangles = std::min(rawTriangleCount, mesh.vertexCount / 3);
+    if (validTriangles <= 0)
     {
-        const int viBase = i * 3;
-        if (viBase + 2 >= mesh.vertexCount)
-        {
-            break;
-        }
-
-        const Vec4 worldA = worldPosAt(viBase + 0);
-        const Vec4 worldB = worldPosAt(viBase + 1);
-        const Vec4 worldC = worldPosAt(viBase + 2);
-        const Vec3 faceNormal = SafeNormalized(
-            (Vec3{worldB.x, worldB.y, worldB.z} - Vec3{worldA.x, worldA.y, worldA.z})
-                .cross(Vec3{worldC.x, worldC.y, worldC.z} - Vec3{worldA.x, worldA.y, worldA.z}),
-            Vec3{0.0f, 1.0f, 0.0f});
-
-        for (int localIndex = 0; localIndex < 3; ++localIndex)
-        {
-            const int vi = viBase + localIndex;
-            const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
-            const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
-            const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
-            const Color vertexColor = MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
-            appendVertex(vertices, worldPosAt(vi), normal, meshTangentAt(vi), vertexColor, u, v);
-        }
+        return;
     }
 
-    if (!vertices.empty())
+    const UINT totalVertices = static_cast<UINT>(validTriangles) * 3u;
+    const size_t sliceOffset =
+        m_commands.Allocate3DVertexSlice(totalVertices, static_cast<UINT>(floatsPerVertex));
+    float *outBase = m_commands.Get3DVertexPtr(sliceOffset);
+
+    m_threadPool.ParallelFor(
+        static_cast<size_t>(validTriangles), 256,
+        [&](uint32_t, size_t beginTri, size_t endTri) {
+            for (size_t t = beginTri; t < endTri; ++t)
+            {
+                const int viBase = static_cast<int>(t) * 3;
+                float *triDst = outBase + t * 3u * floatsPerVertex;
+
+                const Vec4 worldVerts[3] = {
+                    worldPosAt(viBase + 0),
+                    worldPosAt(viBase + 1),
+                    worldPosAt(viBase + 2)
+                };
+                Vec3 faceNormal{0.0f, 1.0f, 0.0f};
+                if (!mesh.normals)
+                {
+                    faceNormal = SafeNormalized(
+                        (Vec3{worldVerts[1].x, worldVerts[1].y, worldVerts[1].z} -
+                         Vec3{worldVerts[0].x, worldVerts[0].y, worldVerts[0].z})
+                            .cross(Vec3{worldVerts[2].x, worldVerts[2].y, worldVerts[2].z} -
+                                   Vec3{worldVerts[0].x, worldVerts[0].y, worldVerts[0].z}),
+                        Vec3{0.0f, 1.0f, 0.0f});
+                }
+
+                for (int localIndex = 0; localIndex < 3; ++localIndex)
+                {
+                    const int vi = viBase + localIndex;
+                    const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
+                    const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
+                    const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
+                    const Color vertexColor =
+                        MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
+                    writeVertex(triDst + static_cast<size_t>(localIndex) * floatsPerVertex,
+                                worldVerts[localIndex], normal, meshTangentAt(vi),
+                                vertexColor, u, v);
+                }
+            }
+        });
+
+    if (textured)
     {
-        if (textured)
-        {
-            m_commands.Draw3DTextured(vertices.data(),
-                                     static_cast<UINT>(vertices.size() / 22),
-                                     const_cast<ID3D11ShaderResourceView *>(textureResource),
-                                     normalResource);
-        }
-        else
-        {
-            m_commands.Draw3D(vertices.data(),
-                              static_cast<UINT>(vertices.size() / 16),
-                              D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        }
+        m_commands.SubmitQueued3DTextured(sliceOffset, totalVertices,
+                                          const_cast<ID3D11ShaderResourceView *>(textureResource),
+                                          normalResource);
+    }
+    else
+    {
+        m_commands.SubmitQueued3D(sliceOffset, totalVertices,
+                                  D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
 }
 
@@ -2230,7 +2291,7 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
     const MaterialMap *albedoMap = nullptr;
     if (material.maps) {
         albedoMap = &material.maps[MATERIAL_MAP_ALBEDO];
-        if (albedoMap->texture.valid) {
+        if (albedoMap->texture.valid || albedoMap->texture.id != 0) {
             albedoResource = m_resources.ShaderResource(albedoMap->texture.id);
         }
     }
@@ -2248,6 +2309,7 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
     const UINT colorOffset = offsetInFloats(program.colorOffset);
     const UINT normalOffset = offsetInFloats(program.normalOffset);
     const UINT worldPositionOffset = offsetInFloats(program.worldPositionOffset);
+    const UINT tangentOffset = offsetInFloats(program.tangentOffset);
     const bool standardConvention = program.worldPositionOffset == 0xFFFFFFFFu;
 
     const Mat4 finalTransform = m_currentMatrix * transform;
@@ -2257,8 +2319,11 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
         const Mat4 normalMatrix = TransposeMat4(finalTransform.inverted());
         const Mat4 mvp = m_projectionMatrix * (m_viewMatrix * finalTransform);
 
-        const auto setMatrixUniform = [&](const char *names[3], const Mat4 &value) {
-            for (int aliasIndex = 0; aliasIndex < 3; ++aliasIndex) {
+        const auto setMatrixUniform = [&](const char *names[4], const Mat4 &value) {
+            for (int aliasIndex = 0; aliasIndex < 4; ++aliasIndex) {
+                if (!names[aliasIndex]) {
+                    continue;
+                }
                 const auto iterator = program.uniforms.find(names[aliasIndex]);
                 if (iterator == program.uniforms.end()) {
                     continue;
@@ -2269,28 +2334,33 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
             }
         };
 
-        const char *modelNames[3] = {"uModel", "model", "MATRIX_MODEL"};
+        const char *modelNames[4] = {"uModel", "model", "matModel", "MATRIX_MODEL"};
         setMatrixUniform(modelNames, finalTransform);
 
-        const char *viewNames[3] = {"uView", "view", "MATRIX_VIEW"};
+        const char *viewNames[4] = {"uView", "view", "matView", "MATRIX_VIEW"};
         setMatrixUniform(viewNames, m_viewMatrix);
 
-        const char *projectionNames[3] = {"uProjection", "projection", "MATRIX_PROJECTION"};
+        const char *projectionNames[4] = {"uProjection", "projection", "matProjection", "MATRIX_PROJECTION"};
         setMatrixUniform(projectionNames, m_projectionMatrix);
 
-        const char *mvpNames[3] = {"uMvp", "mvp", "MATRIX_MVP"};
+        const char *mvpNames[4] = {"uMvp", "mvp", "MATRIX_MVP", nullptr};
         setMatrixUniform(mvpNames, mvp);
 
-        const char *normalNames[3] = {"uNormal", "normalMatrix", "MATRIX_NORMAL"};
+        const char *normalNames[4] = {"uNormal", "normalMatrix", "matNormal", "MATRIX_NORMAL"};
         setMatrixUniform(normalNames, normalMatrix);
 
-        const float whiteColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+        const float diffuseColor[4] = {
+            colorOffset != 0xFFFFFFFFu ? 1.0f : baseColor.r / 255.0f,
+            colorOffset != 0xFFFFFFFFu ? 1.0f : baseColor.g / 255.0f,
+            colorOffset != 0xFFFFFFFFu ? 1.0f : baseColor.b / 255.0f,
+            colorOffset != 0xFFFFFFFFu ? 1.0f : baseColor.a / 255.0f
+        };
         for (const char *name : {"uColor", "colDiffuse", "COLOR_DIFFUSE"}) {
             const auto iterator = program.uniforms.find(name);
             if (iterator == program.uniforms.end()) {
                 continue;
             }
-            StoreUniformValue(program, iterator->second, 0, whiteColor,
+            StoreUniformValue(program, iterator->second, 0, diffuseColor,
                               sizeof(float) * 4, 1);
             break;
         }
@@ -2316,17 +2386,17 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
                 return;
             }
             const MaterialMap &map = material.maps[mapIndex];
-            if (map.texture.valid) {
+            if (map.texture.valid || map.texture.id != 0) {
                 shaderOverride.shaderResources[slot] = m_resources.ShaderResource(map.texture.id);
             } else if (fallback) {
                 shaderOverride.shaderResources[slot] = fallback;
             }
         };
 
-        fillMapSlot(1, MATERIAL_MAP_HEIGHT, whiteFallback);
-        fillMapSlot(2, MATERIAL_MAP_IRRADIANCE, whiteFallback);
-        fillMapSlot(3, MATERIAL_MAP_PREFILTER, whiteFallback);
-        fillMapSlot(4, MATERIAL_MAP_BRDF, whiteFallback);
+        fillMapSlot(1, MATERIAL_MAP_HEIGHT + 0, whiteFallback);
+        fillMapSlot(2, MATERIAL_MAP_HEIGHT + 1, whiteFallback);
+        fillMapSlot(3, MATERIAL_MAP_HEIGHT + 2, whiteFallback);
+        fillMapSlot(4, MATERIAL_MAP_HEIGHT + 3, whiteFallback);
         fillMapSlot(5, MATERIAL_MAP_METALNESS, whiteFallback);
         fillMapSlot(6, MATERIAL_MAP_NORMAL, flatNormalFallback);
         fillMapSlot(7, MATERIAL_MAP_ROUGHNESS, whiteFallback);
@@ -2358,6 +2428,15 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
         return Vec3{0.0f, 1.0f, 0.0f};
     };
 
+    const auto meshTangentAt = [&](int vertexIndex) -> Vec3 {
+        if (mesh.tangents && vertexIndex >= 0 && vertexIndex < mesh.vertexCount) {
+            return transformNormal(Vec3{mesh.tangents[vertexIndex * 3 + 0],
+                                        mesh.tangents[vertexIndex * 3 + 1],
+                                        mesh.tangents[vertexIndex * 3 + 2]});
+        }
+        return Vec3{1.0f, 0.0f, 0.0f};
+    };
+
     const auto localPosAt = [&](int vertexIndex) -> Vec4 {
         return Vec4{mesh.vertices[vertexIndex * 3 + 0],
                     mesh.vertices[vertexIndex * 3 + 1],
@@ -2385,18 +2464,18 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
             Vec3{0.0f, 1.0f, 0.0f});
     };
 
+    const Mat4 viewProj = m_projectionMatrix * m_viewMatrix;
+
     const auto writeVec = [](float *vertex, UINT offset, const float *values, int count) {
         for (int index = 0; index < count; ++index) {
             vertex[offset + index] = values[index];
         }
     };
 
-    const auto appendVertex = [&](std::vector<float> &out, int vertexIndex,
-                                  const Vec3 &normal, Color color, float u, float v)
+    const auto writeVertex = [&](float *vertex, int vertexIndex,
+                                 const Vec3 &normal, Color color, float u, float v)
     {
-        const size_t base = out.size();
-        out.resize(base + floatsPerVertex, 0.0f);
-        float *vertex = out.data() + base;
+        std::memset(vertex, 0, static_cast<size_t>(floatsPerVertex) * sizeof(float));
 
         const Vec4 localPos = localPosAt(vertexIndex);
         if (positionOffset != 0xFFFFFFFFu) {
@@ -2406,7 +2485,7 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
                          std::min<int>(program.positionComponents, 4));
             } else {
                 const Vec4 world = finalTransform * localPos;
-                const Vec4 clip = m_projectionMatrix * (m_viewMatrix * world);
+                const Vec4 clip = viewProj * world;
                 const float position[4] = {clip.x, clip.y, clip.z, clip.w};
                 writeVec(vertex, positionOffset, position,
                          std::min<int>(program.positionComponents, 4));
@@ -2434,82 +2513,102 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
             writeVec(vertex, worldPositionOffset, worldData,
                      std::min<int>(program.worldPositionComponents, 4));
         }
-    };
-
-    const auto drawFilled = [&](const std::vector<float> &builtVertices) {
-        if (!builtVertices.empty()) {
-            m_commands.Draw3DShader(builtVertices.data(),
-                                    static_cast<UINT>(builtVertices.size() / floatsPerVertex),
-                                    shaderOverride);
+        if (tangentOffset != 0xFFFFFFFFu) {
+            const Vec3 tangent = meshTangentAt(vertexIndex);
+            const bool hasTangent = (tangent.x != 0.0f || tangent.y != 0.0f || tangent.z != 0.0f);
+            const float tangentData[4] = {tangent.x, tangent.y, tangent.z, hasTangent ? 1.0f : 0.0f};
+            writeVec(vertex, tangentOffset, tangentData,
+                     std::min<int>(program.tangentComponents, 4));
         }
     };
 
     if (mesh.indices && mesh.triangleCount > 0)
     {
-        std::vector<float> indexedVertices;
-        indexedVertices.reserve(static_cast<std::size_t>(mesh.triangleCount) * 3u *
-                                floatsPerVertex);
+        const UINT totalVertices = static_cast<UINT>(mesh.triangleCount) * 3u;
+        const size_t sliceOffset =
+            m_commands.Allocate3DVertexSlice(totalVertices, floatsPerVertex);
+        float *outBase = m_commands.Get3DVertexPtr(sliceOffset);
 
-        for (int triangleIndex = 0; triangleIndex < mesh.triangleCount; ++triangleIndex)
-        {
-            int vertexIndex[3] = {-1, -1, -1};
-            for (int localIndex = 0; localIndex < 3; ++localIndex)
-            {
-                const int index = mesh.indices[triangleIndex * 3 + localIndex];
-                if (index >= 0 && index < mesh.vertexCount)
+        m_threadPool.ParallelFor(
+            static_cast<size_t>(mesh.triangleCount), 256,
+            [&](uint32_t, size_t beginTri, size_t endTri) {
+                for (size_t t = beginTri; t < endTri; ++t)
                 {
-                    vertexIndex[localIndex] = index;
+                    const int triangleIndex = static_cast<int>(t);
+                    float *triDst = outBase + t * 3u * static_cast<size_t>(floatsPerVertex);
+                    int vertexIndex[3] = {-1, -1, -1};
+                    for (int localIndex = 0; localIndex < 3; ++localIndex)
+                    {
+                        const int index = mesh.indices[triangleIndex * 3 + localIndex];
+                        if (index >= 0 && index < mesh.vertexCount)
+                        {
+                            vertexIndex[localIndex] = index;
+                        }
+                    }
+                    if (vertexIndex[0] < 0 || vertexIndex[1] < 0 || vertexIndex[2] < 0)
+                    {
+                        std::memset(triDst, 0, 3u * static_cast<size_t>(floatsPerVertex) * sizeof(float));
+                        continue;
+                    }
+
+                    const Vec3 faceNormal = mesh.normals
+                        ? Vec3{0.0f, 1.0f, 0.0f}
+                        : faceNormalOf(vertexIndex[0], vertexIndex[1], vertexIndex[2]);
+                    for (int localIndex = 0; localIndex < 3; ++localIndex)
+                    {
+                        const int vi = vertexIndex[localIndex];
+                        const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
+                        const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
+                        const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
+                        const Color vertexColor =
+                            MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
+                        writeVertex(triDst + static_cast<size_t>(localIndex) * floatsPerVertex,
+                                    vi, normal, vertexColor, u, v);
+                    }
                 }
-            }
-            if (vertexIndex[0] < 0 || vertexIndex[1] < 0 || vertexIndex[2] < 0)
-            {
-                continue;
-            }
+            });
 
-            const Vec3 faceNormal = faceNormalOf(vertexIndex[0], vertexIndex[1],
-                                                 vertexIndex[2]);
-            for (int localIndex = 0; localIndex < 3; ++localIndex)
-            {
-                const int vi = vertexIndex[localIndex];
-                const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
-                const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
-                const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
-                const Color vertexColor =
-                    MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
-                appendVertex(indexedVertices, vi, normal, vertexColor, u, v);
-            }
-        }
-
-        drawFilled(indexedVertices);
+        m_commands.SubmitQueued3DShader(sliceOffset, totalVertices, shaderOverride);
         return;
     }
 
-    std::vector<float> vertices;
-    vertices.reserve(static_cast<std::size_t>(mesh.vertexCount) * floatsPerVertex);
-
-    const int triangleCount = mesh.triangleCount > 0 ? mesh.triangleCount : mesh.vertexCount / 3;
-    for (int i = 0; i < triangleCount; ++i)
+    const int rawTriangleCount = mesh.triangleCount > 0 ? mesh.triangleCount : mesh.vertexCount / 3;
+    const int validTriangles = std::min(rawTriangleCount, mesh.vertexCount / 3);
+    if (validTriangles <= 0)
     {
-        const int viBase = i * 3;
-        if (viBase + 2 >= mesh.vertexCount)
-        {
-            break;
-        }
-
-        const Vec3 faceNormal = faceNormalOf(viBase + 0, viBase + 1, viBase + 2);
-        for (int localIndex = 0; localIndex < 3; ++localIndex)
-        {
-            const int vi = viBase + localIndex;
-            const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
-            const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
-            const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
-            const Color vertexColor =
-                MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
-            appendVertex(vertices, vi, normal, vertexColor, u, v);
-        }
+        return;
     }
 
-    drawFilled(vertices);
+    const UINT totalVertices = static_cast<UINT>(validTriangles) * 3u;
+    const size_t sliceOffset =
+        m_commands.Allocate3DVertexSlice(totalVertices, floatsPerVertex);
+    float *outBase = m_commands.Get3DVertexPtr(sliceOffset);
+
+    m_threadPool.ParallelFor(
+        static_cast<size_t>(validTriangles), 256,
+        [&](uint32_t, size_t beginTri, size_t endTri) {
+            for (size_t t = beginTri; t < endTri; ++t)
+            {
+                const int viBase = static_cast<int>(t) * 3;
+                float *triDst = outBase + t * 3u * static_cast<size_t>(floatsPerVertex);
+                const Vec3 faceNormal = mesh.normals
+                    ? Vec3{0.0f, 1.0f, 0.0f}
+                    : faceNormalOf(viBase + 0, viBase + 1, viBase + 2);
+                for (int localIndex = 0; localIndex < 3; ++localIndex)
+                {
+                    const int vi = viBase + localIndex;
+                    const Vec3 normal = mesh.normals ? meshNormalAt(vi) : faceNormal;
+                    const float u = mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f;
+                    const float v = mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f;
+                    const Color vertexColor =
+                        MultiplyColor(baseColor, ReadMeshVertexColor(mesh, vi, WHITE));
+                    writeVertex(triDst + static_cast<size_t>(localIndex) * floatsPerVertex,
+                                vi, normal, vertexColor, u, v);
+                }
+            }
+        });
+
+    m_commands.SubmitQueued3DShader(sliceOffset, totalVertices, shaderOverride);
 }
 
 void QuarkD3D11Renderer::DrawMeshInstanced(const Mesh& mesh,
@@ -3544,6 +3643,9 @@ void QuarkD3D11Renderer::BuildShaderProgram(ShaderProgramData &program,
         } else if (SemanticEquals(signature.SemanticName, "WORLD_POSITION")) {
             program.worldPositionOffset = byteOffset;
             program.worldPositionComponents = components;
+        } else if (SemanticEquals(signature.SemanticName, "TANGENT")) {
+            program.tangentOffset = byteOffset;
+            program.tangentComponents = components;
         }
 
         byteOffset += components * sizeof(float);
@@ -3561,6 +3663,90 @@ void QuarkD3D11Renderer::BuildShaderProgram(ShaderProgramData &program,
 
     std::unordered_map<std::string, UINT> constantBufferBases;
     UINT totalConstantSize = 0;
+
+    const auto registerUniformEntry = [&](const std::string &name, UINT offset, UINT size) {
+        if (name.empty() || program.uniforms.count(name)) {
+            return;
+        }
+        ShaderUniformInfo info{};
+        info.name = name;
+        info.offset = offset;
+        info.size = size;
+        program.uniformInfos.push_back(std::move(info));
+        program.uniforms.emplace(name, static_cast<int>(program.uniformInfos.size()) - 1);
+    };
+
+    const auto reflectTypeMembers = [&](auto &self, ID3D11ShaderReflectionType *type,
+                                        const std::string &prefix, UINT offset,
+                                        UINT totalSize) -> void {
+        if (!type) {
+            return;
+        }
+        D3D11_SHADER_TYPE_DESC typeDesc{};
+        if (FAILED(type->GetDesc(&typeDesc))) {
+            return;
+        }
+
+        if (typeDesc.Elements > 0) {
+            const UINT elemStride = AlignTo16(totalSize / typeDesc.Elements);
+            for (UINT elemIndex = 0; elemIndex < typeDesc.Elements; ++elemIndex) {
+                const std::string elemPrefix = prefix + "[" + std::to_string(elemIndex) + "]";
+                const UINT elemOffset = offset + elemIndex * elemStride;
+                registerUniformEntry(elemPrefix, elemOffset, elemStride);
+
+                for (UINT memberIndex = 0; memberIndex < typeDesc.Members; ++memberIndex) {
+                    ID3D11ShaderReflectionType *memberType = type->GetMemberTypeByIndex(memberIndex);
+                    const char *memberName = type->GetMemberTypeName(memberIndex);
+                    if (!memberType || !memberName) {
+                        continue;
+                    }
+                    D3D11_SHADER_TYPE_DESC memberDesc{};
+                    if (FAILED(memberType->GetDesc(&memberDesc))) {
+                        continue;
+                    }
+                    UINT memberSize = sizeof(float) * 4;
+                    if (memberIndex + 1 < typeDesc.Members) {
+                        D3D11_SHADER_TYPE_DESC nextDesc{};
+                        if (SUCCEEDED(type->GetMemberTypeByIndex(memberIndex + 1)->GetDesc(&nextDesc)) &&
+                            nextDesc.Offset > memberDesc.Offset) {
+                            memberSize = nextDesc.Offset - memberDesc.Offset;
+                        }
+                    } else if (elemStride > memberDesc.Offset) {
+                        memberSize = elemStride - memberDesc.Offset;
+                    }
+                    const std::string fullMemberName = elemPrefix + "." + memberName;
+                    registerUniformEntry(fullMemberName, elemOffset + memberDesc.Offset, memberSize);
+                    self(self, memberType, fullMemberName, elemOffset + memberDesc.Offset, memberSize);
+                }
+            }
+            return;
+        }
+
+        for (UINT memberIndex = 0; memberIndex < typeDesc.Members; ++memberIndex) {
+            ID3D11ShaderReflectionType *memberType = type->GetMemberTypeByIndex(memberIndex);
+            const char *memberName = type->GetMemberTypeName(memberIndex);
+            if (!memberType || !memberName) {
+                continue;
+            }
+            D3D11_SHADER_TYPE_DESC memberDesc{};
+            if (FAILED(memberType->GetDesc(&memberDesc))) {
+                continue;
+            }
+            UINT memberSize = sizeof(float) * 4;
+            if (memberIndex + 1 < typeDesc.Members) {
+                D3D11_SHADER_TYPE_DESC nextDesc{};
+                if (SUCCEEDED(type->GetMemberTypeByIndex(memberIndex + 1)->GetDesc(&nextDesc)) &&
+                    nextDesc.Offset > memberDesc.Offset) {
+                    memberSize = nextDesc.Offset - memberDesc.Offset;
+                }
+            } else if (totalSize > memberDesc.Offset) {
+                memberSize = totalSize - memberDesc.Offset;
+            }
+            const std::string fullMemberName = prefix + "." + memberName;
+            registerUniformEntry(fullMemberName, offset + memberDesc.Offset, memberSize);
+            self(self, memberType, fullMemberName, offset + memberDesc.Offset, memberSize);
+        }
+    };
 
     const auto reflectStage =
         [&](ID3D11ShaderReflection *reflector) {
@@ -3602,17 +3788,14 @@ void QuarkD3D11Renderer::BuildShaderProgram(ShaderProgramData &program,
 
                     const std::string uniformName =
                         variableDescription.Name ? variableDescription.Name : "";
-                    if (uniformName.empty() || program.uniforms.count(uniformName)) {
+                    if (uniformName.empty()) {
                         continue;
                     }
 
-                    ShaderUniformInfo info{};
-                    info.name = uniformName;
-                    info.offset = baseOffset + variableDescription.StartOffset;
-                    info.size = variableDescription.Size;
-                    program.uniformInfos.push_back(std::move(info));
-                    program.uniforms.emplace(uniformName,
-                                             static_cast<int>(program.uniformInfos.size()) - 1);
+                    const UINT varOffset = baseOffset + variableDescription.StartOffset;
+                    registerUniformEntry(uniformName, varOffset, variableDescription.Size);
+                    reflectTypeMembers(reflectTypeMembers, variable->GetType(), uniformName,
+                                       varOffset, variableDescription.Size);
                 }
             }
         };
@@ -3743,6 +3926,9 @@ D3D11CommandContext::ShaderOverride QuarkD3D11Renderer::BuildShaderOverride(
     shaderOverride.inputLayout = program->inputLayout.Get();
     shaderOverride.constantBuffer =
         program->constantBuffer ? program->constantBuffer.Get() : nullptr;
+    shaderOverride.constantData =
+        program->constantStaging.empty() ? nullptr : program->constantStaging.data();
+    shaderOverride.constantDataSize = static_cast<uint32_t>(program->constantStaging.size());
     shaderOverride.strideBytes = program->strideBytes;
     shaderOverride.positionOffset = program->positionOffset;
     shaderOverride.texCoordOffset = program->texCoordOffset;
@@ -3973,7 +4159,6 @@ void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, floa
     }
 
     StoreUniformValue(*program, locIndex, SHADER_UNIFORM_FLOAT, &value, sizeof(value), 1);
-    UploadConstantBuffer(*program);
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }
@@ -3987,7 +4172,6 @@ void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, int 
     }
 
     StoreUniformValue(*program, locIndex, SHADER_UNIFORM_INT, &value, sizeof(value), 1);
-    UploadConstantBuffer(*program);
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }
@@ -4003,7 +4187,6 @@ void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, cons
     const float rgba[4] = {value.r / 255.0f, value.g / 255.0f, value.b / 255.0f,
                            value.a / 255.0f};
     StoreUniformValue(*program, locIndex, SHADER_UNIFORM_VEC4, rgba, sizeof(float), 4);
-    UploadConstantBuffer(*program);
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }
@@ -4018,7 +4201,6 @@ void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, cons
 
     const float vec[2] = {value.x, value.y};
     StoreUniformValue(*program, locIndex, SHADER_UNIFORM_VEC2, vec, sizeof(float), 2);
-    UploadConstantBuffer(*program);
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }
@@ -4033,7 +4215,6 @@ void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, cons
 
     const float vec[3] = {value.x, value.y, value.z};
     StoreUniformValue(*program, locIndex, SHADER_UNIFORM_VEC3, vec, sizeof(float), 3);
-    UploadConstantBuffer(*program);
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }
@@ -4048,7 +4229,6 @@ void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, cons
 
     const float vec[4] = {value.x, value.y, value.z, value.w};
     StoreUniformValue(*program, locIndex, SHADER_UNIFORM_VEC4, vec, sizeof(float), 4);
-    UploadConstantBuffer(*program);
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }
@@ -4063,7 +4243,6 @@ void QuarkD3D11Renderer::SetShaderValueMatrix(const Shader &shader, int locIndex
     }
 
     StoreUniformValue(*program, locIndex, SHADER_UNIFORM_FLOAT, mat, sizeof(float), 16);
-    UploadConstantBuffer(*program);
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }
@@ -4089,7 +4268,6 @@ void QuarkD3D11Renderer::SetShaderValueSampler(const Shader &shader, int locInde
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }
-    UploadConstantBuffer(*program);
 }
 
 void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, const void *value,
@@ -4136,7 +4314,6 @@ void QuarkD3D11Renderer::SetShaderValue(const Shader &shader, int locIndex, cons
             break;
     }
 
-    UploadConstantBuffer(*program);
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }
@@ -4183,7 +4360,6 @@ void QuarkD3D11Renderer::SetShaderValueV(const Shader &shader, int locIndex, con
             break;
     }
 
-    UploadConstantBuffer(*program);
     if (m_currentShaderId == shader.id) {
         m_commands.SetShaderOverride(BuildShaderOverride(shader.id));
     }

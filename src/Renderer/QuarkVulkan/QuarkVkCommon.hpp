@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 namespace qci {
+static constexpr int kVkMaxFramesInFlight = 2;
 struct VkQueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;

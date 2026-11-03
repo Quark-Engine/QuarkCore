@@ -41,6 +41,7 @@
 
 #include "../QuarkIRenderer.hpp"
 #include "../QuarkFont.hpp"
+#include "../QuarkRenderThreadPool.hpp"
 #include "QuarkCore/QuarkCore.hpp"
 #include "QuarkVkCommandContext.hpp"
 #include "QuarkVkCommon.hpp"
@@ -65,7 +66,6 @@
 #include <unordered_set>
 #include <vector>
 namespace qci {
-static constexpr int    kVkMaxFramesInFlight  = 2;
 static constexpr size_t kVkMaxBatchQuads      = 4096;
 static constexpr size_t kVkMaxBatchVertices   = kVkMaxBatchQuads * 4;
 static constexpr size_t kVkMaxBatchIndices    = kVkMaxBatchQuads * 6;
@@ -391,6 +391,7 @@ private:
     QuarkVkDescriptorSetManager     m_vkDescriptorSetManager;
     QuarkVkRenderPass               m_vkRenderPass;
     QuarkVkShaderCompiler           m_vkShaderCompiler;
+    QuarkRenderThreadPool           m_threadPool;
 
     VkSurfaceFormatKHR        ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats) const;
     VkPresentModeKHR          ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& modes) const;

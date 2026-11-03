@@ -281,11 +281,13 @@ private:
         UINT colorOffset = 0xFFFFFFFFu;
         UINT normalOffset = 0xFFFFFFFFu;
         UINT worldPositionOffset = 0xFFFFFFFFu;
+        UINT tangentOffset = 0xFFFFFFFFu;
         UINT positionComponents = 0;
         UINT texCoordComponents = 0;
         UINT colorComponents = 0;
         UINT normalComponents = 0;
         UINT worldPositionComponents = 0;
+        UINT tangentComponents = 0;
         bool hasPosition = false;
         std::vector<uint8_t> constantStaging;
         UINT constantBufferSize = 0;
@@ -332,6 +334,7 @@ private:
     D3D11ShaderCompiler m_shaderCompiler;
     D3D11Pipeline m_pipeline;
     D3D11CommandContext m_commands;
+    QuarkRenderThreadPool m_threadPool;
     int m_width = 0;
     int m_height = 0;
     int m_targetFps = 60;
