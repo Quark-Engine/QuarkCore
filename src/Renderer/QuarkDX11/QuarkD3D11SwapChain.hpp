@@ -50,6 +50,7 @@ private:
     UINT m_msaaSamples = 1;
     UINT m_width = 0;
     UINT m_height = 0;
+    bool m_tearingSupported = false;
 };
 } // namespace qci
 #endif

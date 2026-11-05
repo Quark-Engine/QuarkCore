@@ -207,7 +207,12 @@ public:
     RendererType GetType() const override { return RendererType::D3D11; }
     bool ShouldClose() const override { return m_shouldClose; }
     void SetShouldClose(bool v) { m_shouldClose = v; }
-    void SetTargetFPS(int fps) override { m_targetFps = fps; }
+    void SetTargetFPS(int fps) override {
+        m_targetFps = fps;
+        if (!m_vsyncExplicitlySet) {
+            m_vsync = (fps != 0);
+        }
+    }
     void SetMSAASamples(int samples);
     void Set3DLightEnabled(int index, bool enabled) override;
     bool SetVSync(bool enabled) override {

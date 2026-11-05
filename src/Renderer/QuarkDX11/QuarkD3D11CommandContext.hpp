@@ -36,6 +36,9 @@ public:
     void BeginDrawing();
     void Flush3DBatch();
     void FlushBatch();
+    void FlushDebugOverlay();
+    void SetDrawingDebugOverlay(bool enabled) { m_drawingDebugOverlay = enabled; }
+    bool IsDrawingDebugOverlay() const { return m_drawingDebugOverlay; }
     void Present(bool vsync);
     void Clear(Color color);
     void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, int width, int height);
@@ -146,6 +149,10 @@ private:
     std::vector<BatchVertex> m_batchVertices;
     std::vector<uint32_t> m_batchIndices;
     std::vector<DrawItem> m_batchDrawItems;
+    bool m_drawingDebugOverlay = false;
+    std::vector<BatchVertex> m_overlayVertices;
+    std::vector<uint32_t> m_overlayIndices;
+    std::vector<DrawItem> m_overlayDrawItems;
 
     std::vector<DeferredWorkerContext> m_workers;
     std::vector<float> m_queued3DVertices;

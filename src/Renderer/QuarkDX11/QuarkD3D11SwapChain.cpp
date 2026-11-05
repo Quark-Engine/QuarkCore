@@ -1,6 +1,17 @@
 #include "QuarkD3D11SwapChain.hpp"
 
 #include <cstring>
+#include <dxgi1_5.h>
+
+#ifndef DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING
+#define DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING 2048u
+#endif
+#ifndef DXGI_PRESENT_ALLOW_TEARING
+#define DXGI_PRESENT_ALLOW_TEARING 0x00000200u
+#endif
+#ifndef DXGI_FEATURE_PRESENT_ALLOW_TEARING
+#define DXGI_FEATURE_PRESENT_ALLOW_TEARING ((DXGI_FEATURE)0)
+#endif
 
 #if defined(_WIN32)
 namespace qci {
@@ -34,13 +45,13 @@ void D3D11SwapChain::Initialize(const D3D11Device &device, SDL_Window *window, i
     description.BufferDesc.Width = m_width;
     description.BufferDesc.Height = m_height;
     description.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    description.BufferDesc.RefreshRate = {60, 1};
+    description.BufferDesc.RefreshRate = {0, 1};
     description.SampleDesc.Count = 1;
     description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     description.BufferCount = 2;
     description.OutputWindow = hwnd;
     description.Windowed = TRUE;
-    description.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 
     Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
     Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
@@ -50,7 +61,40 @@ void D3D11SwapChain::Initialize(const D3D11Device &device, SDL_Window *window, i
                          "QueryInterface IDXGIDevice");
     d3d11::ThrowIfFailed(dxgiDevice->GetAdapter(&adapter), "IDXGIDevice::GetAdapter");
     d3d11::ThrowIfFailed(adapter->GetParent(IID_PPV_ARGS(&factory)), "IDXGIAdapter::GetParent");
-    d3d11::ThrowIfFailed(factory->CreateSwapChain(device.Get(), &description, &m_swapChain),
+
+    BOOL allowTearing = FALSE;
+    Microsoft::WRL::ComPtr<IDXGIFactory5> factory5;
+    if (SUCCEEDED(factory.As(&factory5)))
+    {
+        if (FAILED(factory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing))))
+        {
+            allowTearing = FALSE;
+        }
+    }
+    m_tearingSupported = (allowTearing == TRUE);
+    TraceLog(LogLevel::Info, "D3D11", TextFormat("Variable refresh rate / tearing support: %s", m_tearingSupported ? "Yes" : "No"));
+
+    description.Flags = m_tearingSupported ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
+    HRESULT swapChainResult = factory->CreateSwapChain(device.Get(), &description, &m_swapChain);
+    if (FAILED(swapChainResult) && m_tearingSupported)
+    {
+        m_tearingSupported = false;
+        description.Flags = 0;
+        swapChainResult = factory->CreateSwapChain(device.Get(), &description, &m_swapChain);
+    }
+    if (FAILED(swapChainResult))
+    {
+        description.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+        description.Flags = 0;
+        m_tearingSupported = false;
+        swapChainResult = factory->CreateSwapChain(device.Get(), &description, &m_swapChain);
+    }
+    if (FAILED(swapChainResult))
+    {
+        description.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+        swapChainResult = factory->CreateSwapChain(device.Get(), &description, &m_swapChain);
+    }
+    d3d11::ThrowIfFailed(swapChainResult,
                          "IDXGIFactory::CreateSwapChain");
 
     TraceLog(LogLevel::Trace, "D3D11", "Swap chain created successfully.");
@@ -251,7 +295,10 @@ void D3D11SwapChain::Resize(const D3D11Device &device, int width, int height)
 
     d3d11::ThrowIfFailed(m_swapChain->ResizeBuffers(0, static_cast<UINT>(width),
                                                     static_cast<UINT>(height), DXGI_FORMAT_UNKNOWN,
-                                                    0),
+                                                    m_tearingSupported ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0u),
+                         "IDXGISwapChain::ResizeBuffers");
+    if (false) (void)(
+                                                    0 +
                          "IDXGISwapChain::ResizeBuffers");
 
     m_width = static_cast<UINT>(width);
@@ -270,7 +317,9 @@ void D3D11SwapChain::Resize(const D3D11Device &device, int width, int height)
 
 void D3D11SwapChain::Present(bool vsync)
 {
-    const HRESULT result = m_swapChain->Present(vsync ? 1u : 0u, 0);
+    const UINT syncInterval = vsync ? 1u : 0u;
+    const UINT presentFlags = (!vsync && m_tearingSupported) ? DXGI_PRESENT_ALLOW_TEARING : 0u;
+    const HRESULT result = m_swapChain->Present(syncInterval, presentFlags);
 
     if (result != DXGI_STATUS_OCCLUDED)
     {

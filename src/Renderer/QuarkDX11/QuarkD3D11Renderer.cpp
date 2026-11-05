@@ -522,6 +522,8 @@ void QuarkD3D11Renderer::EndDrawing()
         callback(m_device.Context());
     }
 
+    m_commands.FlushDebugOverlay();
+
     const bool vsync = m_vsyncExplicitlySet ? m_vsync : (m_targetFps != 0);
     m_commands.Present(vsync);
 
@@ -532,7 +534,7 @@ void QuarkD3D11Renderer::EndDrawing()
     }
 
     const std::uint64_t freq = SDL_GetPerformanceFrequency();
-    if (m_targetFps > 0) {
+    if (m_targetFps > 0 && !vsync) {
         const std::uint64_t targetTicks = freq / static_cast<std::uint64_t>(m_targetFps);
         while (true) {
             const std::uint64_t now = SDL_GetPerformanceCounter();
@@ -984,7 +986,23 @@ void QuarkD3D11Renderer::Set3DView(const Mat4 &view, const Mat4 &projection)
 void QuarkD3D11Renderer::DrawLine3D(Vec3 startPos, Vec3 endPos, Color color)
 {
     const Vec3 positions[2] = {startPos, endPos};
-    DrawLines3D(positions, 2, CurrentMVP(), color);
+    const size_t sliceOffset = m_commands.Allocate3DVertexSlice(2, 16);
+    float *vertices = m_commands.Get3DVertexPtr(sliceOffset);
+    const Mat4 mvp = CurrentMVP();
+    const float r = color.r / 255.0f;
+    const float g = color.g / 255.0f;
+    const float b = color.b / 255.0f;
+    const float a = color.a / 255.0f;
+    for (size_t index = 0; index < 2; ++index)
+    {
+        const Vec4 clip = mvp * Vec4{positions[index].x, positions[index].y, positions[index].z, 1.0f};
+        float *vertex = vertices + index * 16;
+        vertex[0] = clip.x; vertex[1] = clip.y; vertex[2] = clip.z; vertex[3] = clip.w;
+        vertex[4] = r; vertex[5] = g; vertex[6] = b; vertex[7] = a;
+        vertex[8] = 0.0f; vertex[9] = 0.0f; vertex[10] = 0.0f; vertex[11] = 0.0f;
+        vertex[12] = 0.0f; vertex[13] = 0.0f; vertex[14] = 0.0f; vertex[15] = 0.0f;
+    }
+    m_commands.SubmitQueued3D(sliceOffset, 2, D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
 }
 
 void QuarkD3D11Renderer::DrawPlane(Vec3 center, Vec2 size, Color color)
@@ -3091,6 +3109,8 @@ void QuarkD3D11Renderer::DrawDebugText(const char* text, int x, int y, int fontS
         Vec2{ -1.f, 1.f }, Vec2{ 0.f, 1.f }, Vec2{ 1.f, 1.f }
     };
 
+    m_commands.SetDrawingDebugOverlay(true);
+
     for (const Vec2& delta : offsets) {
         if (delta.x == 0.f && delta.y == 0.f) {
             continue;
@@ -3103,6 +3123,7 @@ void QuarkD3D11Renderer::DrawDebugText(const char* text, int x, int y, int fontS
                static_cast<float>(fontSize), 0.0f, shadow);
     DrawTextEx(it->second, text, Vec2{ static_cast<float>(x), static_cast<float>(y) },
                static_cast<float>(fontSize), 0.0f, color);
+    m_commands.SetDrawingDebugOverlay(false);
 }
 
 void QuarkD3D11Renderer::DrawText(const char* text, int x, int y, int fontSize, Color color)
@@ -3112,6 +3133,7 @@ void QuarkD3D11Renderer::DrawText(const char* text, int x, int y, int fontSize, 
     if (fontData) {
         DrawTextWithFontData(*fontData, text, {static_cast<float>(x), static_cast<float>(y)},
                              static_cast<float>(fontSize), 0.0f, color);
+    m_commands.SetDrawingDebugOverlay(false);
     }
 }
 

@@ -161,6 +161,7 @@ void D3D11CommandContext::BeginDrawing()
 void D3D11CommandContext::Present(bool vsync)
 {
     FlushBatch();
+    FlushDebugOverlay();
     if (m_swapChain)
     {
         m_swapChain->Resolve();
@@ -238,12 +239,26 @@ void D3D11CommandContext::SubmitQueued3D(size_t vertexOffsetFloats, UINT vertexC
         Flush2DBatch();
     }
 
+    const bool culling = m_pipeline->BackfaceCulling();
+    if (!m_queued3DDraws.empty())
+    {
+        Queued3DDraw &prev = m_queued3DDraws.back();
+        if (prev.mode == Queued3DMode::Untextured &&
+            prev.topology == topology &&
+            prev.backfaceCulling == culling &&
+            (prev.vertexOffsetFloats + static_cast<size_t>(prev.vertexCount) * 16 == vertexOffsetFloats))
+        {
+            prev.vertexCount += vertexCount;
+            return;
+        }
+    }
+
     Queued3DDraw draw{};
     draw.mode = Queued3DMode::Untextured;
     draw.vertexOffsetFloats = vertexOffsetFloats;
     draw.vertexCount = vertexCount;
     draw.topology = topology;
-    draw.backfaceCulling = m_pipeline->BackfaceCulling();
+    draw.backfaceCulling = culling;
     m_queued3DDraws.push_back(draw);
 }
 
@@ -261,6 +276,21 @@ void D3D11CommandContext::SubmitQueued3DTextured(size_t vertexOffsetFloats, UINT
         Flush2DBatch();
     }
 
+    const bool culling = m_pipeline->BackfaceCulling();
+    if (!m_queued3DDraws.empty())
+    {
+        Queued3DDraw &prev = m_queued3DDraws.back();
+        if (prev.mode == Queued3DMode::Textured &&
+            prev.shaderResource == shaderResource &&
+            prev.normalResource == normalResource &&
+            prev.backfaceCulling == culling &&
+            (prev.vertexOffsetFloats + static_cast<size_t>(prev.vertexCount) * 22 == vertexOffsetFloats))
+        {
+            prev.vertexCount += vertexCount;
+            return;
+        }
+    }
+
     Queued3DDraw draw{};
     draw.mode = Queued3DMode::Textured;
     draw.vertexOffsetFloats = vertexOffsetFloats;
@@ -268,7 +298,7 @@ void D3D11CommandContext::SubmitQueued3DTextured(size_t vertexOffsetFloats, UINT
     draw.topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
     draw.shaderResource = shaderResource;
     draw.normalResource = normalResource;
-    draw.backfaceCulling = m_pipeline->BackfaceCulling();
+    draw.backfaceCulling = culling;
     m_queued3DDraws.push_back(draw);
 }
 
@@ -519,7 +549,7 @@ void D3D11CommandContext::Flush3DBatch()
 
     const size_t drawCount = m_queued3DDraws.size();
     const bool useDeferredWorkers =
-        drawCount >= 2 && m_threadPool && m_threadPool->IsMultithreaded() && !m_workers.empty();
+        drawCount >= 64 && m_threadPool && m_threadPool->IsMultithreaded() && !m_workers.empty();
 
     if (!useDeferredWorkers)
     {
@@ -772,7 +802,7 @@ void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
         return;
     }
 
-    if (m_batchVertices.size() + 4 > kBatchMaxVertices)
+    if (!m_drawingDebugOverlay && m_batchVertices.size() + 4 > kBatchMaxVertices)
     {
         Flush2DBatch();
     }
@@ -783,7 +813,7 @@ void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
         const float rotatedX = local[index].x * cosine - local[index].y * sine;
         const float rotatedY = local[index].x * sine + local[index].y * cosine;
         Vec2 position{destination.x + rotatedX, destination.y + rotatedY};
-        if (m_camera2DActive) {
+        if (m_camera2DActive && !m_drawingDebugOverlay) {
             position = GetWorldToScreen2D(position, m_camera2D);
         }
 
@@ -798,6 +828,26 @@ void D3D11CommandContext::DrawTextureQuad(const ITexture& texture,
 
 void D3D11CommandContext::BatchTriangle(const BatchVertex v[3])
 {
+    if (m_drawingDebugOverlay)
+    {
+        const uint32_t baseVertex = static_cast<uint32_t>(m_overlayVertices.size());
+        const UINT indexStart = static_cast<UINT>(m_overlayIndices.size());
+
+        m_overlayVertices.insert(m_overlayVertices.end(), v, v + 3);
+        m_overlayIndices.push_back(baseVertex);
+        m_overlayIndices.push_back(baseVertex + 1);
+        m_overlayIndices.push_back(baseVertex + 2);
+        if (!m_overlayDrawItems.empty() && m_overlayDrawItems.back().shaderResource == nullptr)
+        {
+            m_overlayDrawItems.back().indexCount += 3;
+        }
+        else
+        {
+            m_overlayDrawItems.push_back(DrawItem{indexStart, 3, nullptr});
+        }
+        return;
+    }
+
     const uint32_t baseVertex = static_cast<uint32_t>(m_batchVertices.size());
     const UINT indexStart = static_cast<UINT>(m_batchIndices.size());
 
@@ -805,11 +855,41 @@ void D3D11CommandContext::BatchTriangle(const BatchVertex v[3])
     m_batchIndices.push_back(baseVertex);
     m_batchIndices.push_back(baseVertex + 1);
     m_batchIndices.push_back(baseVertex + 2);
-    m_batchDrawItems.push_back(DrawItem{indexStart, 3, nullptr});
+    if (!m_batchDrawItems.empty() && m_batchDrawItems.back().shaderResource == nullptr)
+    {
+        m_batchDrawItems.back().indexCount += 3;
+    }
+    else
+    {
+        m_batchDrawItems.push_back(DrawItem{indexStart, 3, nullptr});
+    }
 }
 
 void D3D11CommandContext::BatchQuad(const BatchVertex v[4], ID3D11ShaderResourceView *shaderResource)
 {
+    if (m_drawingDebugOverlay)
+    {
+        const uint32_t baseVertex = static_cast<uint32_t>(m_overlayVertices.size());
+        const UINT indexStart = static_cast<UINT>(m_overlayIndices.size());
+
+        m_overlayVertices.insert(m_overlayVertices.end(), v, v + 4);
+        m_overlayIndices.push_back(baseVertex);
+        m_overlayIndices.push_back(baseVertex + 1);
+        m_overlayIndices.push_back(baseVertex + 2);
+        m_overlayIndices.push_back(baseVertex);
+        m_overlayIndices.push_back(baseVertex + 2);
+        m_overlayIndices.push_back(baseVertex + 3);
+        if (!m_overlayDrawItems.empty() && m_overlayDrawItems.back().shaderResource == shaderResource)
+        {
+            m_overlayDrawItems.back().indexCount += 6;
+        }
+        else
+        {
+            m_overlayDrawItems.push_back(DrawItem{indexStart, 6, shaderResource});
+        }
+        return;
+    }
+
     const uint32_t baseVertex = static_cast<uint32_t>(m_batchVertices.size());
     const UINT indexStart = static_cast<UINT>(m_batchIndices.size());
 
@@ -820,7 +900,14 @@ void D3D11CommandContext::BatchQuad(const BatchVertex v[4], ID3D11ShaderResource
     m_batchIndices.push_back(baseVertex);
     m_batchIndices.push_back(baseVertex + 2);
     m_batchIndices.push_back(baseVertex + 3);
-    m_batchDrawItems.push_back(DrawItem{indexStart, 6, shaderResource});
+    if (!m_batchDrawItems.empty() && m_batchDrawItems.back().shaderResource == shaderResource)
+    {
+        m_batchDrawItems.back().indexCount += 6;
+    }
+    else
+    {
+        m_batchDrawItems.push_back(DrawItem{indexStart, 6, shaderResource});
+    }
 }
 
 void D3D11CommandContext::Flush2DBatch()
@@ -894,6 +981,99 @@ void D3D11CommandContext::FlushBatch()
 {
     Flush3DBatch();
     Flush2DBatch();
+}
+
+void D3D11CommandContext::FlushDebugOverlay()
+{
+    if (!m_context || !m_pipeline || !m_batchVertexBuffer || !m_batchIndexBuffer ||
+        m_overlayVertices.empty())
+    {
+        m_overlayVertices.clear();
+        m_overlayIndices.clear();
+        m_overlayDrawItems.clear();
+        return;
+    }
+
+    const int targetWidth = m_defaultWidth > 0 ? m_defaultWidth : m_activeWidth;
+    const int targetHeight = m_defaultHeight > 0 ? m_defaultHeight : m_activeHeight;
+    if (targetWidth <= 0 || targetHeight <= 0)
+    {
+        m_overlayVertices.clear();
+        m_overlayIndices.clear();
+        m_overlayDrawItems.clear();
+        return;
+    }
+
+    ID3D11RenderTargetView *renderTarget = m_swapChain ? m_swapChain->RenderTarget() : nullptr;
+    if (!renderTarget)
+    {
+        m_overlayVertices.clear();
+        m_overlayIndices.clear();
+        m_overlayDrawItems.clear();
+        return;
+    }
+    m_context->OMSetRenderTargets(1, &renderTarget, nullptr);
+
+    D3D11_VIEWPORT viewport{};
+    viewport.Width = static_cast<float>(targetWidth);
+    viewport.Height = static_cast<float>(targetHeight);
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+    m_context->RSSetViewports(1, &viewport);
+
+    D3D11_RECT scissorRect{ 0, 0, targetWidth, targetHeight };
+    m_context->RSSetScissorRects(1, &scissorRect);
+
+    for (BatchVertex &vertex : m_overlayVertices)
+    {
+        vertex.x = vertex.x / targetWidth * 2.0f - 1.0f;
+        vertex.y = 1.0f - vertex.y / targetHeight * 2.0f;
+    }
+
+    const size_t vertexCount = std::min<size_t>(m_overlayVertices.size(), kBatchMaxVertices);
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    HRESULT result = m_context->Map(m_batchVertexBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    if (FAILED(result))
+    {
+        m_overlayVertices.clear();
+        m_overlayIndices.clear();
+        m_overlayDrawItems.clear();
+        return;
+    }
+    std::memcpy(mapped.pData, m_overlayVertices.data(), vertexCount * sizeof(BatchVertex));
+    m_context->Unmap(m_batchVertexBuffer.Get(), 0);
+
+    const size_t indexCount = std::min<size_t>(m_overlayIndices.size(), kBatchMaxVertices * 3);
+    result = m_context->Map(m_batchIndexBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    if (FAILED(result))
+    {
+        m_overlayVertices.clear();
+        m_overlayIndices.clear();
+        m_overlayDrawItems.clear();
+        return;
+    }
+    std::memcpy(mapped.pData, m_overlayIndices.data(), indexCount * sizeof(uint32_t));
+    m_context->Unmap(m_batchIndexBuffer.Get(), 0);
+
+    m_pipeline->BindBatch(m_context, m_batchVertexBuffer.Get(), m_batchIndexBuffer.Get());
+
+    ID3D11ShaderResourceView *boundSRV = nullptr;
+    for (const DrawItem &item : m_overlayDrawItems)
+    {
+        ID3D11ShaderResourceView *srv = item.shaderResource ? item.shaderResource
+                                                            : m_whiteShaderResource.Get();
+        if (srv != boundSRV)
+        {
+            m_context->PSSetShaderResources(0, 1, &srv);
+            boundSRV = srv;
+        }
+        m_context->DrawIndexed(item.indexCount, item.indexStart, 0);
+        RecordDebugRenderDraw(item.indexCount);
+    }
+
+    m_overlayVertices.clear();
+    m_overlayIndices.clear();
+    m_overlayDrawItems.clear();
 }
 
 void D3D11CommandContext::BindOverride(ID3D11ShaderResourceView *drawnResource)
@@ -1022,6 +1202,10 @@ void D3D11CommandContext::Shutdown()
     m_batchVertices.clear();
     m_batchIndices.clear();
     m_batchDrawItems.clear();
+    m_drawingDebugOverlay = false;
+    m_overlayVertices.clear();
+    m_overlayIndices.clear();
+    m_overlayDrawItems.clear();
 }
 } // namespace qci
 #endif
