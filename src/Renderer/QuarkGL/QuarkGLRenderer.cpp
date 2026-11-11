@@ -910,6 +910,16 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, const unsigned char
         return false;
     }
 
+    std::string cleanFilePath = filePath ? filePath : "";
+    bool syntheticItalic = false;
+    const std::string italicTag = "|italic";
+    if (cleanFilePath.size() > italicTag.size() &&
+        cleanFilePath.compare(cleanFilePath.size() - italicTag.size(), italicTag.size(), italicTag) == 0)
+    {
+        cleanFilePath.erase(cleanFilePath.size() - italicTag.size());
+        syntheticItalic = true;
+    }
+
     FT_Face face = nullptr;
     if (fileData != nullptr) {
         if (FT_New_Memory_Face(ft, fileData, (FT_Long)dataSize, 0, &face) != 0) {
@@ -917,7 +927,7 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, const unsigned char
             FT_Done_FreeType(ft);
             return false;
         }
-    } else if (FT_New_Face(ft, filePath, 0, &face) != 0) {
+    } else if (FT_New_Face(ft, cleanFilePath.c_str(), 0, &face) != 0) {
         TraceLog(LogLevel::Error, "FONT", TextFormat("[OpenGL] FreeType failed to open font file: %s", filePath ? filePath : "<null>"));
         FT_Done_FreeType(ft);
         return false;
@@ -925,6 +935,11 @@ bool QuarkGLRenderer::LoadFontInternal(const char* filePath, const unsigned char
 
     FT_Select_Charmap(face, FT_ENCODING_UNICODE);
     FT_Set_Pixel_Sizes(face, 0, (FT_UInt)pointSize);
+    if (syntheticItalic)
+    {
+        FT_Matrix italicMatrix = { 0x10000L, 0x0366AL, 0, 0x10000L };
+        FT_Set_Transform(face, &italicMatrix, nullptr);
+    }
 
     std::vector<int> cps;
     const int* cpsPtr = codepoints;
@@ -1129,16 +1144,17 @@ IFont QuarkGLRenderer::LoadFont(const char* filePath, int fontSize,
                                 const int* codepoints, int codepointCount) {
     if (!filePath) {
         IFont handle{};
-        handle.id = m_font.EnsureDefaultFont();
+        handle.id = EnsureDefaultFont();
         return handle;
     }
 
     FontData fd{};
-    if (!m_font.LoadFontInternal(filePath, nullptr, 0, fontSize, codepoints, codepointCount, fd)) {
+    if (!LoadFontInternal(filePath, nullptr, 0, fontSize, codepoints, codepointCount, fd)) {
         return IFont{};
     }
 
-    const uint32_t id = m_font.AddFont(std::move(fd));
+    const uint32_t id = m_nextFontId++;
+    m_fonts[id] = std::move(fd);
     IFont handle{};
     handle.id = id;
     return handle;
@@ -1151,11 +1167,12 @@ IFont QuarkGLRenderer::LoadFontFromMemory(const char* fileType, const unsigned c
     }
 
     FontData fd{};
-    if (!m_font.LoadFontInternal(fileType, fileData, dataSize, fontSize, codepoints, codepointCount, fd)) {
+    if (!LoadFontInternal(fileType, fileData, dataSize, fontSize, codepoints, codepointCount, fd)) {
         return IFont{};
     }
 
-    const uint32_t id = m_font.AddFont(std::move(fd));
+    const uint32_t id = m_nextFontId++;
+    m_fonts[id] = std::move(fd);
     IFont handle{};
     handle.id = id;
     return handle;

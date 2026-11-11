@@ -2697,6 +2697,15 @@ bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
         return false;
     }
 
+    bool syntheticItalic = false;
+    std::string cleanFilePath = filePath ? filePath : "";
+    const std::string italicTag = "|italic";
+    if (cleanFilePath.size() > italicTag.size() &&
+        cleanFilePath.compare(cleanFilePath.size() - italicTag.size(), italicTag.size(), italicTag) == 0) {
+        syntheticItalic = true;
+        cleanFilePath.erase(cleanFilePath.size() - italicTag.size());
+    }
+
     FT_Face face = nullptr;
     if (fileData != nullptr) {
         if (FT_New_Memory_Face(library, fileData, static_cast<FT_Long>(dataSize), 0, &face) != 0) {
@@ -2704,16 +2713,24 @@ bool QuarkD3D11Renderer::LoadFontData(const char* filePath,
             FT_Done_FreeType(library);
             return false;
         }
-    } else if (FT_New_Face(library, filePath, 0, &face) != 0) {
+    } else if (FT_New_Face(library, cleanFilePath.c_str(), 0, &face) != 0) {
         TraceLog(LogLevel::Error,
                  "FONT",
-                 TextFormat("[D3D11] Failed to open font file: %s", filePath));
+                 TextFormat("[D3D11] Failed to open font file: %s", cleanFilePath.c_str()));
         FT_Done_FreeType(library);
         return false;
     }
 
     FT_Select_Charmap(face, FT_ENCODING_UNICODE);
     FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(fontSize));
+    if (syntheticItalic) {
+        FT_Matrix italicMatrix;
+        italicMatrix.xx = 0x10000L;
+        italicMatrix.xy = 0x0366AL;
+        italicMatrix.yx = 0;
+        italicMatrix.yy = 0x10000L;
+        FT_Set_Transform(face, &italicMatrix, nullptr);
+    }
 
     std::vector<int> cps;
     const int* cpsPtr = codepoints;

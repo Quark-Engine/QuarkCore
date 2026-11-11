@@ -59,19 +59,34 @@ bool QuarkGLFont::LoadFontInternal(const char* filePath, const unsigned char* fi
         return false;
     }
 
+    std::string cleanFilePath = filePath ? filePath : "";
+    bool syntheticItalic = false;
+    const std::string italicTag = "|italic";
+    if (cleanFilePath.size() > italicTag.size() &&
+        cleanFilePath.compare(cleanFilePath.size() - italicTag.size(), italicTag.size(), italicTag) == 0)
+    {
+        cleanFilePath.erase(cleanFilePath.size() - italicTag.size());
+        syntheticItalic = true;
+    }
+
     FT_Face face = nullptr;
     if (fileData != nullptr) {
         if (FT_New_Memory_Face(ft, fileData, static_cast<FT_Long>(dataSize), 0, &face) != 0) {
             FT_Done_FreeType(ft);
             return false;
         }
-    } else if (FT_New_Face(ft, filePath, 0, &face) != 0) {
+    } else if (FT_New_Face(ft, cleanFilePath.c_str(), 0, &face) != 0) {
         FT_Done_FreeType(ft);
         return false;
     }
 
     FT_Select_Charmap(face, FT_ENCODING_UNICODE);
     FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(pointSize));
+    if (syntheticItalic)
+    {
+        FT_Matrix italicMatrix = { 0x10000L, 0x0366AL, 0, 0x10000L };
+        FT_Set_Transform(face, &italicMatrix, nullptr);
+    }
 
     std::vector<int> cps;
     const int* cpsPtr = codepoints;
