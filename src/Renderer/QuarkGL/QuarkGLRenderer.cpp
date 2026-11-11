@@ -1599,11 +1599,13 @@ void QuarkGLRenderer::SetTextureWrap(uint32_t textureId, int wrap) {
 }
 
 void QuarkGLRenderer::BeginScissorMode(int x, int y, int width, int height) {
+    FlushBatch();
     glEnable(GL_SCISSOR_TEST);
-    glScissor(x, y, width, height);
+    glScissor(x, m_height - (y + height), width, height);
 }
 
 void QuarkGLRenderer::EndScissorMode() {
+    FlushBatch();
     glDisable(GL_SCISSOR_TEST);
 }
 
