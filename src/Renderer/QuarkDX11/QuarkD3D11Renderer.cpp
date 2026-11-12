@@ -611,9 +611,9 @@ void QuarkD3D11Renderer::DrawRectangleRounded(Rectangle rectangle,
                                                 int segments,
                                                 Color color)
 {
+    (void)segments;
     const float shortestSide = std::min(std::abs(rectangle.width), std::abs(rectangle.height));
-    const float radius = std::clamp(roundness * shortestSide, 0.0f, shortestSide * 0.5f);
-    const int cornerSegments = std::max(segments, 1);
+    const float radius = std::clamp(roundness * shortestSide * 0.5f, 0.0f, shortestSide * 0.5f);
 
     if (radius <= 0.0f)
     {
@@ -621,36 +621,18 @@ void QuarkD3D11Renderer::DrawRectangleRounded(Rectangle rectangle,
         return;
     }
 
-    const Vec2 centers[] = {
-        {rectangle.x + radius, rectangle.y + radius},
-        {rectangle.x + rectangle.width - radius, rectangle.y + radius},
-        {rectangle.x + rectangle.width - radius, rectangle.y + rectangle.height - radius},
-        {rectangle.x + radius, rectangle.y + rectangle.height - radius}
-    };
-    const Vec2 center{rectangle.x + rectangle.width * 0.5f,
-                      rectangle.y + rectangle.height * 0.5f};
+    const float x = rectangle.x;
+    const float y = rectangle.y;
+    const float w = rectangle.width;
+    const float h = rectangle.height;
 
-    std::vector<Vec2> points;
-    points.reserve(static_cast<size_t>(cornerSegments * 4));
+    DrawCircle(x + radius, y + radius, radius, color);
+    DrawCircle(x + w - radius, y + radius, radius, color);
+    DrawCircle(x + w - radius, y + h - radius, radius, color);
+    DrawCircle(x + radius, y + h - radius, radius, color);
 
-    for (int corner = 0; corner < 4; ++corner)
-    {
-        const float startAngle = -PI * 0.5f + corner * PI * 0.5f;
-
-        for (int segment = 0; segment < cornerSegments; ++segment)
-        {
-            const float angle = startAngle + PI * 0.5f * segment / cornerSegments;
-            points.push_back({
-                centers[corner].x + std::cos(angle) * radius,
-                centers[corner].y + std::sin(angle) * radius
-            });
-        }
-    }
-
-    for (size_t index = 1; index + 1 < points.size(); ++index)
-    {
-        m_commands.DrawTriangle(center, points[0], points[index], color, m_width, m_height);
-    }
+    DrawRectangle(Rectangle{ x + radius, y, w - 2.0f * radius, h }, color);
+    DrawRectangle(Rectangle{ x, y + radius, w, h - 2.0f * radius }, color);
 }
 
 void QuarkD3D11Renderer::DrawCircle(float centerX,

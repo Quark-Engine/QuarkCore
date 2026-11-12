@@ -1003,7 +1003,7 @@ struct QCAPI Mat4 {
         +m[2] * (m[4] * A1323 - m[5] * A0323 + m[7] * A0123)
         -m[3] * (m[4] * A1223 - m[5] * A0223 + m[6] * A0123);
 
-        if (std::fabs(det) <= EPSILON) {
+        if (std::fabs(det) <= 1e-15f) {
             return result;
         }
 

@@ -1239,7 +1239,7 @@ void QuarkGLRenderer::DrawDebugText(const char* text, int x, int y, int fontSize
 
     static std::unordered_map<int, IFont> s_debugFonts;
     auto it = s_debugFonts.find(fontSize);
-    if (it == s_debugFonts.end()) {
+    if (it == s_debugFonts.end() || m_fonts.find(it->second.id) == m_fonts.end()) {
         FontData fontData{};
         if (!LoadFontInternal(nullptr, tahoma_ttf, static_cast<int>(tahoma_ttf_len), fontSize,
                               nullptr, 0, fontData)) return;
@@ -1247,8 +1247,29 @@ void QuarkGLRenderer::DrawDebugText(const char* text, int x, int y, int fontSize
         IFont font{};
         font.id = m_nextFontId++;
         m_fonts[font.id] = std::move(fontData);
-        it = s_debugFonts.emplace(fontSize, font).first;
+        s_debugFonts[fontSize] = font;
+        it = s_debugFonts.find(fontSize);
     }
+
+    int winW = 0, winH = 0;
+    SDL_GetWindowSizeInPixels(m_window, &winW, &winH);
+    if (winW > 0 && winH > 0) {
+        m_width = winW;
+        m_height = winH;
+    }
+
+    m_batch.SetScreenSize(m_width, m_height);
+    m_batch.SetCurrentShader(m_defaultShader);
+    m_batch.SetCamera({}, false);
+
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, m_width, m_height);
+    glBindSampler(0, 0);
 
     const Color shadow = { 0, 0, 0, 255 };
     const std::array<Vec2, 9> offsets = {
@@ -1264,6 +1285,8 @@ void QuarkGLRenderer::DrawDebugText(const char* text, int x, int y, int fontSize
 
     DrawTextEx(it->second, text, Vec2{ static_cast<float>(x) + 1.f, static_cast<float>(y) + 1.f }, static_cast<float>(fontSize), 0.f, shadow);
     DrawTextEx(it->second, text, Vec2{ static_cast<float>(x), static_cast<float>(y) }, static_cast<float>(fontSize), 0.f, color);
+
+    FlushBatch();
 }
 
 void QuarkGLRenderer::DrawText(const char* text, int x, int y, int fontSize, Color color) {
@@ -3069,12 +3092,17 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform) {
         } else {
             glUseProgram(m_3d.shader3D);
             if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
+            if(m_3d.viewLoc >= 0) glUniformMatrix4fv(m_3d.viewLoc, 1, GL_FALSE, m_3d.viewMatrix.m);
+            if(m_3d.projLoc >= 0) glUniformMatrix4fv(m_3d.projLoc, 1, GL_FALSE, m_3d.projectionMatrix.m);
             if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc,
                 materialColor.r / 255.0f, materialColor.g / 255.0f,
                 materialColor.b / 255.0f, materialColor.a / 255.0f);
             if(m_3d.samplerLoc >= 0) glUniform1i(m_3d.samplerLoc, 0);
         }
 
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBindSampler(0, 0);
         glBindTexture(GL_TEXTURE_2D, texId);
         if (customShader && material && material->maps) {
             BindMaterialMaps(*material, customShader->id);
@@ -3127,12 +3155,17 @@ void QuarkGLRenderer::DrawModelEx(const Model& model, const Mat4& transform, Col
         } else {
             glUseProgram(m_3d.shader3D);
             if(m_3d.modelLoc >= 0) glUniformMatrix4fv(m_3d.modelLoc, 1, GL_FALSE, final.m);
+            if(m_3d.viewLoc >= 0) glUniformMatrix4fv(m_3d.viewLoc, 1, GL_FALSE, m_3d.viewMatrix.m);
+            if(m_3d.projLoc >= 0) glUniformMatrix4fv(m_3d.projLoc, 1, GL_FALSE, m_3d.projectionMatrix.m);
             if(m_3d.samplerLoc >= 0) glUniform1i(m_3d.samplerLoc, 0);
             if(m_3d.colorLoc >= 0) glUniform4f(m_3d.colorLoc,
                 combinedColor.r / 255.0f, combinedColor.g / 255.0f,
                 combinedColor.b / 255.0f, combinedColor.a / 255.0f);
         }
 
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBindSampler(0, 0);
         glBindTexture(GL_TEXTURE_2D, texId);
         if (customShader && material && material->maps) {
             BindMaterialMaps(*material, customShader->id);
