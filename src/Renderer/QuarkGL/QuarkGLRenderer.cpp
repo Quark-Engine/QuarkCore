@@ -3047,6 +3047,94 @@ void QuarkGLRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
 
 void QuarkGLRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) {
     if (!transforms || instances <= 0) return;
+    if (instances == 1) {
+        DrawMesh(mesh, material, transforms[0]);
+        return;
+    }
+    if (!mesh.vaoId) return;
+    if (!m_3d.initialized) Init3DState();
+
+    GLuint texId = m_3d.whiteTexture;
+    const bool hasTexture = material.maps && material.maps[MATERIAL_MAP_ALBEDO].texture.valid;
+    const Color materialColor = material.maps
+        ? material.maps[MATERIAL_MAP_ALBEDO].color : WHITE;
+    if (hasTexture) {
+        texId = material.maps[MATERIAL_MAP_ALBEDO].texture.id;
+    }
+
+    const Shader* customShader = ResolveMaterialShader(&material);
+    if (customShader) {
+        glUseProgram(customShader->id);
+        const GLint useInstancingLoc = glGetUniformLocation(customShader->id, "useInstancing");
+        if (useInstancingLoc >= 0) {
+            ApplyMaterialShaderUniforms(*customShader, transforms[0], m_3d.viewMatrix, m_3d.projectionMatrix, materialColor, hasTexture);
+            glUniform1i(useInstancingLoc, 1);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texId);
+            if (material.maps) {
+                BindMaterialMaps(material, customShader->id);
+            }
+
+            if (m_3d.instanceVBO == 0) {
+                glGenBuffers(1, &m_3d.instanceVBO);
+            }
+            const size_t requiredBytes = static_cast<size_t>(instances) * sizeof(Mat4);
+            glBindBuffer(GL_ARRAY_BUFFER, m_3d.instanceVBO);
+            if (requiredBytes > m_3d.instanceVBOCapacity) {
+                m_3d.instanceVBOCapacity = requiredBytes * 2;
+                glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(m_3d.instanceVBOCapacity), nullptr, GL_STREAM_DRAW);
+            }
+            glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(requiredBytes), transforms);
+
+            glBindVertexArray(mesh.vaoId);
+            for (GLuint col = 0; col < 4; ++col) {
+                const GLuint loc = 4u + col;
+                glEnableVertexAttribArray(loc);
+                glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, sizeof(Mat4),
+                    reinterpret_cast<const void*>(sizeof(float) * 4u * col));
+                glVertexAttribDivisor(loc, 1);
+            }
+
+            if (mesh.eboId) {
+                glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(mesh.triangleCount * 3),
+                    GL_UNSIGNED_SHORT, nullptr, static_cast<GLsizei>(instances));
+                RecordDebugRenderDraw(static_cast<std::uint64_t>(mesh.triangleCount) * 3u * static_cast<std::uint64_t>(instances));
+            } else {
+                glDrawArraysInstanced(GL_TRIANGLES, 0, mesh.vertexCount, static_cast<GLsizei>(instances));
+                RecordDebugRenderDraw(static_cast<std::uint64_t>(mesh.vertexCount) * static_cast<std::uint64_t>(instances));
+            }
+
+            for (GLuint col = 0; col < 4; ++col) {
+                const GLuint loc = 4u + col;
+                glVertexAttribDivisor(loc, 0);
+                glDisableVertexAttribArray(loc);
+            }
+            glBindVertexArray(0);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glUniform1i(useInstancingLoc, 0);
+            return;
+        }
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texId);
+        if (material.maps) {
+            BindMaterialMaps(material, customShader->id);
+        }
+        glBindVertexArray(mesh.vaoId);
+        for (int i = 0; i < instances; ++i) {
+            ApplyMaterialShaderUniforms(*customShader, transforms[i], m_3d.viewMatrix, m_3d.projectionMatrix, materialColor, hasTexture);
+            if (mesh.eboId) {
+                glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.triangleCount * 3), GL_UNSIGNED_SHORT, nullptr);
+                RecordDebugRenderDraw(static_cast<std::uint64_t>(mesh.triangleCount) * 3u);
+            } else {
+                glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
+                RecordDebugRenderDraw(static_cast<std::uint64_t>(mesh.vertexCount));
+            }
+        }
+        glBindVertexArray(0);
+        return;
+    }
 
     for (int i = 0; i < instances; ++i) {
         DrawMesh(mesh, material, transforms[i]);

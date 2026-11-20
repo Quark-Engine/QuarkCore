@@ -2319,7 +2319,9 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         }
     };
 
-    if (!secondaryTasks.empty()) {
+    if (secondaryTasks.size() == 1) {
+        recordSecondaryTask(0, secondaryTasks[0]);
+    } else if (secondaryTasks.size() > 1) {
         m_threadPool.ParallelFor(secondaryTasks.size(), 1u, [&](uint32_t workerIndex, size_t begin, size_t end) {
             for (size_t idx = begin; idx < end; ++idx) {
                 recordSecondaryTask(workerIndex, secondaryTasks[idx]);

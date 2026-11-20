@@ -260,6 +260,8 @@ void QuarkD3D11Renderer::Shutdown()
     TraceLog(LogLevel::Info, "D3D11", "Shutting down D3D11 renderer...");
 
     m_currentShaderId = 0;
+    m_staticGpuMeshes.clear();
+    m_staticMeshKeysByVertices.clear();
     m_shaderPrograms.clear();
     if (m_whiteShaderTexture.IsValid()) {
         m_resources.DestroyTexture(m_whiteShaderTexture.id);
@@ -1870,10 +1872,12 @@ void QuarkD3D11Renderer::UpdateMeshBuffer(Mesh& mesh, int index, const void* dat
     default:
         break;
     }
+    InvalidateStaticGpuMesh(mesh.vertices);
 }
 
 void QuarkD3D11Renderer::UnloadMesh(Mesh& mesh)
 {
+    InvalidateStaticGpuMesh(mesh.vertices);
     delete[] mesh.vertices;
     mesh.vertices = nullptr;
     delete[] mesh.texcoords;
@@ -2349,11 +2353,12 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
         const char *normalNames[4] = {"uNormal", "normalMatrix", "matNormal", "MATRIX_NORMAL"};
         setMatrixUniform(normalNames, normalMatrix);
 
+        const bool useStaticGpuMesh = standardConvention && mesh.vertexCount > 0;
         const float diffuseColor[4] = {
-            colorOffset != 0xFFFFFFFFu ? 1.0f : baseColor.r / 255.0f,
-            colorOffset != 0xFFFFFFFFu ? 1.0f : baseColor.g / 255.0f,
-            colorOffset != 0xFFFFFFFFu ? 1.0f : baseColor.b / 255.0f,
-            colorOffset != 0xFFFFFFFFu ? 1.0f : baseColor.a / 255.0f
+            (!useStaticGpuMesh && colorOffset != 0xFFFFFFFFu) ? 1.0f : baseColor.r / 255.0f,
+            (!useStaticGpuMesh && colorOffset != 0xFFFFFFFFu) ? 1.0f : baseColor.g / 255.0f,
+            (!useStaticGpuMesh && colorOffset != 0xFFFFFFFFu) ? 1.0f : baseColor.b / 255.0f,
+            (!useStaticGpuMesh && colorOffset != 0xFFFFFFFFu) ? 1.0f : baseColor.a / 255.0f
         };
         for (const char *name : {"uColor", "colDiffuse", "COLOR_DIFFUSE"}) {
             const auto iterator = program.uniforms.find(name);
@@ -2402,6 +2407,21 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
         fillMapSlot(7, MATERIAL_MAP_ROUGHNESS, whiteFallback);
         fillMapSlot(8, MATERIAL_MAP_OCCLUSION, whiteFallback);
         fillMapSlot(9, MATERIAL_MAP_EMISSION, blackFallback);
+    }
+
+    if (standardConvention && mesh.vertexCount > 0)
+    {
+        if (StaticGpuMesh *gpuMesh = GetOrCreateStaticGpuMesh(mesh, program))
+        {
+            m_commands.SubmitQueued3DStaticMesh(
+                gpuMesh->vertexBuffer.Get(),
+                gpuMesh->indexBuffer.Get(),
+                gpuMesh->vertexCount,
+                gpuMesh->indexCount,
+                gpuMesh->indexed,
+                shaderOverride);
+            return;
+        }
     }
 
     const auto transformNormal = [&](const Vec3 &normal) -> Vec3 {
@@ -2611,6 +2631,317 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
     m_commands.SubmitQueued3DShader(sliceOffset, totalVertices, shaderOverride);
 }
 
+void QuarkD3D11Renderer::InvalidateStaticGpuMesh(const float *vertices)
+{
+    if (!vertices)
+    {
+        return;
+    }
+    const auto it = m_staticMeshKeysByVertices.find(vertices);
+    if (it == m_staticMeshKeysByVertices.end())
+    {
+        return;
+    }
+    for (uint64_t key : it->second)
+    {
+        m_staticGpuMeshes.erase(key);
+    }
+    m_staticMeshKeysByVertices.erase(it);
+}
+
+QuarkD3D11Renderer::StaticGpuMesh *QuarkD3D11Renderer::GetOrCreateStaticGpuMesh(
+    const Mesh &mesh, const ShaderProgramData &program)
+{
+    if (!m_device.Get() || !mesh.vertices || mesh.vertexCount <= 0 || program.strideBytes == 0)
+    {
+        return nullptr;
+    }
+
+    uint64_t key = 1469598103934665603ull;
+    const uintptr_t ptrVal = reinterpret_cast<uintptr_t>(mesh.vertices);
+    const auto hashBytes = [&](const void *data, size_t len) {
+        const auto *bytes = static_cast<const unsigned char *>(data);
+        for (size_t i = 0; i < len; ++i)
+        {
+            key ^= bytes[i];
+            key *= 1099511628211ull;
+        }
+    };
+    hashBytes(&ptrVal, sizeof(ptrVal));
+    hashBytes(&program.strideBytes, sizeof(program.strideBytes));
+    hashBytes(&program.positionOffset, sizeof(program.positionOffset));
+    hashBytes(&program.texCoordOffset, sizeof(program.texCoordOffset));
+    hashBytes(&program.colorOffset, sizeof(program.colorOffset));
+    hashBytes(&program.normalOffset, sizeof(program.normalOffset));
+    hashBytes(&program.tangentOffset, sizeof(program.tangentOffset));
+
+    const auto existing = m_staticGpuMeshes.find(key);
+    if (existing != m_staticGpuMeshes.end())
+    {
+        return &existing->second;
+    }
+
+    const UINT floatsPerVertex = program.strideBytes / sizeof(float);
+    const auto offsetInFloats = [](UINT byteOffset) -> UINT {
+        return byteOffset == 0xFFFFFFFFu ? 0xFFFFFFFFu : byteOffset / sizeof(float);
+    };
+    const UINT positionOffset = offsetInFloats(program.positionOffset);
+    const UINT texCoordOffset = offsetInFloats(program.texCoordOffset);
+    const UINT colorOffset = offsetInFloats(program.colorOffset);
+    const UINT normalOffset = offsetInFloats(program.normalOffset);
+    const UINT tangentOffset = offsetInFloats(program.tangentOffset);
+
+    const auto writeVec = [](float *vertex, UINT offset, const float *values, int count) {
+        for (int idx = 0; idx < count; ++idx)
+        {
+            vertex[offset + idx] = values[idx];
+        }
+    };
+
+    const bool hasIndices = (mesh.indices != nullptr && mesh.triangleCount > 0);
+    std::vector<float> vertexData(static_cast<size_t>(mesh.vertexCount) * floatsPerVertex, 0.0f);
+    for (int vi = 0; vi < mesh.vertexCount; ++vi)
+    {
+        float *dst = vertexData.data() + static_cast<size_t>(vi) * floatsPerVertex;
+        if (positionOffset != 0xFFFFFFFFu)
+        {
+            const float pos[4] = {
+                mesh.vertices[vi * 3 + 0],
+                mesh.vertices[vi * 3 + 1],
+                mesh.vertices[vi * 3 + 2],
+                1.0f
+            };
+            writeVec(dst, positionOffset, pos, std::min<int>(program.positionComponents, 4));
+        }
+        if (texCoordOffset != 0xFFFFFFFFu)
+        {
+            const float uv[2] = {
+                mesh.texcoords ? mesh.texcoords[vi * 2 + 0] : 0.0f,
+                mesh.texcoords ? mesh.texcoords[vi * 2 + 1] : 0.0f
+            };
+            writeVec(dst, texCoordOffset, uv, std::min<int>(program.texCoordComponents, 2));
+        }
+        if (colorOffset != 0xFFFFFFFFu)
+        {
+            const Color vc = ReadMeshVertexColor(mesh, vi, WHITE);
+            const float col[4] = { vc.r / 255.0f, vc.g / 255.0f, vc.b / 255.0f, vc.a / 255.0f };
+            writeVec(dst, colorOffset, col, std::min<int>(program.colorComponents, 4));
+        }
+        if (normalOffset != 0xFFFFFFFFu)
+        {
+            const float nrm[4] = {
+                mesh.normals ? mesh.normals[vi * 3 + 0] : 0.0f,
+                mesh.normals ? mesh.normals[vi * 3 + 1] : 1.0f,
+                mesh.normals ? mesh.normals[vi * 3 + 2] : 0.0f,
+                1.0f
+            };
+            writeVec(dst, normalOffset, nrm, std::min<int>(program.normalComponents, 4));
+        }
+        if (tangentOffset != 0xFFFFFFFFu)
+        {
+            const float tx = mesh.tangents ? mesh.tangents[vi * 3 + 0] : 1.0f;
+            const float ty = mesh.tangents ? mesh.tangents[vi * 3 + 1] : 0.0f;
+            const float tz = mesh.tangents ? mesh.tangents[vi * 3 + 2] : 0.0f;
+            const float tanData[4] = { tx, ty, tz, 1.0f };
+            writeVec(dst, tangentOffset, tanData, std::min<int>(program.tangentComponents, 4));
+        }
+    }
+
+    StaticGpuMesh gpuMesh{};
+    gpuMesh.vertexCount = static_cast<UINT>(mesh.vertexCount);
+    gpuMesh.strideBytes = program.strideBytes;
+
+    D3D11_BUFFER_DESC vbDesc{};
+    vbDesc.ByteWidth = static_cast<UINT>(vertexData.size() * sizeof(float));
+    vbDesc.Usage = D3D11_USAGE_IMMUTABLE;
+    vbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    D3D11_SUBRESOURCE_DATA vbInit{};
+    vbInit.pSysMem = vertexData.data();
+    if (FAILED(m_device.Get()->CreateBuffer(&vbDesc, &vbInit, &gpuMesh.vertexBuffer)))
+    {
+        return nullptr;
+    }
+
+    if (hasIndices)
+    {
+        std::vector<uint32_t> indices;
+        indices.reserve(static_cast<size_t>(mesh.triangleCount) * 3u);
+        for (int tri = 0; tri < mesh.triangleCount; ++tri)
+        {
+            const int i0 = static_cast<int>(mesh.indices[tri * 3 + 0]);
+            const int i1 = static_cast<int>(mesh.indices[tri * 3 + 1]);
+            const int i2 = static_cast<int>(mesh.indices[tri * 3 + 2]);
+            if (i0 < 0 || i1 < 0 || i2 < 0 ||
+                i0 >= mesh.vertexCount || i1 >= mesh.vertexCount || i2 >= mesh.vertexCount)
+            {
+                continue;
+            }
+            indices.push_back(static_cast<uint32_t>(i0));
+            indices.push_back(static_cast<uint32_t>(i1));
+            indices.push_back(static_cast<uint32_t>(i2));
+        }
+
+        if (!indices.empty())
+        {
+            D3D11_BUFFER_DESC ibDesc{};
+            ibDesc.ByteWidth = static_cast<UINT>(indices.size() * sizeof(uint32_t));
+            ibDesc.Usage = D3D11_USAGE_IMMUTABLE;
+            ibDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+            D3D11_SUBRESOURCE_DATA ibInit{};
+            ibInit.pSysMem = indices.data();
+            if (SUCCEEDED(m_device.Get()->CreateBuffer(&ibDesc, &ibInit, &gpuMesh.indexBuffer)))
+            {
+                gpuMesh.indexCount = static_cast<UINT>(indices.size());
+                gpuMesh.indexed = true;
+            }
+        }
+    }
+
+    auto [insertedIt, inserted] = m_staticGpuMeshes.emplace(key, std::move(gpuMesh));
+    m_staticMeshKeysByVertices[mesh.vertices].push_back(key);
+    return &insertedIt->second;
+}
+
+void QuarkD3D11Renderer::DrawMeshInstancedWithShader(const Mesh &mesh, const Material &material,
+                                                     const Mat4 *transforms, int instances,
+                                                     ShaderProgramData &program)
+{
+    if (!transforms || instances <= 0 || !mesh.vertices || mesh.vertexCount <= 0 ||
+        program.worldPositionOffset != 0xFFFFFFFFu)
+    {
+        for (int i = 0; i < instances; ++i)
+        {
+            DrawMeshWithShader(mesh, material, transforms[i], program);
+        }
+        return;
+    }
+
+    StaticGpuMesh *gpuMesh = GetOrCreateStaticGpuMesh(mesh, program);
+    if (!gpuMesh)
+    {
+        for (int i = 0; i < instances; ++i)
+        {
+            DrawMeshWithShader(mesh, material, transforms[i], program);
+        }
+        return;
+    }
+
+    const MaterialMap *albedoMap = (material.maps != nullptr) ? &material.maps[MATERIAL_MAP_ALBEDO] : nullptr;
+    ID3D11ShaderResourceView *albedoResource = nullptr;
+    if (albedoMap && (albedoMap->texture.valid || albedoMap->texture.id != 0))
+    {
+        albedoResource = m_resources.ShaderResource(albedoMap->texture.id);
+    }
+    const uint32_t shaderId = (material.shader && material.shader->id != 0)
+                                  ? material.shader->id
+                                  : m_currentShaderId;
+    const Color baseColor = albedoMap ? albedoMap->color : WHITE;
+
+    const auto setMatrixUniform = [&](const char *names[4], const Mat4 &value) {
+        for (int aliasIndex = 0; aliasIndex < 4; ++aliasIndex)
+        {
+            if (!names[aliasIndex]) continue;
+            const auto iterator = program.uniforms.find(names[aliasIndex]);
+            if (iterator == program.uniforms.end()) continue;
+            StoreUniformValue(program, iterator->second, 0, value.m, sizeof(float) * 16, 1);
+            break;
+        }
+    };
+
+    const char *viewNames[4] = {"uView", "view", "matView", "MATRIX_VIEW"};
+    setMatrixUniform(viewNames, m_viewMatrix);
+    const char *projectionNames[4] = {"uProjection", "projection", "matProjection", "MATRIX_PROJECTION"};
+    setMatrixUniform(projectionNames, m_projectionMatrix);
+
+    const float diffuseColor[4] = {
+        baseColor.r / 255.0f, baseColor.g / 255.0f, baseColor.b / 255.0f, baseColor.a / 255.0f
+    };
+    for (const char *name : {"uColor", "colDiffuse", "COLOR_DIFFUSE"})
+    {
+        const auto iterator = program.uniforms.find(name);
+        if (iterator != program.uniforms.end())
+        {
+            StoreUniformValue(program, iterator->second, 0, diffuseColor, sizeof(float) * 4, 1);
+            break;
+        }
+    }
+
+    D3D11CommandContext::ShaderOverride shaderOverride = BuildShaderOverride(shaderId, albedoResource);
+    if (!shaderOverride.Active())
+    {
+        return;
+    }
+
+    if (material.maps)
+    {
+        ID3D11ShaderResourceView *whiteFallback =
+            m_whiteShaderTexture.IsValid() ? m_resources.ShaderResource(m_whiteShaderTexture.id) : nullptr;
+        ID3D11ShaderResourceView *blackFallback =
+            m_blackShaderTexture.IsValid() ? m_resources.ShaderResource(m_blackShaderTexture.id) : nullptr;
+        ID3D11ShaderResourceView *flatNormalFallback =
+            m_flatNormalShaderTexture.IsValid() ? m_resources.ShaderResource(m_flatNormalShaderTexture.id) : nullptr;
+
+        const auto fillMapSlot = [&](UINT slot, int mapIndex, ID3D11ShaderResourceView *fallback) {
+            if (shaderOverride.shaderResources[slot] != nullptr) return;
+            const MaterialMap &map = material.maps[mapIndex];
+            if (map.texture.valid || map.texture.id != 0)
+            {
+                shaderOverride.shaderResources[slot] = m_resources.ShaderResource(map.texture.id);
+            }
+            else if (fallback)
+            {
+                shaderOverride.shaderResources[slot] = fallback;
+            }
+        };
+
+        fillMapSlot(1, MATERIAL_MAP_HEIGHT + 0, whiteFallback);
+        fillMapSlot(2, MATERIAL_MAP_HEIGHT + 1, whiteFallback);
+        fillMapSlot(3, MATERIAL_MAP_HEIGHT + 2, whiteFallback);
+        fillMapSlot(4, MATERIAL_MAP_HEIGHT + 3, whiteFallback);
+        fillMapSlot(5, MATERIAL_MAP_METALNESS, whiteFallback);
+        fillMapSlot(6, MATERIAL_MAP_NORMAL, flatNormalFallback);
+        fillMapSlot(7, MATERIAL_MAP_ROUGHNESS, whiteFallback);
+        fillMapSlot(8, MATERIAL_MAP_OCCLUSION, whiteFallback);
+        fillMapSlot(9, MATERIAL_MAP_EMISSION, blackFallback);
+    }
+
+    const uint32_t singleConstantBytes = static_cast<uint32_t>(program.constantStaging.size());
+    m_instancedConstantsScratch.clear();
+    m_instancedConstantsScratch.reserve(static_cast<size_t>(singleConstantBytes) * static_cast<size_t>(instances));
+
+    const char *modelNames[4] = {"uModel", "model", "matModel", "MATRIX_MODEL"};
+    const char *mvpNames[4] = {"uMvp", "mvp", "MATRIX_MVP", nullptr};
+    const char *normalNames[4] = {"uNormal", "normalMatrix", "matNormal", "MATRIX_NORMAL"};
+    const Mat4 viewProj = m_projectionMatrix * m_viewMatrix;
+
+    for (int i = 0; i < instances; ++i)
+    {
+        const Mat4 finalTransform = m_currentMatrix * transforms[i];
+        const Mat4 normalMatrix = TransposeMat4(finalTransform.inverted());
+        const Mat4 mvp = viewProj * finalTransform;
+        setMatrixUniform(modelNames, finalTransform);
+        setMatrixUniform(mvpNames, mvp);
+        setMatrixUniform(normalNames, normalMatrix);
+        if (singleConstantBytes > 0)
+        {
+            m_instancedConstantsScratch.insert(m_instancedConstantsScratch.end(),
+                                               program.constantStaging.begin(),
+                                               program.constantStaging.end());
+        }
+    }
+
+    m_commands.SubmitQueued3DStaticMesh(
+        gpuMesh->vertexBuffer.Get(),
+        gpuMesh->indexBuffer.Get(),
+        gpuMesh->vertexCount,
+        gpuMesh->indexCount,
+        gpuMesh->indexed,
+        shaderOverride,
+        static_cast<UINT>(instances),
+        m_instancedConstantsScratch.empty() ? nullptr : m_instancedConstantsScratch.data(),
+        singleConstantBytes);
+}
+
 void QuarkD3D11Renderer::DrawMeshInstanced(const Mesh& mesh,
                                            const Material& material,
                                            const Mat4* transforms,
@@ -2618,6 +2949,12 @@ void QuarkD3D11Renderer::DrawMeshInstanced(const Mesh& mesh,
 {
     if (!transforms || instances <= 0)
     {
+        return;
+    }
+
+    if (ShaderProgramData *program = Resolve3DShaderProgram(material))
+    {
+        DrawMeshInstancedWithShader(mesh, material, transforms, instances, *program);
         return;
     }
 

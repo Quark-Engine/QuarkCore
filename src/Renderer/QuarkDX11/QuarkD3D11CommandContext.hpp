@@ -58,6 +58,13 @@ public:
                                 ID3D11ShaderResourceView *normalResource);
     void SubmitQueued3DShader(size_t vertexOffsetFloats, UINT vertexCount,
                               const ShaderOverride &shaderOverride);
+    void SubmitQueued3DStaticMesh(ID3D11Buffer *staticVertexBuffer,
+                                  ID3D11Buffer *staticIndexBuffer,
+                                  UINT vertexCount, UINT indexCount, bool indexed,
+                                  const ShaderOverride &shaderOverride,
+                                  UINT instanceCount = 1,
+                                  const uint8_t *batchedConstantData = nullptr,
+                                  uint32_t singleConstantBytes = 0);
     void Draw3D(const float *vertices, UINT vertexCount, D3D_PRIMITIVE_TOPOLOGY topology);
     void Draw3DTextured(const float *vertices, UINT vertexCount,
                         ID3D11ShaderResourceView *shaderResource,
@@ -109,6 +116,11 @@ private:
         ShaderOverride shaderOverride{};
         size_t constantOffsetBytes = 0;
         uint32_t constantSizeBytes = 0;
+        ID3D11Buffer *staticVertexBuffer = nullptr;
+        ID3D11Buffer *staticIndexBuffer = nullptr;
+        UINT indexCount = 0;
+        UINT instanceCount = 1;
+        bool indexed = false;
         bool backfaceCulling = false;
     };
 

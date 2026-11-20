@@ -316,6 +316,20 @@ private:
     ShaderProgramData *Resolve3DShaderProgram(const Material &material);
     void DrawMeshWithShader(const Mesh &mesh, const Material &material, const Mat4 &transform,
                             ShaderProgramData &program);
+    struct StaticGpuMesh {
+        Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> indexBuffer;
+        UINT vertexCount = 0;
+        UINT indexCount = 0;
+        UINT strideBytes = 0;
+        bool indexed = false;
+    };
+
+    StaticGpuMesh *GetOrCreateStaticGpuMesh(const Mesh &mesh, const ShaderProgramData &program);
+    void InvalidateStaticGpuMesh(const float *vertices);
+    void DrawMeshInstancedWithShader(const Mesh &mesh, const Material &material,
+                                     const Mat4 *transforms, int instances,
+                                     ShaderProgramData &program);
     void ResizeSwapChain();
 
     bool LoadFontData(const char *filePath, const unsigned char *fileData, int dataSize,
@@ -365,6 +379,9 @@ private:
     ITexture m_flatNormalShaderTexture{};
     std::unordered_map<std::string, CachedTexture> m_textureCache;
     std::unordered_map<uint32_t, std::string> m_textureCacheKeys;
+    std::unordered_map<uint64_t, StaticGpuMesh> m_staticGpuMeshes;
+    std::unordered_map<const float *, std::vector<uint64_t>> m_staticMeshKeysByVertices;
+    std::vector<uint8_t> m_instancedConstantsScratch;
     Mat4 m_viewMatrix{};
     Mat4 m_projectionMatrix{};
     Mat4 m_currentMatrix{};

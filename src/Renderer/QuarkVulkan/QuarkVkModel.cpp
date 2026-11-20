@@ -807,7 +807,11 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
     const uint32_t shaderProgramId = m_vkShaderCompiler.CurrentProgramId();
     const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(shaderProgramId);
     const uint32_t drawShaderProgramId = shaderProgramId;
-    const auto gpuMeshIt = m_gpuMeshes.find(mesh.vertices);
+    auto gpuMeshIt = m_gpuMeshes.find(mesh.vertices);
+    if (shaderProgram && shaderProgram->supportsGpuMeshTransform &&
+        gpuMeshIt == m_gpuMeshes.end() && UploadStaticGpuMesh(mesh)) {
+        gpuMeshIt = m_gpuMeshes.find(mesh.vertices);
+    }
     if (shaderProgram && shaderProgram->supportsGpuMeshTransform &&
         gpuMeshIt != m_gpuMeshes.end() && gpuMeshIt->second.indexCount > 0 &&
         materialDescriptorSet != VK_NULL_HANDLE) {
@@ -942,12 +946,73 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
 }
 
 void QuarkVkRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) {
-    if (!transforms || instances <= 0) {
+    if (!transforms || instances <= 0 || !mesh.vertices || mesh.vertexCount <= 0) {
         return;
+    }
+    if (instances == 1) {
+        DrawMesh(mesh, material, transforms[0]);
+        return;
+    }
+
+    const uint32_t shaderProgramId = m_vkShaderCompiler.CurrentProgramId();
+    const VkShaderProgramData* shaderProgram = m_vkShaderCompiler.GetProgram(shaderProgramId);
+    if (shaderProgram && shaderProgram->supportsGpuMeshTransform) {
+        auto gpuMeshIt = m_gpuMeshes.find(mesh.vertices);
+        if (gpuMeshIt == m_gpuMeshes.end() && UploadStaticGpuMesh(mesh)) {
+            gpuMeshIt = m_gpuMeshes.find(mesh.vertices);
+        }
+        const VkDescriptorSet materialDescriptorSet = CreateMaterialDescriptorSet(material);
+        if (gpuMeshIt != m_gpuMeshes.end() && gpuMeshIt->second.indexCount > 0 &&
+            materialDescriptorSet != VK_NULL_HANDLE) {
+            const MaterialMap* albedoMap = (material.maps != nullptr) ? &material.maps[MATERIAL_MAP_ALBEDO] : nullptr;
+            const Color baseColor = albedoMap ? albedoMap->color : WHITE;
+            const std::array<float, 4> normalizedColor = {
+                NormalizeColorComponent(baseColor.r),
+                NormalizeColorComponent(baseColor.g),
+                NormalizeColorComponent(baseColor.b),
+                NormalizeColorComponent(baseColor.a)
+            };
+
+            auto& vertices = GetActive3DTriangleVertices();
+            auto* drawItems = &m_main3DBatch.drawItems;
+            if (m_activeRenderTargetId != 0) {
+                auto renderTargetIt = m_renderTargets.find(m_activeRenderTargetId);
+                if (renderTargetIt != m_renderTargets.end()) {
+                    drawItems = &renderTargetIt->second.drawItems3D;
+                }
+            }
+            const bool startsMain3DGeometry = vertices.empty() && m_activeRenderTargetId == 0;
+            if (startsMain3DGeometry) {
+                m_main3DBatch.shaderProgramId = shaderProgramId;
+            }
+            const uint32_t firstVertex = static_cast<uint32_t>(vertices.size());
+            const Mat4 viewProj = m_projectionMatrix * m_viewMatrix;
+
+            Vk3DDrawItem baseItem{};
+            baseItem.descriptorSet = materialDescriptorSet;
+            baseItem.shaderProgramId = shaderProgramId;
+            baseItem.firstVertex = firstVertex;
+            baseItem.indexCount = gpuMeshIt->second.indexCount;
+            baseItem.indexed = true;
+            baseItem.gpuMesh = true;
+            baseItem.gpuVertexBuffer = gpuMeshIt->second.vertexBuffer;
+            baseItem.gpuIndexBuffer = gpuMeshIt->second.indexBuffer;
+            baseItem.materialColor = normalizedColor;
+
+            drawItems->reserve(drawItems->size() + static_cast<size_t>(instances));
+            for (int i = 0; i < instances; ++i) {
+                const Mat4 finalTransform = m_currentMatrix * transforms[i];
+                baseItem.model = finalTransform;
+                baseItem.modelViewProjection = viewProj * finalTransform;
+                drawItems->push_back(baseItem);
+            }
+            return;
+        }
     }
 
     for (int i = 0; i < instances; ++i) {
         DrawMesh(mesh, material, transforms[i]);
     }
 }
+
 } // namespace qci

@@ -339,6 +339,62 @@ void D3D11CommandContext::SubmitQueued3DShader(size_t vertexOffsetFloats, UINT v
     m_queued3DDraws.push_back(draw);
 }
 
+void D3D11CommandContext::SubmitQueued3DStaticMesh(ID3D11Buffer *staticVertexBuffer,
+                                                   ID3D11Buffer *staticIndexBuffer,
+                                                   UINT vertexCount, UINT indexCount, bool indexed,
+                                                   const ShaderOverride &shaderOverride,
+                                                   UINT instanceCount,
+                                                   const uint8_t *batchedConstantData,
+                                                   uint32_t singleConstantBytes)
+{
+    if (!m_context || !m_pipeline || !m_resources || !m_swapChain || !shaderOverride.Active() ||
+        !staticVertexBuffer || vertexCount == 0 || instanceCount == 0 || !m_activeDepthStencil)
+    {
+        return;
+    }
+
+    if (!m_batchDrawItems.empty())
+    {
+        Flush2DBatch();
+    }
+
+    Queued3DDraw draw{};
+    draw.mode = Queued3DMode::CustomShader;
+    draw.vertexCount = vertexCount;
+    draw.indexCount = indexCount;
+    draw.indexed = indexed && staticIndexBuffer != nullptr && indexCount > 0;
+    draw.staticVertexBuffer = staticVertexBuffer;
+    draw.staticIndexBuffer = staticIndexBuffer;
+    draw.instanceCount = instanceCount;
+    draw.topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    draw.shaderOverride = shaderOverride;
+    draw.shaderOverride.constantData = nullptr;
+    draw.shaderOverride.constantDataSize = 0;
+    draw.backfaceCulling = m_pipeline->BackfaceCulling();
+
+    if (batchedConstantData && singleConstantBytes > 0)
+    {
+        const uint32_t clampedSingle = std::min<uint32_t>(
+            singleConstantBytes, static_cast<uint32_t>(kMaxWorkerConstantBufferBytes));
+        draw.constantOffsetBytes = m_queued3DConstants.size();
+        draw.constantSizeBytes = clampedSingle;
+        const size_t totalBytes = static_cast<size_t>(clampedSingle) * static_cast<size_t>(instanceCount);
+        m_queued3DConstants.insert(m_queued3DConstants.end(), batchedConstantData,
+                                   batchedConstantData + totalBytes);
+    }
+    else if (shaderOverride.constantData && shaderOverride.constantDataSize > 0)
+    {
+        const uint32_t copyBytes = std::min<uint32_t>(
+            shaderOverride.constantDataSize, static_cast<uint32_t>(kMaxWorkerConstantBufferBytes));
+        draw.constantOffsetBytes = m_queued3DConstants.size();
+        draw.constantSizeBytes = copyBytes;
+        m_queued3DConstants.insert(m_queued3DConstants.end(), shaderOverride.constantData,
+                                   shaderOverride.constantData + copyBytes);
+    }
+
+    m_queued3DDraws.push_back(draw);
+}
+
 void D3D11CommandContext::Draw3D(const float *vertices, UINT vertexCount,
                                  D3D_PRIMITIVE_TOPOLOGY topology)
 {
@@ -451,8 +507,9 @@ void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
             return;
         }
         const UINT offset = 0;
+        ID3D11Buffer *boundVB = draw.staticVertexBuffer ? draw.staticVertexBuffer : vertexBuffer3D;
         ctx->IASetInputLayout(draw.shaderOverride.inputLayout);
-        ctx->IASetVertexBuffers(0, 1, &vertexBuffer3D, &strideBytes, &offset);
+        ctx->IASetVertexBuffers(0, 1, &boundVB, &strideBytes, &offset);
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->RSSetState(rasterizer);
         ctx->VSSetShader(draw.shaderOverride.vertexShader, nullptr, 0);
@@ -460,6 +517,77 @@ void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
 
         ID3D11Buffer *targetConstantBuffer =
             workerConstantBuffer ? workerConstantBuffer : draw.shaderOverride.constantBuffer;
+        if (draw.staticVertexBuffer != nullptr)
+        {
+            ctx->PSSetConstantBuffers(1, 1, m_pipeline->LightConstantBuffer());
+
+            ID3D11ShaderResourceView *resources[10] = {};
+            for (size_t index = 0; index < 10; ++index)
+            {
+                resources[index] = draw.shaderOverride.shaderResources[index];
+            }
+            ctx->PSSetShaderResources(0, 10, resources);
+
+            ID3D11SamplerState *sampler = m_pipeline->Sampler();
+            ctx->PSSetSamplers(0, 1, &sampler);
+            ctx->OMSetDepthStencilState(m_pipeline->DepthStencilState(), 0);
+            ctx->OMSetBlendState(m_pipeline->Blend(), blendFactor, 0xFFFFFFFF);
+
+            if (draw.indexed && draw.staticIndexBuffer)
+            {
+                ctx->IASetIndexBuffer(draw.staticIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
+            }
+
+            if (draw.constantSizeBytes > 0 && targetConstantBuffer)
+            {
+                ctx->VSSetConstantBuffers(0, 1, &targetConstantBuffer);
+                ctx->PSSetConstantBuffers(0, 1, &targetConstantBuffer);
+                for (UINT inst = 0; inst < draw.instanceCount; ++inst)
+                {
+                    D3D11_MAPPED_SUBRESOURCE mappedCB{};
+                    if (SUCCEEDED(ctx->Map(targetConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedCB)))
+                    {
+                        const size_t instOffset = draw.constantOffsetBytes +
+                            static_cast<size_t>(inst) * static_cast<size_t>(draw.constantSizeBytes);
+                        std::memcpy(mappedCB.pData,
+                                    m_queued3DConstants.data() + instOffset,
+                                    draw.constantSizeBytes);
+                        ctx->Unmap(targetConstantBuffer, 0);
+                    }
+                    if (draw.indexed && draw.staticIndexBuffer)
+                    {
+                        ctx->DrawIndexed(draw.indexCount, 0, 0);
+                        RecordDebugRenderDraw(draw.indexCount);
+                    }
+                    else
+                    {
+                        ctx->Draw(draw.vertexCount, 0);
+                        RecordDebugRenderDraw(draw.vertexCount);
+                    }
+                }
+            }
+            else
+            {
+                if (draw.shaderOverride.constantBuffer)
+                {
+                    ID3D11Buffer *constantBuffer = draw.shaderOverride.constantBuffer;
+                    ctx->VSSetConstantBuffers(0, 1, &constantBuffer);
+                    ctx->PSSetConstantBuffers(0, 1, &constantBuffer);
+                }
+                if (draw.indexed && draw.staticIndexBuffer)
+                {
+                    ctx->DrawIndexed(draw.indexCount, 0, 0);
+                    RecordDebugRenderDraw(draw.indexCount);
+                }
+                else
+                {
+                    ctx->Draw(draw.vertexCount, 0);
+                    RecordDebugRenderDraw(draw.vertexCount);
+                }
+            }
+            return;
+        }
+
         if (draw.constantSizeBytes > 0 && targetConstantBuffer)
         {
             D3D11_MAPPED_SUBRESOURCE mappedCB{};

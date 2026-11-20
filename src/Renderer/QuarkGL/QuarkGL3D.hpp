@@ -23,6 +23,8 @@ struct Model3DState {
 
     GLuint lineVAO = 0, lineVBO = 0;
     GLuint triVAO = 0, triVBO = 0;
+    GLuint instanceVBO = 0;
+    size_t instanceVBOCapacity = 0;
     std::vector<Vertex3D> lineVertices;
     std::vector<Vertex3D> triVertices;
     Color currentLineColor{255, 255, 255, 255};
