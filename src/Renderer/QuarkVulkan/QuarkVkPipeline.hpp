@@ -41,7 +41,8 @@ struct VkGpuMeshPushConstants {
     float model[16];
     float materialColor[4];
     uint32_t objectSpaceTransform = 1;
-    uint32_t padding[3]{};
+    uint32_t useInstanceBuffer = 0;
+    uint32_t padding[2]{};
 };
 static_assert(sizeof(VkGpuMeshPushConstants) == sizeof(Vk3DPushConstants),
               "GPU mesh push constants must fit the 3D pipeline layout range.");

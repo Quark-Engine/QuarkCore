@@ -297,6 +297,14 @@ private:
         std::vector<uint8_t> constantStaging;
         UINT constantBufferSize = 0;
         bool dirty = false;
+        int locModel = -1;
+        int locView = -1;
+        int locProjection = -1;
+        int locMvp = -1;
+        int locNormal = -1;
+        int locColor = -1;
+        int locUseInstancing = -1;
+        int locInstanceBase = -1;
     };
 
     struct CachedTexture {
@@ -381,6 +389,7 @@ private:
     std::unordered_map<uint32_t, std::string> m_textureCacheKeys;
     std::unordered_map<uint64_t, StaticGpuMesh> m_staticGpuMeshes;
     std::unordered_map<const float *, std::vector<uint64_t>> m_staticMeshKeysByVertices;
+    std::unordered_map<int, Microsoft::WRL::ComPtr<ID3D11BlendState>> m_blendStateCache;
     std::vector<uint8_t> m_instancedConstantsScratch;
     Mat4 m_viewMatrix{};
     Mat4 m_projectionMatrix{};

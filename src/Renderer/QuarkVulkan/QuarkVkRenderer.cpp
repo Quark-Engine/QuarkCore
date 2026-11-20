@@ -261,6 +261,15 @@ void QuarkVkRenderer::Shutdown() {
     m_vkPipeline.Shutdown();
     m_vkDescriptorSetManager.Shutdown(m_device);
 
+    if (m_3DInstanceBuffer != VK_NULL_HANDLE) {
+        if (m_3DInstanceMapped != nullptr) {
+            vmaUnmapMemory(m_gpuAllocator.GetAllocator(), m_3DInstanceAllocation);
+            m_3DInstanceMapped = nullptr;
+        }
+        m_gpuAllocator.DestroyBuffer(m_3DInstanceBuffer, m_3DInstanceAllocation);
+        m_3DInstanceBuffer = VK_NULL_HANDLE;
+        m_3DInstanceAllocation = VK_NULL_HANDLE;
+    }
     if (m_3DDummyBuffer != VK_NULL_HANDLE) {
         if (m_3DDummyBaseMapped != nullptr) {
             vmaUnmapMemory(m_gpuAllocator.GetAllocator(), m_3DDummyAllocation);
@@ -374,7 +383,9 @@ void QuarkVkRenderer::EndDrawing() {
     m_main3DBatch.lineVertices.clear();
     m_main3DBatch.drawItems.clear();
 
-    if (!UploadFrameGeometry(m_currentFrame)) {
+    if (!UploadFrameGeometry(m_currentFrame)) { m_frameInstanceTransforms.clear(); m_drawing = false; return; }
+    m_frameInstanceTransforms.clear();
+    if (false) {
         m_drawing = false;
         return;
     }
@@ -789,6 +800,25 @@ void QuarkVkRenderer::Create3DUniformBuffer() {
         std::memcpy(frameData + 64, identity.m, sizeof(identity.m));
         std::memcpy(frameData + 128, identity.m, sizeof(identity.m));
     }
+    if (m_3DInstanceBuffer == VK_NULL_HANDLE) {
+        VkDeviceMemory instanceMemory = VK_NULL_HANDLE;
+        const VkDeviceSize totalInstanceBytes =
+            static_cast<VkDeviceSize>(kVkMaxInstancesPerFrame) * sizeof(VkInstanceTransformData) * kVkMaxFramesInFlight;
+        if (!CreateBuffer(totalInstanceBytes,
+                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                          VMA_MEMORY_USAGE_AUTO,
+                          m_3DInstanceBuffer, m_3DInstanceAllocation, instanceMemory,
+                          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                          VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
+            throw std::runtime_error("Failed to create Vulkan 3D instance storage buffer.");
+        }
+        if (vmaMapMemory(m_gpuAllocator.GetAllocator(), m_3DInstanceAllocation, &m_3DInstanceMapped) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to map Vulkan 3D instance storage buffer.");
+        }
+        std::memset(m_3DInstanceMapped, 0, static_cast<size_t>(totalInstanceBytes));
+    }
+    if (false) {
+    }
 }
 
 bool QuarkVkRenderer::Allocate3DDescriptorSet(VkDescriptorSet& outSet, VkDescriptorPool& outPool) {
@@ -902,7 +932,12 @@ VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& mat
         }
     }
 
-    std::array<VkWriteDescriptorSet, 11> writes{};
+    VkDescriptorBufferInfo instanceBufferInfo{};
+    instanceBufferInfo.buffer = m_3DInstanceBuffer;
+    instanceBufferInfo.offset = 0;
+    instanceBufferInfo.range = VK_WHOLE_SIZE;
+
+    std::array<VkWriteDescriptorSet, 12> writes{};
     writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 0, 0, 1,
                   VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &matrices, nullptr };
     writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 1, 0, 1,
@@ -917,6 +952,8 @@ VkDescriptorSet QuarkVkRenderer::CreateMaterialDescriptorSet(const Material& mat
         writes[5 + i] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 5 + i, 0, 1,
                           VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &images[i + 1], nullptr, nullptr };
     }
+    writes[11] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, descriptorSet, 11, 0, 1,
+                   VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &instanceBufferInfo, nullptr };
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     VkMaterialCacheEntry entry{};
@@ -1750,6 +1787,16 @@ bool QuarkVkRenderer::UploadFrameGeometry(uint32_t frameIndex) {
             }
         }
     }
+    if (!m_frameInstanceTransforms.empty() && m_3DInstanceMapped) {
+        const size_t clampedCount = std::min(m_frameInstanceTransforms.size(), kVkMaxInstancesPerFrame);
+        auto* dstBase = static_cast<VkInstanceTransformData*>(m_3DInstanceMapped) +
+            static_cast<size_t>(frameIndex) * kVkMaxInstancesPerFrame;
+        std::memcpy(dstBase, m_frameInstanceTransforms.data(),
+                    clampedCount * sizeof(VkInstanceTransformData));
+        vmaFlushAllocation(m_gpuAllocator.GetAllocator(), m_3DInstanceAllocation,
+                           static_cast<VkDeviceSize>(frameIndex) * kVkMaxInstancesPerFrame * sizeof(VkInstanceTransformData),
+                           static_cast<VkDeviceSize>(clampedCount) * sizeof(VkInstanceTransformData));
+    }
     return true;
 }
 
@@ -1913,6 +1960,7 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         std::memcpy(transform.model, item.model.m, sizeof(transform.model));
         std::copy(item.materialColor.begin(), item.materialColor.end(), transform.materialColor);
         transform.objectSpaceTransform = item.gpuMesh ? 1u : 0u;
+        transform.useInstanceBuffer = item.useInstanceBuffer ? 1u : 0u;
         vkCmdPushConstants(targetCmd, layout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(transform), &transform);
@@ -2192,7 +2240,8 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                                 boundIndexBuffer = item.gpuIndexBuffer;
                             }
                             pushGpuMeshTransformToCmd(secCmd, layout3D, item);
-                            vkCmdDrawIndexed(secCmd, item.indexCount, 1, 0, 0, 0);
+                            const uint32_t drawInstances = item.instanceCount > 0 ? item.instanceCount : 1u;
+                            vkCmdDrawIndexed(secCmd, item.indexCount, drawInstances, 0, 0, item.firstInstance);
                             gpuTransformPushActive = true;
                         } else {
                             if (boundVertexBuffer != frame.vertexBuffer3D) {

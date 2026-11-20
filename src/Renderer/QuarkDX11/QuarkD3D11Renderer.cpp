@@ -262,6 +262,7 @@ void QuarkD3D11Renderer::Shutdown()
     m_currentShaderId = 0;
     m_staticGpuMeshes.clear();
     m_staticMeshKeysByVertices.clear();
+    m_blendStateCache.clear();
     m_shaderPrograms.clear();
     if (m_whiteShaderTexture.IsValid()) {
         m_resources.DestroyTexture(m_whiteShaderTexture.id);
@@ -414,9 +415,16 @@ void QuarkD3D11Renderer::SetBlendMode(int mode)
                 break;
         }
 
+        auto cachedIt = m_blendStateCache.find(mode);
+        if (cachedIt != m_blendStateCache.end() && cachedIt->second) {
+            m_device.Context()->OMSetBlendState(cachedIt->second.Get(), blendFactor, 0xFFFFFFFF);
+            return;
+        }
+
         Microsoft::WRL::ComPtr<ID3D11BlendState> customBlend;
         HRESULT hr = m_device.Get()->CreateBlendState(&desc, customBlend.GetAddressOf());
         if (SUCCEEDED(hr)) {
+            m_blendStateCache[mode] = customBlend;
             m_device.Context()->OMSetBlendState(customBlend.Get(), blendFactor, 0xFFFFFFFF);
         }
         return;
@@ -2323,35 +2331,25 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
         const Mat4 normalMatrix = TransposeMat4(finalTransform.inverted());
         const Mat4 mvp = m_projectionMatrix * (m_viewMatrix * finalTransform);
 
-        const auto setMatrixUniform = [&](const char *names[4], const Mat4 &value) {
-            for (int aliasIndex = 0; aliasIndex < 4; ++aliasIndex) {
-                if (!names[aliasIndex]) {
-                    continue;
-                }
-                const auto iterator = program.uniforms.find(names[aliasIndex]);
-                if (iterator == program.uniforms.end()) {
-                    continue;
-                }
-                StoreUniformValue(program, iterator->second, 0, value.m,
-                                  sizeof(float) * 16, 1);
-                break;
-            }
-        };
-
-        const char *modelNames[4] = {"uModel", "model", "matModel", "MATRIX_MODEL"};
-        setMatrixUniform(modelNames, finalTransform);
-
-        const char *viewNames[4] = {"uView", "view", "matView", "MATRIX_VIEW"};
-        setMatrixUniform(viewNames, m_viewMatrix);
-
-        const char *projectionNames[4] = {"uProjection", "projection", "matProjection", "MATRIX_PROJECTION"};
-        setMatrixUniform(projectionNames, m_projectionMatrix);
-
-        const char *mvpNames[4] = {"uMvp", "mvp", "MATRIX_MVP", nullptr};
-        setMatrixUniform(mvpNames, mvp);
-
-        const char *normalNames[4] = {"uNormal", "normalMatrix", "matNormal", "MATRIX_NORMAL"};
-        setMatrixUniform(normalNames, normalMatrix);
+        if (program.locModel >= 0) {
+            StoreUniformValue(program, program.locModel, 0, finalTransform.m, sizeof(float) * 16, 1);
+        }
+        if (program.locView >= 0) {
+            StoreUniformValue(program, program.locView, 0, m_viewMatrix.m, sizeof(float) * 16, 1);
+        }
+        if (program.locProjection >= 0) {
+            StoreUniformValue(program, program.locProjection, 0, m_projectionMatrix.m, sizeof(float) * 16, 1);
+        }
+        if (program.locMvp >= 0) {
+            StoreUniformValue(program, program.locMvp, 0, mvp.m, sizeof(float) * 16, 1);
+        }
+        if (program.locNormal >= 0) {
+            StoreUniformValue(program, program.locNormal, 0, normalMatrix.m, sizeof(float) * 16, 1);
+        }
+        if (program.locUseInstancing >= 0) {
+            const int zero = 0;
+            StoreUniformValue(program, program.locUseInstancing, 0, &zero, sizeof(int), 1);
+        }
 
         const bool useStaticGpuMesh = standardConvention && mesh.vertexCount > 0;
         const float diffuseColor[4] = {
@@ -2360,14 +2358,8 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
             (!useStaticGpuMesh && colorOffset != 0xFFFFFFFFu) ? 1.0f : baseColor.b / 255.0f,
             (!useStaticGpuMesh && colorOffset != 0xFFFFFFFFu) ? 1.0f : baseColor.a / 255.0f
         };
-        for (const char *name : {"uColor", "colDiffuse", "COLOR_DIFFUSE"}) {
-            const auto iterator = program.uniforms.find(name);
-            if (iterator == program.uniforms.end()) {
-                continue;
-            }
-            StoreUniformValue(program, iterator->second, 0, diffuseColor,
-                              sizeof(float) * 4, 1);
-            break;
+        if (program.locColor >= 0) {
+            StoreUniformValue(program, program.locColor, 0, diffuseColor, sizeof(float) * 4, 1);
         }
     }
 
@@ -2837,33 +2829,49 @@ void QuarkD3D11Renderer::DrawMeshInstancedWithShader(const Mesh &mesh, const Mat
                                   : m_currentShaderId;
     const Color baseColor = albedoMap ? albedoMap->color : WHITE;
 
-    const auto setMatrixUniform = [&](const char *names[4], const Mat4 &value) {
-        for (int aliasIndex = 0; aliasIndex < 4; ++aliasIndex)
-        {
-            if (!names[aliasIndex]) continue;
-            const auto iterator = program.uniforms.find(names[aliasIndex]);
-            if (iterator == program.uniforms.end()) continue;
-            StoreUniformValue(program, iterator->second, 0, value.m, sizeof(float) * 16, 1);
-            break;
-        }
-    };
-
-    const char *viewNames[4] = {"uView", "view", "matView", "MATRIX_VIEW"};
-    setMatrixUniform(viewNames, m_viewMatrix);
-    const char *projectionNames[4] = {"uProjection", "projection", "matProjection", "MATRIX_PROJECTION"};
-    setMatrixUniform(projectionNames, m_projectionMatrix);
+    if (program.locView >= 0) {
+        StoreUniformValue(program, program.locView, 0, m_viewMatrix.m, sizeof(float) * 16, 1);
+    }
+    if (program.locProjection >= 0) {
+        StoreUniformValue(program, program.locProjection, 0, m_projectionMatrix.m, sizeof(float) * 16, 1);
+    }
 
     const float diffuseColor[4] = {
         baseColor.r / 255.0f, baseColor.g / 255.0f, baseColor.b / 255.0f, baseColor.a / 255.0f
     };
-    for (const char *name : {"uColor", "colDiffuse", "COLOR_DIFFUSE"})
+    if (program.locColor >= 0) {
+        StoreUniformValue(program, program.locColor, 0, diffuseColor, sizeof(float) * 4, 1);
+    }
+
+    const bool canGpuInstance = (instances > 1 && program.locUseInstancing >= 0 && program.locInstanceBase >= 0);
+    UINT gpuInstanceStart = 0xFFFFFFFFu;
+    if (canGpuInstance)
     {
-        const auto iterator = program.uniforms.find(name);
-        if (iterator != program.uniforms.end())
+        const Mat4 viewProj = m_projectionMatrix * m_viewMatrix;
+        std::vector<D3D11CommandContext::InstanceTransform> gpuInstances(static_cast<size_t>(instances));
+        for (int i = 0; i < instances; ++i)
         {
-            StoreUniformValue(program, iterator->second, 0, diffuseColor, sizeof(float) * 4, 1);
-            break;
+            const Mat4 finalTransform = m_currentMatrix * transforms[i];
+            const Mat4 normalMatrix = TransposeMat4(finalTransform.inverted());
+            const Mat4 mvp = viewProj * finalTransform;
+            std::memcpy(gpuInstances[static_cast<size_t>(i)].model, finalTransform.m, sizeof(float) * 16);
+            std::memcpy(gpuInstances[static_cast<size_t>(i)].mvp, mvp.m, sizeof(float) * 16);
+            std::memcpy(gpuInstances[static_cast<size_t>(i)].normalMatrix, normalMatrix.m, sizeof(float) * 16);
         }
+        gpuInstanceStart = m_commands.Append3DInstances(gpuInstances.data(), static_cast<UINT>(instances));
+    }
+
+    if (gpuInstanceStart != 0xFFFFFFFFu)
+    {
+        const int one = 1;
+        const int baseIdx = static_cast<int>(gpuInstanceStart);
+        StoreUniformValue(program, program.locUseInstancing, 0, &one, sizeof(int), 1);
+        StoreUniformValue(program, program.locInstanceBase, 0, &baseIdx, sizeof(int), 1);
+    }
+    else if (program.locUseInstancing >= 0)
+    {
+        const int zero = 0;
+        StoreUniformValue(program, program.locUseInstancing, 0, &zero, sizeof(int), 1);
     }
 
     D3D11CommandContext::ShaderOverride shaderOverride = BuildShaderOverride(shaderId, albedoResource);
@@ -2905,13 +2913,26 @@ void QuarkD3D11Renderer::DrawMeshInstancedWithShader(const Mesh &mesh, const Mat
         fillMapSlot(9, MATERIAL_MAP_EMISSION, blackFallback);
     }
 
+    if (gpuInstanceStart != 0xFFFFFFFFu)
+    {
+        m_commands.SubmitQueued3DStaticMesh(
+            gpuMesh->vertexBuffer.Get(),
+            gpuMesh->indexBuffer.Get(),
+            gpuMesh->vertexCount,
+            gpuMesh->indexCount,
+            gpuMesh->indexed,
+            shaderOverride,
+            static_cast<UINT>(instances),
+            nullptr,
+            0,
+            true);
+        return;
+    }
+
     const uint32_t singleConstantBytes = static_cast<uint32_t>(program.constantStaging.size());
     m_instancedConstantsScratch.clear();
     m_instancedConstantsScratch.reserve(static_cast<size_t>(singleConstantBytes) * static_cast<size_t>(instances));
 
-    const char *modelNames[4] = {"uModel", "model", "matModel", "MATRIX_MODEL"};
-    const char *mvpNames[4] = {"uMvp", "mvp", "MATRIX_MVP", nullptr};
-    const char *normalNames[4] = {"uNormal", "normalMatrix", "matNormal", "MATRIX_NORMAL"};
     const Mat4 viewProj = m_projectionMatrix * m_viewMatrix;
 
     for (int i = 0; i < instances; ++i)
@@ -2919,9 +2940,15 @@ void QuarkD3D11Renderer::DrawMeshInstancedWithShader(const Mesh &mesh, const Mat
         const Mat4 finalTransform = m_currentMatrix * transforms[i];
         const Mat4 normalMatrix = TransposeMat4(finalTransform.inverted());
         const Mat4 mvp = viewProj * finalTransform;
-        setMatrixUniform(modelNames, finalTransform);
-        setMatrixUniform(mvpNames, mvp);
-        setMatrixUniform(normalNames, normalMatrix);
+        if (program.locModel >= 0) {
+            StoreUniformValue(program, program.locModel, 0, finalTransform.m, sizeof(float) * 16, 1);
+        }
+        if (program.locMvp >= 0) {
+            StoreUniformValue(program, program.locMvp, 0, mvp.m, sizeof(float) * 16, 1);
+        }
+        if (program.locNormal >= 0) {
+            StoreUniformValue(program, program.locNormal, 0, normalMatrix.m, sizeof(float) * 16, 1);
+        }
         if (singleConstantBytes > 0)
         {
             m_instancedConstantsScratch.insert(m_instancedConstantsScratch.end(),
@@ -2939,7 +2966,8 @@ void QuarkD3D11Renderer::DrawMeshInstancedWithShader(const Mesh &mesh, const Mat
         shaderOverride,
         static_cast<UINT>(instances),
         m_instancedConstantsScratch.empty() ? nullptr : m_instancedConstantsScratch.data(),
-        singleConstantBytes);
+        singleConstantBytes,
+        false);
 }
 
 void QuarkD3D11Renderer::DrawMeshInstanced(const Mesh& mesh,
@@ -3971,6 +3999,10 @@ void QuarkD3D11Renderer::BuildShaderProgram(ShaderProgramData &program,
         D3D11_SIGNATURE_PARAMETER_DESC signature{};
         vertexReflector->GetInputParameterDesc(index, &signature);
 
+        if (signature.SystemValueType != D3D_NAME_UNDEFINED) {
+            continue;
+        }
+
         const UINT components = CountMaskComponents(signature.Mask);
         D3D11_INPUT_ELEMENT_DESC element{};
         element.SemanticName = signature.SemanticName;
@@ -4160,6 +4192,24 @@ void QuarkD3D11Renderer::BuildShaderProgram(ShaderProgramData &program,
 
     reflectStage(vertexReflector.Get());
     reflectStage(pixelReflector.Get());
+
+    const auto findFirstUniform = [&](std::initializer_list<const char *> names) -> int {
+        for (const char *name : names) {
+            const auto it = program.uniforms.find(name);
+            if (it != program.uniforms.end()) {
+                return it->second;
+            }
+        }
+        return -1;
+    };
+    program.locModel = findFirstUniform({"uModel", "model", "matModel", "MATRIX_MODEL"});
+    program.locView = findFirstUniform({"uView", "view", "matView", "MATRIX_VIEW"});
+    program.locProjection = findFirstUniform({"uProjection", "projection", "matProjection", "MATRIX_PROJECTION"});
+    program.locMvp = findFirstUniform({"uMvp", "mvp", "MATRIX_MVP"});
+    program.locNormal = findFirstUniform({"uNormal", "normalMatrix", "matNormal", "MATRIX_NORMAL"});
+    program.locColor = findFirstUniform({"uColor", "colDiffuse", "COLOR_DIFFUSE"});
+    program.locUseInstancing = findFirstUniform({"useInstancing"});
+    program.locInstanceBase = findFirstUniform({"instanceBase"});
 
     if (totalConstantSize > 0) {
         EnsureConstantCapacity(program, AlignTo16(totalConstantSize));

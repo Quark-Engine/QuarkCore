@@ -48,7 +48,7 @@ void QuarkVkDescriptorSetManager::CreateLayouts(VkDevice device) {
         throw std::runtime_error("Failed to create Vulkan descriptor set layout.");
     }
 
-    std::array<VkDescriptorSetLayoutBinding, 11> bindings3D{};
+    std::array<VkDescriptorSetLayoutBinding, 12> bindings3D{};
     bindings3D[0] = { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr };
     bindings3D[1] = { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
     bindings3D[2] = { 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
@@ -58,6 +58,7 @@ void QuarkVkDescriptorSetManager::CreateLayouts(VkDevice device) {
         bindings3D[binding] = { binding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
                                 VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
     }
+    bindings3D[11] = { 11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr };
     VkDescriptorSetLayoutCreateInfo layoutInfo3D{};
     layoutInfo3D.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo3D.bindingCount = static_cast<uint32_t>(bindings3D.size());
@@ -101,9 +102,10 @@ void QuarkVkDescriptorSetManager::CreateLayouts(VkDevice device) {
 }
 
 bool QuarkVkDescriptorSetManager::CreateDescriptorPoolSlab(uint32_t maxSets, VkDescriptorPool& outPool) {
-    std::array<VkDescriptorPoolSize, 2> poolSizes = {{
+    std::array<VkDescriptorPoolSize, 3> poolSizes = {{
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, maxSets * 11 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, maxSets * 3 }
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, maxSets * 3 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, maxSets * 1 }
     }};
 
     VkDescriptorPoolCreateInfo poolInfo{};

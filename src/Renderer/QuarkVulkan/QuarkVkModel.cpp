@@ -999,6 +999,25 @@ void QuarkVkRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& materi
             baseItem.gpuIndexBuffer = gpuMeshIt->second.indexBuffer;
             baseItem.materialColor = normalizedColor;
 
+            if (m_3DInstanceBuffer != VK_NULL_HANDLE &&
+                m_frameInstanceTransforms.size() + static_cast<size_t>(instances) <= kVkMaxInstancesPerFrame) {
+                const uint32_t localStart = static_cast<uint32_t>(m_frameInstanceTransforms.size());
+                m_frameInstanceTransforms.reserve(m_frameInstanceTransforms.size() + static_cast<size_t>(instances));
+                for (int i = 0; i < instances; ++i) {
+                    const Mat4 finalTransform = m_currentMatrix * transforms[i];
+                    const Mat4 mvp = viewProj * finalTransform;
+                    VkInstanceTransformData instData{};
+                    std::memcpy(instData.modelViewProjection, mvp.m, sizeof(instData.modelViewProjection));
+                    std::memcpy(instData.model, finalTransform.m, sizeof(instData.model));
+                    m_frameInstanceTransforms.push_back(instData);
+                }
+                baseItem.useInstanceBuffer = true;
+                baseItem.instanceCount = static_cast<uint32_t>(instances);
+                baseItem.firstInstance = static_cast<uint32_t>(m_currentFrame * kVkMaxInstancesPerFrame) + localStart;
+                drawItems->push_back(baseItem);
+                return;
+            }
+
             drawItems->reserve(drawItems->size() + static_cast<size_t>(instances));
             for (int i = 0; i < instances; ++i) {
                 const Mat4 finalTransform = m_currentMatrix * transforms[i];

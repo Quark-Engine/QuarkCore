@@ -73,6 +73,12 @@ static constexpr size_t kVkMaxBatchIndices    = kVkMaxBatchQuads * 6;
 static constexpr size_t kVkMaxVerticesPerFrame = kVkMaxBatchVertices * 16;
 static constexpr size_t kVkMaxIndicesPerFrame  = kVkMaxBatchIndices  * 16;
 static constexpr VkDeviceSize kVk3DUniformFrameStride = 4096;
+static constexpr size_t kVkMaxInstancesPerFrame = 4096;
+
+struct VkInstanceTransformData {
+    float modelViewProjection[16];
+    float model[16];
+};
 
 struct VkFrameData {
     VkBuffer       vertexBuffer = VK_NULL_HANDLE;
@@ -117,6 +123,9 @@ struct Vk3DDrawItem {
     uint32_t indexCount = 0;
     bool indexed = false;
     bool gpuMesh = false;
+    bool useInstanceBuffer = false;
+    uint32_t instanceCount = 1;
+    uint32_t firstInstance = 0;
     VkBuffer gpuVertexBuffer = VK_NULL_HANDLE;
     VkBuffer gpuIndexBuffer = VK_NULL_HANDLE;
     Mat4 modelViewProjection = Mat4::identity();
@@ -543,6 +552,10 @@ private:
     VmaAllocation                 m_3DDummyAllocation = VK_NULL_HANDLE;
     void*                         m_3DDummyBaseMapped = nullptr;
     void*                         m_3DDummyMapped = nullptr;
+    VkBuffer                      m_3DInstanceBuffer = VK_NULL_HANDLE;
+    VmaAllocation                 m_3DInstanceAllocation = VK_NULL_HANDLE;
+    void*                         m_3DInstanceMapped = nullptr;
+    std::vector<VkInstanceTransformData> m_frameInstanceTransforms;
     QuarkVkGpuAllocator           m_gpuAllocator;
     std::unordered_map<const float*, VkGpuMeshData> m_gpuMeshes;
     std::unordered_set<const float*> m_dynamicMeshes;

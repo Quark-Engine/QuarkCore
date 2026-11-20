@@ -112,12 +112,32 @@ void D3D11CommandContext::Initialize(const D3D11Device &device, D3D11SwapChain &
         }
     }
 
+    {
+        D3D11_BUFFER_DESC instDesc{};
+        instDesc.ByteWidth = kMax3DInstances * static_cast<UINT>(sizeof(InstanceTransform));
+        instDesc.Usage = D3D11_USAGE_DYNAMIC;
+        instDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        instDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        instDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+        instDesc.StructureByteStride = static_cast<UINT>(sizeof(InstanceTransform));
+        if (SUCCEEDED(nativeDevice->CreateBuffer(&instDesc, nullptr, &m_instanceBuffer)))
+        {
+            D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+            srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+            srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+            srvDesc.Buffer.FirstElement = 0;
+            srvDesc.Buffer.NumElements = kMax3DInstances;
+            nativeDevice->CreateShaderResourceView(m_instanceBuffer.Get(), &srvDesc, &m_instanceSRV);
+        }
+    }
+
     m_batchVertices.reserve(kBatchMaxVertices);
     m_batchIndices.reserve(kBatchMaxVertices);
     m_batchDrawItems.reserve(kBatchMaxVertices);
     m_queued3DVertices.reserve(65536 * 22);
     m_queued3DConstants.reserve(65536);
     m_queued3DDraws.reserve(1024);
+    m_queued3DInstances.reserve(kMax3DInstances);
 
     TraceLog(LogLevel::Trace, "D3D11",
              TextFormat("Command context initialized (%zu deferred workers).", m_workers.size()));
@@ -339,13 +359,26 @@ void D3D11CommandContext::SubmitQueued3DShader(size_t vertexOffsetFloats, UINT v
     m_queued3DDraws.push_back(draw);
 }
 
+UINT D3D11CommandContext::Append3DInstances(const InstanceTransform *instances, UINT count)
+{
+    if (!instances || count == 0 || !m_instanceBuffer || !m_instanceSRV ||
+        m_queued3DInstances.size() + static_cast<size_t>(count) > kMax3DInstances)
+    {
+        return 0xFFFFFFFFu;
+    }
+    const UINT startIndex = static_cast<UINT>(m_queued3DInstances.size());
+    m_queued3DInstances.insert(m_queued3DInstances.end(), instances, instances + count);
+    return startIndex;
+}
+
 void D3D11CommandContext::SubmitQueued3DStaticMesh(ID3D11Buffer *staticVertexBuffer,
                                                    ID3D11Buffer *staticIndexBuffer,
                                                    UINT vertexCount, UINT indexCount, bool indexed,
                                                    const ShaderOverride &shaderOverride,
                                                    UINT instanceCount,
                                                    const uint8_t *batchedConstantData,
-                                                   uint32_t singleConstantBytes)
+                                                   uint32_t singleConstantBytes,
+                                                   bool useGpuInstancing)
 {
     if (!m_context || !m_pipeline || !m_resources || !m_swapChain || !shaderOverride.Active() ||
         !staticVertexBuffer || vertexCount == 0 || instanceCount == 0 || !m_activeDepthStencil)
@@ -366,13 +399,14 @@ void D3D11CommandContext::SubmitQueued3DStaticMesh(ID3D11Buffer *staticVertexBuf
     draw.staticVertexBuffer = staticVertexBuffer;
     draw.staticIndexBuffer = staticIndexBuffer;
     draw.instanceCount = instanceCount;
+    draw.useGpuInstancing = useGpuInstancing;
     draw.topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
     draw.shaderOverride = shaderOverride;
     draw.shaderOverride.constantData = nullptr;
     draw.shaderOverride.constantDataSize = 0;
     draw.backfaceCulling = m_pipeline->BackfaceCulling();
 
-    if (batchedConstantData && singleConstantBytes > 0)
+    if (!useGpuInstancing && batchedConstantData && singleConstantBytes > 0)
     {
         const uint32_t clampedSingle = std::min<uint32_t>(
             singleConstantBytes, static_cast<uint32_t>(kMaxWorkerConstantBufferBytes));
@@ -451,7 +485,8 @@ void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
                                                        ID3D11Buffer *vertexBuffer3D,
                                                        ID3D11Buffer *workerConstantBuffer,
                                                        size_t &vbByteOffset,
-                                                       const Queued3DDraw &draw)
+                                                       const Queued3DDraw &draw,
+                                                       DrawStateCache &stateCache)
 {
     if (!ctx || !vertexBuffer3D || draw.vertexCount == 0)
     {
@@ -464,39 +499,112 @@ void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
     ID3D11RasterizerState *rasterizer =
         draw.backfaceCulling ? m_pipeline->RasterizerCull() : m_pipeline->Rasterizer();
 
+    auto bindCommonState = [&](ID3D11InputLayout *layout, ID3D11Buffer *vb, UINT stride,
+                               D3D_PRIMITIVE_TOPOLOGY topology, ID3D11VertexShader *vs,
+                               ID3D11PixelShader *ps, ID3D11Buffer *lightCB) {
+        if (stateCache.inputLayout != layout)
+        {
+            ctx->IASetInputLayout(layout);
+            stateCache.inputLayout = layout;
+        }
+        if (stateCache.vertexBuffer != vb || stateCache.vertexStride != stride)
+        {
+            const UINT offset = 0;
+            ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+            stateCache.vertexBuffer = vb;
+            stateCache.vertexStride = stride;
+        }
+        if (stateCache.topology != topology)
+        {
+            ctx->IASetPrimitiveTopology(topology);
+            stateCache.topology = topology;
+        }
+        if (stateCache.rasterizer != rasterizer)
+        {
+            ctx->RSSetState(rasterizer);
+            stateCache.rasterizer = rasterizer;
+        }
+        if (stateCache.vertexShader != vs)
+        {
+            ctx->VSSetShader(vs, nullptr, 0);
+            stateCache.vertexShader = vs;
+        }
+        if (stateCache.pixelShader != ps)
+        {
+            ctx->PSSetShader(ps, nullptr, 0);
+            stateCache.pixelShader = ps;
+        }
+        if (stateCache.psLightConstantBuffer != lightCB)
+        {
+            ctx->PSSetConstantBuffers(1, 1, &lightCB);
+            stateCache.psLightConstantBuffer = lightCB;
+        }
+        ID3D11DepthStencilState *dsState = m_pipeline->DepthStencilState();
+        if (stateCache.depthStencil != dsState)
+        {
+            ctx->OMSetDepthStencilState(dsState, 0);
+            stateCache.depthStencil = dsState;
+        }
+        ID3D11BlendState *blend = m_pipeline->Blend();
+        if (stateCache.blendState != blend)
+        {
+            ctx->OMSetBlendState(blend, blendFactor, 0xFFFFFFFF);
+            stateCache.blendState = blend;
+        }
+    };
+
+    auto bindSampler0 = [&]() {
+        ID3D11SamplerState *sampler = m_pipeline->Sampler();
+        if (stateCache.sampler0 != sampler)
+        {
+            ctx->PSSetSamplers(0, 1, &sampler);
+            stateCache.sampler0 = sampler;
+        }
+    };
+
+    auto bindSRVs = [&](ID3D11ShaderResourceView *const *resources, size_t count) {
+        bool changed = !stateCache.srvsValid;
+        if (!changed)
+        {
+            for (size_t i = 0; i < count; ++i)
+            {
+                if (stateCache.srvs[i] != resources[i])
+                {
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        if (changed)
+        {
+            ctx->PSSetShaderResources(0, static_cast<UINT>(count), resources);
+            for (size_t i = 0; i < count; ++i)
+            {
+                stateCache.srvs[i] = resources[i];
+            }
+            stateCache.srvsValid = true;
+        }
+    };
+
     if (draw.mode == Queued3DMode::Untextured)
     {
         strideFloats = 16;
         strideBytes = sizeof(float) * strideFloats;
-        const UINT offset = 0;
-        ctx->IASetInputLayout(m_pipeline->InputLayout3D());
-        ctx->IASetVertexBuffers(0, 1, &vertexBuffer3D, &strideBytes, &offset);
-        ctx->IASetPrimitiveTopology(draw.topology);
-        ctx->RSSetState(rasterizer);
-        ctx->VSSetShader(m_pipeline->VertexShader3D(), nullptr, 0);
-        ctx->PSSetShader(m_pipeline->PixelShader3D(), nullptr, 0);
-        ctx->PSSetConstantBuffers(1, 1, m_pipeline->LightConstantBuffer());
-        ctx->OMSetDepthStencilState(m_pipeline->DepthStencilState(), 0);
-        ctx->OMSetBlendState(m_pipeline->Blend(), blendFactor, 0xFFFFFFFF);
+        bindCommonState(m_pipeline->InputLayout3D(), vertexBuffer3D, strideBytes, draw.topology,
+                        m_pipeline->VertexShader3D(), m_pipeline->PixelShader3D(),
+                        *m_pipeline->LightConstantBuffer());
     }
     else if (draw.mode == Queued3DMode::Textured)
     {
         strideFloats = 22;
         strideBytes = sizeof(float) * strideFloats;
-        const UINT offset = 0;
-        ctx->IASetInputLayout(m_pipeline->TexturedInputLayout3D());
-        ctx->IASetVertexBuffers(0, 1, &vertexBuffer3D, &strideBytes, &offset);
-        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        ctx->RSSetState(rasterizer);
-        ctx->VSSetShader(m_pipeline->TexturedVertexShader3D(), nullptr, 0);
-        ctx->PSSetShader(m_pipeline->TexturedPixelShader3D(), nullptr, 0);
-        ctx->PSSetConstantBuffers(1, 1, m_pipeline->LightConstantBuffer());
+        bindCommonState(m_pipeline->TexturedInputLayout3D(), vertexBuffer3D, strideBytes,
+                        D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+                        m_pipeline->TexturedVertexShader3D(), m_pipeline->TexturedPixelShader3D(),
+                        *m_pipeline->LightConstantBuffer());
         ID3D11ShaderResourceView *resources[2] = {draw.shaderResource, draw.normalResource};
-        ctx->PSSetShaderResources(0, 2, resources);
-        ID3D11SamplerState *sampler = m_pipeline->Sampler();
-        ctx->PSSetSamplers(0, 1, &sampler);
-        ctx->OMSetDepthStencilState(m_pipeline->DepthStencilState(), 0);
-        ctx->OMSetBlendState(m_pipeline->Blend(), blendFactor, 0xFFFFFFFF);
+        bindSRVs(resources, 2);
+        bindSampler0();
     }
     else
     {
@@ -506,63 +614,82 @@ void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
         {
             return;
         }
-        const UINT offset = 0;
         ID3D11Buffer *boundVB = draw.staticVertexBuffer ? draw.staticVertexBuffer : vertexBuffer3D;
-        ctx->IASetInputLayout(draw.shaderOverride.inputLayout);
-        ctx->IASetVertexBuffers(0, 1, &boundVB, &strideBytes, &offset);
-        ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        ctx->RSSetState(rasterizer);
-        ctx->VSSetShader(draw.shaderOverride.vertexShader, nullptr, 0);
-        ctx->PSSetShader(draw.shaderOverride.pixelShader, nullptr, 0);
+        bindCommonState(draw.shaderOverride.inputLayout, boundVB, strideBytes,
+                        D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+                        draw.shaderOverride.vertexShader, draw.shaderOverride.pixelShader,
+                        *m_pipeline->LightConstantBuffer());
 
         ID3D11Buffer *targetConstantBuffer =
             workerConstantBuffer ? workerConstantBuffer : draw.shaderOverride.constantBuffer;
         if (draw.staticVertexBuffer != nullptr)
         {
-            ctx->PSSetConstantBuffers(1, 1, m_pipeline->LightConstantBuffer());
+            bindSRVs(draw.shaderOverride.shaderResources, 10);
+            bindSampler0();
 
-            ID3D11ShaderResourceView *resources[10] = {};
-            for (size_t index = 0; index < 10; ++index)
-            {
-                resources[index] = draw.shaderOverride.shaderResources[index];
-            }
-            ctx->PSSetShaderResources(0, 10, resources);
-
-            ID3D11SamplerState *sampler = m_pipeline->Sampler();
-            ctx->PSSetSamplers(0, 1, &sampler);
-            ctx->OMSetDepthStencilState(m_pipeline->DepthStencilState(), 0);
-            ctx->OMSetBlendState(m_pipeline->Blend(), blendFactor, 0xFFFFFFFF);
-
-            if (draw.indexed && draw.staticIndexBuffer)
+            if (draw.indexed && draw.staticIndexBuffer && stateCache.indexBuffer != draw.staticIndexBuffer)
             {
                 ctx->IASetIndexBuffer(draw.staticIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
+                stateCache.indexBuffer = draw.staticIndexBuffer;
             }
 
             if (draw.constantSizeBytes > 0 && targetConstantBuffer)
             {
-                ctx->VSSetConstantBuffers(0, 1, &targetConstantBuffer);
-                ctx->PSSetConstantBuffers(0, 1, &targetConstantBuffer);
-                for (UINT inst = 0; inst < draw.instanceCount; ++inst)
+                if (stateCache.vsConstantBuffer0 != targetConstantBuffer)
+                {
+                    ctx->VSSetConstantBuffers(0, 1, &targetConstantBuffer);
+                    stateCache.vsConstantBuffer0 = targetConstantBuffer;
+                }
+                if (stateCache.psConstantBuffer0 != targetConstantBuffer)
+                {
+                    ctx->PSSetConstantBuffers(0, 1, &targetConstantBuffer);
+                    stateCache.psConstantBuffer0 = targetConstantBuffer;
+                }
+                if (draw.useGpuInstancing)
                 {
                     D3D11_MAPPED_SUBRESOURCE mappedCB{};
                     if (SUCCEEDED(ctx->Map(targetConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedCB)))
                     {
-                        const size_t instOffset = draw.constantOffsetBytes +
-                            static_cast<size_t>(inst) * static_cast<size_t>(draw.constantSizeBytes);
                         std::memcpy(mappedCB.pData,
-                                    m_queued3DConstants.data() + instOffset,
+                                    m_queued3DConstants.data() + draw.constantOffsetBytes,
                                     draw.constantSizeBytes);
                         ctx->Unmap(targetConstantBuffer, 0);
                     }
                     if (draw.indexed && draw.staticIndexBuffer)
                     {
-                        ctx->DrawIndexed(draw.indexCount, 0, 0);
-                        RecordDebugRenderDraw(draw.indexCount);
+                        ctx->DrawIndexedInstanced(draw.indexCount, draw.instanceCount, 0, 0, 0);
+                        RecordDebugRenderDraw(static_cast<uint64_t>(draw.indexCount) * draw.instanceCount);
                     }
                     else
                     {
-                        ctx->Draw(draw.vertexCount, 0);
-                        RecordDebugRenderDraw(draw.vertexCount);
+                        ctx->DrawInstanced(draw.vertexCount, draw.instanceCount, 0, 0);
+                        RecordDebugRenderDraw(static_cast<uint64_t>(draw.vertexCount) * draw.instanceCount);
+                    }
+                }
+                else
+                {
+                    for (UINT inst = 0; inst < draw.instanceCount; ++inst)
+                    {
+                        D3D11_MAPPED_SUBRESOURCE mappedCB{};
+                        if (SUCCEEDED(ctx->Map(targetConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedCB)))
+                        {
+                            const size_t instOffset = draw.constantOffsetBytes +
+                                static_cast<size_t>(inst) * static_cast<size_t>(draw.constantSizeBytes);
+                            std::memcpy(mappedCB.pData,
+                                        m_queued3DConstants.data() + instOffset,
+                                        draw.constantSizeBytes);
+                            ctx->Unmap(targetConstantBuffer, 0);
+                        }
+                        if (draw.indexed && draw.staticIndexBuffer)
+                        {
+                            ctx->DrawIndexed(draw.indexCount, 0, 0);
+                            RecordDebugRenderDraw(draw.indexCount);
+                        }
+                        else
+                        {
+                            ctx->Draw(draw.vertexCount, 0);
+                            RecordDebugRenderDraw(draw.vertexCount);
+                        }
                     }
                 }
             }
@@ -571,8 +698,16 @@ void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
                 if (draw.shaderOverride.constantBuffer)
                 {
                     ID3D11Buffer *constantBuffer = draw.shaderOverride.constantBuffer;
-                    ctx->VSSetConstantBuffers(0, 1, &constantBuffer);
-                    ctx->PSSetConstantBuffers(0, 1, &constantBuffer);
+                    if (stateCache.vsConstantBuffer0 != constantBuffer)
+                    {
+                        ctx->VSSetConstantBuffers(0, 1, &constantBuffer);
+                        stateCache.vsConstantBuffer0 = constantBuffer;
+                    }
+                    if (stateCache.psConstantBuffer0 != constantBuffer)
+                    {
+                        ctx->PSSetConstantBuffers(0, 1, &constantBuffer);
+                        stateCache.psConstantBuffer0 = constantBuffer;
+                    }
                 }
                 if (draw.indexed && draw.staticIndexBuffer)
                 {
@@ -598,28 +733,33 @@ void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
                             draw.constantSizeBytes);
                 ctx->Unmap(targetConstantBuffer, 0);
             }
-            ctx->VSSetConstantBuffers(0, 1, &targetConstantBuffer);
-            ctx->PSSetConstantBuffers(0, 1, &targetConstantBuffer);
+            if (stateCache.vsConstantBuffer0 != targetConstantBuffer)
+            {
+                ctx->VSSetConstantBuffers(0, 1, &targetConstantBuffer);
+                stateCache.vsConstantBuffer0 = targetConstantBuffer;
+            }
+            if (stateCache.psConstantBuffer0 != targetConstantBuffer)
+            {
+                ctx->PSSetConstantBuffers(0, 1, &targetConstantBuffer);
+                stateCache.psConstantBuffer0 = targetConstantBuffer;
+            }
         }
         else if (draw.shaderOverride.constantBuffer)
         {
             ID3D11Buffer *constantBuffer = draw.shaderOverride.constantBuffer;
-            ctx->VSSetConstantBuffers(0, 1, &constantBuffer);
-            ctx->PSSetConstantBuffers(0, 1, &constantBuffer);
+            if (stateCache.vsConstantBuffer0 != constantBuffer)
+            {
+                ctx->VSSetConstantBuffers(0, 1, &constantBuffer);
+                stateCache.vsConstantBuffer0 = constantBuffer;
+            }
+            if (stateCache.psConstantBuffer0 != constantBuffer)
+            {
+                ctx->PSSetConstantBuffers(0, 1, &constantBuffer);
+                stateCache.psConstantBuffer0 = constantBuffer;
+            }
         }
-        ctx->PSSetConstantBuffers(1, 1, m_pipeline->LightConstantBuffer());
-
-        ID3D11ShaderResourceView *resources[10] = {};
-        for (size_t index = 0; index < 10; ++index)
-        {
-            resources[index] = draw.shaderOverride.shaderResources[index];
-        }
-        ctx->PSSetShaderResources(0, 10, resources);
-
-        ID3D11SamplerState *sampler = m_pipeline->Sampler();
-        ctx->PSSetSamplers(0, 1, &sampler);
-        ctx->OMSetDepthStencilState(m_pipeline->DepthStencilState(), 0);
-        ctx->OMSetBlendState(m_pipeline->Blend(), blendFactor, 0xFFFFFFFF);
+        bindSRVs(draw.shaderOverride.shaderResources, 10);
+        bindSampler0();
     }
 
     const UINT maxChunkVertices = static_cast<UINT>(kMax3DBufferBytes / strideBytes);
@@ -675,6 +815,19 @@ void D3D11CommandContext::Flush3DBatch()
         return;
     }
 
+    if (!m_queued3DInstances.empty() && m_instanceBuffer && m_instanceSRV)
+    {
+        D3D11_MAPPED_SUBRESOURCE mappedInst{};
+        if (SUCCEEDED(m_context->Map(m_instanceBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedInst)))
+        {
+            const size_t count = std::min<size_t>(m_queued3DInstances.size(), kMax3DInstances);
+            std::memcpy(mappedInst.pData, m_queued3DInstances.data(), count * sizeof(InstanceTransform));
+            m_context->Unmap(m_instanceBuffer.Get(), 0);
+        }
+        ID3D11ShaderResourceView *instSrv = m_instanceSRV.Get();
+        m_context->VSSetShaderResources(10, 1, &instSrv);
+    }
+
     const size_t drawCount = m_queued3DDraws.size();
     const bool useDeferredWorkers =
         drawCount >= 64 && m_threadPool && m_threadPool->IsMultithreaded() && !m_workers.empty();
@@ -682,11 +835,12 @@ void D3D11CommandContext::Flush3DBatch()
     if (!useDeferredWorkers)
     {
         size_t vbByteOffset = 0;
+        DrawStateCache stateCache{};
         ID3D11Buffer *workerCB = !m_workers.empty() ? m_workers[0].constantBuffer.Get() : nullptr;
         for (const Queued3DDraw &draw : m_queued3DDraws)
         {
             ExecuteQueued3DDrawOnContext(m_context, m_pipeline->VertexBuffer3D(), workerCB,
-                                         vbByteOffset, draw);
+                                         vbByteOffset, draw, stateCache);
         }
     }
     else
@@ -722,13 +876,19 @@ void D3D11CommandContext::Flush3DBatch()
 
                     ctx->OMSetRenderTargets(1, &activeRTV, activeDSV);
                     ctx->RSSetViewports(1, &viewport);
+                    if (!m_queued3DInstances.empty() && m_instanceSRV)
+                    {
+                        ID3D11ShaderResourceView *instSrv = m_instanceSRV.Get();
+                        ctx->VSSetShaderResources(10, 1, &instSrv);
+                    }
 
                     size_t vbByteOffset = 0;
+                    DrawStateCache stateCache{};
                     for (size_t d = firstDraw; d < lastDraw; ++d)
                     {
                         ExecuteQueued3DDrawOnContext(ctx, worker.vertexBuffer3D.Get(),
                                                      worker.constantBuffer.Get(), vbByteOffset,
-                                                     m_queued3DDraws[d]);
+                                                     m_queued3DDraws[d], stateCache);
                     }
 
                     ctx->FinishCommandList(FALSE, &worker.commandList);
@@ -757,6 +917,7 @@ void D3D11CommandContext::Flush3DBatch()
     m_queued3DDraws.clear();
     m_queued3DVertices.clear();
     m_queued3DConstants.clear();
+    m_queued3DInstances.clear();
 }
 
 void D3D11CommandContext::DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, int, int)
@@ -1309,6 +1470,9 @@ void D3D11CommandContext::Shutdown()
     m_queued3DDraws.clear();
     m_queued3DVertices.clear();
     m_queued3DConstants.clear();
+    m_queued3DInstances.clear();
+    m_instanceSRV.Reset();
+    m_instanceBuffer.Reset();
     m_threadPool = nullptr;
     m_context = nullptr;
     m_swapChain = nullptr;

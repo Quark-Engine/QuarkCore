@@ -77,6 +77,53 @@ static Mat4 TransposeMat4(const Mat4& matrix) {
     return result;
 }
 
+struct GLShaderUniformCache {
+    GLint texture0Loc = -1;
+    GLint useTextureLoc = -1;
+    GLint useInstancingLoc = -1;
+    GLint shadowMapLocs[4] = { -1, -1, -1, -1 };
+    GLint pbrMapLocs[5] = { -1, -1, -1, -1, -1 };
+};
+
+static std::unordered_map<GLuint, GLShaderUniformCache>& GetShaderUniformCacheMap() {
+    static std::unordered_map<GLuint, GLShaderUniformCache> s_cache;
+    return s_cache;
+}
+
+static const GLShaderUniformCache& GetGLShaderUniformCache(GLuint program) {
+    auto& cacheMap = GetShaderUniformCacheMap();
+    auto it = cacheMap.find(program);
+    if (it != cacheMap.end()) {
+        return it->second;
+    }
+
+    GLShaderUniformCache locs{};
+    locs.texture0Loc = glGetUniformLocation(program, "texture0");
+    locs.useTextureLoc = glGetUniformLocation(program, "useTexture");
+    locs.useInstancingLoc = glGetUniformLocation(program, "useInstancing");
+    static const char* kShadowNames[4] = {
+        "shadowMaps[0]", "shadowMaps[1]", "shadowMaps[2]", "shadowMaps[3]"
+    };
+    for (int i = 0; i < 4; ++i) {
+        locs.shadowMapLocs[i] = glGetUniformLocation(program, kShadowNames[i]);
+    }
+    static const char* kPbrNames[5] = {
+        "metalnessMap", "normalMap", "roughnessMap", "occlusionMap", "emissionMap"
+    };
+    for (int i = 0; i < 5; ++i) {
+        locs.pbrMapLocs[i] = glGetUniformLocation(program, kPbrNames[i]);
+    }
+
+    auto [insertedIt, inserted] = cacheMap.emplace(program, locs);
+    return insertedIt->second;
+}
+
+static void InvalidateGLShaderUniformCache(GLuint program) {
+    if (program != 0) {
+        GetShaderUniformCacheMap().erase(program);
+    }
+}
+
 static void ApplyMaterialShaderUniforms(const Shader& shader, const Mat4& model,
                                         const Mat4& view, const Mat4& projection,
                                         Color tint, bool useTexture) {
@@ -97,11 +144,9 @@ static void ApplyMaterialShaderUniforms(const Shader& shader, const Mat4& model,
         glUniform4f(shader.locs[SHADER_LOC_COLOR_DIFFUSE],
             tint.r / 255.0f, tint.g / 255.0f, tint.b / 255.0f, tint.a / 255.0f);
 
-    GLint texture0Loc = glGetUniformLocation(shader.id, "texture0");
-    if (texture0Loc >= 0) glUniform1i(texture0Loc, 0);
-
-    GLint useTextureLoc = glGetUniformLocation(shader.id, "useTexture");
-    if (useTextureLoc >= 0) glUniform1i(useTextureLoc, useTexture ? 1 : 0);
+    const GLShaderUniformCache& cachedLocs = GetGLShaderUniformCache(shader.id);
+    if (cachedLocs.texture0Loc >= 0) glUniform1i(cachedLocs.texture0Loc, 0);
+    if (cachedLocs.useTextureLoc >= 0) glUniform1i(cachedLocs.useTextureLoc, useTexture ? 1 : 0);
 }
 
 static const Shader* ResolveMaterialShader(const Material* material) {
@@ -1414,6 +1459,7 @@ Shader QuarkGLRenderer::LoadShaderFromMemory(const char* vsSource, const char* f
 }
 
 void QuarkGLRenderer::UnloadShader(Shader& sh) {
+    InvalidateGLShaderUniformCache(sh.id);
     if (sh.id) {
         TraceLog(LogLevel::Info, "SHADER", TextFormat("[OpenGL] Shader program unloaded (ID: %u)", sh.id));
         glDeleteProgram(sh.id);
@@ -2968,13 +3014,13 @@ void QuarkGLRenderer::UnloadMesh(Mesh& mesh) {
 
 void QuarkGLRenderer::BindMaterialMaps(const Material& material, GLuint shaderProgram) {
     if (!material.maps) return;
+    const GLShaderUniformCache& cachedLocs = GetGLShaderUniformCache(shaderProgram);
 
     for (int shadowIndex = 0; shadowIndex < 4; ++shadowIndex) {
-        const int mapIndex = MATERIAL_MAP_HEIGHT + shadowIndex;
-        const GLint shadowMapLoc = glGetUniformLocation(
-            shaderProgram, TextFormat("shadowMaps[%i]", shadowIndex));
+        const GLint shadowMapLoc = cachedLocs.shadowMapLocs[shadowIndex];
         if (shadowMapLoc < 0) continue;
 
+        const int mapIndex = MATERIAL_MAP_HEIGHT + shadowIndex;
         glActiveTexture(GL_TEXTURE1 + shadowIndex);
         glBindTexture(GL_TEXTURE_2D, material.maps[mapIndex].texture.valid
                                          ? material.maps[mapIndex].texture.id
@@ -2985,23 +3031,22 @@ void QuarkGLRenderer::BindMaterialMaps(const Material& material, GLuint shaderPr
     const struct {
         int slot;
         int mapIndex;
-        const char* name;
         GLuint fallback;
-    } pbrMaps[] = {
-        { 5, MATERIAL_MAP_METALNESS, "metalnessMap", m_3d.whiteTexture },
-        { 6, MATERIAL_MAP_NORMAL,    "normalMap",    m_3d.flatNormalTexture },
-        { 7, MATERIAL_MAP_ROUGHNESS, "roughnessMap", m_3d.whiteTexture },
-        { 8, MATERIAL_MAP_OCCLUSION, "occlusionMap", m_3d.whiteTexture },
-        { 9, MATERIAL_MAP_EMISSION,  "emissionMap",  m_3d.blackTexture },
+    } pbrMaps[5] = {
+        { 5, MATERIAL_MAP_METALNESS, m_3d.whiteTexture },
+        { 6, MATERIAL_MAP_NORMAL,    m_3d.flatNormalTexture },
+        { 7, MATERIAL_MAP_ROUGHNESS, m_3d.whiteTexture },
+        { 8, MATERIAL_MAP_OCCLUSION, m_3d.whiteTexture },
+        { 9, MATERIAL_MAP_EMISSION,  m_3d.blackTexture },
     };
-    for (const auto& mapBind : pbrMaps) {
-        const MaterialMap& map = material.maps[mapBind.mapIndex];
-        const GLint location = glGetUniformLocation(shaderProgram, mapBind.name);
+    for (int i = 0; i < 5; ++i) {
+        const GLint location = cachedLocs.pbrMapLocs[i];
         if (location < 0) continue;
 
-        glActiveTexture(GL_TEXTURE0 + mapBind.slot);
-        glBindTexture(GL_TEXTURE_2D, map.texture.valid ? map.texture.id : mapBind.fallback);
-        glUniform1i(location, mapBind.slot);
+        const MaterialMap& map = material.maps[pbrMaps[i].mapIndex];
+        glActiveTexture(GL_TEXTURE0 + pbrMaps[i].slot);
+        glBindTexture(GL_TEXTURE_2D, map.texture.valid ? map.texture.id : pbrMaps[i].fallback);
+        glUniform1i(location, pbrMaps[i].slot);
     }
 
     glActiveTexture(GL_TEXTURE0);
@@ -3065,7 +3110,7 @@ void QuarkGLRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& materi
     const Shader* customShader = ResolveMaterialShader(&material);
     if (customShader) {
         glUseProgram(customShader->id);
-        const GLint useInstancingLoc = glGetUniformLocation(customShader->id, "useInstancing");
+        const GLint useInstancingLoc = GetGLShaderUniformCache(customShader->id).useInstancingLoc;
         if (useInstancingLoc >= 0) {
             ApplyMaterialShaderUniforms(*customShader, transforms[0], m_3d.viewMatrix, m_3d.projectionMatrix, materialColor, hasTexture);
             glUniform1i(useInstancingLoc, 1);
