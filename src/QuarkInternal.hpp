@@ -47,6 +47,7 @@ struct WindowState {
     std::vector<std::string> droppedFiles;
     bool windowResized = false;
     bool inputPolled = false;
+    unsigned int pendingConfigFlags = 0u;
 };
 
 /**
@@ -75,4 +76,5 @@ void UpdateInputState();
 SDL_Scancode ToSDLScancode(KeyboardKey key);
 void CopyText(char* dst, size_t size, const char* src);
 void WriteLog(LogLevel level, const char* type, const std::string& message);
+void ApplyPlatformDarkWindowBackground(SDL_Window* window);
 #endif // __QUARK_INTERNAL__

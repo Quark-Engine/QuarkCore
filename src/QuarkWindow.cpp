@@ -432,7 +432,42 @@ Image GetClipboardImage() {
     return Image{};
 }
 
+#if defined(_WIN32)
+extern "C" {
+    __declspec(dllimport) void* __stdcall CreateSolidBrush(unsigned long color);
+    __declspec(dllimport) long long __stdcall SetClassLongPtrW(void* hWnd, int nIndex, long long dwNewLong);
+}
+#endif
+
+void ApplyPlatformDarkWindowBackground(SDL_Window* window) {
+#if defined(_WIN32)
+    if (!window) {
+        return;
+    }
+    const SDL_PropertiesID props = SDL_GetWindowProperties(window);
+    void* hwnd = SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+    if (!hwnd) {
+        return;
+    }
+    static void* sDarkBrush = CreateSolidBrush(24u | (24u << 8) | (28u << 16));
+    if (sDarkBrush) {
+        constexpr int kGclpHbrBackground = -10;
+        SetClassLongPtrW(hwnd, kGclpHbrBackground, reinterpret_cast<long long>(sDarkBrush));
+    }
+#else
+    (void)window;
+#endif
+}
+
 void SetConfigFlags(unsigned int flags) {
+    if (gWin.window == nullptr) {
+        gWin.pendingConfigFlags |= flags;
+        if ((flags & FLAG_VSYNC_HINT) != 0u) {
+            gWin.vsync = true;
+            gWin.vsyncSet = true;
+        }
+        return;
+    }
     if ((flags & FLAG_VSYNC_HINT) != 0u) {
         SetVSync(true);
     }

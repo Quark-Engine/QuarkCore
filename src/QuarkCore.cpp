@@ -186,19 +186,46 @@ std::string FormatTimeNow() {
     return ss.str();
 }
 
+static SDL_WindowFlags BuildWindowFlags(SDL_WindowFlags baseFlags) {
+    SDL_WindowFlags flags = baseFlags;
+    if ((gWin.pendingConfigFlags & FLAG_WINDOW_MAXIMIZED) != 0u) {
+        flags |= SDL_WINDOW_MAXIMIZED;
+    }
+    if ((gWin.pendingConfigFlags & FLAG_WINDOW_HIDDEN) != 0u) {
+        flags |= SDL_WINDOW_HIDDEN;
+    }
+    if ((gWin.pendingConfigFlags & FLAG_FULLSCREEN_MODE) != 0u) {
+        flags |= SDL_WINDOW_FULLSCREEN;
+    }
+    if ((gWin.pendingConfigFlags & (FLAG_BORDERLESS_WINDOWED_MODE | FLAG_WINDOW_UNDECORATED)) != 0u) {
+        flags |= SDL_WINDOW_BORDERLESS;
+    }
+    return flags;
+}
+
 #if defined(QC_ENABLE_D3D11)
 static bool InitD3D11Backend(int width, int height, const char* title) {
     TraceLog(LogLevel::Info, "RENDERER", "Backend selected: Direct3D 11");
 
-    gWin.window = SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE);
+    gWin.window = SDL_CreateWindow(title, width, height, BuildWindowFlags(SDL_WINDOW_RESIZABLE));
     if (!gWin.window)
         throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
+    ApplyPlatformDarkWindowBackground(gWin.window);
+
+    int pixelW = width;
+    int pixelH = height;
+    SDL_GetWindowSizeInPixels(gWin.window, &pixelW, &pixelH);
+    if (pixelW <= 0 || pixelH <= 0) {
+        pixelW = width;
+        pixelH = height;
+    }
 
     gRendererPtr = &gD3D11Renderer;
-    gRenderer.Init(gWin.window, width, height);
+    gRenderer.Init(gWin.window, pixelW, pixelH);
     gRenderer.SetTargetFPS(gWin.targetFps);
     if (gWin.vsyncSet) gRenderer.SetVSync(gWin.vsync);
     gCurrentBackend = RendererType::D3D11;
+    gWin.pendingConfigFlags = 0u;
     return true;
 }
 #endif
@@ -295,14 +322,24 @@ static bool InitOpenGLBackend(int width, int height, const char* title) {
         title,
         width,
         height,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
+        BuildWindowFlags(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE)
     );
 
     if (!gWin.window)
         throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
+    ApplyPlatformDarkWindowBackground(gWin.window);
+
+    int pixelW = width;
+    int pixelH = height;
+    SDL_GetWindowSizeInPixels(gWin.window, &pixelW, &pixelH);
+    if (pixelW <= 0 || pixelH <= 0) {
+        pixelW = width;
+        pixelH = height;
+    }
 
     gRendererPtr = &gGLRenderer;
-    gRenderer.Init(gWin.window, width, height);
+    gRenderer.Init(gWin.window, pixelW, pixelH);
+    gWin.pendingConfigFlags = 0u;
     int sampleBuffers = 0;
     int actualSamples = 0;
     if (SDL_GL_GetAttribute(SDL_GL_MULTISAMPLEBUFFERS, &sampleBuffers) &&
@@ -509,15 +546,25 @@ static bool InitVulkanBackend(int width, int height, const char* title) {
         title,
         width,
         height,
-        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
+        BuildWindowFlags(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE)
     );
 
     if (!gWin.window)
         throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
+    ApplyPlatformDarkWindowBackground(gWin.window);
+
+    int pixelW = width;
+    int pixelH = height;
+    SDL_GetWindowSizeInPixels(gWin.window, &pixelW, &pixelH);
+    if (pixelW <= 0 || pixelH <= 0) {
+        pixelW = width;
+        pixelH = height;
+    }
 
     gRendererPtr = &gVkRenderer;
     gVkRenderer.SetMSAASamples(gRequestedMSAASamples);
-    gRenderer.Init(gWin.window, width, height);
+    gRenderer.Init(gWin.window, pixelW, pixelH);
+    gWin.pendingConfigFlags = 0u;
     gRenderer.SetTargetFPS(gWin.targetFps);
     if (gWin.vsyncSet) {
         gRenderer.SetVSync(gWin.vsync);
