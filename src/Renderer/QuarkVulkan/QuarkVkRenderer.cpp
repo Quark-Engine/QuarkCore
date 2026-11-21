@@ -580,9 +580,9 @@ void QuarkVkRenderer::CreateInstance() {
 #endif
 
 
+#ifdef _DEBUG
     const char* validationLayer = "VK_LAYER_KHRONOS_validation";
     bool enableValidationLayer = false;
-#ifdef _DEBUG
     uint32_t layerCount = 0;
     VkResult layerResult = vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
     if (layerResult == VK_SUCCESS && layerCount > 0) {

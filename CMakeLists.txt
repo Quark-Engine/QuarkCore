@@ -49,6 +49,11 @@ set(VULKAN_EXTRA_INCLUDES
     "${VULKAN_EXTERNAL_DIR}/include/spirv-tools"
     "${VULKAN_EXTERNAL_DIR}/include/glslang"
 )
+if(MINGW)
+    get_filename_component(_MINGW_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(_MINGW_ROOT "${_MINGW_BIN_DIR}" DIRECTORY)
+    list(PREPEND VULKAN_EXTRA_INCLUDES "${_MINGW_ROOT}/include")
+endif()
 
 if(WIN32)
     add_library(Vulkan::Vulkan INTERFACE IMPORTED GLOBAL)
@@ -90,10 +95,19 @@ if(WIN32)
     endfunction()
 
     function(qc_add_shared_spirv_lib TARGET_NAME BASE_NAME)
-        set(_lib_rel "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}.lib")
-        set(_lib_dbg "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}d.lib")
-        set(_dll_rel "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}.dll")
-        set(_dll_dbg "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}d.dll")
+        if(MSVC)
+            set(_lib_rel "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}.lib")
+            set(_lib_dbg "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}d.lib")
+            set(_dll_rel "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}.dll")
+            set(_dll_dbg "${VULKAN_EXTERNAL_DIR}/lib/${BASE_NAME}d.dll")
+        elseif(MINGW)
+            set(_lib_rel "${VULKAN_EXTERNAL_DIR}/lib/mingw/release/lib${BASE_NAME}.dll.a")
+            set(_lib_dbg "${_lib_rel}")
+            set(_dll_rel "${VULKAN_EXTERNAL_DIR}/lib/mingw/release/lib${BASE_NAME}.dll")
+            set(_dll_dbg "${VULKAN_EXTERNAL_DIR}/lib/mingw/debug/lib${BASE_NAME}.dll")
+        else()
+            message(FATAL_ERROR "Unsupported Windows compiler for ${TARGET_NAME}")
+        endif()
 
         foreach(_file IN ITEMS "${_lib_rel}" "${_lib_dbg}" "${_dll_rel}" "${_dll_dbg}")
             if(NOT EXISTS "${_file}")
@@ -103,7 +117,7 @@ if(WIN32)
 
         add_library(${TARGET_NAME} SHARED IMPORTED GLOBAL)
         target_include_directories(${TARGET_NAME} INTERFACE ${VULKAN_EXTRA_INCLUDES})
-        
+
         set_target_properties(${TARGET_NAME} PROPERTIES
             IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
             IMPORTED_IMPLIB_DEBUG     "${_lib_dbg}"
@@ -117,28 +131,115 @@ if(WIN32)
         )
     endfunction()
 
-    qc_add_shaderc_lib(shaderc_lib           "shaderc.lib"           "shadercd.lib")
-    qc_add_shaderc_lib(glslang_lib           "glslang.lib"           "glslangd.lib")
-    qc_add_shaderc_lib(shaderc_util_lib      "shaderc_util.lib"      "shaderc_utild.lib")
-    qc_add_shaderc_lib(SPIRV_lib             "SPIRV.lib"             "SPIRVd.lib")
+    if(MSVC)
+        qc_add_shaderc_lib(shaderc_lib           "shaderc.lib"           "shadercd.lib")
+        qc_add_shaderc_lib(glslang_lib           "glslang.lib"           "glslangd.lib")
+        qc_add_shaderc_lib(shaderc_util_lib      "shaderc_util.lib"      "shaderc_utild.lib")
+        qc_add_shaderc_lib(SPIRV_lib             "SPIRV.lib"             "SPIRVd.lib")
+    elseif(MINGW)
+        set(_MINGW_SHADERC_LIB "${_MINGW_ROOT}/lib/libshaderc_combined.a")
+        set(_MINGW_GLSLANG_IMPLIB "${_MINGW_ROOT}/lib/libglslang.dll.a")
+        set(_MINGW_GLSLANG_DLL "${_MINGW_ROOT}/bin/glslang.dll")
+        set(_MINGW_GLSLANG_LIMITS_IMPLIB "${_MINGW_ROOT}/lib/libglslang-default-resource-limits.dll.a")
+        set(_MINGW_GLSLANG_LIMITS_DLL "${_MINGW_ROOT}/bin/libglslang-default-resource-limits.dll")
+        set(_MINGW_SPIRV_IMPLIB "${_MINGW_ROOT}/lib/libSPIRV.dll.a")
+        set(_MINGW_SPIRV_DLL "${_MINGW_ROOT}/bin/SPIRV.dll")
+        set(_MINGW_SPIRV_CROSS_CORE "${_MINGW_ROOT}/lib/libspirv-cross-core.a")
+        set(_MINGW_SPIRV_CROSS_GLSL "${_MINGW_ROOT}/lib/libspirv-cross-glsl.a")
+
+        foreach(_file IN ITEMS
+                "${_MINGW_SHADERC_LIB}"
+                "${_MINGW_GLSLANG_IMPLIB}" "${_MINGW_GLSLANG_DLL}"
+                "${_MINGW_GLSLANG_LIMITS_IMPLIB}" "${_MINGW_GLSLANG_LIMITS_DLL}"
+                "${_MINGW_SPIRV_IMPLIB}" "${_MINGW_SPIRV_DLL}"
+                "${_MINGW_SPIRV_CROSS_CORE}" "${_MINGW_SPIRV_CROSS_GLSL}")
+            if(NOT EXISTS "${_file}")
+                message(FATAL_ERROR
+                    "Missing MinGW Vulkan dependency: ${_file}\n"
+                    "Install the MSYS2 UCRT64 glslang, shaderc, and spirv-cross packages.")
+            endif()
+        endforeach()
+
+        add_library(shaderc_lib STATIC IMPORTED GLOBAL)
+        set_target_properties(shaderc_lib PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION_DEBUG "${_MINGW_SHADERC_LIB}"
+            IMPORTED_LOCATION_RELEASE "${_MINGW_SHADERC_LIB}"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+        add_library(shaderc_util_lib INTERFACE IMPORTED GLOBAL)
+
+        add_library(glslang_lib SHARED IMPORTED GLOBAL)
+        set_target_properties(glslang_lib PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_IMPLIB_DEBUG "${_MINGW_GLSLANG_IMPLIB}"
+            IMPORTED_IMPLIB_RELEASE "${_MINGW_GLSLANG_IMPLIB}"
+            IMPORTED_LOCATION_DEBUG "${_MINGW_GLSLANG_DLL}"
+            IMPORTED_LOCATION_RELEASE "${_MINGW_GLSLANG_DLL}"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+        add_library(glslang_limits_lib SHARED IMPORTED GLOBAL)
+        set_target_properties(glslang_limits_lib PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_IMPLIB_DEBUG "${_MINGW_GLSLANG_LIMITS_IMPLIB}"
+            IMPORTED_IMPLIB_RELEASE "${_MINGW_GLSLANG_LIMITS_IMPLIB}"
+            IMPORTED_LOCATION_DEBUG "${_MINGW_GLSLANG_LIMITS_DLL}"
+            IMPORTED_LOCATION_RELEASE "${_MINGW_GLSLANG_LIMITS_DLL}"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+        add_library(SPIRV_lib SHARED IMPORTED GLOBAL)
+        set_target_properties(SPIRV_lib PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_IMPLIB_DEBUG "${_MINGW_SPIRV_IMPLIB}"
+            IMPORTED_IMPLIB_RELEASE "${_MINGW_SPIRV_IMPLIB}"
+            IMPORTED_LOCATION_DEBUG "${_MINGW_SPIRV_DLL}"
+            IMPORTED_LOCATION_RELEASE "${_MINGW_SPIRV_DLL}"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    else()
+        message(FATAL_ERROR "Unsupported Windows compiler for Vulkan shader libraries")
+    endif()
 
     qc_add_shared_spirv_lib(SPIRV_Tools_opt_lib "SPIRV-Tools-opt")
     qc_add_shared_spirv_lib(SPIRV_Tools_lib     "SPIRV-Tools")
 
     add_library(shaderc_combined INTERFACE IMPORTED GLOBAL)
-    target_link_libraries(shaderc_combined INTERFACE
-        shaderc_lib
-        glslang_lib
-        shaderc_util_lib
-        SPIRV_lib
-        SPIRV_Tools_opt_lib
-        SPIRV_Tools_lib
-    )
+    if(MINGW)
+        target_link_libraries(shaderc_combined INTERFACE
+            shaderc_lib
+            glslang_lib
+            glslang_limits_lib
+            shaderc_util_lib
+            SPIRV_lib
+            SPIRV_Tools_opt_lib
+            SPIRV_Tools_lib
+        )
+    else()
+        target_link_libraries(shaderc_combined INTERFACE
+            shaderc_lib
+            glslang_lib
+            shaderc_util_lib
+            SPIRV_lib
+            SPIRV_Tools_opt_lib
+            SPIRV_Tools_lib
+        )
+    endif()
 
-    set(SPIRV_CROSS_CORE_LIB_DEBUG   "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-cored.lib")
-    set(SPIRV_CROSS_CORE_LIB_RELEASE "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-core.lib")
-    set(SPIRV_CROSS_GLSL_LIB_DEBUG   "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-glsld.lib")
-    set(SPIRV_CROSS_GLSL_LIB_RELEASE "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-glsl.lib")
+    if(MSVC)
+        set(SPIRV_CROSS_CORE_LIB_DEBUG   "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-cored.lib")
+        set(SPIRV_CROSS_CORE_LIB_RELEASE "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-core.lib")
+        set(SPIRV_CROSS_GLSL_LIB_DEBUG   "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-glsld.lib")
+        set(SPIRV_CROSS_GLSL_LIB_RELEASE "${VULKAN_EXTERNAL_DIR}/lib/spirv-cross-glsl.lib")
+    elseif(MINGW)
+        set(SPIRV_CROSS_CORE_LIB_DEBUG   "${_MINGW_SPIRV_CROSS_CORE}")
+        set(SPIRV_CROSS_CORE_LIB_RELEASE "${_MINGW_SPIRV_CROSS_CORE}")
+        set(SPIRV_CROSS_GLSL_LIB_DEBUG   "${_MINGW_SPIRV_CROSS_GLSL}")
+        set(SPIRV_CROSS_GLSL_LIB_RELEASE "${_MINGW_SPIRV_CROSS_GLSL}")
+    endif()
 
     foreach(_lib SPIRV_CROSS_CORE_LIB_DEBUG SPIRV_CROSS_CORE_LIB_RELEASE
                  SPIRV_CROSS_GLSL_LIB_DEBUG SPIRV_CROSS_GLSL_LIB_RELEASE)
@@ -257,6 +358,19 @@ endif()
 
 find_package(ZLIB QUIET)
 
+if(TARGET ZLIB::ZLIB)
+    get_target_property(ZLIB_ALIAS_TARGET ZLIB::ZLIB ALIASED_TARGET)
+    if(ZLIB_ALIAS_TARGET)
+        set(ZLIB_TARGET_TO_PROMOTE "${ZLIB_ALIAS_TARGET}")
+    else()
+        set(ZLIB_TARGET_TO_PROMOTE ZLIB::ZLIB)
+    endif()
+    get_target_property(ZLIB_TARGET_IS_IMPORTED "${ZLIB_TARGET_TO_PROMOTE}" IMPORTED)
+    if(ZLIB_TARGET_IS_IMPORTED)
+        set_property(TARGET "${ZLIB_TARGET_TO_PROMOTE}" PROPERTY IMPORTED_GLOBAL TRUE)
+    endif()
+endif()
+
 if(NOT TARGET ZLIB::ZLIB)
     set(ZLIB_EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp")
     add_library(ZLIB::ZLIB STATIC IMPORTED GLOBAL)
@@ -267,6 +381,14 @@ if(NOT TARGET ZLIB::ZLIB)
             IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
             IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/zlibstaticd.lib"
             IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/zlibstatic.lib"
+            MAP_IMPORTED_CONFIG_MINSIZEREL Release
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+        )
+    elseif(MINGW)
+        set_target_properties(ZLIB::ZLIB PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+            IMPORTED_LOCATION_DEBUG   "${ZLIB_EXTERNAL_DIR}/lib/debug/libzlibstaticd.a"
+            IMPORTED_LOCATION_RELEASE "${ZLIB_EXTERNAL_DIR}/lib/release/libzlibstatic.a"
             MAP_IMPORTED_CONFIG_MINSIZEREL Release
             MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
         )
@@ -300,6 +422,24 @@ if(MSVC)
         IMPORTED_IMPLIB_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.lib"
         IMPORTED_LOCATION_DEBUG   "${ASSIMP_EXTERNAL_DIR}/lib/debug/assimp-vc143-mtd.dll"
         IMPORTED_LOCATION_RELEASE "${ASSIMP_EXTERNAL_DIR}/lib/release/assimp-vc143-mt.dll"
+        MAP_IMPORTED_CONFIG_MINSIZEREL Release
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+    )
+elseif(MINGW)
+    set(_MINGW_ASSIMP_IMPLIB "${_MINGW_ROOT}/lib/libassimp.dll.a")
+    set(_MINGW_ASSIMP_DLL "${_MINGW_ROOT}/bin/libassimp-6.dll")
+    if(NOT EXISTS "${_MINGW_ASSIMP_IMPLIB}" OR NOT EXISTS "${_MINGW_ASSIMP_DLL}")
+        message(FATAL_ERROR
+            "Missing MinGW Assimp runtime under ${_MINGW_ROOT}.\n"
+            "Install the MSYS2 UCRT64 assimp package.")
+    endif()
+    target_include_directories(assimp::assimp BEFORE INTERFACE "${_MINGW_ROOT}/include")
+    set_target_properties(assimp::assimp PROPERTIES
+        IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
+        IMPORTED_IMPLIB_DEBUG   "${_MINGW_ASSIMP_IMPLIB}"
+        IMPORTED_IMPLIB_RELEASE "${_MINGW_ASSIMP_IMPLIB}"
+        IMPORTED_LOCATION_DEBUG   "${_MINGW_ASSIMP_DLL}"
+        IMPORTED_LOCATION_RELEASE "${_MINGW_ASSIMP_DLL}"
         MAP_IMPORTED_CONFIG_MINSIZEREL Release
         MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
     )
@@ -976,8 +1116,8 @@ if(QC_BUILD_EXAMPLES)
             $<IF:$<CONFIG:Debug>,${CURL_EXTERNAL_DIR}/lib/debug/libcurl-d.dll,${CURL_EXTERNAL_DIR}/lib/release/libcurl.dll>
             $<IF:$<CONFIG:Debug>,${OPENSSL_EXTERNAL_DIR}/lib/debug/libssl-3-x64.dll,${OPENSSL_EXTERNAL_DIR}/lib/release/libssl-3-x64.dll>
             $<IF:$<CONFIG:Debug>,${OPENSSL_EXTERNAL_DIR}/lib/debug/libcrypto-3-x64.dll,${OPENSSL_EXTERNAL_DIR}/lib/release/libcrypto-3-x64.dll>
-            $<IF:$<CONFIG:Debug>,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Toolsd.dll,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools.dll>
-            $<IF:$<CONFIG:Debug>,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-optd.dll,${VULKAN_EXTERNAL_DIR}/lib/SPIRV-Tools-opt.dll>
+            $<TARGET_FILE:SPIRV_Tools_lib>
+            $<TARGET_FILE:SPIRV_Tools_opt_lib>
             "${VULKAN_RUNTIME_DLL}"
         )
         add_custom_command(TARGET QuarkCore POST_BUILD

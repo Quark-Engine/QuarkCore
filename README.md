@@ -22,6 +22,12 @@
 - DirectX 11.1 support for DirectX 11 backend
 - CMake 3.16+
 
+For Windows GCC builds using MSYS2 UCRT64, install the Vulkan shader dependencies:
+
+```bash
+pacman -S --needed mingw-w64-ucrt-x86_64-assimp mingw-w64-ucrt-x86_64-glslang mingw-w64-ucrt-x86_64-shaderc mingw-w64-ucrt-x86_64-spirv-cross
+```
+
 ### Installation
 
 ```bash
