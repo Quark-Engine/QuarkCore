@@ -73,9 +73,11 @@ public:
 
     VkPipeline Get2D() const { return m_pipeline2D; }
     VkPipeline GetOffscreen2D() const { return m_offscreenPipeline2D; }
-    VkPipeline Get3DTri() const { return m_pipeline3DTri; }
+    VkPipeline Get3DTri() const { return Get3DTri(m_backfaceCullingEnabled); }
+    VkPipeline Get3DTri(bool culled) const { return culled ? m_pipeline3DTriCulled : m_pipeline3DTri; }
     VkPipeline Get3DLines() const { return m_pipeline3DLines; }
-    VkPipeline GetOffscreen3DTri() const { return m_offscreenPipeline3DTri; }
+    VkPipeline GetOffscreen3DTri() const { return GetOffscreen3DTri(m_backfaceCullingEnabled); }
+    VkPipeline GetOffscreen3DTri(bool culled) const { return culled ? m_offscreenPipeline3DTriCulled : m_offscreenPipeline3DTri; }
     VkPipeline GetOffscreen3DLines() const { return m_offscreenPipeline3DLines; }
 
     VkPipeline Create2DPipeline(VkRenderPass renderPass,
@@ -85,7 +87,8 @@ public:
                                 VkPrimitiveTopology topology,
                                 VkShaderModule vertexModule = VK_NULL_HANDLE,
                                 VkShaderModule fragmentModule = VK_NULL_HANDLE,
-                                bool gpuMeshTransform = false);
+                                bool gpuMeshTransform = false,
+                                bool backfaceCulling = false);
 
 private:
     void EnsureLayouts();
@@ -105,9 +108,11 @@ private:
     VkPipeline m_pipeline2D                = VK_NULL_HANDLE;
     VkPipeline m_offscreenPipeline2D       = VK_NULL_HANDLE;
     VkPipeline m_pipeline3DTri             = VK_NULL_HANDLE;
+    VkPipeline m_pipeline3DTriCulled       = VK_NULL_HANDLE;
     VkPipeline m_pipeline3DLines           = VK_NULL_HANDLE;
-    VkPipeline m_offscreenPipeline3DTri    = VK_NULL_HANDLE;
-    VkPipeline m_offscreenPipeline3DLines  = VK_NULL_HANDLE;
+    VkPipeline m_offscreenPipeline3DTri       = VK_NULL_HANDLE;
+    VkPipeline m_offscreenPipeline3DTriCulled = VK_NULL_HANDLE;
+    VkPipeline m_offscreenPipeline3DLines     = VK_NULL_HANDLE;
 };
 } // namespace qci
 #endif // __QUARK_VK_PIPELINE__

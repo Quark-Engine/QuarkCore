@@ -2364,7 +2364,8 @@ void QuarkD3D11Renderer::DrawMeshWithShader(const Mesh &mesh, const Material &ma
     }
 
     D3D11CommandContext::ShaderOverride shaderOverride = BuildShaderOverride(shaderId,
-                                                                            albedoResource);
+                                                                            albedoResource,
+                                                                            false);
     if (!shaderOverride.Active()) {
         return;
     }
@@ -2848,17 +2849,17 @@ void QuarkD3D11Renderer::DrawMeshInstancedWithShader(const Mesh &mesh, const Mat
     if (canGpuInstance)
     {
         const Mat4 viewProj = m_projectionMatrix * m_viewMatrix;
-        std::vector<D3D11CommandContext::InstanceTransform> gpuInstances(static_cast<size_t>(instances));
+        m_gpuInstancesScratch.resize(static_cast<size_t>(instances));
         for (int i = 0; i < instances; ++i)
         {
             const Mat4 finalTransform = m_currentMatrix * transforms[i];
             const Mat4 normalMatrix = TransposeMat4(finalTransform.inverted());
             const Mat4 mvp = viewProj * finalTransform;
-            std::memcpy(gpuInstances[static_cast<size_t>(i)].model, finalTransform.m, sizeof(float) * 16);
-            std::memcpy(gpuInstances[static_cast<size_t>(i)].mvp, mvp.m, sizeof(float) * 16);
-            std::memcpy(gpuInstances[static_cast<size_t>(i)].normalMatrix, normalMatrix.m, sizeof(float) * 16);
+            std::memcpy(m_gpuInstancesScratch[static_cast<size_t>(i)].model, finalTransform.m, sizeof(float) * 16);
+            std::memcpy(m_gpuInstancesScratch[static_cast<size_t>(i)].mvp, mvp.m, sizeof(float) * 16);
+            std::memcpy(m_gpuInstancesScratch[static_cast<size_t>(i)].normalMatrix, normalMatrix.m, sizeof(float) * 16);
         }
-        gpuInstanceStart = m_commands.Append3DInstances(gpuInstances.data(), static_cast<UINT>(instances));
+        gpuInstanceStart = m_commands.Append3DInstances(m_gpuInstancesScratch.data(), static_cast<UINT>(instances));
     }
 
     if (gpuInstanceStart != 0xFFFFFFFFu)
@@ -2874,7 +2875,7 @@ void QuarkD3D11Renderer::DrawMeshInstancedWithShader(const Mesh &mesh, const Mat
         StoreUniformValue(program, program.locUseInstancing, 0, &zero, sizeof(int), 1);
     }
 
-    D3D11CommandContext::ShaderOverride shaderOverride = BuildShaderOverride(shaderId, albedoResource);
+    D3D11CommandContext::ShaderOverride shaderOverride = BuildShaderOverride(shaderId, albedoResource, false);
     if (!shaderOverride.Active())
     {
         return;
@@ -4286,11 +4287,7 @@ void QuarkD3D11Renderer::StoreUniformValue(ShaderProgramData &program, int locIn
 
     EnsureConstantCapacity(program, static_cast<size_t>(info.offset) + totalBytes);
     std::memcpy(program.constantStaging.data() + info.offset, value, totalBytes);
-
-    auto &storage = program.uniformValues[locIndex];
-    storage.assign(static_cast<const uint8_t *>(value),
-                   static_cast<const uint8_t *>(value) + totalBytes);
-    program.uniformTypes[locIndex] = uniformType;
+    (void)uniformType;
     program.dirty = true;
 }
 
@@ -4317,7 +4314,7 @@ void QuarkD3D11Renderer::RegisterShaderTexture(ShaderProgramData &program, int l
 }
 
 D3D11CommandContext::ShaderOverride QuarkD3D11Renderer::BuildShaderOverride(
-    uint32_t shaderId, ID3D11ShaderResourceView *slot0Fallback)
+    uint32_t shaderId, ID3D11ShaderResourceView *slot0Fallback, bool uploadConstants)
 {
     D3D11CommandContext::ShaderOverride shaderOverride{};
 
@@ -4327,7 +4324,9 @@ D3D11CommandContext::ShaderOverride QuarkD3D11Renderer::BuildShaderOverride(
         return shaderOverride;
     }
 
-    UploadConstantBuffer(*program);
+    if (uploadConstants) {
+        UploadConstantBuffer(*program);
+    }
 
     shaderOverride.vertexShader = program->vertexShader.Get();
     shaderOverride.pixelShader = program->pixelShader.Get();

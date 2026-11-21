@@ -5,6 +5,7 @@
 #include "../QuarkRenderThreadPool.hpp"
 #include "QuarkD3D11Pipeline.hpp"
 #include "QuarkD3D11SwapChain.hpp"
+#include <d3d11_1.h>
 #include <cstdint>
 #include <vector>
 namespace qci {
@@ -95,6 +96,8 @@ private:
     static constexpr UINT kBatchMaxVertices = 8192 * 4;
     static constexpr size_t kMax3DBufferBytes = 8 * 1024 * 1024;
     static constexpr size_t kMaxWorkerConstantBufferBytes = 65536;
+    static constexpr size_t kRingConstantBufferBytes = 4 * 1024 * 1024;
+    static constexpr size_t kConstantBufferAlignment = 256;
 
     struct BatchVertex {
         float x, y;
@@ -135,6 +138,7 @@ private:
 
     struct DeferredWorkerContext {
         Microsoft::WRL::ComPtr<ID3D11DeviceContext> deferredContext;
+        Microsoft::WRL::ComPtr<ID3D11DeviceContext1> deferredContext1;
         Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer3D;
         Microsoft::WRL::ComPtr<ID3D11Buffer> constantBuffer;
         Microsoft::WRL::ComPtr<ID3D11CommandList> commandList;
@@ -160,7 +164,9 @@ private:
     };
 
     void Flush2DBatch();
-    void ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx, ID3D11Buffer *vertexBuffer3D,
+    void ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx, ID3D11DeviceContext1 *ctx1,
+                                      bool useRingConstantBuffer,
+                                      ID3D11Buffer *vertexBuffer3D,
                                       ID3D11Buffer *workerConstantBuffer, size_t &vbByteOffset,
                                       const Queued3DDraw &draw, DrawStateCache &stateCache);
     void BindOverride(ID3D11ShaderResourceView *drawnResource);
@@ -168,6 +174,8 @@ private:
     void BatchQuad(const BatchVertex v[4], ID3D11ShaderResourceView *shaderResource);
 
     ID3D11DeviceContext *m_context = nullptr;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext1> m_context1;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> m_ringConstantBuffer;
     D3D11SwapChain *m_swapChain = nullptr;
     D3D11Pipeline *m_pipeline = nullptr;
     D3D11Resources *m_resources = nullptr;

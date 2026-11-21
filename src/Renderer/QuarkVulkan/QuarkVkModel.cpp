@@ -825,6 +825,7 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
         drawItem.indexCount = gpuMeshIt->second.indexCount;
         drawItem.indexed = true;
         drawItem.gpuMesh = true;
+        drawItem.backfaceCulling = m_vkPipeline.BackfaceCulling();
         drawItem.gpuVertexBuffer = gpuMeshIt->second.vertexBuffer;
         drawItem.gpuIndexBuffer = gpuMeshIt->second.indexBuffer;
         drawItem.modelViewProjection = modelViewProjection;
@@ -942,7 +943,7 @@ void QuarkVkRenderer::DrawMesh(const Mesh& mesh, const Material& material, const
         m_main3DBatch.shaderProgramId = drawShaderProgramId;
     }
     drawItems->push_back({ materialDescriptorSet, drawShaderProgramId,
-        firstVertex, static_cast<uint32_t>(mesh.vertexCount), firstIndex, indexCount, true });
+        firstVertex, static_cast<uint32_t>(mesh.vertexCount), firstIndex, indexCount, true, false, false, m_vkPipeline.BackfaceCulling() });
 }
 
 void QuarkVkRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) {
@@ -995,6 +996,7 @@ void QuarkVkRenderer::DrawMeshInstanced(const Mesh& mesh, const Material& materi
             baseItem.indexCount = gpuMeshIt->second.indexCount;
             baseItem.indexed = true;
             baseItem.gpuMesh = true;
+            baseItem.backfaceCulling = m_vkPipeline.BackfaceCulling();
             baseItem.gpuVertexBuffer = gpuMeshIt->second.vertexBuffer;
             baseItem.gpuIndexBuffer = gpuMeshIt->second.indexBuffer;
             baseItem.materialColor = normalizedColor;

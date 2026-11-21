@@ -521,25 +521,11 @@ const float* QuarkVkRenderer::GetMatrixProjection() {
 }
 
 void QuarkVkRenderer::EnableBackfaceCulling() {
-    if (m_vkPipeline.BackfaceCulling() || m_device == VK_NULL_HANDLE) {
-        m_vkPipeline.SetBackfaceCulling(true);
-        return;
-    }
-
-    vkDeviceWaitIdle(m_device);
     m_vkPipeline.SetBackfaceCulling(true);
-    CreateShaderPipelines();
 }
 
 void QuarkVkRenderer::DisableBackfaceCulling() {
-    if (!m_vkPipeline.BackfaceCulling() || m_device == VK_NULL_HANDLE) {
-        m_vkPipeline.SetBackfaceCulling(false);
-        return;
-    }
-
-    vkDeviceWaitIdle(m_device);
     m_vkPipeline.SetBackfaceCulling(false);
-    CreateShaderPipelines();
 }
 
 void QuarkVkRenderer::RefreshViewport() {
@@ -583,21 +569,24 @@ void QuarkVkRenderer::CreateInstance() {
 #ifdef _DEBUG
     const char* validationLayer = "VK_LAYER_KHRONOS_validation";
     bool enableValidationLayer = false;
-    uint32_t layerCount = 0;
-    VkResult layerResult = vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-    if (layerResult == VK_SUCCESS && layerCount > 0) {
-        std::vector<VkLayerProperties> layers(layerCount);
-        layerResult = vkEnumerateInstanceLayerProperties(&layerCount, layers.data());
-        if (layerResult == VK_SUCCESS) {
-            enableValidationLayer = std::any_of(layers.begin(), layers.end(),
-                [validationLayer](const VkLayerProperties& layer) {
-                    return std::strcmp(layer.layerName, validationLayer) == 0;
-                });
+    const char* validationEnv = std::getenv("QUARK_VK_VALIDATION");
+    if (validationEnv && validationEnv[0] == '1') {
+        uint32_t layerCount = 0;
+        VkResult layerResult = vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+        if (layerResult == VK_SUCCESS && layerCount > 0) {
+            std::vector<VkLayerProperties> layers(layerCount);
+            layerResult = vkEnumerateInstanceLayerProperties(&layerCount, layers.data());
+            if (layerResult == VK_SUCCESS) {
+                enableValidationLayer = std::any_of(layers.begin(), layers.end(),
+                    [validationLayer](const VkLayerProperties& layer) {
+                        return std::strcmp(layer.layerName, validationLayer) == 0;
+                    });
+            }
         }
-    }
-    if (!enableValidationLayer) {
-        TraceLog(LogLevel::Warn, "VULKAN",
-            "VK_LAYER_KHRONOS_validation is unavailable; continuing without validation.");
+        if (!enableValidationLayer) {
+            TraceLog(LogLevel::Warn, "VULKAN",
+                "VK_LAYER_KHRONOS_validation is unavailable; continuing without validation.");
+        }
     }
 #endif
 
@@ -667,6 +656,7 @@ void QuarkVkRenderer::PickPhysicalDevice() {
 
     TraceLog(LogLevel::Info, "VULKAN", TextFormat("Found %u physical device(s) with Vulkan support:", deviceCount));
 
+    uint64_t bestScore = 0;
     for (uint32_t i = 0; i < deviceCount; ++i) {
         VkPhysicalDevice device = devices[i];
         VkPhysicalDeviceProperties props;
@@ -698,8 +688,18 @@ void QuarkVkRenderer::PickPhysicalDevice() {
             VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion), VK_VERSION_PATCH(props.apiVersion),
             vramGb, hostGb, suitable ? "Yes" : "No"));
 
-        if (m_physicalDevice == VK_NULL_HANDLE && suitable) {
-            m_physicalDevice = device;
+        if (suitable) {
+            uint64_t score = 1;
+            if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                score += 1000000ull;
+            } else if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+                score += 10000ull;
+            }
+            score += vramBytes / (64ull * 1024ull * 1024ull);
+            if (m_physicalDevice == VK_NULL_HANDLE || score > bestScore) {
+                m_physicalDevice = device;
+                bestScore = score;
+            }
         }
     }
 
@@ -1160,13 +1160,27 @@ void QuarkVkRenderer::CreateShaderPipelines() {
                                                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                program.vertexModule,
                                                                program.fragmentModule,
-                                                               program.supportsGpuMeshTransform);
+                                                               program.supportsGpuMeshTransform,
+                                                               false);
+            program.pipeline3DCulled = m_vkPipeline.Create3DPipeline(m_vkRenderPass.Get(),
+                                                                     VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                                                     program.vertexModule,
+                                                                     program.fragmentModule,
+                                                                     program.supportsGpuMeshTransform,
+                                                                     true);
             if (m_vkRenderTarget.RenderPass() != VK_NULL_HANDLE) {
                 program.pipeline3DOffscreen = m_vkPipeline.Create3DPipeline(m_vkRenderTarget.RenderPass(),
                                                                             VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                             program.vertexModule,
                                                                             program.fragmentModule,
-                                                                            program.supportsGpuMeshTransform);
+                                                                            program.supportsGpuMeshTransform,
+                                                                            false);
+                program.pipeline3DOffscreenCulled = m_vkPipeline.Create3DPipeline(m_vkRenderTarget.RenderPass(),
+                                                                                  VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                                                                  program.vertexModule,
+                                                                                  program.fragmentModule,
+                                                                                  program.supportsGpuMeshTransform,
+                                                                                  true);
             }
         }
     }
@@ -1268,6 +1282,8 @@ VkPresentModeKHR QuarkVkRenderer::ChooseSwapPresentMode(const std::vector<VkPres
     if (!vsync) {
         for (const auto& mode : modes) {
             if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) return mode;
+        }
+        for (const auto& mode : modes) {
             if (mode == VK_PRESENT_MODE_MAILBOX_KHR) return mode;
         }
         return VK_PRESENT_MODE_FIFO_KHR;
@@ -2202,13 +2218,15 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
                         RecordDebugRenderDraw(item.firstVertex - cursor);
                     }
 
-                    VkPipeline itemPipeline = defaultTriPipeline;
+                    VkPipeline itemPipeline = task.isOffscreen
+                        ? m_vkPipeline.GetOffscreen3DTri(item.backfaceCulling)
+                        : m_vkPipeline.Get3DTri(item.backfaceCulling);
                     VkDescriptorSet descriptorSet = item.descriptorSet != VK_NULL_HANDLE
                         ? item.descriptorSet : whiteDescriptorSet;
                     if (itemShaderProgram != nullptr) {
                         const VkPipeline shaderPipe = task.isOffscreen
-                            ? itemShaderProgram->pipeline3DOffscreen
-                            : itemShaderProgram->pipeline3D;
+                            ? (item.backfaceCulling ? itemShaderProgram->pipeline3DOffscreenCulled : itemShaderProgram->pipeline3DOffscreen)
+                            : (item.backfaceCulling ? itemShaderProgram->pipeline3DCulled : itemShaderProgram->pipeline3D);
                         if (shaderPipe != VK_NULL_HANDLE) {
                             itemPipeline = shaderPipe;
                         }
@@ -2368,8 +2386,15 @@ bool QuarkVkRenderer::RecordCommandBuffer(VkCommandBuffer cmd, uint32_t imageInd
         }
     };
 
-    if (secondaryTasks.size() == 1) {
-        recordSecondaryTask(0, secondaryTasks[0]);
+    size_t totalSecondaryDrawWork = 0;
+    for (const SecondaryPassTask& task : secondaryTasks) {
+        totalSecondaryDrawWork += static_cast<size_t>(task.chunkEnd - task.chunkBegin);
+    }
+
+    if (secondaryTasks.size() == 1 || totalSecondaryDrawWork < 64) {
+        for (SecondaryPassTask& task : secondaryTasks) {
+            recordSecondaryTask(0, task);
+        }
     } else if (secondaryTasks.size() > 1) {
         m_threadPool.ParallelFor(secondaryTasks.size(), 1u, [&](uint32_t workerIndex, size_t begin, size_t end) {
             for (size_t idx = begin; idx < end; ++idx) {

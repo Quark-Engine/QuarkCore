@@ -124,6 +124,7 @@ struct Vk3DDrawItem {
     bool indexed = false;
     bool gpuMesh = false;
     bool useInstanceBuffer = false;
+    bool backfaceCulling = false;
     uint32_t instanceCount = 1;
     uint32_t firstInstance = 0;
     VkBuffer gpuVertexBuffer = VK_NULL_HANDLE;

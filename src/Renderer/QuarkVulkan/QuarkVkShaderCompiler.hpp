@@ -11,9 +11,11 @@ namespace qci {
 struct VkShaderProgramData {
     VkShaderModule vertexModule   = VK_NULL_HANDLE;
     VkShaderModule fragmentModule = VK_NULL_HANDLE;
-    VkPipeline     pipeline       = VK_NULL_HANDLE;
-    VkPipeline     pipeline3D     = VK_NULL_HANDLE;
-    VkPipeline     pipeline3DOffscreen = VK_NULL_HANDLE;
+    VkPipeline     pipeline              = VK_NULL_HANDLE;
+    VkPipeline     pipeline3D            = VK_NULL_HANDLE;
+    VkPipeline     pipeline3DCulled      = VK_NULL_HANDLE;
+    VkPipeline     pipeline3DOffscreen   = VK_NULL_HANDLE;
+    VkPipeline     pipeline3DOffscreenCulled = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet3D = VK_NULL_HANDLE;
     bool            supports3D    = false;
     bool            supportsGpuMeshTransform = false;

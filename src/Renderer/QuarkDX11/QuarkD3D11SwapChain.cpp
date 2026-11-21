@@ -19,7 +19,7 @@ void D3D11SwapChain::Initialize(const D3D11Device &device, SDL_Window *window, i
                                 int height)
 {
     TraceLog(LogLevel::Info, "D3D11",
-             TextFormat("Creating swap chain (%dx%d, Buffers: 2, Format: RGBA8)", width, height));
+             TextFormat("Creating swap chain (%dx%d, Buffers: 3, Format: RGBA8)", width, height));
 
     if (!window)
     {
@@ -48,7 +48,7 @@ void D3D11SwapChain::Initialize(const D3D11Device &device, SDL_Window *window, i
     description.BufferDesc.RefreshRate = {0, 1};
     description.SampleDesc.Count = 1;
     description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    description.BufferCount = 2;
+    description.BufferCount = 3;
     description.OutputWindow = hwnd;
     description.Windowed = TRUE;
     description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;

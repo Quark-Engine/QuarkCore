@@ -290,9 +290,17 @@ void QuarkVkShaderCompiler::DestroyProgramData(VkShaderProgramData& program) {
         vkDestroyPipeline(m_device, program.pipeline3D, nullptr);
         program.pipeline3D = VK_NULL_HANDLE;
     }
+    if (program.pipeline3DCulled != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, program.pipeline3DCulled, nullptr);
+        program.pipeline3DCulled = VK_NULL_HANDLE;
+    }
     if (program.pipeline3DOffscreen != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_device, program.pipeline3DOffscreen, nullptr);
         program.pipeline3DOffscreen = VK_NULL_HANDLE;
+    }
+    if (program.pipeline3DOffscreenCulled != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, program.pipeline3DOffscreenCulled, nullptr);
+        program.pipeline3DOffscreenCulled = VK_NULL_HANDLE;
     }
     if (program.vertexModule != VK_NULL_HANDLE) {
         vkDestroyShaderModule(m_device, program.vertexModule, nullptr);
@@ -315,9 +323,17 @@ void QuarkVkShaderCompiler::FreePipelines() {
             vkDestroyPipeline(m_device, program.pipeline3D, nullptr);
             program.pipeline3D = VK_NULL_HANDLE;
         }
+        if (program.pipeline3DCulled != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, program.pipeline3DCulled, nullptr);
+            program.pipeline3DCulled = VK_NULL_HANDLE;
+        }
         if (program.pipeline3DOffscreen != VK_NULL_HANDLE) {
             vkDestroyPipeline(m_device, program.pipeline3DOffscreen, nullptr);
             program.pipeline3DOffscreen = VK_NULL_HANDLE;
+        }
+        if (program.pipeline3DOffscreenCulled != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, program.pipeline3DOffscreenCulled, nullptr);
+            program.pipeline3DOffscreenCulled = VK_NULL_HANDLE;
         }
     }
 }

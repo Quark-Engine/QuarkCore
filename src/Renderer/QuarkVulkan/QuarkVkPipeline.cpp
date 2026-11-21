@@ -305,10 +305,16 @@ void QuarkVkPipeline::CreatePipelines(VkRenderPass renderPass,
     if (offscreenRenderPass != VK_NULL_HANDLE) {
         m_offscreenPipeline2D = Create2DPipeline(offscreenRenderPass);
     }
-    m_pipeline3DTri = Create3DPipeline(renderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    m_pipeline3DTri = Create3DPipeline(renderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                       VK_NULL_HANDLE, VK_NULL_HANDLE, false, false);
+    m_pipeline3DTriCulled = Create3DPipeline(renderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                             VK_NULL_HANDLE, VK_NULL_HANDLE, false, true);
     m_pipeline3DLines = Create3DPipeline(renderPass, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
     if (offscreenRenderPass != VK_NULL_HANDLE) {
-        m_offscreenPipeline3DTri = Create3DPipeline(offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        m_offscreenPipeline3DTri = Create3DPipeline(offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                                    VK_NULL_HANDLE, VK_NULL_HANDLE, false, false);
+        m_offscreenPipeline3DTriCulled = Create3DPipeline(offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                                          VK_NULL_HANDLE, VK_NULL_HANDLE, false, true);
         m_offscreenPipeline3DLines = Create3DPipeline(offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
     }
 }
@@ -326,6 +332,10 @@ void QuarkVkPipeline::DestroyPipelines() {
         vkDestroyPipeline(m_device, m_offscreenPipeline3DLines, nullptr);
         m_offscreenPipeline3DLines = VK_NULL_HANDLE;
     }
+    if (m_offscreenPipeline3DTriCulled != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_offscreenPipeline3DTriCulled, nullptr);
+        m_offscreenPipeline3DTriCulled = VK_NULL_HANDLE;
+    }
     if (m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_device, m_offscreenPipeline3DTri, nullptr);
         m_offscreenPipeline3DTri = VK_NULL_HANDLE;
@@ -337,6 +347,10 @@ void QuarkVkPipeline::DestroyPipelines() {
     if (m_pipeline3DLines != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_device, m_pipeline3DLines, nullptr);
         m_pipeline3DLines = VK_NULL_HANDLE;
+    }
+    if (m_pipeline3DTriCulled != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_pipeline3DTriCulled, nullptr);
+        m_pipeline3DTriCulled = VK_NULL_HANDLE;
     }
     if (m_pipeline3DTri != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_device, m_pipeline3DTri, nullptr);
@@ -369,38 +383,7 @@ void QuarkVkPipeline::Shutdown() {
 }
 
 void QuarkVkPipeline::SetBackfaceCulling(bool enabled) {
-    if (m_backfaceCullingEnabled == enabled || m_device == VK_NULL_HANDLE) {
-        m_backfaceCullingEnabled = enabled;
-        return;
-    }
-
     m_backfaceCullingEnabled = enabled;
-
-    if (m_pipeline3DTri != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_pipeline3DTri, nullptr);
-        m_pipeline3DTri = VK_NULL_HANDLE;
-    }
-    if (m_pipeline3DLines != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_pipeline3DLines, nullptr);
-        m_pipeline3DLines = VK_NULL_HANDLE;
-    }
-    if (m_offscreenPipeline3DTri != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_offscreenPipeline3DTri, nullptr);
-        m_offscreenPipeline3DTri = VK_NULL_HANDLE;
-    }
-    if (m_offscreenPipeline3DLines != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_offscreenPipeline3DLines, nullptr);
-        m_offscreenPipeline3DLines = VK_NULL_HANDLE;
-    }
-
-    if (m_renderPass != VK_NULL_HANDLE) {
-        m_pipeline3DTri = Create3DPipeline(m_renderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        m_pipeline3DLines = Create3DPipeline(m_renderPass, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
-    }
-    if (m_offscreenRenderPass != VK_NULL_HANDLE) {
-        m_offscreenPipeline3DTri = Create3DPipeline(m_offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        m_offscreenPipeline3DLines = Create3DPipeline(m_offscreenRenderPass, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
-    }
 }
 
 VkPipeline QuarkVkPipeline::Create2DPipeline(VkRenderPass renderPass,
@@ -600,7 +583,8 @@ VkPipeline QuarkVkPipeline::Create3DPipeline(VkRenderPass renderPass,
                                              VkPrimitiveTopology topology,
                                              VkShaderModule vertexModule,
                                              VkShaderModule fragmentModule,
-                                             bool gpuMeshTransform) {
+                                             bool gpuMeshTransform,
+                                             bool backfaceCulling) {
     if (m_device == VK_NULL_HANDLE || renderPass == VK_NULL_HANDLE) {
         return VK_NULL_HANDLE;
     }
@@ -697,7 +681,7 @@ VkPipeline QuarkVkPipeline::Create3DPipeline(VkRenderPass renderPass,
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode             = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth               = 1.0f;
-    rasterizer.cullMode                = m_backfaceCullingEnabled ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+    rasterizer.cullMode                = backfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     rasterizer.frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable         = VK_FALSE;
 

@@ -46,13 +46,27 @@ Shader QuarkVkRenderer::FinishShaderProgram(uint32_t shaderId) {
                                                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                programData.vertexModule,
                                                                programData.fragmentModule,
-                                                               programData.supportsGpuMeshTransform);
+                                                               programData.supportsGpuMeshTransform,
+                                                               false);
+        programData.pipeline3DCulled = m_vkPipeline.Create3DPipeline(m_vkRenderPass.Get(),
+                                                                     VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                                                     programData.vertexModule,
+                                                                     programData.fragmentModule,
+                                                                     programData.supportsGpuMeshTransform,
+                                                                     true);
         if (m_vkRenderTarget.RenderPass() != VK_NULL_HANDLE) {
             programData.pipeline3DOffscreen = m_vkPipeline.Create3DPipeline(m_vkRenderTarget.RenderPass(),
                                                                             VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                                                             programData.vertexModule,
                                                                             programData.fragmentModule,
-                                                                            programData.supportsGpuMeshTransform);
+                                                                            programData.supportsGpuMeshTransform,
+                                                                            false);
+            programData.pipeline3DOffscreenCulled = m_vkPipeline.Create3DPipeline(m_vkRenderTarget.RenderPass(),
+                                                                                  VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                                                                  programData.vertexModule,
+                                                                                  programData.fragmentModule,
+                                                                                  programData.supportsGpuMeshTransform,
+                                                                                  true);
         }
         VkDescriptorPool descriptorPool3D = VK_NULL_HANDLE;
         if (Allocate3DDescriptorSet(programData.descriptorSet3D, descriptorPool3D)) {

@@ -1,6 +1,8 @@
 #include "QuarkD3D11Device.hpp"
 
 #if defined(_WIN32)
+#include <cstdlib>
+#include <dxgi1_6.h>
 #include <string>
 namespace qci {
 namespace {
@@ -65,11 +67,54 @@ void D3D11Device::Initialize()
 {
     UINT flags = 0;
 #if defined(_DEBUG)
-    flags |= D3D11_CREATE_DEVICE_DEBUG;
+    const char *debugEnv = std::getenv("QUARK_D3D11_DEBUG");
+    if (debugEnv && debugEnv[0] == '1') {
+        flags |= D3D11_CREATE_DEVICE_DEBUG;
+    }
 #endif
 
     TraceLog(LogLevel::Info, "D3D11", "Creating Direct3D 11 device...");
     TraceLog(LogLevel::Trace, "D3D11", TextFormat("Device creation flags: 0x%08X", flags));
+
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> preferredAdapter;
+    {
+        Microsoft::WRL::ComPtr<IDXGIFactory1> dxgiFactory;
+        if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)))) {
+            Microsoft::WRL::ComPtr<IDXGIFactory6> factory6;
+            if (SUCCEEDED(dxgiFactory.As(&factory6))) {
+                for (UINT i = 0;; ++i) {
+                    Microsoft::WRL::ComPtr<IDXGIAdapter1> candidate;
+                    if (FAILED(factory6->EnumAdapterByGpuPreference(
+                            i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&candidate)))) {
+                        break;
+                    }
+                    DXGI_ADAPTER_DESC1 desc{};
+                    if (SUCCEEDED(candidate->GetDesc1(&desc)) &&
+                        (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0) {
+                        preferredAdapter = candidate;
+                        break;
+                    }
+                }
+            }
+            if (!preferredAdapter) {
+                SIZE_T bestVram = 0;
+                for (UINT i = 0;; ++i) {
+                    Microsoft::WRL::ComPtr<IDXGIAdapter1> candidate;
+                    if (FAILED(dxgiFactory->EnumAdapters1(i, &candidate))) {
+                        break;
+                    }
+                    DXGI_ADAPTER_DESC1 desc{};
+                    if (SUCCEEDED(candidate->GetDesc1(&desc)) &&
+                        (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0) {
+                        if (!preferredAdapter || desc.DedicatedVideoMemory > bestVram) {
+                            bestVram = desc.DedicatedVideoMemory;
+                            preferredAdapter = candidate;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
     D3D_FEATURE_LEVEL selectedLevel{};
@@ -77,12 +122,16 @@ void D3D11Device::Initialize()
     bool debugLayerEnabled = flags != 0;
 
     const auto create = [&](D3D_DRIVER_TYPE driver, UINT creationFlags) {
+        IDXGIAdapter *adapterPtr =
+            (driver == D3D_DRIVER_TYPE_HARDWARE && preferredAdapter) ? preferredAdapter.Get() : nullptr;
+        const D3D_DRIVER_TYPE actualDriver =
+            adapterPtr ? D3D_DRIVER_TYPE_UNKNOWN : driver;
         TraceLog(LogLevel::Trace,
                  "D3D11",
                  TextFormat("Trying %s device (Flags: 0x%08X)...",
                             DriverName(driver),
                             creationFlags));
-        return D3D11CreateDevice(nullptr, driver, nullptr, creationFlags, levels, ARRAYSIZE(levels),
+        return D3D11CreateDevice(adapterPtr, actualDriver, nullptr, creationFlags, levels, ARRAYSIZE(levels),
                                  D3D11_SDK_VERSION, &m_device, &selectedLevel, &m_context);
     };
 

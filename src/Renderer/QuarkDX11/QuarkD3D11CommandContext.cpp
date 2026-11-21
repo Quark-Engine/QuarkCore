@@ -13,6 +13,11 @@ void D3D11CommandContext::Initialize(const D3D11Device &device, D3D11SwapChain &
                                      int width, int height, QuarkRenderThreadPool *threadPool)
 {
     m_context = device.Context();
+    m_context1.Reset();
+    if (m_context)
+    {
+        m_context->QueryInterface(IID_PPV_ARGS(&m_context1));
+    }
     m_swapChain = &swapChain;
     m_pipeline = &pipeline;
     m_resources = &resources;
@@ -83,6 +88,7 @@ void D3D11CommandContext::Initialize(const D3D11Device &device, D3D11SwapChain &
                 allSucceeded = false;
                 break;
             }
+            worker.deferredContext.As(&worker.deferredContext1);
 
             D3D11_BUFFER_DESC vbDesc{};
             vbDesc.ByteWidth = static_cast<UINT>(kMax3DBufferBytes);
@@ -128,6 +134,20 @@ void D3D11CommandContext::Initialize(const D3D11Device &device, D3D11SwapChain &
             srvDesc.Buffer.FirstElement = 0;
             srvDesc.Buffer.NumElements = kMax3DInstances;
             nativeDevice->CreateShaderResourceView(m_instanceBuffer.Get(), &srvDesc, &m_instanceSRV);
+        }
+    }
+
+    m_ringConstantBuffer.Reset();
+    if (m_context1 && nativeDevice)
+    {
+        D3D11_BUFFER_DESC ringDesc{};
+        ringDesc.ByteWidth = static_cast<UINT>(kRingConstantBufferBytes);
+        ringDesc.Usage = D3D11_USAGE_DYNAMIC;
+        ringDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        ringDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        if (FAILED(nativeDevice->CreateBuffer(&ringDesc, nullptr, &m_ringConstantBuffer)))
+        {
+            m_ringConstantBuffer.Reset();
         }
     }
 
@@ -350,10 +370,17 @@ void D3D11CommandContext::SubmitQueued3DShader(size_t vertexOffsetFloats, UINT v
     {
         const uint32_t copyBytes = std::min<uint32_t>(
             shaderOverride.constantDataSize, static_cast<uint32_t>(kMaxWorkerConstantBufferBytes));
-        draw.constantOffsetBytes = m_queued3DConstants.size();
+        const size_t alignedOffset =
+            (m_queued3DConstants.size() + kConstantBufferAlignment - 1u) &
+            ~(kConstantBufferAlignment - 1u);
+        const size_t alignedSize =
+            (static_cast<size_t>(copyBytes) + kConstantBufferAlignment - 1u) &
+            ~(kConstantBufferAlignment - 1u);
+        m_queued3DConstants.resize(alignedOffset + alignedSize, 0);
+        std::memcpy(m_queued3DConstants.data() + alignedOffset, shaderOverride.constantData,
+                    copyBytes);
+        draw.constantOffsetBytes = alignedOffset;
         draw.constantSizeBytes = copyBytes;
-        m_queued3DConstants.insert(m_queued3DConstants.end(), shaderOverride.constantData,
-                                   shaderOverride.constantData + copyBytes);
     }
 
     m_queued3DDraws.push_back(draw);
@@ -410,20 +437,37 @@ void D3D11CommandContext::SubmitQueued3DStaticMesh(ID3D11Buffer *staticVertexBuf
     {
         const uint32_t clampedSingle = std::min<uint32_t>(
             singleConstantBytes, static_cast<uint32_t>(kMaxWorkerConstantBufferBytes));
-        draw.constantOffsetBytes = m_queued3DConstants.size();
+        const size_t alignedOffset =
+            (m_queued3DConstants.size() + kConstantBufferAlignment - 1u) &
+            ~(kConstantBufferAlignment - 1u);
+        const size_t alignedSingle =
+            (static_cast<size_t>(clampedSingle) + kConstantBufferAlignment - 1u) &
+            ~(kConstantBufferAlignment - 1u);
+        m_queued3DConstants.resize(alignedOffset + alignedSingle * static_cast<size_t>(instanceCount), 0);
+        for (UINT inst = 0; inst < instanceCount; ++inst)
+        {
+            std::memcpy(m_queued3DConstants.data() + alignedOffset + static_cast<size_t>(inst) * alignedSingle,
+                        batchedConstantData + static_cast<size_t>(inst) * static_cast<size_t>(singleConstantBytes),
+                        clampedSingle);
+        }
+        draw.constantOffsetBytes = alignedOffset;
         draw.constantSizeBytes = clampedSingle;
-        const size_t totalBytes = static_cast<size_t>(clampedSingle) * static_cast<size_t>(instanceCount);
-        m_queued3DConstants.insert(m_queued3DConstants.end(), batchedConstantData,
-                                   batchedConstantData + totalBytes);
     }
     else if (shaderOverride.constantData && shaderOverride.constantDataSize > 0)
     {
         const uint32_t copyBytes = std::min<uint32_t>(
             shaderOverride.constantDataSize, static_cast<uint32_t>(kMaxWorkerConstantBufferBytes));
-        draw.constantOffsetBytes = m_queued3DConstants.size();
+        const size_t alignedOffset =
+            (m_queued3DConstants.size() + kConstantBufferAlignment - 1u) &
+            ~(kConstantBufferAlignment - 1u);
+        const size_t alignedSize =
+            (static_cast<size_t>(copyBytes) + kConstantBufferAlignment - 1u) &
+            ~(kConstantBufferAlignment - 1u);
+        m_queued3DConstants.resize(alignedOffset + alignedSize, 0);
+        std::memcpy(m_queued3DConstants.data() + alignedOffset, shaderOverride.constantData,
+                    copyBytes);
+        draw.constantOffsetBytes = alignedOffset;
         draw.constantSizeBytes = copyBytes;
-        m_queued3DConstants.insert(m_queued3DConstants.end(), shaderOverride.constantData,
-                                   shaderOverride.constantData + copyBytes);
     }
 
     m_queued3DDraws.push_back(draw);
@@ -482,6 +526,8 @@ void D3D11CommandContext::Draw3DShader(const float *vertices, UINT vertexCount,
 }
 
 void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
+                                                       ID3D11DeviceContext1 *ctx1,
+                                                       bool useRingConstantBuffer,
                                                        ID3D11Buffer *vertexBuffer3D,
                                                        ID3D11Buffer *workerConstantBuffer,
                                                        size_t &vbByteOffset,
@@ -633,27 +679,47 @@ void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
                 stateCache.indexBuffer = draw.staticIndexBuffer;
             }
 
-            if (draw.constantSizeBytes > 0 && targetConstantBuffer)
+            if (draw.constantSizeBytes > 0 && (useRingConstantBuffer || targetConstantBuffer))
             {
-                if (stateCache.vsConstantBuffer0 != targetConstantBuffer)
+                const size_t alignedSingle =
+                    (static_cast<size_t>(draw.constantSizeBytes) + kConstantBufferAlignment - 1u) &
+                    ~(kConstantBufferAlignment - 1u);
+                const bool canBindRing = useRingConstantBuffer && ctx1 && m_ringConstantBuffer;
+                if (!canBindRing)
                 {
-                    ctx->VSSetConstantBuffers(0, 1, &targetConstantBuffer);
-                    stateCache.vsConstantBuffer0 = targetConstantBuffer;
-                }
-                if (stateCache.psConstantBuffer0 != targetConstantBuffer)
-                {
-                    ctx->PSSetConstantBuffers(0, 1, &targetConstantBuffer);
-                    stateCache.psConstantBuffer0 = targetConstantBuffer;
+                    if (stateCache.vsConstantBuffer0 != targetConstantBuffer)
+                    {
+                        ctx->VSSetConstantBuffers(0, 1, &targetConstantBuffer);
+                        stateCache.vsConstantBuffer0 = targetConstantBuffer;
+                    }
+                    if (stateCache.psConstantBuffer0 != targetConstantBuffer)
+                    {
+                        ctx->PSSetConstantBuffers(0, 1, &targetConstantBuffer);
+                        stateCache.psConstantBuffer0 = targetConstantBuffer;
+                    }
                 }
                 if (draw.useGpuInstancing)
                 {
-                    D3D11_MAPPED_SUBRESOURCE mappedCB{};
-                    if (SUCCEEDED(ctx->Map(targetConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedCB)))
+                    if (canBindRing)
                     {
-                        std::memcpy(mappedCB.pData,
-                                    m_queued3DConstants.data() + draw.constantOffsetBytes,
-                                    draw.constantSizeBytes);
-                        ctx->Unmap(targetConstantBuffer, 0);
+                        ID3D11Buffer *ringCB = m_ringConstantBuffer.Get();
+                        const UINT firstConst = static_cast<UINT>(draw.constantOffsetBytes / 16u);
+                        const UINT numConsts = static_cast<UINT>(alignedSingle / 16u);
+                        ctx1->VSSetConstantBuffers1(0, 1, &ringCB, &firstConst, &numConsts);
+                        ctx1->PSSetConstantBuffers1(0, 1, &ringCB, &firstConst, &numConsts);
+                        stateCache.vsConstantBuffer0 = nullptr;
+                        stateCache.psConstantBuffer0 = nullptr;
+                    }
+                    else
+                    {
+                        D3D11_MAPPED_SUBRESOURCE mappedCB{};
+                        if (SUCCEEDED(ctx->Map(targetConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedCB)))
+                        {
+                            std::memcpy(mappedCB.pData,
+                                        m_queued3DConstants.data() + draw.constantOffsetBytes,
+                                        draw.constantSizeBytes);
+                            ctx->Unmap(targetConstantBuffer, 0);
+                        }
                     }
                     if (draw.indexed && draw.staticIndexBuffer)
                     {
@@ -668,17 +734,33 @@ void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
                 }
                 else
                 {
+                    ID3D11Buffer *ringCB = canBindRing ? m_ringConstantBuffer.Get() : nullptr;
+                    const UINT numConsts = static_cast<UINT>(alignedSingle / 16u);
+                    if (canBindRing)
+                    {
+                        stateCache.vsConstantBuffer0 = nullptr;
+                        stateCache.psConstantBuffer0 = nullptr;
+                    }
                     for (UINT inst = 0; inst < draw.instanceCount; ++inst)
                     {
-                        D3D11_MAPPED_SUBRESOURCE mappedCB{};
-                        if (SUCCEEDED(ctx->Map(targetConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedCB)))
+                        const size_t instOffset = draw.constantOffsetBytes +
+                            static_cast<size_t>(inst) * alignedSingle;
+                        if (canBindRing)
                         {
-                            const size_t instOffset = draw.constantOffsetBytes +
-                                static_cast<size_t>(inst) * static_cast<size_t>(draw.constantSizeBytes);
-                            std::memcpy(mappedCB.pData,
-                                        m_queued3DConstants.data() + instOffset,
-                                        draw.constantSizeBytes);
-                            ctx->Unmap(targetConstantBuffer, 0);
+                            const UINT firstConst = static_cast<UINT>(instOffset / 16u);
+                            ctx1->VSSetConstantBuffers1(0, 1, &ringCB, &firstConst, &numConsts);
+                            ctx1->PSSetConstantBuffers1(0, 1, &ringCB, &firstConst, &numConsts);
+                        }
+                        else
+                        {
+                            D3D11_MAPPED_SUBRESOURCE mappedCB{};
+                            if (SUCCEEDED(ctx->Map(targetConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedCB)))
+                            {
+                                std::memcpy(mappedCB.pData,
+                                            m_queued3DConstants.data() + instOffset,
+                                            draw.constantSizeBytes);
+                                ctx->Unmap(targetConstantBuffer, 0);
+                            }
                         }
                         if (draw.indexed && draw.staticIndexBuffer)
                         {
@@ -723,25 +805,41 @@ void D3D11CommandContext::ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx,
             return;
         }
 
-        if (draw.constantSizeBytes > 0 && targetConstantBuffer)
+        if (draw.constantSizeBytes > 0 && (useRingConstantBuffer || targetConstantBuffer))
         {
-            D3D11_MAPPED_SUBRESOURCE mappedCB{};
-            if (SUCCEEDED(ctx->Map(targetConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedCB)))
+            if (useRingConstantBuffer && ctx1 && m_ringConstantBuffer)
             {
-                std::memcpy(mappedCB.pData,
-                            m_queued3DConstants.data() + draw.constantOffsetBytes,
-                            draw.constantSizeBytes);
-                ctx->Unmap(targetConstantBuffer, 0);
+                ID3D11Buffer *ringCB = m_ringConstantBuffer.Get();
+                const size_t alignedSize =
+                    (static_cast<size_t>(draw.constantSizeBytes) + kConstantBufferAlignment - 1u) &
+                    ~(kConstantBufferAlignment - 1u);
+                const UINT firstConst = static_cast<UINT>(draw.constantOffsetBytes / 16u);
+                const UINT numConsts = static_cast<UINT>(alignedSize / 16u);
+                ctx1->VSSetConstantBuffers1(0, 1, &ringCB, &firstConst, &numConsts);
+                ctx1->PSSetConstantBuffers1(0, 1, &ringCB, &firstConst, &numConsts);
+                stateCache.vsConstantBuffer0 = nullptr;
+                stateCache.psConstantBuffer0 = nullptr;
             }
-            if (stateCache.vsConstantBuffer0 != targetConstantBuffer)
+            else if (targetConstantBuffer)
             {
-                ctx->VSSetConstantBuffers(0, 1, &targetConstantBuffer);
-                stateCache.vsConstantBuffer0 = targetConstantBuffer;
-            }
-            if (stateCache.psConstantBuffer0 != targetConstantBuffer)
-            {
-                ctx->PSSetConstantBuffers(0, 1, &targetConstantBuffer);
-                stateCache.psConstantBuffer0 = targetConstantBuffer;
+                D3D11_MAPPED_SUBRESOURCE mappedCB{};
+                if (SUCCEEDED(ctx->Map(targetConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedCB)))
+                {
+                    std::memcpy(mappedCB.pData,
+                                m_queued3DConstants.data() + draw.constantOffsetBytes,
+                                draw.constantSizeBytes);
+                    ctx->Unmap(targetConstantBuffer, 0);
+                }
+                if (stateCache.vsConstantBuffer0 != targetConstantBuffer)
+                {
+                    ctx->VSSetConstantBuffers(0, 1, &targetConstantBuffer);
+                    stateCache.vsConstantBuffer0 = targetConstantBuffer;
+                }
+                if (stateCache.psConstantBuffer0 != targetConstantBuffer)
+                {
+                    ctx->PSSetConstantBuffers(0, 1, &targetConstantBuffer);
+                    stateCache.psConstantBuffer0 = targetConstantBuffer;
+                }
             }
         }
         else if (draw.shaderOverride.constantBuffer)
@@ -828,9 +926,23 @@ void D3D11CommandContext::Flush3DBatch()
         m_context->VSSetShaderResources(10, 1, &instSrv);
     }
 
+    bool useRingConstantBuffer = false;
+    if (!m_queued3DConstants.empty() && m_context1 && m_ringConstantBuffer &&
+        m_queued3DConstants.size() <= kRingConstantBufferBytes)
+    {
+        D3D11_MAPPED_SUBRESOURCE mappedRing{};
+        if (SUCCEEDED(m_context->Map(m_ringConstantBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0,
+                                     &mappedRing)))
+        {
+            std::memcpy(mappedRing.pData, m_queued3DConstants.data(), m_queued3DConstants.size());
+            m_context->Unmap(m_ringConstantBuffer.Get(), 0);
+            useRingConstantBuffer = true;
+        }
+    }
+
     const size_t drawCount = m_queued3DDraws.size();
     const bool useDeferredWorkers =
-        drawCount >= 64 && m_threadPool && m_threadPool->IsMultithreaded() && !m_workers.empty();
+        drawCount >= 256 && m_threadPool && m_threadPool->IsMultithreaded() && !m_workers.empty();
 
     if (!useDeferredWorkers)
     {
@@ -839,7 +951,8 @@ void D3D11CommandContext::Flush3DBatch()
         ID3D11Buffer *workerCB = !m_workers.empty() ? m_workers[0].constantBuffer.Get() : nullptr;
         for (const Queued3DDraw &draw : m_queued3DDraws)
         {
-            ExecuteQueued3DDrawOnContext(m_context, m_pipeline->VertexBuffer3D(), workerCB,
+            ExecuteQueued3DDrawOnContext(m_context, m_context1.Get(), useRingConstantBuffer,
+                                         m_pipeline->VertexBuffer3D(), workerCB,
                                          vbByteOffset, draw, stateCache);
         }
     }
@@ -886,7 +999,9 @@ void D3D11CommandContext::Flush3DBatch()
                     DrawStateCache stateCache{};
                     for (size_t d = firstDraw; d < lastDraw; ++d)
                     {
-                        ExecuteQueued3DDrawOnContext(ctx, worker.vertexBuffer3D.Get(),
+                        ExecuteQueued3DDrawOnContext(ctx, worker.deferredContext1.Get(),
+                                                     useRingConstantBuffer,
+                                                     worker.vertexBuffer3D.Get(),
                                                      worker.constantBuffer.Get(), vbByteOffset,
                                                      m_queued3DDraws[d], stateCache);
                     }
@@ -1473,6 +1588,8 @@ void D3D11CommandContext::Shutdown()
     m_queued3DInstances.clear();
     m_instanceSRV.Reset();
     m_instanceBuffer.Reset();
+    m_ringConstantBuffer.Reset();
+    m_context1.Reset();
     m_threadPool = nullptr;
     m_context = nullptr;
     m_swapChain = nullptr;

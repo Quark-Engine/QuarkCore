@@ -313,7 +313,8 @@ private:
     };
 
     D3D11CommandContext::ShaderOverride BuildShaderOverride(
-        uint32_t shaderId, ID3D11ShaderResourceView *slot0Fallback = nullptr);
+        uint32_t shaderId, ID3D11ShaderResourceView *slot0Fallback = nullptr,
+        bool uploadConstants = true);
     void BuildShaderProgram(ShaderProgramData &program, const char *vsSource, const char *fsSource);
     void RegisterShaderTexture(ShaderProgramData &program, int locIndex, uint32_t textureId);
     void UploadConstantBuffer(ShaderProgramData &program);
@@ -391,6 +392,7 @@ private:
     std::unordered_map<const float *, std::vector<uint64_t>> m_staticMeshKeysByVertices;
     std::unordered_map<int, Microsoft::WRL::ComPtr<ID3D11BlendState>> m_blendStateCache;
     std::vector<uint8_t> m_instancedConstantsScratch;
+    std::vector<D3D11CommandContext::InstanceTransform> m_gpuInstancesScratch;
     Mat4 m_viewMatrix{};
     Mat4 m_projectionMatrix{};
     Mat4 m_currentMatrix{};
