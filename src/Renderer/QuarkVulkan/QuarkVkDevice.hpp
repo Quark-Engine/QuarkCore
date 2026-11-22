@@ -2,30 +2,52 @@
 #define __QUARK_VK_DEVICE__
 
 #include "QuarkVkCommon.hpp"
-namespace qci {
-class QuarkVkDevice {
-public:
-    void Initialize(VkInstance instance, VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
-    void Shutdown();
 
-    VkDevice Get() const { return m_device; }
-    VkQueue GraphicsQueue() const { return m_graphicsQueue; }
-    VkQueue PresentQueue() const { return m_presentQueue; }
-    uint32_t GraphicsQueueFamily() const { return m_graphicsQueueFamily; }
-    bool IsInitialized() const { return m_device != VK_NULL_HANDLE; }
+namespace qci
+{
+    class QuarkVkDevice
+    {
+    public:
+        void Initialize(VkInstance instance, VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
+        void Shutdown();
 
-    void CreateLogicalDevice(const VkQueueFamilyIndices& indices,
-                             const std::vector<const char*>& enabledExtensions,
-                             const VkPhysicalDeviceFeatures* features = nullptr);
+        VkDevice Get() const
+        {
+            return m_Device;
+        }
 
-private:
-    VkInstance m_instance = VK_NULL_HANDLE;
-    VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
-    VkSurfaceKHR m_surface = VK_NULL_HANDLE;
-    VkDevice m_device = VK_NULL_HANDLE;
-    VkQueue m_graphicsQueue = VK_NULL_HANDLE;
-    VkQueue m_presentQueue = VK_NULL_HANDLE;
-    uint32_t m_graphicsQueueFamily = UINT32_MAX;
-};
-} // namespace qci
+        VkQueue GraphicsQueue() const
+        {
+            return m_GraphicsQueue;
+        }
+
+        VkQueue PresentQueue() const
+        {
+            return m_PresentQueue;
+        }
+
+        uint32_t GraphicsQueueFamily() const
+        {
+            return m_GraphicsQueueFamily;
+        }
+
+        bool IsInitialized() const
+        {
+            return m_Device != VK_NULL_HANDLE;
+        }
+
+        void CreateLogicalDevice(const VkQueueFamilyIndices& indices,
+                                 const std::vector<const char*>& vpEnabledExtensions,
+                                 const VkPhysicalDeviceFeatures* pFeatures = nullptr);
+
+    private:
+        VkInstance m_Instance = VK_NULL_HANDLE;
+        VkPhysicalDevice m_PhysicalDevice = VK_NULL_HANDLE;
+        VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
+        VkDevice m_Device = VK_NULL_HANDLE;
+        VkQueue m_GraphicsQueue = VK_NULL_HANDLE;
+        VkQueue m_PresentQueue = VK_NULL_HANDLE;
+        uint32_t m_GraphicsQueueFamily = UINT32_MAX;
+    };
+} // qci
 #endif // __QUARK_VK_DEVICE__

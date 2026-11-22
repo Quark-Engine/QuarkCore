@@ -7,7 +7,7 @@ int main()
     InitWindow(800, 480, "QuarkCore Lights", RendererType::OpenGL);
     SetTargetFPS(60);
 
-    const char* vsSource = R"(
+    const char* pVsSource = R"(
         #version 330 core
         layout(location=0) in vec2 aPos;
         uniform vec2 uScreenSize;
@@ -18,7 +18,7 @@ int main()
         }
     )";
 
-    const char* fsSource = R"(
+    const char* pFsSource = R"(
         #version 330 core
 
         struct Light {
@@ -54,7 +54,7 @@ int main()
         }
     )";
 
-    Shader shader = LoadShaderFromMemory(vsSource, fsSource);
+    Shader shader = LoadShaderFromMemory(pVsSource, pFsSource);
 
     printf("shader id: %d\n", shader.id);
     printf("lights[0].enabled: %d\n", GetShaderLocation(shader, "lights[0].enabled"));
@@ -67,28 +67,26 @@ int main()
 
     Light light0 = CreateLight(
         LIGHT_POINT,
-        Vec3{ 400.0f, 240.0f, 0.0f },
-        Vec3{ 0.0f,   0.0f,   0.0f },
+        Vec3{400.0f, 240.0f, 0.0f},
+        Vec3{0.0f, 0.0f, 0.0f},
         GetColor(0xFFAA00),
-        shader
-    );
+        shader);
     light0.attenuation = 0.0001f;
 
     Light light1 = CreateLight(
         LIGHT_POINT,
-        Vec3{ 400.0f, 240.0f, 0.0f },
-        Vec3{ 0.0f,   0.0f,   0.0f },
+        Vec3{400.0f, 240.0f, 0.0f},
+        Vec3{0.0f, 0.0f, 0.0f},
         GetColor(0x0088FF),
-        shader
-    );
+        shader);
     light1.attenuation = 0.0001f;
 
     while (!WindowShouldClose())
     {
         float t = (float)GetTime();
 
-        light0.position.x = (sinf(t)         * 0.3f + 0.5f) * 800.0f;
-        light0.position.y = (cosf(t)         * 0.3f + 0.5f) * 480.0f;
+        light0.position.x = (sinf(t) * 0.3f + 0.5f) * 800.0f;
+        light0.position.y = (cosf(t) * 0.3f + 0.5f) * 480.0f;
 
         light1.position.x = (sinf(-t + 1.5f) * 0.3f + 0.5f) * 800.0f;
         light1.position.y = (cosf(-t + 1.5f) * 0.3f + 0.5f) * 480.0f;
@@ -97,10 +95,7 @@ int main()
         ClearBackground(BLACK);
 
         BeginShaderMode(shader);
-        SetShaderValue(shader, locScreenSize, Vec2{
-            (float)GetScreenWidth(),
-            (float)GetScreenHeight()
-        });
+        SetShaderValue(shader, locScreenSize, Vec2{(float)GetScreenWidth(), (float)GetScreenHeight()});
         UpdateLightValues(shader, light0);
         UpdateLightValues(shader, light1);
         DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), WHITE);

@@ -7,16 +7,20 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
-namespace qci::d3d11 {
-inline void ThrowIfFailed(HRESULT result, const char *operation) {
-    if (FAILED(result)) {
-        std::ostringstream message;
-        message << operation << " failed (HRESULT 0x" << std::uppercase << std::hex
-                << static_cast<unsigned long>(result) << ")";
-        TraceLog(LogLevel::Error, "D3D11", message.str().c_str());
-        throw std::runtime_error(message.str());
+
+namespace qci::d3d11
+{
+    inline void ThrowIfFailed(HRESULT result, const char* pOperation)
+    {
+        if (FAILED(result))
+        {
+            std::ostringstream message;
+            message << pOperation << " failed (HRESULT 0x" << std::uppercase << std::hex
+                    << static_cast<unsigned long>(result) << ")";
+            TraceLog(LogLevel::Error, "D3D11", message.str().c_str());
+            throw std::runtime_error(message.str());
+        }
     }
-}
-} // namespace qci::d3d11
+} // qci::d3d11
 #endif
 #endif // __QUARK_D3D11_COMMON__

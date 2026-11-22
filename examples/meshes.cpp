@@ -1,8 +1,8 @@
 #include "QuarkCore/QuarkCore.hpp"
 
-namespace {
-
-constexpr const char* kUnlitVertexShader = R"glsl(
+namespace
+{
+    constexpr const char* UNLIT_VERTEX_SHADER = R"glsl(
 #version 450
 layout(location = 0) in vec4 aPosition;
 layout(location = 1) in vec2 aTexCoord;
@@ -21,7 +21,7 @@ void main() {
 }
 )glsl";
 
-constexpr const char* kUnlitFragmentShader = R"glsl(
+    constexpr const char* UNLIT_FRAGMENT_SHADER = R"glsl(
 #version 450
 layout(location = 0) in vec4 vColor;
 layout(location = 0) out vec4 outColor;
@@ -29,18 +29,18 @@ void main() {
     outColor = vColor;
 }
 )glsl";
+} // anonymous
 
-}
-
-int main() {
+int main()
+{
     InitWindow(1280, 720, "QuarkCore Meshes Example", RendererType::Vulkan);
     SetWindowMinimumSize(800, 450);
     SetTargetFPS(60);
 
     Camera3D camera3d{};
-    camera3d.position = { 8.0f, 6.0f, 10.0f };
-    camera3d.target = { 0.0f, 1.0f, 0.0f };
-    camera3d.up = { 0.0f, 1.0f, 0.0f };
+    camera3d.position = {8.0f, 6.0f, 10.0f};
+    camera3d.target = {0.0f, 1.0f, 0.0f};
+    camera3d.up = {0.0f, 1.0f, 0.0f};
     camera3d.fovy = 45.0f;
     camera3d.projection = CAMERA_PERSPECTIVE;
 
@@ -59,22 +59,24 @@ int main() {
     cubeBounds.max = Vec3{1.0f, 2.0f, 1.0f};
 
     Material defaultMaterial{};
-    Shader unlitShader = LoadShaderFromMemory(kUnlitVertexShader, kUnlitFragmentShader);
+    Shader unlitShader = LoadShaderFromMemory(UNLIT_VERTEX_SHADER, UNLIT_FRAGMENT_SHADER);
     defaultMaterial.shader = &unlitShader;
 
     const int instanceCount = 4;
     Matrix instanceTransforms[instanceCount] = {
-        Mat4::translation(-5.0f, 1.0f,  0.0f),
+        Mat4::translation(-5.0f, 1.0f, 0.0f),
         Mat4::translation(-3.0f, 1.0f, -3.0f),
-        Mat4::translation(-3.0f, 1.0f,  3.0f),
-        Mat4::translation(-1.0f, 1.0f,  0.0f)
-    };
+        Mat4::translation(-3.0f, 1.0f, 3.0f),
+        Mat4::translation(-1.0f, 1.0f, 0.0f)};
 
     bool exportReady = false;
 
-    while (!WindowShouldClose()) {
-        if (IsKeyPressed(KEY_SPACE)) {
-            if (!exportReady) {
+    while (!WindowShouldClose())
+    {
+        if (IsKeyPressed(KEY_SPACE))
+        {
+            if (!exportReady)
+            {
                 ExportMesh(sphere, "sphere.obj");
                 ExportMeshAsCode(cube, "cube_export.cpp");
                 exportReady = true;
@@ -86,11 +88,11 @@ int main() {
         ClearBackground(Color{18, 22, 30, 255});
 
         BeginMode3D(camera3d);
-            DrawMesh(plane, defaultMaterial, Mat4::translation(0.0f, 0.0f, 0.0f));
-            DrawMesh(cube, defaultMaterial, Mat4::translation(3.0f, 1.0f, 0.0f));
-            DrawMesh(sphere, defaultMaterial, Mat4::translation(-3.0f, 1.25f, 0.0f));
-            DrawMeshInstanced(cube, defaultMaterial, instanceTransforms, instanceCount);
-            DrawBoundingBox(cubeBounds, YELLOW);
+        DrawMesh(plane, defaultMaterial, Mat4::translation(0.0f, 0.0f, 0.0f));
+        DrawMesh(cube, defaultMaterial, Mat4::translation(3.0f, 1.0f, 0.0f));
+        DrawMesh(sphere, defaultMaterial, Mat4::translation(-3.0f, 1.25f, 0.0f));
+        DrawMeshInstanced(cube, defaultMaterial, instanceTransforms, instanceCount);
+        DrawBoundingBox(cubeBounds, YELLOW);
         EndMode3D();
 
         DrawText("Mesh demo: plane, cube, sphere, instanced cube", 20, 20, 20, WHITE);

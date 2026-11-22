@@ -55,250 +55,281 @@
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
-namespace qci {
-class QuarkGLRenderer final : public IRenderer {
-public:
-    QuarkGLRenderer() = default;
-    ~QuarkGLRenderer() override;
 
-    void Init(SDL_Window* window, int width, int height) override;
-    void Shutdown() override;
+namespace qci
+{
+    class QuarkGLRenderer final : public IRenderer
+    {
+    public:
+        QuarkGLRenderer() = default;
+        ~QuarkGLRenderer() override;
 
-    void BeginDrawing() override;
-    void EndDrawing() override;
-    void ClearBackground(Color color) override;
+        void Init(SDL_Window* pWindow, int width, int height) override;
+        void Shutdown() override;
 
-    void DrawRectangle(float x, float y, float width, float height, Color color) override;
-    void DrawRectangle(const Rectangle& rectangle, Color color) override;
-    void DrawRectangleV(Vec2 position, Vec2 size, Color color) override;
-    void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color) override;
-    void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments, Color color) override;
-    void DrawCircle(float centerX, float centerY, float radius, Color color) override;
-    void DrawCircleLines(float centerX, float centerY, float radius, Color color) override;
-    void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Color color) override;
-    void DrawLine(float x1, float y1, float x2, float y2, Color color) override;
-    void DrawLineV(Vec2 start, Vec2 end, Color color) override;
-    void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color) override;
-    void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color) override;
+        void BeginDrawing() override;
+        void EndDrawing() override;
+        void ClearBackground(Color color) override;
 
-    void Set3DView(const Mat4& view, const Mat4& projection) override;
-    void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color) override;
-    void DrawPlane(Vec3 center, Vec2 size, Color color) override;
-    void DrawCube(Vec3 position, float width, float height, float length, Color color) override;
-    void DrawCubeV(Vec3 position, Vec3 size, Color color) override;
-    void DrawCubeWires(Vec3 position, float width, float height, float length, Color color) override;
-    void DrawCubeWiresV(Vec3 position, Vec3 size, Color color) override;
-    void DrawSphere(Vec3 centerPos, float radius, Color color) override;
-    void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color color) override;
-    void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color color) override;
-    void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) override;
-    void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color) override;
-    void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) override;
-    void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) override;
-    void DrawGrid(int slices, float spacing, Color color) override;
+        void DrawRectangle(float x, float y, float width, float height, Color color) override;
+        void DrawRectangle(const Rectangle& rectangle, Color color) override;
+        void DrawRectangleV(Vec2 position, Vec2 size, Color color) override;
+        void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color) override;
+        void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments, Color color) override;
+        void DrawCircle(float centerX, float centerY, float radius, Color color) override;
+        void DrawCircleLines(float centerX, float centerY, float radius, Color color) override;
+        void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Color color) override;
+        void DrawLine(float x1, float y1, float x2, float y2, Color color) override;
+        void DrawLineV(Vec2 start, Vec2 end, Color color) override;
+        void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color) override;
+        void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color) override;
 
-    void DrawDebugText(const char* text, int x, int y, int fontSize, Color color) override;
-    void DrawText(const char* text, int x, int y, int fontSize, Color color) override;
-    void DrawTextEx(IFont font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) override;
-    Vec2 MeasureTextEx(IFont font, const char* text, float fontSize, float spacing) override;
-    int  MeasureText(const char* text, int fontSize) override;
-    void FillFont(IFont font, Font& out) override;
+        void Set3DView(const Mat4& view, const Mat4& projection) override;
+        void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color) override;
+        void DrawPlane(Vec3 center, Vec2 size, Color color) override;
+        void DrawCube(Vec3 position, float width, float height, float length, Color color) override;
+        void DrawCubeV(Vec3 position, Vec3 size, Color color) override;
+        void DrawCubeWires(Vec3 position, float width, float height, float length, Color color) override;
+        void DrawCubeWiresV(Vec3 position, Vec3 size, Color color) override;
+        void DrawSphere(Vec3 centerPos, float radius, Color color) override;
+        void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color color) override;
+        void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color color) override;
+        void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) override;
+        void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color) override;
+        void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) override;
+        void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) override;
+        void DrawGrid(int slices, float spacing, Color color) override;
 
-    void           DrawTexture(const ITexture& texture, float x, float y, Color tint) override;
-    void           DrawTextureV(const ITexture& texture, Vec2 position, Color tint) override;
-    void           DrawTextureEx(const ITexture& texture, Vec2 position, float rotation, float scale, Color tint) override;
-    void           DrawTextureRec(const ITexture& texture, Rectangle source, Vec2 position, Color tint) override;
-    void           DrawTexturePro(ITexture texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint) override;
-    void           DrawTextureTiled(ITexture texture, float scale, Vec2 offset, Color tint) override;
-    void           DrawTextureNPatch(ITexture texture, NPatchInfo nPatchInfo, Rectangle dest, Vec2 origin, float rotation, Color tint) override;
-    ITexture       LoadTexture(const char* filePath) override;
-    ITexture       LoadTextureFromImage(const Image& image) override;
-    ITexture       LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize) override;
-    ITexture       GetRenderTextureTexture(IRenderTexture target) override;
-    void           UnloadTexture(ITexture& texture) override;
-    bool           UpdateTexture(const ITexture& texture, const void* pixels) override;
-    bool           UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pixels) override;
-    bool           isTextureValid(ITexture& texture) override;
-    IRenderTexture LoadRenderTexture(int width, int height) override;
-    void           UnloadRenderTexture(IRenderTexture target) override;
-    bool           isRenderTextureValid(IRenderTexture& target) override;
-    Image          ReadTextureImage(const ITexture& texture) override;
-    Image          ReadScreenImage() override;
-    ITexture       GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB) override;
+        void DrawDebugText(const char* pText, int x, int y, int fontSize, Color color) override;
+        void DrawText(const char* pText, int x, int y, int fontSize, Color color) override;
+        void DrawTextEx(IFont font, const char* pText, Vec2 position, float fontSize, float spacing, Color tint) override;
+        Vec2 MeasureTextEx(IFont font, const char* pText, float fontSize, float spacing) override;
+        int MeasureText(const char* pText, int fontSize) override;
+        void FillFont(IFont font, Font& out) override;
 
-    void BeginTextureMode(IRenderTexture target) override;
-    void EndTextureMode() override;
-    void SetTextureFilterMode(TextureFilter mode) override;
-    void SetTextureFilter(TextureFilter filter) override;
-    void SetTextureWrap(int wrap) override;
-    void SetTextureWrap(uint32_t textureId, int wrap) override;
-    void BeginScissorMode(int x, int y, int width, int height) override;
-    void EndScissorMode() override;
-    void SetBlendMode(int mode) override;
+        void DrawTexture(const ITexture& texture, float x, float y, Color tint) override;
+        void DrawTextureV(const ITexture& texture, Vec2 position, Color tint) override;
+        void DrawTextureEx(const ITexture& texture, Vec2 position, float rotation, float scale, Color tint) override;
+        void DrawTextureRec(const ITexture& texture, Rectangle source, Vec2 position, Color tint) override;
+        void DrawTexturePro(ITexture texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint) override;
+        void DrawTextureTiled(ITexture texture, float scale, Vec2 offset, Color tint) override;
+        void DrawTextureNPatch(ITexture texture, NPatchInfo nPatchInfo, Rectangle dest, Vec2 origin, float rotation, Color tint) override;
+        ITexture LoadTexture(const char* pFilePath) override;
+        ITexture LoadTextureFromImage(const Image& image) override;
+        ITexture LoadTextureCubemap(const unsigned char* pRgbaFaces, int faceSize) override;
+        ITexture GetRenderTextureTexture(IRenderTexture target) override;
+        void UnloadTexture(ITexture& texture) override;
+        bool UpdateTexture(const ITexture& texture, const void* pPixels) override;
+        bool UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pPixels) override;
+        bool isTextureValid(ITexture& texture) override;
+        IRenderTexture LoadRenderTexture(int width, int height) override;
+        void UnloadRenderTexture(IRenderTexture target) override;
+        bool isRenderTextureValid(IRenderTexture& target) override;
+        Image ReadTextureImage(const ITexture& texture) override;
+        Image ReadScreenImage() override;
+        ITexture GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB) override;
 
-    IFont LoadFont(const char* filePath, int fontSize,
-                   const int* codepoints, int codepointCount) override;
-    IFont LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int dataSize,
-                             int fontSize, const int* codepoints, int codepointCount) override;
-    void  UnloadFont(IFont& font) override;
+        void BeginTextureMode(IRenderTexture target) override;
+        void EndTextureMode() override;
+        void SetTextureFilterMode(TextureFilter mode) override;
+        void SetTextureFilter(TextureFilter filter) override;
+        void SetTextureWrap(int wrap) override;
+        void SetTextureWrap(uint32_t textureId, int wrap) override;
+        void BeginScissorMode(int x, int y, int width, int height) override;
+        void EndScissorMode() override;
+        void SetBlendMode(int mode) override;
 
-    void   BeginShaderMode(const Shader& shader) override;
-    void   EndShaderMode() override;
-    Shader LoadShader(const char* vsFileName, const char* fsFileName) override;
-    Shader LoadShaderFromMemory(const char* vsSource, const char* fsSource) override;
-    void   UnloadShader(Shader& shader) override;
-    bool   isShaderValid(Shader& shader) override;
-    int    GetShaderLocation(const Shader& shader, const char* uniformName) override;
-    int    GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex) override;
-    int    GetShaderAttributeLocation(const Shader& shader, const char* attribName) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, float value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, int value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const Color& value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const Vec2& value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const Vec3& value) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const Vec4& value) override;
-    void   SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat) override;
-    void   SetShaderValueSampler(const Shader& sfhader, int locIndex, int textureUnit) override;
-    void   SetShaderValue(const Shader& shader, int locIndex, const void* value, int uniformType) override;
-    void   SetShaderValueV(const Shader& shader, int locIndex, const void* value, int uniformType, int count) override;
-    void   SetShaderValueMatrix(const Shader& shader, int locIndex, const Matrix& mat) override;
-    void   SetShaderValueTexture(const Shader& shader, int locIndex, const ITexture& texture) override;
-    void   SetShaderValueTextureUnit(const Shader& shader, int locIndex, const ITexture& texture, int textureUnit) override;
+        IFont LoadFont(const char* pFilePath, int fontSize,
+                       const int* pCodepoints, int codepointCount) override;
+        IFont LoadFontFromMemory(const char* pFileType, const unsigned char* pFileData, int dataSize,
+                                 int fontSize, const int* pCodepoints, int codepointCount) override;
+        void UnloadFont(IFont& font) override;
 
-    void BeginMode2D(const Camera2D& camera) override;
-    void EndMode2D() override;
-    void BeginMode3D(const Camera3D& camera) override;
-    void EndMode3D() override;
-    Camera2D GetCamera2D() const override { return m_camera2D; }
+        void BeginShaderMode(const Shader& shader) override;
+        void EndShaderMode() override;
+        Shader LoadShader(const char* pVsFileName, const char* pFsFileName) override;
+        Shader LoadShaderFromMemory(const char* pVsSource, const char* pFsSource) override;
+        void UnloadShader(Shader& shader) override;
+        bool isShaderValid(Shader& shader) override;
+        int GetShaderLocation(const Shader& shader, const char* pUniformName) override;
+        int GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex) override;
+        int GetShaderAttributeLocation(const Shader& shader, const char* pAttribName) override;
+        void SetShaderValue(const Shader& shader, int locIndex, float value) override;
+        void SetShaderValue(const Shader& shader, int locIndex, int value) override;
+        void SetShaderValue(const Shader& shader, int locIndex, const Color& value) override;
+        void SetShaderValue(const Shader& shader, int locIndex, const Vec2& value) override;
+        void SetShaderValue(const Shader& shader, int locIndex, const Vec3& value) override;
+        void SetShaderValue(const Shader& shader, int locIndex, const Vec4& value) override;
+        void SetShaderValueMatrix(const Shader& shader, int locIndex, const float* pMat) override;
+        void SetShaderValueSampler(const Shader& shader, int locIndex, int textureUnit) override;
+        void SetShaderValue(const Shader& shader, int locIndex, const void* pValue, int uniformType) override;
+        void SetShaderValueV(const Shader& shader, int locIndex, const void* pValue, int uniformType, int count) override;
+        void SetShaderValueMatrix(const Shader& shader, int locIndex, const Matrix& mat) override;
+        void SetShaderValueTexture(const Shader& shader, int locIndex, const ITexture& texture) override;
+        void SetShaderValueTextureUnit(const Shader& shader, int locIndex, const ITexture& texture, int textureUnit) override;
 
-    void         PushMatrix() override;
-    void         PopMatrix() override;
-    void         Translate(const Vec3& translation) override;
-    void         Rotate(float angle, const Vec3& axis) override;
-    void         Scale(const Vec3& scale) override;
-    void         MultMatrix(const Mat4& matrix) override;
-    const float* GetMatrixModelview() override;
-    const float* GetMatrixProjection() override;
-    void         EnableBackfaceCulling() override;
-    void         DisableBackfaceCulling() override;
+        void BeginMode2D(const Camera2D& camera) override;
+        void EndMode2D() override;
+        void BeginMode3D(const Camera3D& camera) override;
+        void EndMode3D() override;
+        Camera2D GetCamera2D() const override
+        {
+            return m_Camera2D;
+        }
 
-    Model LoadModel(const char* filePath) override;
-    void  UnloadModel(Model& model) override;
-    void  DrawModel(const Model& model, const Vec3& position, float scale,
-                    float rotationX, float rotationY, float rotationZ) override;
-    void  DrawModelEx(const Model& model, const Mat4& transform) override;
-    void  DrawModelEx(const Model& model, const Mat4& transform, Color tint) override;
+        void PushMatrix() override;
+        void PopMatrix() override;
+        void Translate(const Vec3& translation) override;
+        void Rotate(float angle, const Vec3& axis) override;
+        void Scale(const Vec3& scale) override;
+        void MultMatrix(const Mat4& matrix) override;
+        const float* GetMatrixModelview() override;
+        const float* GetMatrixProjection() override;
+        void EnableBackfaceCulling() override;
+        void DisableBackfaceCulling() override;
 
-    void  UploadMesh(Mesh& mesh, bool dynamic) override;
-    void  UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) override;
-    void  UnloadMesh(Mesh& mesh) override;
-    void  DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) override;
-    void  DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) override;
+        Model LoadModel(const char* pFilePath) override;
+        void UnloadModel(Model& model) override;
+        void DrawModel(const Model& model, const Vec3& position, float scale,
+                       float rotationX, float rotationY, float rotationZ) override;
+        void DrawModelEx(const Model& model, const Mat4& transform) override;
+        void DrawModelEx(const Model& model, const Mat4& transform, Color tint) override;
 
-    RendererType GetType() const override { return RendererType::OpenGL; }
+        void UploadMesh(Mesh& mesh, bool dynamic) override;
+        void UpdateMeshBuffer(Mesh& mesh, int index, const void* pData, int dataSize, int offset) override;
+        void UnloadMesh(Mesh& mesh) override;
+        void DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) override;
+        void DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* pTransforms, int instances) override;
 
-    int   GetScreenWidth()  const override { return m_width; }
-    int   GetScreenHeight() const override { return m_height; }
-    void  SetTargetFPS(int fps)   override;
-    bool  SetVSync(bool enabled)  override;
-    float GetFrameTime()   const override { return m_frameTime; }
-    bool  ShouldClose()     const override { return m_shouldClose; }
-    void SetShouldClose(bool v)  { m_shouldClose = v; }
+        RendererType GetType() const override
+        {
+            return RendererType::OpenGL;
+        }
 
-    void   RefreshViewport() override;
+        int GetScreenWidth() const override
+        {
+            return m_Width;
+        }
 
-private:
+        int GetScreenHeight() const override
+        {
+            return m_Height;
+        }
 
-    struct BatchVertex {
-        float x, y, u, v, r, g, b, a;
+        void SetTargetFPS(int fps) override;
+        bool SetVSync(bool enabled) override;
+
+        float GetFrameTime() const override
+        {
+            return m_FrameTime;
+        }
+
+        bool ShouldClose() const override
+        {
+            return m_ShouldClose;
+        }
+
+        void SetShouldClose(bool v)
+        {
+            m_ShouldClose = v;
+        }
+
+        void RefreshViewport() override;
+
+    private:
+        struct BatchVertex
+        {
+            float m_X, m_Y, m_U, m_V, m_R, m_G, m_B, m_A;
+        };
+
+        using GlyphData = qci::GlyphData;
+        using FontData = qci::FontData;
+
+        struct CachedTexture
+        {
+            ITexture m_Texture{};
+            int m_References = 0;
+        };
+
+        void InitGL();
+        static std::array<float, 4> ToNormColor(Color c);
+        GLuint CreateTextureFromRgba(const std::uint8_t* pPixels, int w, int h);
+        GLuint CompileGLShader(GLenum type, const char* pSource);
+        GLuint CreateDefaultProgram();
+
+        static constexpr std::size_t MAX_BATCH_VERTICES = 8192;
+        void FlushBatch();
+        void EnsureBatchTexture(GLuint textureId);
+        void PushVertex(const BatchVertex& vtx);
+        void PushQuad(GLuint tex, float x, float y, float w, float h, Color color);
+        void PushCircleImpl(float cx, float cy, float r, Color color);
+        void PushTexturedQuad(GLuint tex, Rectangle uv,
+                              float x, float y, float w, float h, Color color);
+
+        bool LoadFontInternal(const char* pFilePath, const unsigned char* pFileData, int dataSize,
+                              int pointSize, const int* pCodepoints, int codepointCount, FontData& out);
+        static int FindGlyph(const FontData& fd, int codepoint);
+        uint32_t EnsureDefaultFont();
+        const FontData* GetFontData(IFont font) const;
+        void DrawTextWithFontData(const FontData& fd, const char* pText,
+                                  Vec2 pos, float fontSize, float spacing, Color tint);
+        Vec2 MeasureTextWithFontData(const FontData& fd, const char* pText,
+                                     float fontSize, float spacing) const;
+
+        void Init3DState();
+        void Init3DGeometry();
+        GLuint Compile3DShader();
+        void FlushLines3D();
+        void FlushTriangles3D();
+        void DrawTriangle3DImpl(Vertex3D v1, Vertex3D v2, Vertex3D v3, Color color);
+        void BindMaterialMaps(const Material& material, GLuint shaderProgram);
+        Vec3 TransformPoint(const Mat4& m, const Vec3& p) const;
+        Mat4 ApplyCurrentMatrix(const Mat4& t) const;
+
+        SDL_Window* m_pWindow = nullptr;
+        SDL_GLContext m_Context = nullptr;
+        int m_Width = 0;
+        int m_Height = 0;
+        int m_TargetFps = 60;
+        bool m_Vsync = true;
+        bool m_VsyncExplicitlySet = false;
+        float m_FrameTime = 0.f;
+        bool m_Drawing = false;
+        bool m_ShouldClose = false;
+        std::uint64_t m_LastFrameCounter = 0;
+
+        GLuint m_Program = 0;
+        GLuint m_Vao = 0;
+        GLuint m_Vbo = 0;
+        GLuint m_WhiteTexture = 0;
+        GLuint m_CurrentTexture = 0;
+        GLuint m_CurrentShader = 0;
+        GLuint m_DefaultShader = 0;
+        GLuint m_CurrentFbo = 0;
+        std::vector<BatchVertex> m_vBatchVertices;
+
+        Camera2D m_Camera2D{};
+        bool m_Camera2DActive = false;
+
+        Mat4 m_CurrentMatrix = Mat4::identity();
+        std::vector<Mat4> m_vMatrixStack;
+
+        Model3DState m_3D;
+
+        QuarkGLDevice m_Device;
+        QuarkGLBatch m_Batch;
+        QuarkGLTexture m_Texture;
+        QuarkGLShader m_Shader;
+        QuarkGLFont m_Font;
+
+        std::unordered_map<uint32_t, FontData> m_Fonts;
+        std::unordered_map<int, IFont> m_DebugFonts;
+        uint32_t m_NextFontId = 1;
+        uint32_t m_DefaultFontId = 0;
+
+        std::unordered_map<std::string, CachedTexture> m_TextureCache;
+        std::unordered_map<GLuint, std::string> m_TextureCacheKeys;
     };
+} // qci
 
-    using GlyphData = qci::GlyphData;
-    using FontData = qci::FontData;
-
-    struct CachedTexture {
-        ITexture texture{};
-        int      references = 0;
-    };
-
-    void   InitGL();
-    static std::array<float,4> ToNormColor(Color c);
-    GLuint CreateTextureFromRgba(const std::uint8_t* pixels, int w, int h);
-    GLuint CompileGLShader(GLenum type, const char* source);
-    GLuint CreateDefaultProgram();
-
-    static constexpr std::size_t kMaxBatchVertices = 8192;
-    void FlushBatch();
-    void EnsureBatchTexture(GLuint textureId);
-    void PushVertex(const BatchVertex& vtx);
-    void PushQuad(GLuint tex, float x, float y, float w, float h, Color color);
-    void PushCircleImpl(float cx, float cy, float r, Color color);
-    void PushTexturedQuad(GLuint tex, Rectangle uv,
-                          float x, float y, float w, float h, Color color);
-
-    bool            LoadFontInternal(const char* filePath, const unsigned char* fileData, int dataSize,
-                                     int pointSize, const int* codepoints, int codepointCount, FontData& out);
-    static int      FindGlyph(const FontData& fd, int codepoint);
-    uint32_t        EnsureDefaultFont();
-    const FontData* GetFontData(IFont font) const;
-    void DrawTextWithFontData(const FontData& fd, const char* text,
-                              Vec2 pos, float fontSize, float spacing, Color tint);
-    Vec2 MeasureTextWithFontData(const FontData& fd, const char* text,
-                                 float fontSize, float spacing) const;
-
-    void   Init3DState();
-    void   Init3DGeometry();
-    GLuint Compile3DShader();
-    void   FlushLines3D();
-    void   FlushTriangles3D();
-    void   DrawTriangle3DImpl(Vertex3D v1, Vertex3D v2, Vertex3D v3, Color color);
-    void   BindMaterialMaps(const Material& material, GLuint shaderProgram);
-    Vec3   TransformPoint(const Mat4& m, const Vec3& p) const;
-    Mat4   ApplyCurrentMatrix(const Mat4& t) const;
-
-    SDL_Window*   m_window   = nullptr;
-    SDL_GLContext m_context  = nullptr;
-    int           m_width    = 0;
-    int           m_height   = 0;
-    int           m_targetFps = 60;
-    bool          m_vsync     = true;
-    bool          m_vsyncExplicitlySet = false;
-    float         m_frameTime = 0.f;
-    bool          m_drawing  = false;
-    bool          m_shouldClose = false;
-    std::uint64_t m_lastFrameCounter = 0;
-
-    GLuint m_program        = 0;
-    GLuint m_vao            = 0;
-    GLuint m_vbo            = 0;
-    GLuint m_whiteTexture   = 0;
-    GLuint m_currentTexture = 0;
-    GLuint m_currentShader  = 0;
-    GLuint m_defaultShader  = 0;
-    GLuint m_currentFbo     = 0;
-    std::vector<BatchVertex> m_batchVertices;
-
-    Camera2D m_camera2D{};
-    bool     m_camera2DActive = false;
-
-    Mat4              m_currentMatrix = Mat4::identity();
-    std::vector<Mat4> m_matrixStack;
-
-    Model3DState m_3d;
-
-    QuarkGLDevice m_device;
-    QuarkGLBatch m_batch;
-    QuarkGLTexture m_texture;
-    QuarkGLShader m_shader;
-    QuarkGLFont m_font;
-
-    std::unordered_map<uint32_t, FontData> m_fonts;
-    std::unordered_map<int, IFont> m_debugFonts;
-    uint32_t m_nextFontId    = 1;
-    uint32_t m_defaultFontId = 0;
-
-    std::unordered_map<std::string, CachedTexture> m_textureCache;
-    std::unordered_map<GLuint, std::string> m_textureCacheKeys;
-};
-} // namespace qci
 #endif // __QUARK_GL_RENDERER__

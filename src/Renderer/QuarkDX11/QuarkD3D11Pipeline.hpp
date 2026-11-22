@@ -6,84 +6,143 @@
 #include "QuarkD3D11Resources.hpp"
 #include "QuarkD3D11ShaderCompiler.hpp"
 #include <wrl/client.h>
-namespace qci {
-struct D3D11LightConstantData {
-    float ambientColor[4];
-    float viewPosition[4];
-    float lightPositions[4][4];
-    float lightColors[4][4];
-    float lightParams[4][4]; // x = attenuation, y = enabled, z = type, w = padding
 
-    void SetAmbient(const float values[3]) {
-        ambientColor[0] = values[0];
-        ambientColor[1] = values[1];
-        ambientColor[2] = values[2];
-        ambientColor[3] = 1.0f;
-    }
-};
-
-class D3D11Pipeline {
-public:
-    void Initialize(ID3D11Device *device, D3D11ShaderCompiler &compiler, D3D11Resources &resources);
-    void Shutdown();
-    void UpdateLights(ID3D11DeviceContext *context, const D3D11LightConstantData &lights);
-    void Bind3D(ID3D11DeviceContext *context) const;
-    void BindTexture3D(ID3D11DeviceContext *context, ID3D11ShaderResourceView *shaderResource,
-                       ID3D11ShaderResourceView *normalResource) const;
-    void BindBatch(ID3D11DeviceContext *context, ID3D11Buffer *vertexBuffer,
-                   ID3D11Buffer *indexBuffer) const;
-    void SetBackfaceCulling(bool enabled) { m_backfaceCullingEnabled = enabled; }
-    bool BackfaceCulling() const { return m_backfaceCullingEnabled; }
-    void SetTextureFilterMode(TextureFilter mode);
-    void SetTextureWrapMode(int wrap);
-    TextureFilter GetTextureFilterMode() const { return m_textureFilterMode; }
-    int GetTextureWrapMode() const { return m_textureWrapMode; }
-    ID3D11Buffer *VertexBuffer() const { return m_vertexBuffer; }
-    ID3D11Buffer *VertexBuffer3D() const { return m_vertexBuffer3D; }
-    ID3D11VertexShader *VertexShader3D() const { return m_vertexShader3D.Get(); }
-    ID3D11PixelShader *PixelShader3D() const { return m_pixelShader3D.Get(); }
-    ID3D11InputLayout *InputLayout3D() const { return m_inputLayout3D.Get(); }
-    ID3D11VertexShader *TexturedVertexShader3D() const { return m_texturedVertexShader3D.Get(); }
-    ID3D11PixelShader *TexturedPixelShader3D() const { return m_texturedPixelShader3D.Get(); }
-    ID3D11InputLayout *TexturedInputLayout3D() const { return m_texturedInputLayout3D.Get(); }
-    ID3D11RasterizerState *Rasterizer() const { return m_rasterizerState.Get(); }
-    ID3D11RasterizerState *RasterizerCull() const { return m_rasterizerStateCull.Get(); }
-    ID3D11DepthStencilState *DepthStencilState() const { return m_depthStencilState.Get(); }
-    ID3D11Buffer *const *LightConstantBuffer() const { return m_lightConstantBuffer.GetAddressOf(); }
-    ID3D11BlendState *Blend() const { return m_blendState.Get(); }
-    ID3D11SamplerState *Sampler() const { return m_textureSampler.Get(); }
-    ID3D11DepthStencilState *DepthStencilDisabledState() const
+namespace qci
+{
+    struct D3D11LightConstantData
     {
-        return m_depthStencilDisabledState.Get();
-    }
+        float m_aAmbientColor[4];
+        float m_aViewPosition[4];
+        float m_aLightPositions[4][4];
+        float m_aLightColors[4][4];
+        float m_aLightParams[4][4]; // x = attenuation, y = enabled, z = type, w = padding
 
-private:
-    void CreateSamplerState(TextureFilter mode);
-    ID3D11Device *m_device = nullptr;
-    ID3D11Buffer *m_vertexBuffer = nullptr;
-    ID3D11Buffer *m_vertexBuffer3D = nullptr;
-    Microsoft::WRL::ComPtr<ID3D11VertexShader> m_texturedVertexShader;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> m_texturedPixelShader;
-    Microsoft::WRL::ComPtr<ID3D11InputLayout> m_texturedInputLayout;
-    Microsoft::WRL::ComPtr<ID3D11VertexShader> m_texturedVertexShader3D;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> m_texturedPixelShader3D;
-    Microsoft::WRL::ComPtr<ID3D11InputLayout> m_texturedInputLayout3D;
-    Microsoft::WRL::ComPtr<ID3D11SamplerState> m_textureSampler;
-    Microsoft::WRL::ComPtr<ID3D11BlendState> m_blendState;
-    Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_rasterizerState;
-    Microsoft::WRL::ComPtr<ID3D11VertexShader> m_vertexShader3D;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> m_pixelShader3D;
-    Microsoft::WRL::ComPtr<ID3D11InputLayout> m_inputLayout3D;
-    Microsoft::WRL::ComPtr<ID3D11DepthStencilState> m_depthStencilState;
-    Microsoft::WRL::ComPtr<ID3D11DepthStencilState> m_depthStencilDisabledState;
-    Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_rasterizerStateCull;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> m_lightConstantBuffer;
-    bool m_backfaceCullingEnabled = false;
-    TextureFilter m_textureFilterMode = TEXTURE_FILTER_BILINEAR;
-    int m_textureWrapMode = TEXTURE_WRAP_REPEAT;
-};
+        void SetAmbient(const float aValues[3])
+        {
+            m_aAmbientColor[0] = aValues[0];
+            m_aAmbientColor[1] = aValues[1];
+            m_aAmbientColor[2] = aValues[2];
+            m_aAmbientColor[3] = 1.0f;
+        }
+    };
 
-using D3D11PipelineState = D3D11Pipeline;
-} // namespace qci
+    class D3D11Pipeline
+    {
+    public:
+        void Initialize(ID3D11Device* pDevice, D3D11ShaderCompiler& compiler, D3D11Resources& resources);
+        void Shutdown();
+        void UpdateLights(ID3D11DeviceContext* pContext, const D3D11LightConstantData& lights);
+        void Bind3D(ID3D11DeviceContext* pContext) const;
+        void BindTexture3D(ID3D11DeviceContext* pContext, ID3D11ShaderResourceView* pShaderResource,
+                           ID3D11ShaderResourceView* pNormalResource) const;
+        void BindBatch(ID3D11DeviceContext* pContext, ID3D11Buffer* pVertexBuffer,
+                       ID3D11Buffer* pIndexBuffer) const;
+        void SetBackfaceCulling(bool enabled)
+        {
+            m_BackfaceCullingEnabled = enabled;
+        }
+        bool BackfaceCulling() const
+        {
+            return m_BackfaceCullingEnabled;
+        }
+        void SetTextureFilterMode(TextureFilter mode);
+        void SetTextureWrapMode(int wrap);
+        TextureFilter GetTextureFilterMode() const
+        {
+            return m_TextureFilterMode;
+        }
+        int GetTextureWrapMode() const
+        {
+            return m_TextureWrapMode;
+        }
+        ID3D11Buffer* VertexBuffer() const
+        {
+            return m_pVertexBuffer;
+        }
+        ID3D11Buffer* VertexBuffer3D() const
+        {
+            return m_pVertexBuffer3D;
+        }
+        ID3D11VertexShader* VertexShader3D() const
+        {
+            return m_VertexShader3D.Get();
+        }
+        ID3D11PixelShader* PixelShader3D() const
+        {
+            return m_PixelShader3D.Get();
+        }
+        ID3D11InputLayout* InputLayout3D() const
+        {
+            return m_InputLayout3D.Get();
+        }
+        ID3D11VertexShader* TexturedVertexShader3D() const
+        {
+            return m_TexturedVertexShader3D.Get();
+        }
+        ID3D11PixelShader* TexturedPixelShader3D() const
+        {
+            return m_TexturedPixelShader3D.Get();
+        }
+        ID3D11InputLayout* TexturedInputLayout3D() const
+        {
+            return m_TexturedInputLayout3D.Get();
+        }
+        ID3D11RasterizerState* Rasterizer() const
+        {
+            return m_RasterizerState.Get();
+        }
+        ID3D11RasterizerState* RasterizerCull() const
+        {
+            return m_RasterizerStateCull.Get();
+        }
+        ID3D11DepthStencilState* DepthStencilState() const
+        {
+            return m_DepthStencilState.Get();
+        }
+        ID3D11Buffer* const* LightConstantBuffer() const
+        {
+            return m_LightConstantBuffer.GetAddressOf();
+        }
+        ID3D11BlendState* Blend() const
+        {
+            return m_BlendState.Get();
+        }
+        ID3D11SamplerState* Sampler() const
+        {
+            return m_TextureSampler.Get();
+        }
+        ID3D11DepthStencilState* DepthStencilDisabledState() const
+        {
+            return m_DepthStencilDisabledState.Get();
+        }
+
+    private:
+        void CreateSamplerState(TextureFilter mode);
+        ID3D11Device* m_pDevice = nullptr;
+        ID3D11Buffer* m_pVertexBuffer = nullptr;
+        ID3D11Buffer* m_pVertexBuffer3D = nullptr;
+        Microsoft::WRL::ComPtr<ID3D11VertexShader> m_TexturedVertexShader;
+        Microsoft::WRL::ComPtr<ID3D11PixelShader> m_TexturedPixelShader;
+        Microsoft::WRL::ComPtr<ID3D11InputLayout> m_TexturedInputLayout;
+        Microsoft::WRL::ComPtr<ID3D11VertexShader> m_TexturedVertexShader3D;
+        Microsoft::WRL::ComPtr<ID3D11PixelShader> m_TexturedPixelShader3D;
+        Microsoft::WRL::ComPtr<ID3D11InputLayout> m_TexturedInputLayout3D;
+        Microsoft::WRL::ComPtr<ID3D11SamplerState> m_TextureSampler;
+        Microsoft::WRL::ComPtr<ID3D11BlendState> m_BlendState;
+        Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_RasterizerState;
+        Microsoft::WRL::ComPtr<ID3D11VertexShader> m_VertexShader3D;
+        Microsoft::WRL::ComPtr<ID3D11PixelShader> m_PixelShader3D;
+        Microsoft::WRL::ComPtr<ID3D11InputLayout> m_InputLayout3D;
+        Microsoft::WRL::ComPtr<ID3D11DepthStencilState> m_DepthStencilState;
+        Microsoft::WRL::ComPtr<ID3D11DepthStencilState> m_DepthStencilDisabledState;
+        Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_RasterizerStateCull;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> m_LightConstantBuffer;
+        bool m_BackfaceCullingEnabled = false;
+        TextureFilter m_TextureFilterMode = TEXTURE_FILTER_BILINEAR;
+        int m_TextureWrapMode = TEXTURE_WRAP_REPEAT;
+    };
+
+    using D3D11PipelineState = D3D11Pipeline;
+} // qci
 #endif
 #endif // __QUARK_D3D11_PIPELINE__

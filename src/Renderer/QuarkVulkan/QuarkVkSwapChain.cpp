@@ -4,323 +4,372 @@
 
 #include <array>
 #include <stdexcept>
-namespace qci {
-void QuarkVkSwapChain::Initialize(VkDevice device,
-                                 VkPhysicalDevice physicalDevice,
-                                 VkSurfaceKHR surface,
-                                 int width,
-                                 int height,
-                                 const VkSwapChainSupportDetails& details,
-                                 const VkQueueFamilyIndices& indices,
-                                 const VkSurfaceFormatKHR& surfaceFormat,
-                                 const VkPresentModeKHR& presentMode) {
-    (void)physicalDevice;
 
-    uint32_t imageCount = details.capabilities.minImageCount + 1;
-    if (details.capabilities.maxImageCount > 0 && imageCount > details.capabilities.maxImageCount) {
-        imageCount = details.capabilities.maxImageCount;
+namespace qci
+{
+    void QuarkVkSwapChain::Initialize(VkDevice device,
+                                      VkPhysicalDevice physicalDevice,
+                                      VkSurfaceKHR surface,
+                                      int width,
+                                      int height,
+                                      const VkSwapChainSupportDetails& details,
+                                      const VkQueueFamilyIndices& indices,
+                                      const VkSurfaceFormatKHR& surfaceFormat,
+                                      const VkPresentModeKHR& presentMode)
+    {
+        (void)physicalDevice;
+
+        uint32_t imageCount = details.m_Capabilities.minImageCount + 1;
+        if (details.m_Capabilities.maxImageCount > 0 && imageCount > details.m_Capabilities.maxImageCount)
+        {
+            imageCount = details.m_Capabilities.maxImageCount;
+        }
+        m_MinImageCount = details.m_Capabilities.minImageCount;
+
+        VkExtent2D extent =
+            {
+                static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+        if (details.m_Capabilities.currentExtent.width != UINT32_MAX)
+        {
+            extent = details.m_Capabilities.currentExtent;
+        }
+
+        VkSwapchainCreateInfoKHR createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+        createInfo.surface = surface;
+        createInfo.minImageCount = imageCount;
+        createInfo.imageFormat = surfaceFormat.format;
+        createInfo.imageColorSpace = surfaceFormat.colorSpace;
+        createInfo.imageExtent = extent;
+        createInfo.imageArrayLayers = 1;
+        createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+        std::array<uint32_t, 2> aQueueFamilyIndices =
+            {
+                indices.m_GraphicsFamily.value(),
+                indices.m_PresentFamily.value()};
+
+        if (indices.m_GraphicsFamily != indices.m_PresentFamily)
+        {
+            createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+            createInfo.queueFamilyIndexCount = static_cast<uint32_t>(aQueueFamilyIndices.size());
+            createInfo.pQueueFamilyIndices = aQueueFamilyIndices.data();
+        }
+        else
+        {
+            createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            createInfo.queueFamilyIndexCount = 0;
+            createInfo.pQueueFamilyIndices = nullptr;
+        }
+
+        createInfo.preTransform = details.m_Capabilities.currentTransform;
+        createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        createInfo.presentMode = presentMode;
+        createInfo.clipped = VK_TRUE;
+        createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+        if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &m_SwapChain) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create Vulkan swapchain.");
+        }
+
+        vkGetSwapchainImagesKHR(device, m_SwapChain, &imageCount, nullptr);
+        m_vImages.resize(imageCount);
+        vkGetSwapchainImagesKHR(device, m_SwapChain, &imageCount, m_vImages.data());
+
+        m_ImageFormat = surfaceFormat.format;
+        m_Extent = extent;
+
+        m_vImageViews.resize(m_vImages.size());
+        for (size_t i = 0; i < m_vImages.size(); ++i)
+        {
+            VkImageViewCreateInfo viewInfo{};
+            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            viewInfo.image = m_vImages[i];
+            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            viewInfo.format = m_ImageFormat;
+            viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+            viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            viewInfo.subresourceRange.baseMipLevel = 0;
+            viewInfo.subresourceRange.levelCount = 1;
+            viewInfo.subresourceRange.baseArrayLayer = 0;
+            viewInfo.subresourceRange.layerCount = 1;
+
+            if (vkCreateImageView(device, &viewInfo, nullptr, &m_vImageViews[i]) != VK_SUCCESS)
+            {
+                throw std::runtime_error("Failed to create Vulkan swapchain image view.");
+            }
+        }
     }
-    m_minImageCount = details.capabilities.minImageCount;
 
-    VkExtent2D extent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
-    if (details.capabilities.currentExtent.width != UINT32_MAX) {
-        extent = details.capabilities.currentExtent;
+    void QuarkVkSwapChain::Recreate(VkDevice device,
+                                    VkPhysicalDevice physicalDevice,
+                                    VkSurfaceKHR surface,
+                                    int width,
+                                    int height,
+                                    const VkSwapChainSupportDetails& details,
+                                    const VkQueueFamilyIndices& indices,
+                                    const VkSurfaceFormatKHR& surfaceFormat,
+                                    const VkPresentModeKHR& presentMode)
+    {
+        (void)physicalDevice;
+
+        Shutdown(device);
+        Initialize(device, physicalDevice, surface, width, height, details, indices, surfaceFormat, presentMode);
     }
 
-    VkSwapchainCreateInfoKHR createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface = surface;
-    createInfo.minImageCount = imageCount;
-    createInfo.imageFormat = surfaceFormat.format;
-    createInfo.imageColorSpace = surfaceFormat.colorSpace;
-    createInfo.imageExtent = extent;
-    createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    void QuarkVkSwapChain::CreateAttachmentResources(VkDevice device, QuarkVkGpuAllocator& allocator,
+                                                     VkFormat depthFormat, VkSampleCountFlagBits samples)
+    {
+        DestroyAttachmentResources(device);
 
-    std::array<uint32_t, 2> queueFamilyIndices = {
-        indices.graphicsFamily.value(),
-        indices.presentFamily.value()
-    };
+        m_pAllocator = &allocator;
 
-    if (indices.graphicsFamily != indices.presentFamily) {
-        createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        createInfo.queueFamilyIndexCount = static_cast<uint32_t>(queueFamilyIndices.size());
-        createInfo.pQueueFamilyIndices = queueFamilyIndices.data();
-    } else {
-        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        createInfo.queueFamilyIndexCount = 0;
-        createInfo.pQueueFamilyIndices = nullptr;
+        if (samples > VK_SAMPLE_COUNT_1_BIT)
+        {
+            CreateMSAAColorResources(device, allocator, m_ImageFormat, samples);
+        }
+
+        m_vDepthImages.assign(m_vImages.size(), VK_NULL_HANDLE);
+        m_vDepthMemories.assign(m_vImages.size(), VK_NULL_HANDLE);
+        m_vDepthAllocations.assign(m_vImages.size(), VK_NULL_HANDLE);
+        m_vDepthImageViews.assign(m_vImages.size(), VK_NULL_HANDLE);
+
+        for (size_t i = 0; i < m_vImages.size(); ++i)
+        {
+            if (!CreateDepthResources(device, allocator, depthFormat, samples, static_cast<uint32_t>(i)))
+            {
+                DestroyAttachmentResources(device);
+                throw std::runtime_error("Failed to create Vulkan swapchain depth resources.");
+            }
+        }
     }
 
-    createInfo.preTransform = details.capabilities.currentTransform;
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    createInfo.presentMode = presentMode;
-    createInfo.clipped = VK_TRUE;
-    createInfo.oldSwapchain = VK_NULL_HANDLE;
+    void QuarkVkSwapChain::DestroyAttachmentResources(VkDevice device)
+    {
+        if (m_pAllocator == nullptr)
+        {
+            return;
+        }
 
-    if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &m_swapChain) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan swapchain.");
+        for (size_t i = 0; i < m_vDepthImageViews.size(); ++i)
+        {
+            DestroyDepthResources(device, *m_pAllocator, static_cast<uint32_t>(i));
+        }
+        m_vDepthImageViews.clear();
+        m_vDepthImages.clear();
+        m_vDepthMemories.clear();
+        m_vDepthAllocations.clear();
+
+        DestroyMSAAColorResources(device, *m_pAllocator);
+
+        m_pAllocator = nullptr;
     }
 
-    vkGetSwapchainImagesKHR(device, m_swapChain, &imageCount, nullptr);
-    m_images.resize(imageCount);
-    vkGetSwapchainImagesKHR(device, m_swapChain, &imageCount, m_images.data());
+    bool QuarkVkSwapChain::CreateDepthResources(VkDevice device, QuarkVkGpuAllocator& allocator,
+                                                VkFormat depthFormat, VkSampleCountFlagBits samples,
+                                                uint32_t index)
+    {
+        m_vDepthImages[index] = VK_NULL_HANDLE;
+        m_vDepthMemories[index] = VK_NULL_HANDLE;
+        m_vDepthAllocations[index] = VK_NULL_HANDLE;
+        m_vDepthImageViews[index] = VK_NULL_HANDLE;
 
-    m_imageFormat = surfaceFormat.format;
-    m_extent = extent;
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.extent.width = m_Extent.width;
+        imageInfo.extent.height = m_Extent.height;
+        imageInfo.extent.depth = 1;
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.format = depthFormat;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        imageInfo.samples = samples;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    m_imageViews.resize(m_images.size());
-    for (size_t i = 0; i < m_images.size(); ++i) {
+        VmaAllocation allocation = VK_NULL_HANDLE;
+        if (!allocator.CreateImage(imageInfo,
+                                   VMA_MEMORY_USAGE_AUTO,
+                                   m_vDepthImages[index],
+                                   allocation,
+                                   VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT))
+        {
+            return false;
+        }
+
+        VmaAllocationInfo allocInfo{};
+        vmaGetAllocationInfo(allocator.GetAllocator(), allocation, &allocInfo);
+        m_vDepthMemories[index] = allocInfo.deviceMemory;
+        m_vDepthAllocations[index] = allocation;
+
         VkImageViewCreateInfo viewInfo{};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = m_images[i];
+        viewInfo.image = m_vDepthImages[index];
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = m_imageFormat;
-        viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        viewInfo.format = depthFormat;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        if (HasStencilComponent(depthFormat))
+        {
+            viewInfo.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = 1;
+
+        if (vkCreateImageView(device, &viewInfo, nullptr, &m_vDepthImageViews[index]) != VK_SUCCESS)
+        {
+            allocator.DestroyImage(m_vDepthImages[index], m_vDepthAllocations[index]);
+            m_vDepthImages[index] = VK_NULL_HANDLE;
+            m_vDepthMemories[index] = VK_NULL_HANDLE;
+            m_vDepthAllocations[index] = VK_NULL_HANDLE;
+            return false;
+        }
+
+        return true;
+    }
+
+    void QuarkVkSwapChain::DestroyDepthResources(VkDevice device, QuarkVkGpuAllocator& allocator, uint32_t index)
+    {
+        if (m_vDepthImageViews.size() > index && m_vDepthImageViews[index] != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(device, m_vDepthImageViews[index], nullptr);
+            m_vDepthImageViews[index] = VK_NULL_HANDLE;
+        }
+        if (m_vDepthImages.size() > index && m_vDepthImages[index] != VK_NULL_HANDLE)
+        {
+            if (m_vDepthAllocations.size() > index && m_vDepthAllocations[index] != VK_NULL_HANDLE)
+            {
+                allocator.DestroyImage(m_vDepthImages[index], m_vDepthAllocations[index]);
+                m_vDepthAllocations[index] = VK_NULL_HANDLE;
+            }
+            else
+            {
+                vkDestroyImage(device, m_vDepthImages[index], nullptr);
+            }
+            m_vDepthImages[index] = VK_NULL_HANDLE;
+        }
+        if (m_vDepthMemories.size() > index)
+        {
+            m_vDepthMemories[index] = VK_NULL_HANDLE;
+        }
+    }
+
+    void QuarkVkSwapChain::CreateMSAAColorResources(VkDevice device, QuarkVkGpuAllocator& allocator,
+                                                    VkFormat colorFormat, VkSampleCountFlagBits samples)
+    {
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.extent.width = m_Extent.width;
+        imageInfo.extent.height = m_Extent.height;
+        imageInfo.extent.depth = 1;
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.format = colorFormat;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageInfo.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        imageInfo.samples = samples;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        m_MsaaColorAllocation = VK_NULL_HANDLE;
+        if (!allocator.CreateImage(imageInfo,
+                                   VMA_MEMORY_USAGE_AUTO,
+                                   m_MsaaColorImage,
+                                   m_MsaaColorAllocation,
+                                   VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT))
+        {
+            throw std::runtime_error("Failed to create MSAA color image.");
+        }
+
+        VmaAllocationInfo allocInfo{};
+        vmaGetAllocationInfo(allocator.GetAllocator(), m_MsaaColorAllocation, &allocInfo);
+        m_MsaaColorMemory = allocInfo.deviceMemory;
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = m_MsaaColorImage;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = colorFormat;
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         viewInfo.subresourceRange.baseMipLevel = 0;
         viewInfo.subresourceRange.levelCount = 1;
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = 1;
 
-        if (vkCreateImageView(device, &viewInfo, nullptr, &m_imageViews[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan swapchain image view.");
+        if (vkCreateImageView(device, &viewInfo, nullptr, &m_MsaaColorImageView) != VK_SUCCESS)
+        {
+            if (m_MsaaColorAllocation != VK_NULL_HANDLE)
+            {
+                allocator.DestroyImage(m_MsaaColorImage, m_MsaaColorAllocation);
+                m_MsaaColorAllocation = VK_NULL_HANDLE;
+            }
+            else if (m_MsaaColorImage != VK_NULL_HANDLE)
+            {
+                vkDestroyImage(device, m_MsaaColorImage, nullptr);
+            }
+            m_MsaaColorMemory = VK_NULL_HANDLE;
+            m_MsaaColorImage = VK_NULL_HANDLE;
+            throw std::runtime_error("Failed to create MSAA color image view.");
         }
     }
-}
 
-void QuarkVkSwapChain::Recreate(VkDevice device,
-                                VkPhysicalDevice physicalDevice,
-                                VkSurfaceKHR surface,
-                                int width,
-                                int height,
-                                const VkSwapChainSupportDetails& details,
-                                const VkQueueFamilyIndices& indices,
-                                const VkSurfaceFormatKHR& surfaceFormat,
-                                const VkPresentModeKHR& presentMode) {
-    (void)physicalDevice;
-
-    Shutdown(device);
-    Initialize(device, physicalDevice, surface, width, height, details, indices, surfaceFormat, presentMode);
-}
-
-void QuarkVkSwapChain::CreateAttachmentResources(VkDevice device, QuarkVkGpuAllocator& allocator,
-                                                 VkFormat depthFormat, VkSampleCountFlagBits samples) {
-    DestroyAttachmentResources(device);
-
-    m_allocator = &allocator;
-
-    if (samples > VK_SAMPLE_COUNT_1_BIT) {
-        CreateMSAAColorResources(device, allocator, m_imageFormat, samples);
-    }
-
-    m_depthImages.assign(m_images.size(), VK_NULL_HANDLE);
-    m_depthMemories.assign(m_images.size(), VK_NULL_HANDLE);
-    m_depthAllocations.assign(m_images.size(), VK_NULL_HANDLE);
-    m_depthImageViews.assign(m_images.size(), VK_NULL_HANDLE);
-
-    for (size_t i = 0; i < m_images.size(); ++i) {
-        if (!CreateDepthResources(device, allocator, depthFormat, samples, static_cast<uint32_t>(i))) {
-            DestroyAttachmentResources(device);
-            throw std::runtime_error("Failed to create Vulkan swapchain depth resources.");
+    void QuarkVkSwapChain::DestroyMSAAColorResources(VkDevice device, QuarkVkGpuAllocator& allocator)
+    {
+        if (m_MsaaColorImageView != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(device, m_MsaaColorImageView, nullptr);
+            m_MsaaColorImageView = VK_NULL_HANDLE;
         }
-    }
-}
-
-void QuarkVkSwapChain::DestroyAttachmentResources(VkDevice device) {
-    if (m_allocator == nullptr) {
-        return;
-    }
-
-    for (size_t i = 0; i < m_depthImageViews.size(); ++i) {
-        DestroyDepthResources(device, *m_allocator, static_cast<uint32_t>(i));
-    }
-    m_depthImageViews.clear();
-    m_depthImages.clear();
-    m_depthMemories.clear();
-    m_depthAllocations.clear();
-
-    DestroyMSAAColorResources(device, *m_allocator);
-
-    m_allocator = nullptr;
-}
-
-bool QuarkVkSwapChain::CreateDepthResources(VkDevice device, QuarkVkGpuAllocator& allocator,
-                                            VkFormat depthFormat, VkSampleCountFlagBits samples,
-                                            uint32_t index) {
-    m_depthImages[index] = VK_NULL_HANDLE;
-    m_depthMemories[index] = VK_NULL_HANDLE;
-    m_depthAllocations[index] = VK_NULL_HANDLE;
-    m_depthImageViews[index] = VK_NULL_HANDLE;
-
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width  = m_extent.width;
-    imageInfo.extent.height = m_extent.height;
-    imageInfo.extent.depth  = 1;
-    imageInfo.mipLevels     = 1;
-    imageInfo.arrayLayers   = 1;
-    imageInfo.format        = depthFormat;
-    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    imageInfo.samples       = samples;
-    imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocation allocation = VK_NULL_HANDLE;
-    if (!allocator.CreateImage(imageInfo,
-                               VMA_MEMORY_USAGE_AUTO,
-                               m_depthImages[index],
-                               allocation,
-                               VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)) {
-        return false;
-    }
-
-    VmaAllocationInfo allocInfo{};
-    vmaGetAllocationInfo(allocator.GetAllocator(), allocation, &allocInfo);
-    m_depthMemories[index] = allocInfo.deviceMemory;
-    m_depthAllocations[index] = allocation;
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image                           = m_depthImages[index];
-    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format                          = depthFormat;
-    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
-    if (HasStencilComponent(depthFormat)) {
-        viewInfo.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-    }
-    viewInfo.subresourceRange.baseMipLevel   = 0;
-    viewInfo.subresourceRange.levelCount     = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount     = 1;
-
-    if (vkCreateImageView(device, &viewInfo, nullptr, &m_depthImageViews[index]) != VK_SUCCESS) {
-        allocator.DestroyImage(m_depthImages[index], m_depthAllocations[index]);
-        m_depthImages[index] = VK_NULL_HANDLE;
-        m_depthMemories[index] = VK_NULL_HANDLE;
-        m_depthAllocations[index] = VK_NULL_HANDLE;
-        return false;
-    }
-
-    return true;
-}
-
-void QuarkVkSwapChain::DestroyDepthResources(VkDevice device, QuarkVkGpuAllocator& allocator, uint32_t index) {
-    if (m_depthImageViews.size() > index && m_depthImageViews[index] != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, m_depthImageViews[index], nullptr);
-        m_depthImageViews[index] = VK_NULL_HANDLE;
-    }
-    if (m_depthImages.size() > index && m_depthImages[index] != VK_NULL_HANDLE) {
-        if (m_depthAllocations.size() > index && m_depthAllocations[index] != VK_NULL_HANDLE) {
-            allocator.DestroyImage(m_depthImages[index], m_depthAllocations[index]);
-            m_depthAllocations[index] = VK_NULL_HANDLE;
-        } else {
-            vkDestroyImage(device, m_depthImages[index], nullptr);
+        if (m_MsaaColorImage != VK_NULL_HANDLE)
+        {
+            if (m_MsaaColorAllocation != VK_NULL_HANDLE)
+            {
+                allocator.DestroyImage(m_MsaaColorImage, m_MsaaColorAllocation);
+            }
+            else
+            {
+                vkDestroyImage(device, m_MsaaColorImage, nullptr);
+            }
+            m_MsaaColorImage = VK_NULL_HANDLE;
         }
-        m_depthImages[index] = VK_NULL_HANDLE;
-    }
-    if (m_depthMemories.size() > index) {
-        m_depthMemories[index] = VK_NULL_HANDLE;
-    }
-}
-
-void QuarkVkSwapChain::CreateMSAAColorResources(VkDevice device, QuarkVkGpuAllocator& allocator,
-                                                VkFormat colorFormat, VkSampleCountFlagBits samples) {
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width  = m_extent.width;
-    imageInfo.extent.height = m_extent.height;
-    imageInfo.extent.depth  = 1;
-    imageInfo.mipLevels     = 1;
-    imageInfo.arrayLayers   = 1;
-    imageInfo.format        = colorFormat;
-    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage         = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    imageInfo.samples       = samples;
-    imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-
-    m_msaaColorAllocation = VK_NULL_HANDLE;
-    if (!allocator.CreateImage(imageInfo,
-                               VMA_MEMORY_USAGE_AUTO,
-                               m_msaaColorImage,
-                               m_msaaColorAllocation,
-                               VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT)) {
-        throw std::runtime_error("Failed to create MSAA color image.");
-    }
-
-    VmaAllocationInfo allocInfo{};
-    vmaGetAllocationInfo(allocator.GetAllocator(), m_msaaColorAllocation, &allocInfo);
-    m_msaaColorMemory = allocInfo.deviceMemory;
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image                           = m_msaaColorImage;
-    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format                          = colorFormat;
-    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel   = 0;
-    viewInfo.subresourceRange.levelCount     = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount     = 1;
-
-    if (vkCreateImageView(device, &viewInfo, nullptr, &m_msaaColorImageView) != VK_SUCCESS) {
-        if (m_msaaColorAllocation != VK_NULL_HANDLE) {
-            allocator.DestroyImage(m_msaaColorImage, m_msaaColorAllocation);
-            m_msaaColorAllocation = VK_NULL_HANDLE;
-        } else if (m_msaaColorImage != VK_NULL_HANDLE) {
-            vkDestroyImage(device, m_msaaColorImage, nullptr);
+        if (m_MsaaColorMemory != VK_NULL_HANDLE)
+        {
+            m_MsaaColorMemory = VK_NULL_HANDLE;
         }
-        m_msaaColorMemory = VK_NULL_HANDLE;
-        m_msaaColorImage = VK_NULL_HANDLE;
-        throw std::runtime_error("Failed to create MSAA color image view.");
+        m_MsaaColorAllocation = VK_NULL_HANDLE;
     }
-}
 
-void QuarkVkSwapChain::DestroyMSAAColorResources(VkDevice device, QuarkVkGpuAllocator& allocator) {
-    if (m_msaaColorImageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, m_msaaColorImageView, nullptr);
-        m_msaaColorImageView = VK_NULL_HANDLE;
-    }
-    if (m_msaaColorImage != VK_NULL_HANDLE) {
-        if (m_msaaColorAllocation != VK_NULL_HANDLE) {
-            allocator.DestroyImage(m_msaaColorImage, m_msaaColorAllocation);
-        } else {
-            vkDestroyImage(device, m_msaaColorImage, nullptr);
+    void QuarkVkSwapChain::Shutdown(VkDevice device)
+    {
+        DestroyAttachmentResources(device);
+
+        for (auto& imageView : m_vImageViews)
+        {
+            if (imageView != VK_NULL_HANDLE)
+            {
+                vkDestroyImageView(device, imageView, nullptr);
+                imageView = VK_NULL_HANDLE;
+            }
         }
-        m_msaaColorImage = VK_NULL_HANDLE;
-    }
-    if (m_msaaColorMemory != VK_NULL_HANDLE) {
-        m_msaaColorMemory = VK_NULL_HANDLE;
-    }
-    m_msaaColorAllocation = VK_NULL_HANDLE;
-}
+        m_vImageViews.clear();
 
-void QuarkVkSwapChain::Shutdown(VkDevice device) {
-    DestroyAttachmentResources(device);
-
-    for (auto& imageView : m_imageViews) {
-        if (imageView != VK_NULL_HANDLE) {
-            vkDestroyImageView(device, imageView, nullptr);
-            imageView = VK_NULL_HANDLE;
+        if (m_SwapChain != VK_NULL_HANDLE)
+        {
+            vkDestroySwapchainKHR(device, m_SwapChain, nullptr);
+            m_SwapChain = VK_NULL_HANDLE;
         }
-    }
-    m_imageViews.clear();
 
-    if (m_swapChain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(device, m_swapChain, nullptr);
-        m_swapChain = VK_NULL_HANDLE;
+        m_vImages.clear();
+        m_ImageFormat = VK_FORMAT_UNDEFINED;
+        m_Extent = {0, 0};
+        m_MinImageCount = 0;
     }
-
-    m_images.clear();
-    m_imageFormat = VK_FORMAT_UNDEFINED;
-    m_extent = {0, 0};
-    m_minImageCount = 0;
-}
-} // namespace qci
+} // qci

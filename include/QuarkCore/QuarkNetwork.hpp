@@ -19,7 +19,8 @@
 
 struct NetworkRequestHandle;
 
-enum NetworkRequestState {
+enum NetworkRequestState
+{
     NETWORK_REQUEST_PENDING = 0,
     NETWORK_REQUEST_RUNNING,
     NETWORK_REQUEST_COMPLETED,
@@ -27,23 +28,26 @@ enum NetworkRequestState {
     NETWORK_REQUEST_CANCELLED
 };
 
-struct HttpHeader {
+struct HttpHeader
+{
     const char* name;
     const char* value;
 };
 
-struct HttpRequest {
+struct HttpRequest
+{
     const char* url;
     const char* method; // Defaults to GET when null or empty.
     const HttpHeader* headers;
     int headerCount;
     const unsigned char* body;
     size_t bodySize;
-    unsigned int timeoutMs; // Defaults to 30 seconds when zero.
+    unsigned int timeoutMs;  // Defaults to 30 seconds when zero.
     size_t maxResponseBytes; // Defaults to 16 MiB when zero.
 };
 
-struct HttpResponse {
+struct HttpResponse
+{
     long statusCode;
     const unsigned char* body;
     size_t bodySize;
@@ -60,12 +64,12 @@ struct HttpResponse {
  *
  * @return A request handle, or nullptr if request data could not be copied.
  */
-QCAPI NetworkRequestHandle* SendHttpRequestAsync(const HttpRequest* request);
+QCAPI NetworkRequestHandle* SendHttpRequestAsync(const HttpRequest* pRequest);
 
 /**
  * @brief Get the current state of a request.
  */
-QCAPI NetworkRequestState GetHttpRequestState(const NetworkRequestHandle* request);
+QCAPI NetworkRequestState GetHttpRequestState(const NetworkRequestHandle* pRequest);
 
 /**
  * @brief Get the transport error after a request fails.
@@ -73,7 +77,7 @@ QCAPI NetworkRequestState GetHttpRequestState(const NetworkRequestHandle* reques
  * The returned string is owned by the request and remains valid until it is
  * unloaded. Returns nullptr while running or after a successful response.
  */
-QCAPI const char* GetHttpRequestError(const NetworkRequestHandle* request);
+QCAPI const char* GetHttpRequestError(const NetworkRequestHandle* pRequest);
 
 /**
  * @brief Read a completed response.
@@ -82,16 +86,16 @@ QCAPI const char* GetHttpRequestError(const NetworkRequestHandle* request);
  * until UnloadHttpRequest() is called.
  * @return true if the request completed and response was written.
  */
-QCAPI bool TryGetHttpResponse(const NetworkRequestHandle* request, HttpResponse* response);
+QCAPI bool TryGetHttpResponse(const NetworkRequestHandle* pRequest, HttpResponse* pResponse);
 
 /**
  * @brief Request cancellation. Cancellation is best-effort.
  */
-QCAPI void CancelHttpRequest(NetworkRequestHandle* request);
+QCAPI void CancelHttpRequest(NetworkRequestHandle* pRequest);
 
 /**
  * @brief Cancel if necessary, wait for completion, and release a request.
  */
-QCAPI void UnloadHttpRequest(NetworkRequestHandle* request);
+QCAPI void UnloadHttpRequest(NetworkRequestHandle* pRequest);
 
 #endif // __QUARK_NETWORK__

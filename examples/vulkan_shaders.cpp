@@ -1,9 +1,9 @@
 #include "QuarkCore/QuarkCore.hpp"
 #include <cmath>
 
-namespace {
-
-constexpr const char* kVkSimpleVert = R"(
+namespace
+{
+    constexpr const char* VK_SIMPLE_VERT = R"(
 #version 450 core
 layout(location = 0) in vec2 aPosition;
 layout(location = 0) out vec2 vPos;
@@ -21,7 +21,7 @@ void main() {
 }
 )";
 
-constexpr const char* kVkSimpleFrag = R"(
+    constexpr const char* VK_SIMPLE_FRAG = R"(
 #version 450 core
 layout(location = 0) in vec2 vPos;
 layout(location = 0) out vec4 fragColor;
@@ -38,16 +38,17 @@ void main() {
     fragColor = vec4(color, 1.0);
 }
 )";
+} // anonymous
 
-} // namespace
-
-int main() {
+int main()
+{
     InitWindow(1280, 720, "QuarkCore Vulkan Shader Example", RendererType::Vulkan);
     SetTargetFPS(60);
 
-    Shader shader = LoadShaderFromMemory(kVkSimpleVert, kVkSimpleFrag);
+    Shader shader = LoadShaderFromMemory(VK_SIMPLE_VERT, VK_SIMPLE_FRAG);
 
-    while (!WindowShouldClose()) {
+    while (!WindowShouldClose())
+    {
         BeginDrawing();
         ClearBackground(Color{20, 20, 30, 255});
 

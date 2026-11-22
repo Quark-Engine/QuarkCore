@@ -78,88 +78,105 @@ void main() {
 }
 )";
 
-int main() {
+int main()
+{
     InitWindow(1280, 720, "Shader Effects Demo", RendererType::OpenGL);
     SetTargetFPS(60);
 
     Texture2D checker = GenCheckerTexture(
         512, 512, 32,
         Color{220, 80, 80, 255},
-        Color{80, 80, 220, 255}
-    );
+        Color{80, 80, 220, 255});
 
-    Shader shaderChromatic = LoadShaderFromMemory(kVertexShaderSource, CHROMATIC_FRAG);
-    Shader shaderPixelate  = LoadShaderFromMemory(kVertexShaderSource, PIXELATE_FRAG);
-    Shader shaderVignette  = LoadShaderFromMemory(kVertexShaderSource, VIGNETTE_FRAG);
-    Shader shaderScanlines = LoadShaderFromMemory(kVertexShaderSource, SCANLINES_FRAG);
+    Shader shaderChromatic = LoadShaderFromMemory(VERTEX_SHADER_SOURCE, CHROMATIC_FRAG);
+    Shader shaderPixelate = LoadShaderFromMemory(VERTEX_SHADER_SOURCE, PIXELATE_FRAG);
+    Shader shaderVignette = LoadShaderFromMemory(VERTEX_SHADER_SOURCE, VIGNETTE_FRAG);
+    Shader shaderScanlines = LoadShaderFromMemory(VERTEX_SHADER_SOURCE, SCANLINES_FRAG);
 
-    int locStrength   = GetShaderLocation(shaderChromatic, "uStrength");
-    int locPixelSize  = GetShaderLocation(shaderPixelate,  "uPixelSize");
-    int locPixelScreen= GetShaderLocation(shaderPixelate,  "uScreenSize");
-    int locVigRadius  = GetShaderLocation(shaderVignette,  "uRadius");
-    int locVigSoft    = GetShaderLocation(shaderVignette,  "uSoftness");
+    int locStrength = GetShaderLocation(shaderChromatic, "uStrength");
+    int locPixelSize = GetShaderLocation(shaderPixelate, "uPixelSize");
+    int locPixelScreen = GetShaderLocation(shaderPixelate, "uScreenSize");
+    int locVigRadius = GetShaderLocation(shaderVignette, "uRadius");
+    int locVigSoft = GetShaderLocation(shaderVignette, "uSoftness");
     int locScanScreen = GetShaderLocation(shaderScanlines, "uScreenSize");
     int locScanIntens = GetShaderLocation(shaderScanlines, "uIntensity");
 
     float chromaStrength = 0.005f;
-    float pixelSize      = 8.0f;
-    float vigRadius      = 0.6f;
-    float scanIntensity  = 0.5f;
+    float pixelSize = 8.0f;
+    float vigRadius = 0.6f;
+    float scanIntensity = 0.5f;
 
     int activeShader = 0; // 0=none 1=chromatic 2=pixelate 3=vignette 4=scanlines
 
-    const char* names[] = { "none", "chromatic aberration", "pixelate", "vignette", "scanlines" };
+    const char* names[] = {"none", "chromatic aberration", "pixelate", "vignette", "scanlines"};
 
-    while (!WindowShouldClose()) {
-        if (IsKeyPressed(KEY_ONE)) activeShader = 0;
-        else if (IsKeyPressed(KEY_TWO)) activeShader = 1;
-        else if (IsKeyPressed(KEY_THREE)) activeShader = 2;
-        else if (IsKeyPressed(KEY_FOUR)) activeShader = 3;
-        else if (IsKeyPressed(KEY_FIVE)) activeShader = 4;
+    while (!WindowShouldClose())
+    {
+        if (IsKeyPressed(KEY_ONE))
+            activeShader = 0;
+        else if (IsKeyPressed(KEY_TWO))
+            activeShader = 1;
+        else if (IsKeyPressed(KEY_THREE))
+            activeShader = 2;
+        else if (IsKeyPressed(KEY_FOUR))
+            activeShader = 3;
+        else if (IsKeyPressed(KEY_FIVE))
+            activeShader = 4;
 
-        if (IsKeyDown(KEY_UP)) {
-            if (activeShader == 1) chromaStrength += 0.001f;
-            if (activeShader == 2) pixelSize      += 0.5f;
-            if (activeShader == 3) vigRadius      += 0.01f;
-            if (activeShader == 4) scanIntensity  += 0.02f;
+        if (IsKeyDown(KEY_UP))
+        {
+            if (activeShader == 1)
+                chromaStrength += 0.001f;
+            if (activeShader == 2)
+                pixelSize += 0.5f;
+            if (activeShader == 3)
+                vigRadius += 0.01f;
+            if (activeShader == 4)
+                scanIntensity += 0.02f;
         }
-        if (IsKeyDown(KEY_DOWN)) {
-            if (activeShader == 1) chromaStrength -= 0.001f;
-            if (activeShader == 2) pixelSize      -= 0.5f;
-            if (activeShader == 3) vigRadius      -= 0.01f;
-            if (activeShader == 4) scanIntensity  -= 0.02f;
+        if (IsKeyDown(KEY_DOWN))
+        {
+            if (activeShader == 1)
+                chromaStrength -= 0.001f;
+            if (activeShader == 2)
+                pixelSize -= 0.5f;
+            if (activeShader == 3)
+                vigRadius -= 0.01f;
+            if (activeShader == 4)
+                scanIntensity -= 0.02f;
         }
 
-        chromaStrength = std::max(0.0f, std::min(0.05f,  chromaStrength));
-        pixelSize      = std::max(1.0f, std::min(64.0f,  pixelSize));
-        vigRadius      = std::max(0.1f, std::min(1.0f,   vigRadius));
-        scanIntensity  = std::max(0.0f, std::min(1.0f,   scanIntensity));
+        chromaStrength = std::max(0.0f, std::min(0.05f, chromaStrength));
+        pixelSize = std::max(1.0f, std::min(64.0f, pixelSize));
+        vigRadius = std::max(0.1f, std::min(1.0f, vigRadius));
+        scanIntensity = std::max(0.0f, std::min(1.0f, scanIntensity));
 
         float sw = (float)GetScreenWidth();
         float sh = (float)GetScreenHeight();
 
-        switch (activeShader) {
-            case 1:
-                BeginShaderMode(shaderChromatic);
-                SetShaderValue(shaderChromatic, locStrength, chromaStrength);
-                break;
-            case 2:
-                BeginShaderMode(shaderPixelate);
-                SetShaderValue(shaderPixelate, locPixelScreen, Vec2{sw, sh});
-                SetShaderValue(shaderPixelate, locPixelSize,   pixelSize);
-                break;
-            case 3:
-                BeginShaderMode(shaderVignette);
-                SetShaderValue(shaderVignette, locVigRadius, vigRadius);
-                SetShaderValue(shaderVignette, locVigSoft,   0.3f);
-                break;
-            case 4:
-                BeginShaderMode(shaderScanlines);
-                SetShaderValue(shaderScanlines, locScanScreen, Vec2{sw, sh});
-                SetShaderValue(shaderScanlines, locScanIntens, scanIntensity);
-                break;
-            default:
-                break;
+        switch (activeShader)
+        {
+        case 1:
+            BeginShaderMode(shaderChromatic);
+            SetShaderValue(shaderChromatic, locStrength, chromaStrength);
+            break;
+        case 2:
+            BeginShaderMode(shaderPixelate);
+            SetShaderValue(shaderPixelate, locPixelScreen, Vec2{sw, sh});
+            SetShaderValue(shaderPixelate, locPixelSize, pixelSize);
+            break;
+        case 3:
+            BeginShaderMode(shaderVignette);
+            SetShaderValue(shaderVignette, locVigRadius, vigRadius);
+            SetShaderValue(shaderVignette, locVigSoft, 0.3f);
+            break;
+        case 4:
+            BeginShaderMode(shaderScanlines);
+            SetShaderValue(shaderScanlines, locScanScreen, Vec2{sw, sh});
+            SetShaderValue(shaderScanlines, locScanIntens, scanIntensity);
+            break;
+        default:
+            break;
         }
 
         BeginDrawing();
@@ -175,22 +192,38 @@ int main() {
         DrawRectangle(10, 10, 420, 130, Color{0, 0, 0, 180});
 
         TraceLog(LogLevel::Info, "HUD",
-            TextFormat("Shader : %s", names[activeShader]));
+                 TextFormat("Shader : %s", names[activeShader]));
         TraceLog(LogLevel::Info, "HUD",
-            TextFormat("Keys   : 1=none  2=chroma  3=pixel  4=vignette  5=scan"));
+                 TextFormat("Keys   : 1=none  2=chroma  3=pixel  4=vignette  5=scan"));
         TraceLog(LogLevel::Info, "HUD",
-            TextFormat("Up/Down: adjust parameter"));
+                 TextFormat("Up/Down: adjust parameter"));
 
         float param = 0.0f;
-        const char* paramName = "";
-        if (activeShader == 1) { param = chromaStrength; paramName = "strength"; }
-        if (activeShader == 2) { param = pixelSize;      paramName = "pixel size"; }
-        if (activeShader == 3) { param = vigRadius;      paramName = "radius"; }
-        if (activeShader == 4) { param = scanIntensity;  paramName = "intensity"; }
+        const char* pParamName = "";
+        if (activeShader == 1)
+        {
+            param = chromaStrength;
+            pParamName = "strength";
+        }
+        if (activeShader == 2)
+        {
+            param = pixelSize;
+            pParamName = "pixel size";
+        }
+        if (activeShader == 3)
+        {
+            param = vigRadius;
+            pParamName = "radius";
+        }
+        if (activeShader == 4)
+        {
+            param = scanIntensity;
+            pParamName = "intensity";
+        }
 
         if (activeShader != 0)
             TraceLog(LogLevel::Info, "HUD",
-                TextFormat("%-12s: %.3f", paramName, param));
+                     TextFormat("%-12s: %.3f", pParamName, param));
 
         EndDrawing();
     }

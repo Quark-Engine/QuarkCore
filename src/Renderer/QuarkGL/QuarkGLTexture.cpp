@@ -5,270 +5,329 @@
 #include <fstream>
 #include <vector>
 #include <cstring>
-namespace qci {
-GLuint QuarkGLTexture::CreateTextureFromRgba(const uint8_t* pixels, int width, int height) {
-    GLuint id = 0;
-    glGenTextures(1, &id);
-    glBindTexture(GL_TEXTURE_2D, id);
 
-    const GLint textureFilter = gTextureFilter == TEXTURE_FILTER_POINT ? GL_NEAREST : GL_LINEAR;
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, textureFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, textureFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+namespace qci
+{
+    GLuint QuarkGLTexture::CreateTextureFromRgba(const uint8_t* pPixels, int width, int height)
+    {
+        GLuint id = 0;
+        glGenTextures(1, &id);
+        glBindTexture(GL_TEXTURE_2D, id);
 
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return id;
-}
+        const GLint textureFilter = g_TextureFilter == TEXTURE_FILTER_POINT ? GL_NEAREST : GL_LINEAR;
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, textureFilter);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, textureFilter);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-void QuarkGLTexture::FlipRowsRgba(void* pixels, int width, int height) {
-    const int rowBytes = width * 4;
-    std::vector<uint8_t> tmp(rowBytes);
-    uint8_t* data = static_cast<uint8_t*>(pixels);
-
-    for (int y = 0; y < height / 2; ++y) {
-        uint8_t* top = data + static_cast<size_t>(y) * rowBytes;
-        uint8_t* bottom = data + static_cast<size_t>(height - 1 - y) * rowBytes;
-        std::memcpy(tmp.data(), top, rowBytes);
-        std::memcpy(top, bottom, rowBytes);
-        std::memcpy(bottom, tmp.data(), rowBytes);
-    }
-}
-
-ITexture QuarkGLTexture::LoadTexture(const char* path) {
-    if (!path) return {};
-
-    std::error_code pathError;
-    std::string cacheKey = std::filesystem::weakly_canonical(path, pathError).string();
-    if (pathError || cacheKey.empty()) {
-        cacheKey = std::filesystem::path(path).lexically_normal().string();
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pPixels);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        return id;
     }
 
-    const auto cached = m_textureCache.find(cacheKey);
-    if (cached != m_textureCache.end()) {
-        cached->second.references++;
-        return cached->second.texture;
+    void QuarkGLTexture::FlipRowsRgba(void* pPixels, int width, int height)
+    {
+        const int rowBytes = width * 4;
+        std::vector<uint8_t> vTmp(rowBytes);
+        uint8_t* pData = static_cast<uint8_t*>(pPixels);
+
+        for (int y = 0; y < height / 2; ++y)
+        {
+            uint8_t* pTop = pData + static_cast<size_t>(y) * rowBytes;
+            uint8_t* pBottom = pData + static_cast<size_t>(height - 1 - y) * rowBytes;
+            std::memcpy(vTmp.data(), pTop, rowBytes);
+            std::memcpy(pTop, pBottom, rowBytes);
+            std::memcpy(pBottom, vTmp.data(), rowBytes);
+        }
     }
 
-    ImageFileData img;
-    ITexture texture{};
-    const bool loaded = LoadImageFile(path, img, 4);
-    if (loaded) {
-        texture.id = CreateTextureFromRgba(img.pixels.data(), img.width, img.height);
-        texture.width = img.width;
-        texture.height = img.height;
-        texture.mipmaps = 1;
-        texture.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-        texture.valid = true;
+    ITexture QuarkGLTexture::LoadTexture(const char* pPath)
+    {
+        if (!pPath)
+        {
+            return {};
+        }
 
-        m_textureCache.emplace(cacheKey, CachedTexture{texture, 1});
-        m_textureCacheKeys.emplace(texture.id, cacheKey);
-    }
-    return texture;
-}
+        std::error_code pathError;
+        std::string cacheKey = std::filesystem::weakly_canonical(pPath, pathError).string();
+        if (pathError || cacheKey.empty())
+        {
+            cacheKey = std::filesystem::path(pPath).lexically_normal().string();
+        }
 
-ITexture QuarkGLTexture::LoadTextureFromImage(const Image& image) {
-    if (!image.data || image.width <= 0 || image.height <= 0 || image.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
-        return {};
-    }
+        const auto cached = m_TextureCache.find(cacheKey);
+        if (cached != m_TextureCache.end())
+        {
+            cached->second.m_References++;
+            return cached->second.m_Texture;
+        }
 
-    ITexture texture{};
-    texture.id = CreateTextureFromRgba(static_cast<const uint8_t*>(image.data), image.width, image.height);
-    if (texture.id == 0) {
+        ImageFileData img;
+        ITexture texture{};
+        const bool loaded = LoadImageFile(pPath, img, 4);
+        if (loaded)
+        {
+            texture.m_Id = CreateTextureFromRgba(img.m_vPixels.data(), img.m_Width, img.m_Height);
+            texture.m_Width = img.m_Width;
+            texture.m_Height = img.m_Height;
+            texture.m_Mipmaps = 1;
+            texture.m_Format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+            texture.m_Valid = true;
+
+            m_TextureCache.emplace(cacheKey, CachedTexture{texture, 1});
+            m_TextureCacheKeys.emplace(texture.m_Id, cacheKey);
+        }
         return texture;
     }
 
-    texture.width = image.width;
-    texture.height = image.height;
-    texture.mipmaps = 1;
-    texture.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-    texture.valid = true;
-    return texture;
-}
+    ITexture QuarkGLTexture::LoadTextureFromImage(const Image& image)
+    {
+        if (!image.data || image.width <= 0 || image.height <= 0 || image.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+        {
+            return {};
+        }
 
-ITexture QuarkGLTexture::LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize) {
-    if (!rgbaFaces || faceSize <= 0) {
-        return {};
+        ITexture texture{};
+        texture.m_Id = CreateTextureFromRgba(static_cast<const uint8_t*>(image.data), image.width, image.height);
+        if (texture.m_Id == 0)
+        {
+            return texture;
+        }
+
+        texture.m_Width = image.width;
+        texture.m_Height = image.height;
+        texture.m_Mipmaps = 1;
+        texture.m_Format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+        texture.m_Valid = true;
+        return texture;
     }
 
-    GLuint id = 0;
-    glGenTextures(1, &id);
-    if (id == 0) {
-        return {};
+    ITexture QuarkGLTexture::LoadTextureCubemap(const unsigned char* pRgbaFaces, int faceSize)
+    {
+        if (!pRgbaFaces || faceSize <= 0)
+        {
+            return {};
+        }
+
+        GLuint id = 0;
+        glGenTextures(1, &id);
+        if (id == 0)
+        {
+            return {};
+        }
+        glBindTexture(GL_TEXTURE_CUBE_MAP, id);
+
+        const GLint textureFilter = g_TextureFilter == TEXTURE_FILTER_POINT ? GL_NEAREST : GL_LINEAR;
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, textureFilter);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, textureFilter);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+        const size_t faceBytes = static_cast<size_t>(faceSize) * faceSize * 4;
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        for (GLuint face = 0; face < 6; ++face)
+        {
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGBA8,
+                         faceSize, faceSize, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                         pRgbaFaces + face * faceBytes);
+        }
+        glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+        m_CubemapTextureIds.insert(id);
+
+        return ITexture{id, faceSize, faceSize, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true};
     }
-    glBindTexture(GL_TEXTURE_CUBE_MAP, id);
 
-    const GLint textureFilter = gTextureFilter == TEXTURE_FILTER_POINT ? GL_NEAREST : GL_LINEAR;
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, textureFilter);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, textureFilter);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-
-    const size_t faceBytes = static_cast<size_t>(faceSize) * faceSize * 4;
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    for (GLuint face = 0; face < 6; ++face) {
-        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGBA8,
-                     faceSize, faceSize, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                     rgbaFaces + face * faceBytes);
+    bool QuarkGLTexture::IsCubemap(uint32_t textureId) const
+    {
+        return m_CubemapTextureIds.find(static_cast<GLuint>(textureId)) != m_CubemapTextureIds.end();
     }
-    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
-    m_cubemapTextureIds.insert(id);
 
-    return ITexture{id, faceSize, faceSize, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, true};
-}
-
-bool QuarkGLTexture::IsCubemap(uint32_t textureId) const {
-    return m_cubemapTextureIds.find(static_cast<GLuint>(textureId)) != m_cubemapTextureIds.end();
-}
-
-void QuarkGLTexture::UnloadTexture(ITexture& texture) {
-    if (texture.id) {
-        const auto cacheKey = m_textureCacheKeys.find(texture.id);
-        if (cacheKey != m_textureCacheKeys.end()) {
-            auto cached = m_textureCache.find(cacheKey->second);
-            if (cached != m_textureCache.end()) {
-                cached->second.references--;
-                if (cached->second.references > 0) {
-                    texture = {};
-                    return;
+    void QuarkGLTexture::UnloadTexture(ITexture& texture)
+    {
+        if (texture.m_Id)
+        {
+            const auto cacheKey = m_TextureCacheKeys.find(texture.m_Id);
+            if (cacheKey != m_TextureCacheKeys.end())
+            {
+                auto cached = m_TextureCache.find(cacheKey->second);
+                if (cached != m_TextureCache.end())
+                {
+                    cached->second.m_References--;
+                    if (cached->second.m_References > 0)
+                    {
+                        texture = {};
+                        return;
+                    }
+                    glDeleteTextures(1, &texture.m_Id);
+                    m_TextureCache.erase(cached);
                 }
-                glDeleteTextures(1, &texture.id);
-                m_textureCache.erase(cached);
+                m_TextureCacheKeys.erase(cacheKey);
+                texture = {};
+                return;
             }
-            m_textureCacheKeys.erase(cacheKey);
-            texture = {};
-            return;
+
+            m_CubemapTextureIds.erase(texture.m_Id);
+            glDeleteTextures(1, &texture.m_Id);
         }
-
-        m_cubemapTextureIds.erase(texture.id);
-        glDeleteTextures(1, &texture.id);
+        texture = {};
     }
-    texture = {};
-}
 
-ITexture QuarkGLTexture::GetRenderTextureTexture(IRenderTexture target) const {
-    return target.texture;
-}
+    ITexture QuarkGLTexture::GetRenderTextureTexture(IRenderTexture target) const
+    {
+        return target.m_Texture;
+    }
 
-IRenderTexture QuarkGLTexture::LoadRenderTexture(int width, int height) {
-    IRenderTexture target{};
+    IRenderTexture QuarkGLTexture::LoadRenderTexture(int width, int height)
+    {
+        IRenderTexture target{};
 
-    glGenFramebuffers(1, &target.id);
-    glBindFramebuffer(GL_FRAMEBUFFER, target.id);
+        glGenFramebuffers(1, &target.m_Id);
+        glBindFramebuffer(GL_FRAMEBUFFER, target.m_Id);
 
-    glGenTextures(1, &target.texture.id);
-    glBindTexture(GL_TEXTURE_2D, target.texture.id);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glGenTextures(1, &target.m_Texture.m_Id);
+        glBindTexture(GL_TEXTURE_2D, target.m_Texture.m_Id);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
-    const GLint textureFilter = gTextureFilter == TEXTURE_FILTER_POINT ? GL_NEAREST : GL_LINEAR;
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, textureFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, textureFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        const GLint textureFilter = g_TextureFilter == TEXTURE_FILTER_POINT ? GL_NEAREST : GL_LINEAR;
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, textureFilter);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, textureFilter);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target.texture.id, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target.m_Texture.m_Id, 0);
 
-    glGenRenderbuffers(1, &target.depthId);
-    glBindRenderbuffer(GL_RENDERBUFFER, target.depthId);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, target.depthId);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glGenRenderbuffers(1, &target.m_DepthId);
+        glBindRenderbuffer(GL_RENDERBUFFER, target.m_DepthId);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, target.m_DepthId);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    target.texture.width = width;
-    target.texture.height = height;
-    target.texture.mipmaps = 1;
-    target.texture.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-    target.texture.valid = true;
-    return target;
-}
+        target.m_Texture.m_Width = width;
+        target.m_Texture.m_Height = height;
+        target.m_Texture.m_Mipmaps = 1;
+        target.m_Texture.m_Format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+        target.m_Texture.m_Valid = true;
+        return target;
+    }
 
-void QuarkGLTexture::UnloadRenderTexture(IRenderTexture target) {
-    if (target.id) glDeleteFramebuffers(1, &target.id);
-    if (target.depthId) glDeleteRenderbuffers(1, &target.depthId);
-    if (target.texture.id) glDeleteTextures(1, &target.texture.id);
-}
-
-ITexture QuarkGLTexture::GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB) {
-    std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4);
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            Color color = (((x / cellSize) + (y / cellSize)) % 2 == 0) ? colorA : colorB;
-            const size_t index = (static_cast<size_t>(y) * width + x) * 4;
-            pixels[index + 0] = color.r;
-            pixels[index + 1] = color.g;
-            pixels[index + 2] = color.b;
-            pixels[index + 3] = color.a;
+    void QuarkGLTexture::UnloadRenderTexture(IRenderTexture target)
+    {
+        if (target.m_Id)
+        {
+            glDeleteFramebuffers(1, &target.m_Id);
+        }
+        if (target.m_DepthId)
+        {
+            glDeleteRenderbuffers(1, &target.m_DepthId);
+        }
+        if (target.m_Texture.m_Id)
+        {
+            glDeleteTextures(1, &target.m_Texture.m_Id);
         }
     }
 
-    ITexture texture{};
-    texture.id = CreateTextureFromRgba(pixels.data(), width, height);
-    texture.width = width;
-    texture.height = height;
-    texture.mipmaps = 1;
-    texture.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-    texture.valid = true;
-    return texture;
-}
+    ITexture QuarkGLTexture::GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB)
+    {
+        std::vector<uint8_t> vPixels(static_cast<size_t>(width) * height * 4);
 
-bool QuarkGLTexture::IsTextureValid(ITexture& texture) const {
-    return texture.valid && texture.id != 0;
-}
+        for (int y = 0; y < height; ++y)
+        {
+            for (int x = 0; x < width; ++x)
+            {
+                Color color = (((x / cellSize) + (y / cellSize)) % 2 == 0) ? colorA : colorB;
+                const size_t index = (static_cast<size_t>(y) * width + x) * 4;
+                vPixels[index + 0] = color.r;
+                vPixels[index + 1] = color.g;
+                vPixels[index + 2] = color.b;
+                vPixels[index + 3] = color.a;
+            }
+        }
 
-bool QuarkGLTexture::IsRenderTextureValid(IRenderTexture& target) const {
-    return target.id != 0 && target.texture.valid;
-}
-
-Image QuarkGLTexture::ReadTextureImage(const ITexture& texture) const {
-    if (!texture.valid || texture.id == 0 || texture.width <= 0 || texture.height <= 0) return Image{};
-
-    const size_t bytes = static_cast<size_t>(texture.width) * texture.height * 4;
-    void* buffer = MemAlloc(bytes);
-    if (!buffer) return Image{};
-
-    glBindTexture(GL_TEXTURE_2D, texture.id);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    FlipRowsRgba(buffer, texture.width, texture.height);
-
-    Image image{};
-    image.data = buffer;
-    image.width = texture.width;
-    image.height = texture.height;
-    image.mipmaps = 1;
-    image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-    return image;
-}
-
-Image QuarkGLTexture::ReadScreenImage(int width, int height, GLuint currentFbo) const {
-    if (width <= 0 || height <= 0) return Image{};
-
-    const size_t bytes = static_cast<size_t>(width) * height * 4;
-    void* buffer = MemAlloc(bytes);
-    if (!buffer) return Image{};
-
-    glBindFramebuffer(GL_FRAMEBUFFER, currentFbo);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    if (currentFbo != 0) {
-        glReadBuffer(GL_COLOR_ATTACHMENT0);
-    } else {
-        glReadBuffer(GL_BACK);
+        ITexture texture{};
+        texture.m_Id = CreateTextureFromRgba(vPixels.data(), width, height);
+        texture.m_Width = width;
+        texture.m_Height = height;
+        texture.m_Mipmaps = 1;
+        texture.m_Format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+        texture.m_Valid = true;
+        return texture;
     }
-    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
 
-    FlipRowsRgba(buffer, width, height);
+    bool QuarkGLTexture::IsTextureValid(ITexture& texture) const
+    {
+        return texture.m_Valid && texture.m_Id != 0;
+    }
 
-    Image image{};
-    image.data = buffer;
-    image.width = width;
-    image.height = height;
-    image.mipmaps = 1;
-    image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-    return image;
-}
-} // namespace qci
+    bool QuarkGLTexture::IsRenderTextureValid(IRenderTexture& target) const
+    {
+        return target.m_Id != 0 && target.m_Texture.m_Valid;
+    }
+
+    Image QuarkGLTexture::ReadTextureImage(const ITexture& texture) const
+    {
+        if (!texture.m_Valid || texture.m_Id == 0 || texture.m_Width <= 0 || texture.m_Height <= 0)
+        {
+            return Image{};
+        }
+
+        const size_t bytes = static_cast<size_t>(texture.m_Width) * texture.m_Height * 4;
+        void* pBuffer = MemAlloc(bytes);
+        if (!pBuffer)
+        {
+            return Image{};
+        }
+
+        glBindTexture(GL_TEXTURE_2D, texture.m_Id);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pBuffer);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        FlipRowsRgba(pBuffer, texture.m_Width, texture.m_Height);
+
+        Image image{};
+        image.data = pBuffer;
+        image.width = texture.m_Width;
+        image.height = texture.m_Height;
+        image.mipmaps = 1;
+        image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+        return image;
+    }
+
+    Image QuarkGLTexture::ReadScreenImage(int width, int height, GLuint currentFbo) const
+    {
+        if (width <= 0 || height <= 0)
+        {
+            return Image{};
+        }
+
+        const size_t bytes = static_cast<size_t>(width) * height * 4;
+        void* pBuffer = MemAlloc(bytes);
+        if (!pBuffer)
+        {
+            return Image{};
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, currentFbo);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        if (currentFbo != 0)
+        {
+            glReadBuffer(GL_COLOR_ATTACHMENT0);
+        }
+        else
+        {
+            glReadBuffer(GL_BACK);
+        }
+        glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pBuffer);
+
+        FlipRowsRgba(pBuffer, width, height);
+
+        Image image{};
+        image.data = pBuffer;
+        image.width = width;
+        image.height = height;
+        image.mipmaps = 1;
+        image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+        return image;
+    }
+} // qci

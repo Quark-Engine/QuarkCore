@@ -4,15 +4,17 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-namespace {
 
-bool NearlyEqual(float a, float b, float eps = 1e-4f) {
-    return std::fabs(a - b) <= eps;
-}
+namespace
+{
+    bool NearlyEqual(float a, float b, float eps = 1e-4f)
+    {
+        return std::fabs(a - b) <= eps;
+    }
+} // anonymous
 
-} // namespace
-
-int main() {
+int main()
+{
     Model model{};
     model.meshCount = 1;
     model.meshes = new Mesh[1]{};
@@ -46,23 +48,27 @@ int main() {
 
     UpdateModelAnimation(model, animation, 0.0f);
 
-    if (model.boneMatrices == nullptr) {
+    if (model.boneMatrices == nullptr)
+    {
         std::cerr << "boneMatrices were not allocated" << std::endl;
         return 1;
     }
 
-    if (mesh.animVertices == nullptr || mesh.animNormals == nullptr) {
+    if (mesh.animVertices == nullptr || mesh.animNormals == nullptr)
+    {
         std::cerr << "animated vertex buffers were not generated" << std::endl;
         return 2;
     }
 
-    if (!NearlyEqual(mesh.animVertices[0], 2.0f)) {
+    if (!NearlyEqual(mesh.animVertices[0], 2.0f))
+    {
         std::cerr << "mesh vertex was not skinned to the animation transform: "
                   << mesh.animVertices[0] << std::endl;
         return 3;
     }
 
-    if (!NearlyEqual(model.boneMatrices[0].m[12], 12.0f)) {
+    if (!NearlyEqual(model.boneMatrices[0].m[12], 12.0f))
+    {
         std::cerr << "bone matrix translation is wrong: " << model.boneMatrices[0].m[12] << std::endl;
         return 4;
     }
@@ -72,7 +78,8 @@ int main() {
     delete[] model.skeleton.bones;
     delete[] model.skeleton.bindPose;
     delete[] model.boneMatrices;
-    for (int i = 0; i < animation.keyframeCount; ++i) {
+    for (int i = 0; i < animation.keyframeCount; ++i)
+    {
         delete[] animation.keyframePoses[i];
     }
     delete[] animation.keyframePoses;

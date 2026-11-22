@@ -1,6 +1,6 @@
 /*
     ========================================================
-    
+
         Quark Core v1.0
         By Quark Engine Development Team
 
@@ -28,19 +28,19 @@
 #define __QUARK_CORE__
 
 #if defined(_WIN32) && !defined(NOGDI)
-    #define NOGDI
+#define NOGDI
 #endif
 
 #if defined(_WIN32)
-    #if defined(QUARKCORE_STATIC)
-        #define QCAPI
-    #elif defined(QUARKCORE_BUILD_DLL)
-        #define QCAPI __declspec(dllexport)
-    #else
-        #define QCAPI __declspec(dllimport)
-    #endif
+#if defined(QUARKCORE_STATIC)
+#define QCAPI
+#elif defined(QUARKCORE_BUILD_DLL)
+#define QCAPI __declspec(dllexport)
 #else
-    #define QCAPI
+#define QCAPI __declspec(dllimport)
+#endif
+#else
+#define QCAPI
 #endif
 
 #include <SDL3/SDL.h>
@@ -53,10 +53,11 @@ struct ID3D11Device;
 struct ID3D11DeviceContext;
 struct ID3D11ShaderResourceView;
 #endif
-/** 
+/**
  * @brief Renderer type enumeration.
  */
-enum class RendererType {
+enum class RendererType
+{
     Auto,
     OpenGL,
     Vulkan,
@@ -66,24 +67,26 @@ enum class RendererType {
 /**
  * @brief Texture structure.
  */
-struct Texture {
-    unsigned int id = 0;     // Texture id
-    int width = 0;           // Texture base width
-    int height = 0;          // Texture base height
-    int mipmaps = 1;         // Mipmap levels, 1 by default
-    int format = 0;          // Data format (PixelFormat type)
-    bool valid = false;      // Whether the texture is valid and ready to use
+struct Texture
+{
+    unsigned int id = 0; // Texture id
+    int width = 0;       // Texture base width
+    int height = 0;      // Texture base height
+    int mipmaps = 1;     // Mipmap levels, 1 by default
+    int format = 0;      // Data format (PixelFormat type)
+    bool valid = false;  // Whether the texture is valid and ready to use
 };
 
 using Texture2D = Texture;
 using TextureCubemap = Texture;
 
-typedef enum {
-    CUBEMAP_LAYOUT_AUTO_DETECT = 0,         // Automatically detect layout type
-    CUBEMAP_LAYOUT_LINE_VERTICAL,           // Layout is defined by a vertical line with faces
-    CUBEMAP_LAYOUT_LINE_HORIZONTAL,         // Layout is defined by a horizontal line with faces
-    CUBEMAP_LAYOUT_CROSS_THREE_BY_FOUR,     // Layout is defined by a 3x4 cross with cubemap faces
-    CUBEMAP_LAYOUT_CROSS_FOUR_BY_THREE      // Layout is defined by a 4x3 cross with cubemap faces
+typedef enum
+{
+    CUBEMAP_LAYOUT_AUTO_DETECT = 0,     // Automatically detect layout type
+    CUBEMAP_LAYOUT_LINE_VERTICAL,       // Layout is defined by a vertical line with faces
+    CUBEMAP_LAYOUT_LINE_HORIZONTAL,     // Layout is defined by a horizontal line with faces
+    CUBEMAP_LAYOUT_CROSS_THREE_BY_FOUR, // Layout is defined by a 3x4 cross with cubemap faces
+    CUBEMAP_LAYOUT_CROSS_FOUR_BY_THREE  // Layout is defined by a 4x3 cross with cubemap faces
 } CubemapLayout;
 
 #include "Quark3D.hpp"
@@ -96,10 +99,11 @@ typedef enum {
 /**
  * @brief Render texture structure.
  */
-struct RenderTexture2D {
-    unsigned int id = 0;               // Framebuffer ID
-    Texture2D texture;                 // Color buffer texture
-    unsigned int depthId = 0;          // Depth buffer ID
+struct RenderTexture2D
+{
+    unsigned int id = 0;      // Framebuffer ID
+    Texture2D texture;        // Color buffer texture
+    unsigned int depthId = 0; // Depth buffer ID
 };
 
 using RenderTexture = RenderTexture2D;
@@ -110,18 +114,20 @@ using RenderTexture = RenderTexture2D;
 /**
  * @brief Font glyph info structure.
  */
-struct GlyphInfo {
-    int value = 0;         // Character value (Unicode)
-    int offsetX = 0;       // Character offset X when drawing
-    int offsetY = 0;       // Character offset Y when drawing
-    int advanceX = 0;      // Character advance position X
-    Image image;           // Character image data
+struct GlyphInfo
+{
+    int value = 0;    // Character value (Unicode)
+    int offsetX = 0;  // Character offset X when drawing
+    int offsetY = 0;  // Character offset Y when drawing
+    int advanceX = 0; // Character advance position X
+    Image image;      // Character image data
 };
 
 /**
  * @brief Font structure.
  */
-struct Font {
+struct Font
+{
     int baseSize = 0;             // Base size (default chars height)
     int glyphCount = 0;           // Number of glyph characters
     int glyphPadding = 0;         // Padding around the glyph characters
@@ -135,108 +141,115 @@ struct Font {
 /**
  * @brief Shader uniform data type enumeration.
  */
-typedef enum {
-    SHADER_UNIFORM_FLOAT = 0,       // float
-    SHADER_UNIFORM_VEC2,            // vec2 (2 float)
-    SHADER_UNIFORM_VEC3,            // vec3 (3 float)
-    SHADER_UNIFORM_VEC4,            // vec4 (4 float)
-    SHADER_UNIFORM_INT,             // int
-    SHADER_UNIFORM_IVEC2,           // ivec2 (2 int)
-    SHADER_UNIFORM_IVEC3,           // ivec3 (3 int)
-    SHADER_UNIFORM_IVEC4,           // ivec4 (4 int)
-    SHADER_UNIFORM_UINT,            // unsigned int
-    SHADER_UNIFORM_UIVEC2,          // uivec2 (2 unsigned int)
-    SHADER_UNIFORM_UIVEC3,          // uivec3 (3 unsigned int)
-    SHADER_UNIFORM_UIVEC4,          // uivec4 (4 unsigned int)
-    SHADER_UNIFORM_SAMPLER2D        // sampler2D
+typedef enum
+{
+    SHADER_UNIFORM_FLOAT = 0, // float
+    SHADER_UNIFORM_VEC2,      // vec2 (2 float)
+    SHADER_UNIFORM_VEC3,      // vec3 (3 float)
+    SHADER_UNIFORM_VEC4,      // vec4 (4 float)
+    SHADER_UNIFORM_INT,       // int
+    SHADER_UNIFORM_IVEC2,     // ivec2 (2 int)
+    SHADER_UNIFORM_IVEC3,     // ivec3 (3 int)
+    SHADER_UNIFORM_IVEC4,     // ivec4 (4 int)
+    SHADER_UNIFORM_UINT,      // unsigned int
+    SHADER_UNIFORM_UIVEC2,    // uivec2 (2 unsigned int)
+    SHADER_UNIFORM_UIVEC3,    // uivec3 (3 unsigned int)
+    SHADER_UNIFORM_UIVEC4,    // uivec4 (4 unsigned int)
+    SHADER_UNIFORM_SAMPLER2D  // sampler2D
 } ShaderUniformDataType;
 
 /**
  * @brief Shader attribute data type enumeration.
  */
-typedef enum {
-    SHADER_ATTRIB_FLOAT = 0,        // float
-    SHADER_ATTRIB_VEC2,             // vec2 (2 float)
-    SHADER_ATTRIB_VEC3,             // vec3 (3 float)
-    SHADER_ATTRIB_VEC4              // vec4 (4 float)
+typedef enum
+{
+    SHADER_ATTRIB_FLOAT = 0, // float
+    SHADER_ATTRIB_VEC2,      // vec2 (2 float)
+    SHADER_ATTRIB_VEC3,      // vec3 (3 float)
+    SHADER_ATTRIB_VEC4       // vec4 (4 float)
 } ShaderAttributeDataType;
 
 /**
  * @brief Shader location index enumeration.
  */
-typedef enum {
-    SHADER_LOC_VERTEX_POSITION = 0, // Shader location: vertex attribute: position
-    SHADER_LOC_VERTEX_TEXCOORD01,   // Shader location: vertex attribute: texcoord01
-    SHADER_LOC_VERTEX_TEXCOORD02,   // Shader location: vertex attribute: texcoord02
-    SHADER_LOC_VERTEX_NORMAL,       // Shader location: vertex attribute: normal
-    SHADER_LOC_VERTEX_TANGENT,      // Shader location: vertex attribute: tangent
-    SHADER_LOC_VERTEX_COLOR,        // Shader location: vertex attribute: color
-    SHADER_LOC_MATRIX_MVP,          // Shader location: matrix uniform: model-view-projection
-    SHADER_LOC_MATRIX_VIEW,         // Shader location: matrix uniform: view (camera transform)
-    SHADER_LOC_MATRIX_PROJECTION,   // Shader location: matrix uniform: projection
-    SHADER_LOC_MATRIX_MODEL,        // Shader location: matrix uniform: model (transform)
-    SHADER_LOC_MATRIX_NORMAL,       // Shader location: matrix uniform: normal
-    SHADER_LOC_VECTOR_VIEW,         // Shader location: vector uniform: view
-    SHADER_LOC_COLOR_DIFFUSE,       // Shader location: vector uniform: diffuse color
-    SHADER_LOC_COLOR_SPECULAR,      // Shader location: vector uniform: specular color
-    SHADER_LOC_COLOR_AMBIENT,       // Shader location: vector uniform: ambient color
-    SHADER_LOC_MAP_ALBEDO,          // Shader location: sampler2d texture: albedo (same as: SHADER_LOC_MAP_DIFFUSE)
-    SHADER_LOC_MAP_METALNESS,       // Shader location: sampler2d texture: metalness (same as: SHADER_LOC_MAP_SPECULAR)
-    SHADER_LOC_MAP_NORMAL,          // Shader location: sampler2d texture: normal
-    SHADER_LOC_MAP_ROUGHNESS,       // Shader location: sampler2d texture: roughness
-    SHADER_LOC_MAP_OCCLUSION,       // Shader location: sampler2d texture: occlusion
-    SHADER_LOC_MAP_EMISSION,        // Shader location: sampler2d texture: emission
-    SHADER_LOC_MAP_HEIGHT,          // Shader location: sampler2d texture: heightmap
-    SHADER_LOC_MAP_CUBEMAP,         // Shader location: samplerCube texture: cubemap
-    SHADER_LOC_MAP_IRRADIANCE,      // Shader location: samplerCube texture: irradiance
-    SHADER_LOC_MAP_PREFILTER,       // Shader location: samplerCube texture: prefilter
-    SHADER_LOC_MAP_BRDF,            // Shader location: sampler2d texture: brdf
-    SHADER_LOC_VERTEX_BONEIDS,      // Shader location: vertex attribute: bone indices
-    SHADER_LOC_VERTEX_BONEWEIGHTS,  // Shader location: vertex attribute: bone weights
-    SHADER_LOC_MATRIX_BONETRANSFORMS, // Shader location: matrix attribute: bone transforms (animation)
+typedef enum
+{
+    SHADER_LOC_VERTEX_POSITION = 0,      // Shader location: vertex attribute: position
+    SHADER_LOC_VERTEX_TEXCOORD01,        // Shader location: vertex attribute: texcoord01
+    SHADER_LOC_VERTEX_TEXCOORD02,        // Shader location: vertex attribute: texcoord02
+    SHADER_LOC_VERTEX_NORMAL,            // Shader location: vertex attribute: normal
+    SHADER_LOC_VERTEX_TANGENT,           // Shader location: vertex attribute: tangent
+    SHADER_LOC_VERTEX_COLOR,             // Shader location: vertex attribute: color
+    SHADER_LOC_MATRIX_MVP,               // Shader location: matrix uniform: model-view-projection
+    SHADER_LOC_MATRIX_VIEW,              // Shader location: matrix uniform: view (camera transform)
+    SHADER_LOC_MATRIX_PROJECTION,        // Shader location: matrix uniform: projection
+    SHADER_LOC_MATRIX_MODEL,             // Shader location: matrix uniform: model (transform)
+    SHADER_LOC_MATRIX_NORMAL,            // Shader location: matrix uniform: normal
+    SHADER_LOC_VECTOR_VIEW,              // Shader location: vector uniform: view
+    SHADER_LOC_COLOR_DIFFUSE,            // Shader location: vector uniform: diffuse color
+    SHADER_LOC_COLOR_SPECULAR,           // Shader location: vector uniform: specular color
+    SHADER_LOC_COLOR_AMBIENT,            // Shader location: vector uniform: ambient color
+    SHADER_LOC_MAP_ALBEDO,               // Shader location: sampler2d texture: albedo (same as: SHADER_LOC_MAP_DIFFUSE)
+    SHADER_LOC_MAP_METALNESS,            // Shader location: sampler2d texture: metalness (same as: SHADER_LOC_MAP_SPECULAR)
+    SHADER_LOC_MAP_NORMAL,               // Shader location: sampler2d texture: normal
+    SHADER_LOC_MAP_ROUGHNESS,            // Shader location: sampler2d texture: roughness
+    SHADER_LOC_MAP_OCCLUSION,            // Shader location: sampler2d texture: occlusion
+    SHADER_LOC_MAP_EMISSION,             // Shader location: sampler2d texture: emission
+    SHADER_LOC_MAP_HEIGHT,               // Shader location: sampler2d texture: heightmap
+    SHADER_LOC_MAP_CUBEMAP,              // Shader location: samplerCube texture: cubemap
+    SHADER_LOC_MAP_IRRADIANCE,           // Shader location: samplerCube texture: irradiance
+    SHADER_LOC_MAP_PREFILTER,            // Shader location: samplerCube texture: prefilter
+    SHADER_LOC_MAP_BRDF,                 // Shader location: sampler2d texture: brdf
+    SHADER_LOC_VERTEX_BONEIDS,           // Shader location: vertex attribute: bone indices
+    SHADER_LOC_VERTEX_BONEWEIGHTS,       // Shader location: vertex attribute: bone weights
+    SHADER_LOC_MATRIX_BONETRANSFORMS,    // Shader location: matrix attribute: bone transforms (animation)
     SHADER_LOC_VERTEX_INSTANCETRANSFORM, // Shader location: vertex attribute: instance transforms
-    SHADER_LOC_COUNT                // Total number of shader locations
+    SHADER_LOC_COUNT                     // Total number of shader locations
 } ShaderLocationIndex;
 
 /**
  * @brief Shader structure.
  */
-struct Shader {
-    unsigned int id = 0;               // Program ID
-    int locs[SHADER_LOC_COUNT] = {};   // Uniform locations array
+struct Shader
+{
+    unsigned int id = 0;             // Program ID
+    int locs[SHADER_LOC_COUNT] = {}; // Uniform locations array
 };
 
 /**
  * @brief Camera projection type.
  */
-typedef enum {
+typedef enum
+{
     CAMERA_PERSPECTIVE = 0,
     CAMERA_ORTHOGRAPHIC
 } CameraProjection;
 
 /**
  * @brief 2D Camera for orthographic projection.
- * 
+ *
  * Controls view transformation for 2D rendering with pan and zoom.
  */
-struct Camera2D {
-    Vec2 offset{0.0f, 0.0f};          // Camera screen offset (center of viewport)
-    Vec2 target{0.0f, 0.0f};          // Target position to look at
-    float rotation{0.0f};              // Camera rotation in degrees
-    float zoom{1.0f};                  // Zoom level (1.0 = default)
+struct Camera2D
+{
+    Vec2 offset{0.0f, 0.0f}; // Camera screen offset (center of viewport)
+    Vec2 target{0.0f, 0.0f}; // Target position to look at
+    float rotation{0.0f};    // Camera rotation in degrees
+    float zoom{1.0f};        // Zoom level (1.0 = default)
 };
 
 /**
  * @brief 3D Camera for perspective projection.
- * 
+ *
  * Controls view and projection transformation for 3D rendering.
  */
-struct Camera3D {
+struct Camera3D
+{
     Vec3 position{0.0f, 0.0f, 10.0f}; // Camera position in 3D space
     Vec3 target{0.0f, 0.0f, 0.0f};    // Target position to look at
     Vec3 up{0.0f, 1.0f, 0.0f};        // Camera up vector
-    float fovy{45.0f};                 // Camera field-of-view Y in degrees
-    int projection{0};                 // Camera projection: CAMERA_PERSPECTIVE or CAMERA_ORTHOGRAPHIC
+    float fovy{45.0f};                // Camera field-of-view Y in degrees
+    int projection{0};                // Camera projection: CAMERA_PERSPECTIVE or CAMERA_ORTHOGRAPHIC
 };
 
 using Camera = Camera3D;
@@ -246,7 +259,8 @@ using Camera = Camera3D;
  * @param camera Camera whose matrix should be calculated.
  * @return Camera view-projection matrix.
  */
-inline Mat4 GetCameraMat4(const Camera3D& camera) {
+inline Mat4 GetCameraMat4(const Camera3D& camera)
+{
     return Mat4::lookAt(camera.position, camera.target, camera.up);
 }
 
@@ -254,7 +268,7 @@ inline Mat4 GetCameraMat4(const Camera3D& camera) {
  * @brief Default vertex shader source code.
  * Implements basic 2D rendering with texture and color attributes.
  */
-inline constexpr const char* kVertexShaderSource = R"(
+inline constexpr const char* VERTEX_SHADER_SOURCE = R"(
 #version 330 core
 layout (location = 0) in vec2 aPosition;
 layout (location = 1) in vec2 aTexCoord;
@@ -281,7 +295,7 @@ void main() {
  * @brief Default fragment shader source code.
  * Implements basic textured rendering with color modulation.
  */
-inline constexpr const char* kFragmentShaderSource = R"(
+inline constexpr const char* FRAGMENT_SHADER_SOURCE = R"(
 #version 330 core
 in vec2 vTexCoord;
 in vec4 vColor;
@@ -298,7 +312,8 @@ void main() {
 /**
  * @brief Log level type enumeration.
  */
-enum class LogLevel {
+enum class LogLevel
+{
     Trace = 0,
     Info,
     Warn,
@@ -306,7 +321,8 @@ enum class LogLevel {
     None,
 };
 
-typedef enum {
+typedef enum
+{
     KEY_NULL = 0,
     KEY_APOSTROPHE = 39,
     KEY_COMMA = 44,
@@ -419,7 +435,8 @@ typedef enum {
     KEY_VOLUME_DOWN = 25
 } KeyboardKey;
 
-typedef enum {
+typedef enum
+{
     MOUSE_BUTTON_LEFT = 0,
     MOUSE_BUTTON_RIGHT = 1,
     MOUSE_BUTTON_MIDDLE = 2,
@@ -432,21 +449,23 @@ typedef enum {
 /**
  * @brief Mouse cursor type enumeration.
  */
-typedef enum {
-    MOUSE_CURSOR_DEFAULT       = 0,     // Default pointer shape
-    MOUSE_CURSOR_ARROW         = 1,     // Arrow shape
-    MOUSE_CURSOR_IBEAM         = 2,     // Text writing cursor shape
-    MOUSE_CURSOR_CROSSHAIR     = 3,     // Cross shape
-    MOUSE_CURSOR_POINTING_HAND = 4,     // Pointing hand cursor
-    MOUSE_CURSOR_RESIZE_EW     = 5,     // Horizontal resize/move arrow shape
-    MOUSE_CURSOR_RESIZE_NS     = 6,     // Vertical resize/move arrow shape
-    MOUSE_CURSOR_RESIZE_NWSE   = 7,     // Top-left to bottom-right diagonal resize/move arrow shape
-    MOUSE_CURSOR_RESIZE_NESW   = 8,     // The top-right to bottom-left diagonal resize/move arrow shape
-    MOUSE_CURSOR_RESIZE_ALL    = 9,     // The omnidirectional resize/move cursor shape
-    MOUSE_CURSOR_NOT_ALLOWED   = 10    // The operation-not-allowed shape
+typedef enum
+{
+    MOUSE_CURSOR_DEFAULT = 0,       // Default pointer shape
+    MOUSE_CURSOR_ARROW = 1,         // Arrow shape
+    MOUSE_CURSOR_IBEAM = 2,         // Text writing cursor shape
+    MOUSE_CURSOR_CROSSHAIR = 3,     // Cross shape
+    MOUSE_CURSOR_POINTING_HAND = 4, // Pointing hand cursor
+    MOUSE_CURSOR_RESIZE_EW = 5,     // Horizontal resize/move arrow shape
+    MOUSE_CURSOR_RESIZE_NS = 6,     // Vertical resize/move arrow shape
+    MOUSE_CURSOR_RESIZE_NWSE = 7,   // Top-left to bottom-right diagonal resize/move arrow shape
+    MOUSE_CURSOR_RESIZE_NESW = 8,   // The top-right to bottom-left diagonal resize/move arrow shape
+    MOUSE_CURSOR_RESIZE_ALL = 9,    // The omnidirectional resize/move cursor shape
+    MOUSE_CURSOR_NOT_ALLOWED = 10   // The operation-not-allowed shape
 } MouseCursor;
 
-typedef enum {
+typedef enum
+{
     FLAG_VSYNC_HINT = 0x00000040,
     FLAG_FULLSCREEN_MODE = 0x00000002,
     FLAG_WINDOW_RESIZABLE = 0x00000004,
@@ -461,23 +480,26 @@ typedef enum {
     FLAG_WINDOW_ALWAYS_RUN = 0x00002000,
 } ConfigFlags;
 
-typedef enum {
-    TEXTURE_FILTER_POINT = 0,               // No filter, pixel approximation
-    TEXTURE_FILTER_BILINEAR,                // Linear filtering
-    TEXTURE_FILTER_TRILINEAR,               // Trilinear filtering (linear with mipmaps)
-    TEXTURE_FILTER_ANISOTROPIC_4X,          // Anisotropic filtering 4x
-    TEXTURE_FILTER_ANISOTROPIC_8X,          // Anisotropic filtering 8x
-    TEXTURE_FILTER_ANISOTROPIC_16X,         // Anisotropic filtering 16x
+typedef enum
+{
+    TEXTURE_FILTER_POINT = 0,       // No filter, pixel approximation
+    TEXTURE_FILTER_BILINEAR,        // Linear filtering
+    TEXTURE_FILTER_TRILINEAR,       // Trilinear filtering (linear with mipmaps)
+    TEXTURE_FILTER_ANISOTROPIC_4X,  // Anisotropic filtering 4x
+    TEXTURE_FILTER_ANISOTROPIC_8X,  // Anisotropic filtering 8x
+    TEXTURE_FILTER_ANISOTROPIC_16X, // Anisotropic filtering 16x
 } TextureFilter;
 
-typedef enum {
+typedef enum
+{
     TEXTURE_WRAP_REPEAT = 0,
     TEXTURE_WRAP_CLAMP = 1,
     TEXTURE_WRAP_MIRROR_REPEAT = 2,
     TEXTURE_WRAP_MIRROR_CLAMP = 3,
 } TextureWrap;
 
-typedef enum {
+typedef enum
+{
     BLEND_ALPHA = 0,
     BLEND_ADDITIVE = 1,
     BLEND_MULTIPLIED = 2,
@@ -486,7 +508,8 @@ typedef enum {
     BLEND_MOD_COLOR = 5,
 } BlendMode;
 
-typedef enum {
+typedef enum
+{
     GESTURE_NONE = 0,
     GESTURE_TAP = 1,
     GESTURE_DOUBLETAP = 2,
@@ -500,7 +523,8 @@ typedef enum {
     GESTURE_PINCH_OUT = 512,
 } Gesture;
 
-typedef enum {
+typedef enum
+{
     CAMERA_CUSTOM = 0,
     CAMERA_FREE = 1,
     CAMERA_ORBITAL = 2,
@@ -508,7 +532,8 @@ typedef enum {
     CAMERA_THIRD_PERSON = 4,
 } CameraMode;
 
-typedef enum {
+typedef enum
+{
     FONT_DEFAULT = 0,
     FONT_BITMAP = 1,
     FONT_SDF = 2,
@@ -519,20 +544,21 @@ typedef enum {
  *
  * @param width Window width in pixels.
  * @param height Window height in pixels.
- * @param title Window title text.
+ * @param pTitle Window title text.
  */
-QCAPI void InitWindow(int width, int height, const char* title, RendererType rendererType = RendererType::Auto);
+QCAPI void InitWindow(int width, int height, const char* pTitle, RendererType rendererType = RendererType::Auto);
 
 struct rAudioBuffer;
 struct rAudioProcessor;
 
-typedef void (*AudioCallback)(void* bufferData, unsigned int frames);
-typedef unsigned char* (*LoadFileDataCallback)(const char* fileName, int* dataSize);
-typedef bool (*SaveFileDataCallback)(const char* fileName, void* data, int dataSize);
-typedef char* (*LoadFileTextCallback)(const char* fileName);
-typedef bool (*SaveFileTextCallback)(const char* fileName, char* text);
+typedef void (*AudioCallback)(void* pBufferData, unsigned int frames);
+typedef unsigned char* (*LoadFileDataCallback)(const char* pFileName, int* pDataSize);
+typedef bool (*SaveFileDataCallback)(const char* pFileName, void* pData, int dataSize);
+typedef char* (*LoadFileTextCallback)(const char* pFileName);
+typedef bool (*SaveFileTextCallback)(const char* pFileName, char* pText);
 
-struct Wave {
+struct Wave
+{
     unsigned int frameCount = 0;
     unsigned int sampleRate = 0;
     unsigned int sampleSize = 0;
@@ -540,7 +566,8 @@ struct Wave {
     void* data = nullptr;
 };
 
-struct AudioStream {
+struct AudioStream
+{
     rAudioBuffer* buffer = nullptr;
     rAudioProcessor* processor = nullptr;
     unsigned int sampleRate = 0;
@@ -548,12 +575,14 @@ struct AudioStream {
     unsigned int channels = 0;
 };
 
-struct Sound {
+struct Sound
+{
     AudioStream stream;
     unsigned int frameCount = 0;
 };
 
-struct Music {
+struct Music
+{
     AudioStream stream;
     unsigned int frameCount = 0;
     bool looping = false;
@@ -561,7 +590,8 @@ struct Music {
     void* ctxData = nullptr;
 };
 
-struct VrDeviceInfo {
+struct VrDeviceInfo
+{
     int hResolution = 0;
     int vResolution = 0;
     float hScreenSize = 0.0f;
@@ -573,7 +603,8 @@ struct VrDeviceInfo {
     float chromaAbCorrection[4] = {};
 };
 
-struct VrStereoConfig {
+struct VrStereoConfig
+{
     Matrix projection[2];
     Matrix viewOffset[2];
     float leftLensCenter[2] = {};
@@ -584,13 +615,15 @@ struct VrStereoConfig {
     float scaleIn[2] = {};
 };
 
-struct AutomationEvent {
+struct AutomationEvent
+{
     unsigned int frame = 0;
     unsigned int type = 0;
     int params[4] = {};
 };
 
-struct AutomationEventList {
+struct AutomationEventList
+{
     unsigned int capacity = 0;
     unsigned int count = 0;
     AutomationEvent* events = nullptr;
@@ -601,21 +634,21 @@ struct AutomationEventList {
  * @param size Number of bytes to allocate.
  * @return Pointer to the allocated memory block.
  */
-QCAPI void*           MemAlloc(size_t size);
+QCAPI void* MemAlloc(size_t size);
 
 /**
  * @brief Resize a previously allocated block of memory.
- * @param ptr Pointer to the memory block to resize.
+ * @param pPtr Pointer to the memory block to resize.
  * @param size New desired size of the memory block, in bytes.
  * @return Pointer to the resized memory block.
  */
-QCAPI void*           MemRealloc(void* ptr, unsigned int size);
+QCAPI void* MemRealloc(void* pPtr, unsigned int size);
 
 /**
  * @brief Free a block of memory previously allocated with MemAlloc/MemRealloc.
- * @param ptr Pointer to the memory block to free.
+ * @param pPtr Pointer to the memory block to free.
  */
-QCAPI void            MemFree(void* ptr);
+QCAPI void MemFree(void* pPtr);
 
 /**
  * @brief Set the requested multisample anti-aliasing sample count (2, 4 or 8; other values disable MSAA).
@@ -710,12 +743,12 @@ QCAPI VkSampleCountFlagBits GetVulkanMSAASamples();
  */
 QCAPI VkDescriptorSet GetVulkanTextureDescriptorSet(uint32_t textureId);
 
-using VulkanRenderCallback = void(*)(VkCommandBuffer commandBuffer);
+using VulkanRenderCallback = void (*)(VkCommandBuffer commandBuffer);
 /**
  * @brief Set a callback invoked while recording Vulkan rendering commands.
- * @param callback Callback function, or nullptr to clear it.
+ * @param pfnCallback Callback function, or nullptr to clear it.
  */
-QCAPI void SetVulkanRenderCallback(VulkanRenderCallback callback);
+QCAPI void SetVulkanRenderCallback(VulkanRenderCallback pfnCallback);
 /**
  * @brief Get the currently registered Vulkan render callback.
  * @return Registered callback, or nullptr if none is set.
@@ -728,25 +761,25 @@ QCAPI VulkanRenderCallback GetVulkanRenderCallback();
  * @brief Get the active D3D11 device.
  * @return D3D11 device, or nullptr if unavailable.
  */
-QCAPI ID3D11Device *GetD3D11Device();
+QCAPI ID3D11Device* GetD3D11Device();
 /**
  * @brief Get the active D3D11 immediate context.
  * @return D3D11 immediate context, or nullptr if unavailable.
  */
-QCAPI ID3D11DeviceContext *GetD3D11ImmediateContext();
+QCAPI ID3D11DeviceContext* GetD3D11ImmediateContext();
 /**
  * @brief Get the Direct3D 11 shader resource view for a texture.
  * @param textureId QuarkCore texture identifier.
  * @return Shader resource view, or nullptr if the texture is unavailable.
  */
-QCAPI ID3D11ShaderResourceView *GetD3D11TextureShaderResourceView(uint32_t textureId);
+QCAPI ID3D11ShaderResourceView* GetD3D11TextureShaderResourceView(uint32_t textureId);
 
-using D3D11RenderCallback = void(*)(ID3D11DeviceContext *deviceContext);
+using D3D11RenderCallback = void (*)(ID3D11DeviceContext* pDeviceContext);
 /**
  * @brief Set a callback invoked before the D3D11 frame is presented.
- * @param callback Callback function, or nullptr to clear it.
+ * @param pfnCallback Callback function, or nullptr to clear it.
  */
-QCAPI void SetD3D11RenderCallback(D3D11RenderCallback callback);
+QCAPI void SetD3D11RenderCallback(D3D11RenderCallback pfnCallback);
 /**
  * @brief Get the currently registered D3D11 render callback.
  * @return Registered callback, or nullptr if none is set.
@@ -754,17 +787,17 @@ QCAPI void SetD3D11RenderCallback(D3D11RenderCallback callback);
 QCAPI D3D11RenderCallback GetD3D11RenderCallback();
 #endif
 
-using NativeEventCallback = void(*)(const SDL_Event* event);
-QCAPI void SetNativeEventCallback(NativeEventCallback callback);
+using NativeEventCallback = void (*)(const SDL_Event* pEvent);
+QCAPI void SetNativeEventCallback(NativeEventCallback pfnCallback);
 
 /**
  * @brief Set window title text.
  *
- * @param title New window title.
+ * @param pTitle New window title.
  * @return true on success.
  * @return false on failure.
  */
-QCAPI bool SetWindowTitle(const char* title);
+QCAPI bool SetWindowTitle(const char* pTitle);
 /**
  * @brief Get current window title.
  *
@@ -992,7 +1025,7 @@ QCAPI float GetWindowPixelDensity();
  */
 QCAPI void SetWindowIcon(Image image);
 
-using TraceLogCallback = void (*)(LogLevel level, const char* message);
+using TraceLogCallback = void (*)(LogLevel level, const char* pMessage);
 
 /**
  * @brief Check whether the window was resized since the last event pump.
@@ -1021,10 +1054,10 @@ QCAPI void ClearWindowState(unsigned int flags);
 QCAPI void ToggleBorderlessWindowed();
 /**
  * @brief Set the window icon from an array of images.
- * @param images Array of images.
+ * @param pImages Array of images.
  * @param count Number of images.
  */
-QCAPI void SetWindowIcons(Image* images, int count);
+QCAPI void SetWindowIcons(Image* pImages, int count);
 /**
  * @brief Move the window to a specific monitor.
  * @param monitor Monitor index.
@@ -1097,9 +1130,9 @@ QCAPI int GetMonitorPhysicalHeight(int monitor);
 QCAPI const char* GetMonitorName(int monitor);
 /**
  * @brief Set the clipboard text.
- * @param text Text to copy.
+ * @param pText Text to copy.
  */
-QCAPI void SetClipboardText(const char* text);
+QCAPI void SetClipboardText(const char* pText);
 /**
  * @brief Get the clipboard text.
  * @return Clipboard text, or empty string if unavailable.
@@ -1125,19 +1158,19 @@ QCAPI void SwapScreenBuffer();
 QCAPI void PollInputEvents();
 /**
  * @brief Save a screenshot to a file.
- * @param fileName Output image name.
+ * @param pFileName Output image name.
  */
-QCAPI void TakeScreenshot(const char* fileName);
+QCAPI void TakeScreenshot(const char* pFileName);
 /**
  * @brief Open a URL in the default browser.
- * @param url URL string.
+ * @param pUrl URL string.
  */
-QCAPI bool OpenURL(const char* url);
+QCAPI bool OpenURL(const char* pUrl);
 /**
  * @brief Register a custom trace log callback.
- * @param callback Callback function or nullptr to disable.
+ * @param pfnCallback Callback function or nullptr to disable.
  */
-QCAPI void SetTraceLogCallback(TraceLogCallback callback);
+QCAPI void SetTraceLogCallback(TraceLogCallback pfnCallback);
 /**
  * @brief Get the refresh rate of the current monitor.
  * @return Refresh rate in hertz.
@@ -1151,10 +1184,10 @@ QCAPI Font GetDefaultFont();
 /**
  * @brief Get a shader attribute location by name.
  * @param shader Shader to query.
- * @param attribName Attribute name.
+ * @param pAttribName Attribute name.
  * @return Attribute location, or -1 if it is not found.
  */
-QCAPI int GetShaderAttributeLocation(const Shader& shader, const char* attribName);
+QCAPI int GetShaderAttributeLocation(const Shader& shader, const char* pAttribName);
 /**
  * @brief Set the active logging level.
  * @param level Logging level to use.
@@ -1172,32 +1205,45 @@ QCAPI SDL_Window* GetNativeWindow();
  * @brief Get the native SDL window handle.
  * @return Pointer to the SDL window.
  */
-inline SDL_Window* GetWindowHandle(void) { return GetNativeWindow(); }
+inline SDL_Window* GetWindowHandle(void)
+{
+    return GetNativeWindow();
+}
 /**
  * @brief Set the minimum window dimensions.
  * @param width Minimum width in pixels.
  * @param height Minimum height in pixels.
  * @return true if the operation succeeds.
  */
-inline bool SetWindowMinSize(int width, int height) { return SetWindowMinimumSize(width, height); }
+inline bool SetWindowMinSize(int width, int height)
+{
+    return SetWindowMinimumSize(width, height);
+}
 /**
  * @brief Set the maximum window dimensions.
  * @param width Maximum width in pixels.
  * @param height Maximum height in pixels.
  * @return true if the operation succeeds.
  */
-inline bool SetWindowMaxSize(int width, int height) { return SetWindowMaximumSize(width, height); }
+inline bool SetWindowMaxSize(int width, int height)
+{
+    return SetWindowMaximumSize(width, height);
+}
 /**
  * @brief Get the window's display scale.
  * @return Display scale factor.
  */
-inline float GetWindowScaleDPI(void) { return GetWindowDisplayScale(); }
+inline float GetWindowScaleDPI(void)
+{
+    return GetWindowDisplayScale();
+}
 /**
  * @brief Get the refresh rate of a monitor as an integer.
  * @param monitor Monitor index (the current monitor is used).
  * @return Refresh rate in hertz.
  */
-inline int GetMonitorRefreshRate(int monitor) {
+inline int GetMonitorRefreshRate(int monitor)
+{
     (void)monitor;
     return static_cast<int>(std::lround(static_cast<double>(GetCurrentMonitorRefreshRate())));
 }
@@ -1205,39 +1251,45 @@ inline int GetMonitorRefreshRate(int monitor) {
  * @brief Get the default font.
  * @return Default font object.
  */
-inline Font GetFontDefault(void) { return GetDefaultFont(); }
+inline Font GetFontDefault(void)
+{
+    return GetDefaultFont();
+}
 /**
  * @brief Get a shader attribute location by name.
  * @param shader Shader to query.
- * @param attribName Attribute name.
+ * @param pAttribName Attribute name.
  * @return Attribute location, or -1 if it is not found.
  */
-inline int GetShaderLocationAttrib(const Shader& shader, const char* attribName) {
-    return GetShaderAttributeLocation(shader, attribName);
+inline int GetShaderLocationAttrib(const Shader& shader, const char* pAttribName)
+{
+    return GetShaderAttributeLocation(shader, pAttribName);
 }
 /**
  * @brief Set the log level using a raylib-compatible integer value.
  * @param logLevel Integer log level to map to a QuarkCore logging level.
  */
-inline void SetTraceLogLevel(int logLevel) {
-    switch (logLevel) {
-        case 0:
-        case 1:
-        case 2:
-            SetLogLevel(LogLevel::Trace);
-            break;
-        case 3:
-            SetLogLevel(LogLevel::Info);
-            break;
-        case 4:
-            SetLogLevel(LogLevel::Warn);
-            break;
-        case 5:
-            SetLogLevel(LogLevel::Error);
-            break;
-        default:
-            SetLogLevel(LogLevel::None);
-            break;
+inline void SetTraceLogLevel(int logLevel)
+{
+    switch (logLevel)
+    {
+    case 0:
+    case 1:
+    case 2:
+        SetLogLevel(LogLevel::Trace);
+        break;
+    case 3:
+        SetLogLevel(LogLevel::Info);
+        break;
+    case 4:
+        SetLogLevel(LogLevel::Warn);
+        break;
+    case 5:
+        SetLogLevel(LogLevel::Error);
+        break;
+    default:
+        SetLogLevel(LogLevel::None);
+        break;
     }
 }
 
@@ -1283,7 +1335,7 @@ QCAPI void SetLogLevel(LogLevel level);
  * @param logType Log type.
  * @param message Log message.
  */
-QCAPI void TraceLog(LogLevel level, const char* logType, const char* message);
+QCAPI void TraceLog(LogLevel level, const char* pLogType, const char* pMessage);
 /**
  * @brief Format a text string.
  *
@@ -1291,7 +1343,7 @@ QCAPI void TraceLog(LogLevel level, const char* logType, const char* message);
  * @param ... Format arguments.
  * @return Pointer to formatted string.
  */
-QCAPI const char* TextFormat(const char* format, ...);
+QCAPI const char* TextFormat(const char* pFormat, ...);
 
 /**
  * @brief Copy one string to another, returns bytes copied.
@@ -1299,7 +1351,7 @@ QCAPI const char* TextFormat(const char* format, ...);
  * @param src Source string.
  * @return Number of bytes copied.
  */
-QCAPI int TextCopy(char* dst, const char* src);
+QCAPI int TextCopy(char* pDst, const char* pSrc);
 
 /**
  * @brief Check if two strings are equal.
@@ -1307,14 +1359,14 @@ QCAPI int TextCopy(char* dst, const char* src);
  * @param text2 Second string.
  * @return True if text1 and text2 are equal.
  */
-QCAPI bool TextIsEqual(const char* text1, const char* text2);
+QCAPI bool TextIsEqual(const char* pText1, const char* pText2);
 
 /**
  * @brief Get text length in bytes, checks for '\0' ending.
  * @param text Text string.
  * @return Length of the text.
  */
-QCAPI unsigned int TextLength(const char* text);
+QCAPI unsigned int TextLength(const char* pText);
 
 /**
  * @brief Get a piece of a text string.
@@ -1323,14 +1375,14 @@ QCAPI unsigned int TextLength(const char* text);
  * @param length Desired length.
  * @return Pointer to a static substring buffer.
  */
-QCAPI const char* TextSubtext(const char* text, int position, int length);
+QCAPI const char* TextSubtext(const char* pText, int position, int length);
 
 /**
  * @brief Remove all whitespace from a text string.
  * @param text Text string.
  * @return Pointer to a static buffer without spaces.
  */
-QCAPI const char* TextRemoveSpaces(const char* text);
+QCAPI const char* TextRemoveSpaces(const char* pText);
 
 /**
  * @brief Get the text between two markers (allocated, release with MemFree).
@@ -1339,7 +1391,7 @@ QCAPI const char* TextRemoveSpaces(const char* text);
  * @param end End marker.
  * @return Allocated substring, or NULL if markers not found.
  */
-QCAPI char* GetTextBetween(const char* text, const char* begin, const char* end);
+QCAPI char* GetTextBetween(const char* pText, const char* pBegin, const char* pEnd);
 
 /**
  * @brief Replace all occurrences of a string within text (allocated, release with MemFree).
@@ -1348,7 +1400,7 @@ QCAPI char* GetTextBetween(const char* text, const char* begin, const char* end)
  * @param replacement Replacement string.
  * @return Allocated result, or NULL if search not found.
  */
-QCAPI char* TextReplace(const char* text, const char* search, const char* replacement);
+QCAPI char* TextReplace(const char* pText, const char* pSearch, const char* pReplacement);
 
 /**
  * @brief Replace occurrences of a string within text, always allocating (release with MemFree).
@@ -1357,7 +1409,7 @@ QCAPI char* TextReplace(const char* text, const char* search, const char* replac
  * @param replacement Replacement string.
  * @return Always-allocated result.
  */
-QCAPI char* TextReplaceAlloc(const char* text, const char* search, const char* replacement);
+QCAPI char* TextReplaceAlloc(const char* pText, const char* pSearch, const char* pReplacement);
 
 /**
  * @brief Replace the text between two markers, inclusive (allocated, release with MemFree).
@@ -1367,7 +1419,7 @@ QCAPI char* TextReplaceAlloc(const char* text, const char* search, const char* r
  * @param replacement Replacement string.
  * @return Allocated result, or NULL if markers not found.
  */
-QCAPI char* TextReplaceBetween(const char* text, const char* begin, const char* end, const char* replacement);
+QCAPI char* TextReplaceBetween(const char* pText, const char* pBegin, const char* pEnd, const char* pReplacement);
 
 /**
  * @brief Replace the text between two markers, always allocating (release with MemFree).
@@ -1377,7 +1429,7 @@ QCAPI char* TextReplaceBetween(const char* text, const char* begin, const char* 
  * @param replacement Replacement string.
  * @return Always-allocated result.
  */
-QCAPI char* TextReplaceBetweenAlloc(const char* text, const char* begin, const char* end, const char* replacement);
+QCAPI char* TextReplaceBetweenAlloc(const char* pText, const char* pBegin, const char* pEnd, const char* pReplacement);
 
 /**
  * @brief Insert a string into text at a position (allocated, release with MemFree).
@@ -1386,7 +1438,7 @@ QCAPI char* TextReplaceBetweenAlloc(const char* text, const char* begin, const c
  * @param position Insertion position.
  * @return Allocated result, or NULL on invalid input.
  */
-QCAPI char* TextInsert(const char* text, const char* insert, int position);
+QCAPI char* TextInsert(const char* pText, const char* pInsert, int position);
 
 /**
  * @brief Insert a string into text at a position, always allocating (release with MemFree).
@@ -1395,7 +1447,7 @@ QCAPI char* TextInsert(const char* text, const char* insert, int position);
  * @param position Insertion position.
  * @return Always-allocated result.
  */
-QCAPI char* TextInsertAlloc(const char* text, const char* insert, int position);
+QCAPI char* TextInsertAlloc(const char* pText, const char* pInsert, int position);
 
 /**
  * @brief Join a list of strings with a delimiter (allocated, release with MemFree).
@@ -1404,7 +1456,7 @@ QCAPI char* TextInsertAlloc(const char* text, const char* insert, int position);
  * @param delimiter Delimiter string.
  * @return Allocated joined string.
  */
-QCAPI char* TextJoin(char** textList, int count, const char* delimiter);
+QCAPI char* TextJoin(char** ppTextList, int count, const char* pDelimiter);
 
 /**
  * @brief Split a text string into an array of tokens (release with MemFree per token and the array).
@@ -1413,7 +1465,7 @@ QCAPI char* TextJoin(char** textList, int count, const char* delimiter);
  * @param count Output number of tokens.
  * @return Allocated array of allocated tokens.
  */
-QCAPI char** TextSplit(const char* text, char delimiter, int* count);
+QCAPI char** TextSplit(const char* pText, char delimiter, int* pCount);
 
 /**
  * @brief Append text at the current position and advance the position.
@@ -1421,7 +1473,7 @@ QCAPI char** TextSplit(const char* text, char delimiter, int* count);
  * @param append String to append.
  * @param position Position to append at (in/out).
  */
-QCAPI void TextAppend(char* text, const char* append, int* position);
+QCAPI void TextAppend(char* pText, const char* pAppend, int* pPosition);
 
 /**
  * @brief Find the index of the first occurrence of a string within text.
@@ -1429,56 +1481,56 @@ QCAPI void TextAppend(char* text, const char* append, int* position);
  * @param search String to search for.
  * @return Index of the match, or -1 if not found.
  */
-QCAPI int TextFindIndex(const char* text, const char* search);
+QCAPI int TextFindIndex(const char* pText, const char* pSearch);
 
 /**
  * @brief Convert text to upper case (static buffer).
  * @param text Text to convert.
  * @return Pointer to a static buffer.
  */
-QCAPI const char* TextToUpper(const char* text);
+QCAPI const char* TextToUpper(const char* pText);
 
 /**
  * @brief Convert text to lower case (static buffer).
  * @param text Text to convert.
  * @return Pointer to a static buffer.
  */
-QCAPI const char* TextToLower(const char* text);
+QCAPI const char* TextToLower(const char* pText);
 
 /**
  * @brief Convert text to PascalCase (static buffer).
  * @param text Text to convert.
  * @return Pointer to a static buffer.
  */
-QCAPI const char* TextToPascal(const char* text);
+QCAPI const char* TextToPascal(const char* pText);
 
 /**
  * @brief Convert text to snake_case (static buffer).
  * @param text Text to convert.
  * @return Pointer to a static buffer.
  */
-QCAPI const char* TextToSnake(const char* text);
+QCAPI const char* TextToSnake(const char* pText);
 
 /**
  * @brief Convert text to camelCase (static buffer).
  * @param text Text to convert.
  * @return Pointer to a static buffer.
  */
-QCAPI const char* TextToCamel(const char* text);
+QCAPI const char* TextToCamel(const char* pText);
 
 /**
  * @brief Get the integer value from a text string.
  * @param text Text to parse.
  * @return Integer value.
  */
-QCAPI int TextToInteger(const char* text);
+QCAPI int TextToInteger(const char* pText);
 
 /**
  * @brief Get the float value from a text string.
  * @param text Text to parse.
  * @return Float value.
  */
-QCAPI float TextToFloat(const char* text);
+QCAPI float TextToFloat(const char* pText);
 
 /**
  * @brief Load an array of lines from a text (release with UnloadTextLines).
@@ -1486,14 +1538,14 @@ QCAPI float TextToFloat(const char* text);
  * @param count Output number of lines.
  * @return Allocated array of allocated line strings.
  */
-QCAPI char** LoadTextLines(const char* text, int* count);
+QCAPI char** LoadTextLines(const char* pText, int* pCount);
 
 /**
  * @brief Unload an array of lines loaded with LoadTextLines.
  * @param text Array of line strings.
  * @param lineCount Number of lines.
  */
-QCAPI void UnloadTextLines(char** text, int lineCount);
+QCAPI void UnloadTextLines(char** ppText, int lineCount);
 
 /**
  * @brief Set the target FPS.
@@ -1610,12 +1662,18 @@ QCAPI Vec2 GetMousePosition();
  * @brief Get the horizontal mouse position as an integer.
  * @return Mouse X coordinate in pixels.
  */
-inline int GetMouseX() { return static_cast<int>(GetMousePosition().x); }
+inline int GetMouseX()
+{
+    return static_cast<int>(GetMousePosition().x);
+}
 /**
  * @brief Get the vertical mouse position as an integer.
  * @return Mouse Y coordinate in pixels.
  */
-inline int GetMouseY() { return static_cast<int>(GetMousePosition().y); }
+inline int GetMouseY()
+{
+    return static_cast<int>(GetMousePosition().y);
+}
 
 /**
  * @brief Check whether a key is currently in its repeat-pressed state.
@@ -1702,7 +1760,7 @@ QCAPI float GetGesturePinchAngle(void);
  * @param camera Camera to update.
  * @param mode Camera control mode.
  */
-QCAPI void UpdateCamera(Camera3D* camera, int mode);
+QCAPI void UpdateCamera(Camera3D* pCamera, int mode);
 /**
  * @brief Update a camera using explicit movement, rotation, and zoom inputs.
  * @param camera Camera to update.
@@ -1710,7 +1768,7 @@ QCAPI void UpdateCamera(Camera3D* camera, int mode);
  * @param rotation Camera rotation angles in radians.
  * @param zoom Zoom change.
  */
-QCAPI void UpdateCameraPro(Camera3D* camera, Vec2 movement, Vec3 rotation, float zoom);
+QCAPI void UpdateCameraPro(Camera3D* pCamera, Vec2 movement, Vec3 rotation, float zoom);
 /**
  * @brief Build the view matrix for a 3D camera.
  * @param camera Camera configuration.
@@ -1785,7 +1843,7 @@ QCAPI float GetMasterVolume(void);
  * @param fileName Path to the audio file.
  * @return Loaded waveform, or an empty waveform on failure.
  */
-QCAPI Wave LoadWave(const char* fileName);
+QCAPI Wave LoadWave(const char* pFileName);
 /**
  * @brief Load a waveform from encoded memory data.
  * @param fileType File extension or data format identifier.
@@ -1793,7 +1851,7 @@ QCAPI Wave LoadWave(const char* fileName);
  * @param dataSize Size of the encoded data in bytes.
  * @return Loaded waveform, or an empty waveform on failure.
  */
-QCAPI Wave LoadWaveFromMemory(const char* fileType, const unsigned char* fileData, int dataSize);
+QCAPI Wave LoadWaveFromMemory(const char* pFileType, const unsigned char* pFileData, int dataSize);
 /**
  * @brief Convert waveform samples to a floating-point array.
  * @param wave Waveform to convert.
@@ -1805,7 +1863,7 @@ QCAPI float* LoadWaveSamples(Wave wave);
  * @param fileName Path to the audio file.
  * @return Loaded sound, or an invalid sound on failure.
  */
-QCAPI Sound LoadSound(const char* fileName);
+QCAPI Sound LoadSound(const char* pFileName);
 /**
  * @brief Create a sound from a waveform.
  * @param wave Source waveform.
@@ -1824,7 +1882,7 @@ QCAPI Sound LoadSoundAlias(Sound source);
  * @param data New sample data.
  * @param frameCount Number of audio frames supplied.
  */
-QCAPI void UpdateSound(Sound sound, const void* data, int frameCount);
+QCAPI void UpdateSound(Sound sound, const void* pData, int frameCount);
 /**
  * @brief Unload waveform data and release its resources.
  * @param wave Waveform to unload.
@@ -1846,14 +1904,14 @@ QCAPI void UnloadSoundAlias(Sound alias);
  * @param fileName Destination file path.
  * @return true if the waveform was exported successfully.
  */
-QCAPI bool ExportWave(Wave wave, const char* fileName);
+QCAPI bool ExportWave(Wave wave, const char* pFileName);
 /**
  * @brief Export waveform samples as source code.
  * @param wave Waveform to export.
  * @param fileName Destination source file path.
  * @return true if the file was written successfully.
  */
-QCAPI bool ExportWaveAsCode(Wave wave, const char* fileName);
+QCAPI bool ExportWaveAsCode(Wave wave, const char* pFileName);
 /**
  * @brief Create a copy of a waveform and its sample data.
  * @param wave Waveform to copy.
@@ -1866,7 +1924,7 @@ QCAPI Wave WaveCopy(Wave wave);
  * @param initFrame First frame to keep.
  * @param finalFrame Last frame to keep.
  */
-QCAPI void WaveCrop(Wave* wave, int initFrame, int finalFrame);
+QCAPI void WaveCrop(Wave* pWave, int initFrame, int finalFrame);
 /**
  * @brief Convert a waveform to the requested audio format.
  * @param wave Waveform to modify.
@@ -1874,13 +1932,13 @@ QCAPI void WaveCrop(Wave* wave, int initFrame, int finalFrame);
  * @param sampleSize Target sample size in bits.
  * @param channels Target channel count.
  */
-QCAPI void WaveFormat(Wave* wave, int sampleRate, int sampleSize, int channels);
+QCAPI void WaveFormat(Wave* pWave, int sampleRate, int sampleSize, int channels);
 /**
  * @brief Load a streaming music track from a file.
  * @param fileName Path to the audio file.
  * @return Music stream, or an invalid stream on failure.
  */
-QCAPI Music LoadMusicStream(const char* fileName);
+QCAPI Music LoadMusicStream(const char* pFileName);
 /**
  * @brief Load a streaming music track from encoded memory data.
  * @param fileType File extension or data format identifier.
@@ -1888,7 +1946,7 @@ QCAPI Music LoadMusicStream(const char* fileName);
  * @param dataSize Size of the encoded data in bytes.
  * @return Music stream, or an invalid stream on failure.
  */
-QCAPI Music LoadMusicStreamFromMemory(const char* fileType, const unsigned char* data, int dataSize);
+QCAPI Music LoadMusicStreamFromMemory(const char* pFileType, const unsigned char* pData, int dataSize);
 /**
  * @brief Unload a music stream and release its resources.
  * @param music Music stream to unload.
@@ -2024,7 +2082,7 @@ QCAPI void StopAudioStream(AudioStream stream);
  * @param data Interleaved audio sample data.
  * @param frameCount Number of audio frames supplied.
  */
-QCAPI void UpdateAudioStream(AudioStream stream, const void* data, int frameCount);
+QCAPI void UpdateAudioStream(AudioStream stream, const void* pData, int frameCount);
 /**
  * @brief Set the default audio stream buffer size.
  * @param size Buffer size in audio frames.
@@ -2127,12 +2185,12 @@ QCAPI void SetSoundPan(Sound sound, float pan);
  * @param dataSize Output size of the returned buffer in bytes.
  * @return File data, or nullptr if loading fails.
  */
-QCAPI unsigned char* LoadFileData(const char* fileName, int* dataSize);
+QCAPI unsigned char* LoadFileData(const char* pFileName, int* pDataSize);
 /**
  * @brief Release data allocated by LoadFileData.
  * @param data File data buffer to release.
  */
-QCAPI void UnloadFileData(unsigned char* data);
+QCAPI void UnloadFileData(unsigned char* pData);
 /**
  * @brief Save bytes to a file.
  * @param fileName Destination file path.
@@ -2140,7 +2198,7 @@ QCAPI void UnloadFileData(unsigned char* data);
  * @param dataSize Number of bytes to write.
  * @return true if the data was saved successfully.
  */
-QCAPI bool SaveFileData(const char* fileName, const void* data, int dataSize);
+QCAPI bool SaveFileData(const char* pFileName, const void* pData, int dataSize);
 /**
  * @brief Export byte data as a C source-code array.
  * @param data Byte data to export.
@@ -2148,25 +2206,25 @@ QCAPI bool SaveFileData(const char* fileName, const void* data, int dataSize);
  * @param fileName Destination source file path.
  * @return true if the file was written successfully.
  */
-QCAPI bool ExportDataAsCode(const unsigned char* data, int dataSize, const char* fileName);
+QCAPI bool ExportDataAsCode(const unsigned char* pData, int dataSize, const char* pFileName);
 /**
  * @brief Load a text file into a heap-allocated null-terminated string.
  * @param fileName Path to the text file.
  * @return Loaded text, or nullptr if loading fails.
  */
-QCAPI char* LoadFileText(const char* fileName);
+QCAPI char* LoadFileText(const char* pFileName);
 /**
  * @brief Release text allocated by LoadFileText.
  * @param text Text buffer to release.
  */
-QCAPI void UnloadFileText(char* text);
+QCAPI void UnloadFileText(char* pText);
 /**
  * @brief Save a null-terminated string to a file.
  * @param fileName Destination file path.
  * @param text Text to write.
  * @return true if the text was saved successfully.
  */
-QCAPI bool SaveFileText(const char* fileName, const char* text);
+QCAPI bool SaveFileText(const char* pFileName, const char* pText);
 /**
  * @brief Set the callback used to load file bytes.
  * @param callback Callback, or nullptr to restore the default loader.
@@ -2193,7 +2251,7 @@ QCAPI void SetSaveFileTextCallback(SaveFileTextCallback callback);
  * @param fileName Path to the event-list file.
  * @return Loaded event list, or an empty list if loading fails.
  */
-QCAPI AutomationEventList LoadAutomationEventList(const char* fileName);
+QCAPI AutomationEventList LoadAutomationEventList(const char* pFileName);
 /**
  * @brief Release the storage owned by an automation event list.
  * @param list Event list to unload.
@@ -2205,12 +2263,12 @@ QCAPI void UnloadAutomationEventList(AutomationEventList list);
  * @param fileName Destination file path.
  * @return true if the list was written successfully.
  */
-QCAPI bool ExportAutomationEventList(AutomationEventList list, const char* fileName);
+QCAPI bool ExportAutomationEventList(AutomationEventList list, const char* pFileName);
 /**
  * @brief Set the event list used for automation recording and playback.
  * @param list Event list to use.
  */
-QCAPI void SetAutomationEventList(AutomationEventList* list);
+QCAPI void SetAutomationEventList(AutomationEventList* pList);
 /**
  * @brief Set the current base frame for automation events.
  * @param frame Base frame index.
@@ -2349,7 +2407,7 @@ QCAPI void DrawTexturePro(Texture2D texture, Rectangle source, Rectangle dest, V
 
 /**
  * @brief Get the default font.
- * 
+ *
  * @return Default font object.
  */
 QCAPI Font GetDefaultFont();
@@ -2363,7 +2421,7 @@ QCAPI Font GetDefaultFont();
  * @param fontSize Font size in pixels.
  * @param color Text tint color.
  */
-QCAPI void DrawText(const char* text, int x, int y, int fontSize, Color color);
+QCAPI void DrawText(const char* pText, int x, int y, int fontSize, Color color);
 
 /**
  * @brief Draw debug text with a hard drop shadow and 1 px outline.
@@ -2374,7 +2432,7 @@ QCAPI void DrawText(const char* text, int x, int y, int fontSize, Color color);
  * @param fontSize Font size in pixels.
  * @param color Text tint color.
  */
-QCAPI void DrawDebugText(const char* text, int x, int y, int fontSize, Color color);
+QCAPI void DrawDebugText(const char* pText, int x, int y, int fontSize, Color color);
 
 /**
  * @brief Draw text with a custom font.
@@ -2386,8 +2444,8 @@ QCAPI void DrawDebugText(const char* text, int x, int y, int fontSize, Color col
  * @param spacing Additional character spacing in pixels.
  * @param tint Text tint color.
  */
-QCAPI void DrawTextEx(Font font, const char* text, Vec2 position,
-                float fontSize, float spacing, Color tint);
+QCAPI void DrawTextEx(Font font, const char* pText, Vec2 position,
+                      float fontSize, float spacing, Color tint);
 
 /**
  * @brief Measure text with a custom font.
@@ -2398,8 +2456,8 @@ QCAPI void DrawTextEx(Font font, const char* text, Vec2 position,
  * @param spacing Additional character spacing in pixels.
  * @return Text size as Vec2.
  */
-QCAPI Vec2 MeasureTextEx(Font font, const char* text,
-                   float fontSize, float spacing);
+QCAPI Vec2 MeasureTextEx(Font font, const char* pText,
+                         float fontSize, float spacing);
 
 /**
  * @brief Measure text using the default font.
@@ -2408,7 +2466,7 @@ QCAPI Vec2 MeasureTextEx(Font font, const char* text,
  * @param fontSize Font size in pixels.
  * @return Text width in pixels.
  */
-QCAPI int MeasureText(const char* text, int fontSize);
+QCAPI int MeasureText(const char* pText, int fontSize);
 
 /**
  * @brief Draw current FPS as text.
@@ -2430,8 +2488,8 @@ QCAPI void DrawFPS(int posX, int posY);
  * @param spacing Additional character spacing in pixels.
  * @param tint Text tint color.
  */
-QCAPI void DrawTextPro(Font font, const char* text, Vec2 position, Vec2 origin,
-                float rotation, float fontSize, float spacing, Color tint);
+QCAPI void DrawTextPro(Font font, const char* pText, Vec2 position, Vec2 origin,
+                       float rotation, float fontSize, float spacing, Color tint);
 
 /**
  * @brief Draw a single codepoint (character).
@@ -2455,8 +2513,8 @@ QCAPI void DrawTextCodepoint(Font font, int codepoint, Vec2 position, float font
  * @param spacing Additional character spacing in pixels.
  * @param tint Text tint color.
  */
-QCAPI void DrawTextCodepoints(Font font, const int* codepoints, int codepointCount,
-                       Vec2 position, float fontSize, float spacing, Color tint);
+QCAPI void DrawTextCodepoints(Font font, const int* pCodepoints, int codepointCount,
+                              Vec2 position, float fontSize, float spacing, Color tint);
 
 /**
  * @brief Set vertical line spacing between lines of text.
@@ -2475,8 +2533,8 @@ QCAPI void SetTextLineSpacing(int spacing);
  * @param spacing Additional character spacing in pixels.
  * @return Text size as Vec2.
  */
-QCAPI Vec2 MeasureTextCodepoints(Font font, const int* codepoints, int length,
-                          float fontSize, float spacing);
+QCAPI Vec2 MeasureTextCodepoints(Font font, const int* pCodepoints, int length,
+                                 float fontSize, float spacing);
 
 /**
  * @brief Get the atlas index of a codepoint in a font.
@@ -2511,13 +2569,13 @@ QCAPI Rectangle GetGlyphAtlasRec(Font font, int codepoint);
  * @param length Number of codepoints in the array.
  * @return Heap-allocated UTF-8 string (release with UnloadUTF8).
  */
-QCAPI char* LoadUTF8(const int* codepoints, int length);
+QCAPI char* LoadUTF8(const int* pCodepoints, int length);
 
 /**
  * @brief Unload a UTF-8 string previously allocated with LoadUTF8.
  * @param text UTF-8 string to unload.
  */
-QCAPI void UnloadUTF8(char* text);
+QCAPI void UnloadUTF8(char* pText);
 
 /**
  * @brief Load all codepoints from a UTF-8 text string.
@@ -2525,20 +2583,20 @@ QCAPI void UnloadUTF8(char* text);
  * @param count Output number of codepoints.
  * @return Heap-allocated array of codepoints (release with UnloadCodepoints).
  */
-QCAPI int* LoadCodepoints(const char* text, int* count);
+QCAPI int* LoadCodepoints(const char* pText, int* pCount);
 
 /**
  * @brief Unload a codepoints array previously allocated with LoadCodepoints.
  * @param codepoints Array to unload.
  */
-QCAPI void UnloadCodepoints(int* codepoints);
+QCAPI void UnloadCodepoints(int* pCodepoints);
 
 /**
  * @brief Get the total number of codepoints in a UTF-8 encoded string.
  * @param text UTF-8 encoded string.
  * @return Number of codepoints.
  */
-QCAPI int GetCodepointCount(const char* text);
+QCAPI int GetCodepointCount(const char* pText);
 
 /**
  * @brief Get the next codepoint in a UTF-8 encoded string, 0x3f('?') on failure.
@@ -2546,7 +2604,7 @@ QCAPI int GetCodepointCount(const char* text);
  * @param codepointSize Output size in bytes of the decoded codepoint.
  * @return Decoded codepoint.
  */
-QCAPI int GetCodepoint(const char* text, int* codepointSize);
+QCAPI int GetCodepoint(const char* pText, int* pCodepointSize);
 
 /**
  * @brief Get the next codepoint in a UTF-8 encoded string, 0x3f('?') on failure.
@@ -2554,7 +2612,7 @@ QCAPI int GetCodepoint(const char* text, int* codepointSize);
  * @param codepointSize Output size in bytes of the decoded codepoint.
  * @return Decoded codepoint.
  */
-QCAPI int GetCodepointNext(const char* text, int* codepointSize);
+QCAPI int GetCodepointNext(const char* pText, int* pCodepointSize);
 
 /**
  * @brief Get the previous codepoint in a UTF-8 encoded string, 0x3f('?') on failure.
@@ -2562,7 +2620,7 @@ QCAPI int GetCodepointNext(const char* text, int* codepointSize);
  * @param codepointSize Output size in bytes of the decoded codepoint.
  * @return Decoded codepoint.
  */
-QCAPI int GetCodepointPrevious(const char* text, int* codepointSize);
+QCAPI int GetCodepointPrevious(const char* pText, int* pCodepointSize);
 
 /**
  * @brief Encode a single codepoint into a UTF-8 byte sequence.
@@ -2570,20 +2628,20 @@ QCAPI int GetCodepointPrevious(const char* text, int* codepointSize);
  * @param utf8Size Output size in bytes of the encoded sequence.
  * @return Pointer to a static UTF-8 byte sequence.
  */
-QCAPI const char* CodepointToUTF8(int codepoint, int* utf8Size);
+QCAPI const char* CodepointToUTF8(int codepoint, int* pUtf8Size);
 
 /**
  * @brief Load a font from file (rasterized at the default pixel size).
- * 
+ *
  * @param fileName Path to the font file (.ttf, .otf, etc.).
  * @return Loaded font object.
  * @return Invalid font (valid=false) on failure.
  */
-QCAPI Font LoadFont(const char* fileName);
+QCAPI Font LoadFont(const char* pFileName);
 
 /**
  * @brief Unload a font and free resources.
- * 
+ *
  * @param font Font object to unload.
  */
 QCAPI void UnloadFont(Font font);
@@ -2598,7 +2656,7 @@ QCAPI void UnloadFont(Font font);
  * @return Loaded font object.
  * @return Invalid font (valid=false) on failure.
  */
-QCAPI Font LoadFontEx(const char* fileName, int fontSize, const int* codepoints, int codepointCount);
+QCAPI Font LoadFontEx(const char* pFileName, int fontSize, const int* pCodepoints, int codepointCount);
 
 /**
  * @brief Load a font from an Image (XNA style), where the image holds all glyphs.
@@ -2623,8 +2681,8 @@ QCAPI Font LoadFontFromImage(Image image, Color key, int firstChar);
  * @return Loaded font object.
  * @return Invalid font (valid=false) on failure.
  */
-QCAPI Font LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int dataSize,
-                       int fontSize, const int* codepoints, int codepointCount);
+QCAPI Font LoadFontFromMemory(const char* pFileType, const unsigned char* pFileData, int dataSize,
+                              int fontSize, const int* pCodepoints, int codepointCount);
 
 /**
  * @brief Check if a font is valid (font data loaded).
@@ -2647,8 +2705,8 @@ QCAPI bool IsFontValid(Font font);
  * @return A heap-allocated array of GlyphInfo (must be released with UnloadFontData).
  * @return NULL on failure.
  */
-QCAPI GlyphInfo* LoadFontData(const unsigned char* fileData, int dataSize, int fontSize,
-                       const int* codepoints, int codepointCount, int type, int* glyphCount);
+QCAPI GlyphInfo* LoadFontData(const unsigned char* pFileData, int dataSize, int fontSize,
+                              const int* pCodepoints, int codepointCount, int type, int* pGlyphCount);
 
 /**
  * @brief Generate image font atlas using glyph info.
@@ -2661,8 +2719,8 @@ QCAPI GlyphInfo* LoadFontData(const unsigned char* fileData, int dataSize, int f
  * @param packMethod Packing method (0 = Spritefont/LoadFontData, 1 = LoadFontEx/Donut packing).
  * @return Generated atlas image.
  */
-QCAPI Image GenImageFontAtlas(const GlyphInfo* glyphs, Rectangle** glyphRecs, int glyphCount,
-                       int fontSize, int padding, int packMethod);
+QCAPI Image GenImageFontAtlas(const GlyphInfo* pGlyphs, Rectangle** ppGlyphRecs, int glyphCount,
+                              int fontSize, int padding, int packMethod);
 
 /**
  * @brief Unload font glyph info data (RAM).
@@ -2670,7 +2728,7 @@ QCAPI Image GenImageFontAtlas(const GlyphInfo* glyphs, Rectangle** glyphRecs, in
  * @param glyphs Array of GlyphInfo to unload.
  * @param glyphCount Number of glyphs in the array.
  */
-QCAPI void UnloadFontData(GlyphInfo* glyphs, int glyphCount);
+QCAPI void UnloadFontData(GlyphInfo* pGlyphs, int glyphCount);
 
 /**
  * @brief Export font data as a code file (C header).
@@ -2679,7 +2737,7 @@ QCAPI void UnloadFontData(GlyphInfo* glyphs, int glyphCount);
  * @param fileName Path of the output code file.
  * @return true on success.
  */
-QCAPI bool ExportFontAsCode(Font font, const char* fileName);
+QCAPI bool ExportFontAsCode(Font font, const char* pFileName);
 
 /**
  * @brief Load a texture from a file.
@@ -2687,7 +2745,7 @@ QCAPI bool ExportFontAsCode(Font font, const char* fileName);
  * @return Loaded texture.
  * @return Empty texture on failure.
  */
-QCAPI Texture2D LoadTexture(const char* filePath);
+QCAPI Texture2D LoadTexture(const char* pFilePath);
 /**
  * @brief Create a texture from image data.
  * @param image Source image.
@@ -2706,19 +2764,19 @@ QCAPI TextureCubemap LoadTextureCubemap(Image image, CubemapLayout layout);
  * @param texture Texture to update.
  * @param pixels New pixel data.
  */
-QCAPI void UpdateTexture(Texture2D texture, const void* pixels);
+QCAPI void UpdateTexture(Texture2D texture, const void* pPixels);
 /**
  * @brief Replace a rectangular region of texture pixel data.
  * @param texture Texture to update.
  * @param rec Region to update.
  * @param pixels New region pixel data.
  */
-QCAPI void UpdateTextureRec(Texture2D texture, Rectangle rec, const void* pixels);
+QCAPI void UpdateTextureRec(Texture2D texture, Rectangle rec, const void* pPixels);
 /**
  * @brief Generate mipmap levels for a texture.
  * @param texture Texture to update with generated mipmaps.
  */
-QCAPI void GenTextureMipmaps(Texture2D* texture);
+QCAPI void GenTextureMipmaps(Texture2D* pTexture);
 /**
  * @brief Load a render texture.
  * @param width Texture width.
@@ -2764,11 +2822,11 @@ QCAPI void UnloadVertexBuffer(unsigned int vboId);
  * On the OpenGL backend, specify the paths to the GLSL versions of the shaders
  * (`.vert` and `.frag`). They will be loaded and compiled into an OpenGL shader
  * program automatically.
- * 
+ *
  * On the Vulkan backend, specify the paths to the SPIR-V versions of the
  * shaders (`.spv`). They will be loaded and compiled into a Vulkan shader
  * module automatically.
- * 
+ *
  * On the Direct3D 11 backend, specify the paths to the HLSL versions of the shaders
  * (`.hlsl`). They will be loaded and compiled into a Direct3D 11 shader
  * program automatically.
@@ -2778,7 +2836,7 @@ QCAPI void UnloadVertexBuffer(unsigned int vboId);
  * @return Loaded shader.
  * @return Empty shader on failure.
  */
-QCAPI Shader LoadShader(const char* vsFileName, const char* fsFileName);
+QCAPI Shader LoadShader(const char* pVsFileName, const char* pFsFileName);
 
 /**
  * @brief Load shader from vertex and fragment source strings.
@@ -2787,7 +2845,7 @@ QCAPI Shader LoadShader(const char* vsFileName, const char* fsFileName);
  * @return Loaded shader.
  * @return Empty shader on failure.
  */
-QCAPI Shader LoadShaderFromMemory(const char* vsSource, const char* fsSource);
+QCAPI Shader LoadShaderFromMemory(const char* pVsSource, const char* pFsSource);
 
 /**
  * @brief Enable or disable one of the standard 3D light slots.
@@ -2810,7 +2868,7 @@ QCAPI bool IsShaderValid(const Shader& shader);
  * @param uniformName Uniform name to find.
  * @return Uniform location index (-1 if not found).
  */
-QCAPI int GetShaderLocation(const Shader& shader, const char* uniformName);
+QCAPI int GetShaderLocation(const Shader& shader, const char* pUniformName);
 
 /**
  * @brief Get shader location using predefined index.
@@ -2826,7 +2884,7 @@ QCAPI int GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex);
  * @param attribName Attribute name to find.
  * @return Attribute location index (-1 if not found).
  */
-QCAPI int GetShaderAttributeLocation(const Shader& shader, const char* attribName);
+QCAPI int GetShaderAttributeLocation(const Shader& shader, const char* pAttribName);
 
 /**
  * @brief Set shader float uniform value.
@@ -2882,7 +2940,7 @@ QCAPI void SetShaderValue(const Shader& shader, int locIndex, const Color& value
  * @param locIndex Uniform location index.
  * @param mat 4x4 matrix (16 floats).
  */
-QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const float* mat);
+QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const float* pMat);
 /**
  * @brief Set a shader uniform using a raw value and uniform type.
  * @param shader Shader to modify.
@@ -2890,7 +2948,7 @@ QCAPI void SetShaderValueMatrix(const Shader& shader, int locIndex, const float*
  * @param value Pointer to the uniform value.
  * @param uniformType Uniform type constant.
  */
-QCAPI void SetShaderValue(const Shader& shader, int locIndex, const void* value, int uniformType);
+QCAPI void SetShaderValue(const Shader& shader, int locIndex, const void* pValue, int uniformType);
 /**
  * @brief Set an array of shader uniform values.
  * @param shader Shader to modify.
@@ -2899,7 +2957,7 @@ QCAPI void SetShaderValue(const Shader& shader, int locIndex, const void* value,
  * @param uniformType Uniform type constant.
  * @param count Number of values.
  */
-QCAPI void SetShaderValueV(const Shader& shader, int locIndex, const void* value, int uniformType, int count);
+QCAPI void SetShaderValueV(const Shader& shader, int locIndex, const void* pValue, int uniformType, int count);
 /**
  * @brief Set a shader matrix uniform from a Matrix object.
  * @param shader Shader to modify.
@@ -3221,7 +3279,8 @@ QCAPI bool IsGamepadAvailable(int gamepad);
 /**
  * @brief Standard QuarkCore gamepad buttons.
  */
-typedef enum {
+typedef enum
+{
     GAMEPAD_BUTTON_UNKNOWN = 0,
     GAMEPAD_BUTTON_LEFT_FACE_UP,
     GAMEPAD_BUTTON_LEFT_FACE_RIGHT,
@@ -3310,13 +3369,13 @@ QCAPI void SetGamepadVibration(int gamepad, float lowFrequency, float highFreque
  * @param mappings SDL gamepad mapping string.
  * @return SDL mapping result code.
  */
-QCAPI int SetGamepadMappings(const char* mappings);
+QCAPI int SetGamepadMappings(const char* pMappings);
 /**
  * @brief Add an SDL gamepad mapping string and report success.
  * @param mapping SDL gamepad mapping string.
  * @return True when the mapping was accepted.
  */
-QCAPI bool AddGamepadMapping(const char* mapping);
+QCAPI bool AddGamepadMapping(const char* pMapping);
 /**
  * @brief Return the mapping string for a gamepad.
  * @param gamepad Gamepad index.
@@ -3395,20 +3454,21 @@ QCAPI void DrawTextureTiled(Texture2D texture, float scale, Vec2 offset, Color t
 /**
  * @brief N-Patch layout constants.
  */
-#define NPATCH_NINE_PATCH            0    // Npatch layout: 3x3 tiles
-#define NPATCH_THREE_PATCH_HORIZONTAL 1   // Npatch layout: 1x3 tiles
-#define NPATCH_THREE_PATCH_VERTICAL  2    // Npatch layout: 3x1 tiles
+#define NPATCH_NINE_PATCH 0             // Npatch layout: 3x3 tiles
+#define NPATCH_THREE_PATCH_HORIZONTAL 1 // Npatch layout: 1x3 tiles
+#define NPATCH_THREE_PATCH_VERTICAL 2   // Npatch layout: 3x1 tiles
 
 /**
  * @brief N-Patch info structure.
  */
-struct NPatchInfo {
-    Rectangle source;   // Texture source rectangle
-    int left = 0;       // Left border offset
-    int top = 0;        // Top border offset
-    int right = 0;      // Right border offset
-    int bottom = 0;     // Bottom border offset
-    int layout = 0;     // Layout of the n-patch: 3x3, 1x3 or 3x1
+struct NPatchInfo
+{
+    Rectangle source; // Texture source rectangle
+    int left = 0;     // Left border offset
+    int top = 0;      // Top border offset
+    int right = 0;    // Right border offset
+    int bottom = 0;   // Bottom border offset
+    int layout = 0;   // Layout of the n-patch: 3x3, 1x3 or 3x1
 };
 
 /**
@@ -3473,7 +3533,7 @@ QCAPI void DrawLineEx(Vec2 startPos, Vec2 endPos, float thick, Color color);
  * @param pointCount Number of points.
  * @param color Line color.
  */
-QCAPI void DrawLineStrip(const Vec2* points, int pointCount, Color color);
+QCAPI void DrawLineStrip(const Vec2* pPoints, int pointCount, Color color);
 /**
  * @brief Draw a line using a quadratic Bezier curve.
  * @param startPos Curve start position.
@@ -3618,14 +3678,14 @@ QCAPI void DrawTriangleLinesEx(Vec2 v1, Vec2 v2, Vec2 v3, float thick, Color col
  * @param pointCount Number of vertices.
  * @param color Fill color.
  */
-QCAPI void DrawTriangleFan(const Vec2* points, int pointCount, Color color);
+QCAPI void DrawTriangleFan(const Vec2* pPoints, int pointCount, Color color);
 /**
  * @brief Draw a triangle strip from a point array.
  * @param points Array of vertices.
  * @param pointCount Number of vertices.
  * @param color Fill color.
  */
-QCAPI void DrawTriangleStrip(const Vec2* points, int pointCount, Color color);
+QCAPI void DrawTriangleStrip(const Vec2* pPoints, int pointCount, Color color);
 
 /**
  * @brief Draw circle outline.
@@ -3827,7 +3887,7 @@ QCAPI Rectangle GetShapesTextureRectangle(void);
  * @param thick Line thickness in pixels.
  * @param color Spline color.
  */
-QCAPI void DrawSplineLinear(const Vec2* points, int pointCount, float thick, Color color);
+QCAPI void DrawSplineLinear(const Vec2* pPoints, int pointCount, float thick, Color color);
 /**
  * @brief Draw a spline through points using basis interpolation.
  * @param points Spline control points.
@@ -3835,7 +3895,7 @@ QCAPI void DrawSplineLinear(const Vec2* points, int pointCount, float thick, Col
  * @param thick Line thickness in pixels.
  * @param color Spline color.
  */
-QCAPI void DrawSplineBasis(const Vec2* points, int pointCount, float thick, Color color);
+QCAPI void DrawSplineBasis(const Vec2* pPoints, int pointCount, float thick, Color color);
 /**
  * @brief Draw a spline through points using Catmull-Rom interpolation.
  * @param points Spline control points.
@@ -3843,7 +3903,7 @@ QCAPI void DrawSplineBasis(const Vec2* points, int pointCount, float thick, Colo
  * @param thick Line thickness in pixels.
  * @param color Spline color.
  */
-QCAPI void DrawSplineCatmullRom(const Vec2* points, int pointCount, float thick, Color color);
+QCAPI void DrawSplineCatmullRom(const Vec2* pPoints, int pointCount, float thick, Color color);
 /**
  * @brief Draw a spline using quadratic Bezier interpolation.
  * @param points Spline control points.
@@ -3851,7 +3911,7 @@ QCAPI void DrawSplineCatmullRom(const Vec2* points, int pointCount, float thick,
  * @param thick Line thickness in pixels.
  * @param color Spline color.
  */
-QCAPI void DrawSplineBezierQuadratic(const Vec2* points, int pointCount, float thick, Color color);
+QCAPI void DrawSplineBezierQuadratic(const Vec2* pPoints, int pointCount, float thick, Color color);
 /**
  * @brief Draw a spline using cubic Bezier interpolation.
  * @param points Spline control points.
@@ -3859,7 +3919,7 @@ QCAPI void DrawSplineBezierQuadratic(const Vec2* points, int pointCount, float t
  * @param thick Line thickness in pixels.
  * @param color Spline color.
  */
-QCAPI void DrawSplineBezierCubic(const Vec2* points, int pointCount, float thick, Color color);
+QCAPI void DrawSplineBezierCubic(const Vec2* pPoints, int pointCount, float thick, Color color);
 /**
  * @brief Draw one linear spline segment.
  * @param p1 Segment start.
@@ -4168,7 +4228,7 @@ QCAPI bool CheckCollisionPointLine(Vec2 point, Vec2 p1, Vec2 p2, int threshold);
  * @return true if point is inside polygon.
  * @return false otherwise.
  */
-QCAPI bool CheckCollisionPointPoly(Vec2 point, const Vec2* points, int pointCount);
+QCAPI bool CheckCollisionPointPoly(Vec2 point, const Vec2* pPoints, int pointCount);
 
 /**
  * @brief Check collision between two line segments.
@@ -4180,7 +4240,7 @@ QCAPI bool CheckCollisionPointPoly(Vec2 point, const Vec2* points, int pointCoun
  * @return true if lines collide.
  * @return false otherwise.
  */
-QCAPI bool CheckCollisionLines(Vec2 startPos1, Vec2 endPos1, Vec2 startPos2, Vec2 endPos2, Vec2* collisionPoint);
+QCAPI bool CheckCollisionLines(Vec2 startPos1, Vec2 endPos1, Vec2 startPos2, Vec2 endPos2, Vec2* pCollisionPoint);
 
 /**
  * @brief Get the intersection rectangle of two rectangles.
@@ -4217,7 +4277,7 @@ QCAPI int* LoadRandomSequence(unsigned int count, int min, int max);
  * @brief Unload a random sequence allocated by LoadRandomSequence.
  * @param sequence Sequence pointer to free.
  */
-QCAPI void UnloadRandomSequence(int* sequence);
+QCAPI void UnloadRandomSequence(int* pSequence);
 
 /**
  * @brief Set the random number generator seed.
@@ -4251,9 +4311,10 @@ QCAPI bool IsShaderReady(Shader shader);
 /**
  * @brief File path list structure.
  */
-struct FilePathList {
-    unsigned int count = 0;           // Filepaths entries count
-    char** paths = nullptr;           // Filepaths entries
+struct FilePathList
+{
+    unsigned int count = 0; // Filepaths entries count
+    char** paths = nullptr; // Filepaths entries
 };
 
 /**
@@ -4262,27 +4323,27 @@ struct FilePathList {
  * @param fileRename Destination path.
  * @return Zero on success, non-zero on failure.
  */
-QCAPI int FileRename(const char* fileName, const char* fileRename);
+QCAPI int FileRename(const char* pFileName, const char* pFileRename);
 /**
  * @brief Remove an existing file.
  * @param fileName File path.
  * @return Zero on success, non-zero on failure.
  */
-QCAPI int FileRemove(const char* fileName);
+QCAPI int FileRemove(const char* pFileName);
 /**
  * @brief Copy a file.
  * @param srcPath Source path.
  * @param dstPath Destination path.
  * @return Zero on success, non-zero on failure.
  */
-QCAPI int FileCopy(const char* srcPath, const char* dstPath);
+QCAPI int FileCopy(const char* pSrcPath, const char* pDstPath);
 /**
  * @brief Move a file.
  * @param srcPath Source path.
  * @param dstPath Destination path.
  * @return Zero on success, non-zero on failure.
  */
-QCAPI int FileMove(const char* srcPath, const char* dstPath);
+QCAPI int FileMove(const char* pSrcPath, const char* pDstPath);
 /**
  * @brief Replace text in an existing file.
  * @param fileName File path.
@@ -4290,75 +4351,75 @@ QCAPI int FileMove(const char* srcPath, const char* dstPath);
  * @param replacement Replacement text.
  * @return Zero on success, non-zero on failure.
  */
-QCAPI int FileTextReplace(const char* fileName, const char* search, const char* replacement);
+QCAPI int FileTextReplace(const char* pFileName, const char* pSearch, const char* pReplacement);
 /**
  * @brief Find text in a file.
  * @param fileName File path.
  * @param search Text to find.
  * @return Matching byte index, or -1 when not found.
  */
-QCAPI int FileTextFindIndex(const char* fileName, const char* search);
+QCAPI int FileTextFindIndex(const char* pFileName, const char* pSearch);
 /**
  * @brief Check whether a file exists.
  * @param fileName File path.
  * @return True when the file exists.
  */
-QCAPI bool FileExists(const char* fileName);
+QCAPI bool FileExists(const char* pFileName);
 /**
  * @brief Check whether a directory exists.
  * @param dirPath Directory path.
  * @return True when the directory exists.
  */
-QCAPI bool DirectoryExists(const char* dirPath);
+QCAPI bool DirectoryExists(const char* pDirPath);
 /**
  * @brief Check a file extension.
  * @param fileName File path.
  * @param ext Extension, preferably including '.'.
  * @return True when it matches.
  */
-QCAPI bool IsFileExtension(const char* fileName, const char* ext);
+QCAPI bool IsFileExtension(const char* pFileName, const char* pExt);
 /**
  * @brief Get a file size in bytes.
  * @param fileName File path.
  * @return File length, or -1 on failure.
  */
-QCAPI int GetFileLength(const char* fileName);
+QCAPI int GetFileLength(const char* pFileName);
 /**
  * @brief Get the last modification time of a file.
  * @param fileName File path.
  * @return Platform file timestamp.
  */
-QCAPI long GetFileModTime(const char* fileName);
+QCAPI long GetFileModTime(const char* pFileName);
 /**
  * @brief Get the extension portion of a path.
  * @param fileName File path.
  * @return Pointer to a static result string.
  */
-QCAPI const char* GetFileExtension(const char* fileName);
+QCAPI const char* GetFileExtension(const char* pFileName);
 /**
  * @brief Get the filename portion of a path.
  * @param filePath File path.
  * @return Pointer to a static result string.
  */
-QCAPI const char* GetFileName(const char* filePath);
+QCAPI const char* GetFileName(const char* pFilePath);
 /**
  * @brief Get a filename without its extension.
  * @param filePath File path.
  * @return Pointer to a static result string.
  */
-QCAPI const char* GetFileNameWithoutExt(const char* filePath);
+QCAPI const char* GetFileNameWithoutExt(const char* pFilePath);
 /**
  * @brief Get the directory portion of a path.
  * @param filePath File path.
  * @return Pointer to a static result string.
  */
-QCAPI const char* GetDirectoryPath(const char* filePath);
+QCAPI const char* GetDirectoryPath(const char* pFilePath);
 /**
  * @brief Get the parent directory of a path.
  * @param dirPath Directory path.
  * @return Pointer to a static result string.
  */
-QCAPI const char* GetPrevDirectoryPath(const char* dirPath);
+QCAPI const char* GetPrevDirectoryPath(const char* pDirPath);
 /**
  * @brief Get the current working directory.
  * @return Pointer to a static result string.
@@ -4374,43 +4435,43 @@ QCAPI const char* GetApplicationDirectory(void);
  * @param dirPath Directory path.
  * @return Zero on success, non-zero on failure.
  */
-QCAPI int MakeDirectory(const char* dirPath);
+QCAPI int MakeDirectory(const char* pDirPath);
 /**
  * @brief Change the current working directory.
  * @param dirPath Directory path.
  * @return Zero on success, non-zero on failure.
  */
-QCAPI int ChangeDirectory(const char* dirPath);
+QCAPI int ChangeDirectory(const char* pDirPath);
 /**
  * @brief Check whether a path identifies a file.
  * @param path Path to inspect.
  * @return True when it is a file.
  */
-QCAPI bool IsPathFile(const char* path);
+QCAPI bool IsPathFile(const char* pPath);
 /**
  * @brief Check whether a path identifies a directory.
  * @param path Path to inspect.
  * @return True when it is a directory.
  */
-QCAPI bool IsPathDirectory(const char* path);
+QCAPI bool IsPathDirectory(const char* pPath);
 /**
  * @brief Check whether a path is an absolute path.
  * @param path Path to inspect.
  * @return True when the path is absolute.
  */
-QCAPI bool IsPathAbsolute(const char* path);
+QCAPI bool IsPathAbsolute(const char* pPath);
 /**
  * @brief Validate a filename for the current platform.
  * @param fileName Filename to validate.
  * @return True when valid.
  */
-QCAPI bool IsFileNameValid(const char* fileName);
+QCAPI bool IsFileNameValid(const char* pFileName);
 /**
  * @brief Load files and directories from a directory without recursion.
  * @param dirPath Directory path.
  * @return Allocated path list.
  */
-QCAPI FilePathList LoadDirectoryFiles(const char* dirPath);
+QCAPI FilePathList LoadDirectoryFiles(const char* pDirPath);
 /**
  * @brief Load directory entries with filtering and optional recursion.
  * @param basePath Base directory path.
@@ -4418,7 +4479,7 @@ QCAPI FilePathList LoadDirectoryFiles(const char* dirPath);
  * @param scanSubdirs Whether to scan subdirectories.
  * @return Allocated path list.
  */
-QCAPI FilePathList LoadDirectoryFilesEx(const char* basePath, const char* filter, bool scanSubdirs);
+QCAPI FilePathList LoadDirectoryFilesEx(const char* pBasePath, const char* pFilter, bool scanSubdirs);
 /**
  * @brief Release a directory path list.
  * @param files Path list to release.
@@ -4444,7 +4505,7 @@ QCAPI void UnloadDroppedFiles(FilePathList files);
  * @param dirPath Directory path.
  * @return Entry count.
  */
-QCAPI unsigned int GetDirectoryFileCount(const char* dirPath);
+QCAPI unsigned int GetDirectoryFileCount(const char* pDirPath);
 /**
  * @brief Count filtered directory entries with optional recursion.
  * @param basePath Base directory path.
@@ -4452,5 +4513,5 @@ QCAPI unsigned int GetDirectoryFileCount(const char* dirPath);
  * @param scanSubdirs Whether to scan subdirectories.
  * @return Entry count.
  */
-QCAPI unsigned int GetDirectoryFileCountEx(const char* basePath, const char* filter, bool scanSubdirs);
+QCAPI unsigned int GetDirectoryFileCountEx(const char* pBasePath, const char* pFilter, bool scanSubdirs);
 #endif // __QUARK_CORE__

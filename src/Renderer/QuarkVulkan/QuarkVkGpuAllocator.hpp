@@ -5,44 +5,55 @@
 
 #include <cstdint>
 #include <vector>
-namespace qci {
-struct VkGpuBufferAllocation {
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VmaAllocation allocation = VK_NULL_HANDLE;
-    VmaAllocationInfo info{};
-};
 
-class QuarkVkGpuAllocator {
-public:
-    QuarkVkGpuAllocator() = default;
-    ~QuarkVkGpuAllocator();
+namespace qci
+{
+    struct VkGpuBufferAllocation
+    {
+        VkBuffer m_Buffer = VK_NULL_HANDLE;
+        VmaAllocation m_Allocation = VK_NULL_HANDLE;
+        VmaAllocationInfo m_Info{};
+    };
 
-    bool Initialize(VkInstance instance, VkPhysicalDevice physicalDevice, VkDevice device);
-    void Shutdown();
+    class QuarkVkGpuAllocator
+    {
+    public:
+        QuarkVkGpuAllocator() = default;
+        ~QuarkVkGpuAllocator();
 
-    bool IsInitialized() const { return m_allocator != VK_NULL_HANDLE; }
+        bool Initialize(VkInstance instance, VkPhysicalDevice physicalDevice, VkDevice device);
+        void Shutdown();
 
-    bool CreateBuffer(VkDeviceSize size,
-                      VkBufferUsageFlags usage,
-                      VmaMemoryUsage memoryUsage,
-                      VkBuffer& outBuffer,
-                      VmaAllocation& outAllocation,
-                      VmaAllocationCreateFlags flags = 0) const;
+        bool IsInitialized() const
+        {
+            return m_Allocator != VK_NULL_HANDLE;
+        }
 
-    bool CreateImage(const VkImageCreateInfo& imageCreateInfo,
-                     VmaMemoryUsage memoryUsage,
-                     VkImage& outImage,
-                     VmaAllocation& outAllocation,
-                     VmaAllocationCreateFlags flags = 0) const;
+        bool CreateBuffer(VkDeviceSize size,
+                          VkBufferUsageFlags usage,
+                          VmaMemoryUsage memoryUsage,
+                          VkBuffer& outBuffer,
+                          VmaAllocation& outAllocation,
+                          VmaAllocationCreateFlags flags = 0) const;
 
-    void DestroyBuffer(VkBuffer buffer, VmaAllocation allocation) const;
-    void DestroyImage(VkImage image, VmaAllocation allocation) const;
+        bool CreateImage(const VkImageCreateInfo& imageCreateInfo,
+                         VmaMemoryUsage memoryUsage,
+                         VkImage& outImage,
+                         VmaAllocation& outAllocation,
+                         VmaAllocationCreateFlags flags = 0) const;
 
-    VmaAllocator GetAllocator() const { return m_allocator; }
-    VmaAllocatorInfo GetInfo() const;
+        void DestroyBuffer(VkBuffer buffer, VmaAllocation allocation) const;
+        void DestroyImage(VkImage image, VmaAllocation allocation) const;
 
-private:
-    VmaAllocator m_allocator = VK_NULL_HANDLE;
-};
-} // namespace qci
+        VmaAllocator GetAllocator() const
+        {
+            return m_Allocator;
+        }
+
+        VmaAllocatorInfo GetInfo() const;
+
+    private:
+        VmaAllocator m_Allocator = VK_NULL_HANDLE;
+    };
+} // qci
 #endif // __QUARK_VK_GPU_ALLOCATOR__

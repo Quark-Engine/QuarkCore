@@ -7,60 +7,67 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-namespace qci {
-struct VkShaderProgramData {
-    VkShaderModule vertexModule   = VK_NULL_HANDLE;
-    VkShaderModule fragmentModule = VK_NULL_HANDLE;
-    VkPipeline     pipeline              = VK_NULL_HANDLE;
-    VkPipeline     pipeline3D            = VK_NULL_HANDLE;
-    VkPipeline     pipeline3DCulled      = VK_NULL_HANDLE;
-    VkPipeline     pipeline3DOffscreen   = VK_NULL_HANDLE;
-    VkPipeline     pipeline3DOffscreenCulled = VK_NULL_HANDLE;
-    VkDescriptorSet descriptorSet3D = VK_NULL_HANDLE;
-    bool            supports3D    = false;
-    bool            supportsGpuMeshTransform = false;
-    std::unordered_map<std::string, int> uniforms;
-    std::unordered_map<std::string, int> attributes;
-    std::unordered_map<int, std::vector<uint8_t>> uniformValues;
-    std::unordered_map<int, int> uniformTypes;
-    std::unordered_map<int, std::string> uniformNames;
-};
 
-class QuarkVkShaderCompiler {
-public:
-    void Initialize(VkDevice device);
-    void Shutdown();
-    bool IsInitialized() const;
+namespace qci
+{
+    struct VkShaderProgramData
+    {
+        VkShaderModule m_VertexModule = VK_NULL_HANDLE;
+        VkShaderModule m_FragmentModule = VK_NULL_HANDLE;
+        VkPipeline m_Pipeline = VK_NULL_HANDLE;
+        VkPipeline m_Pipeline3D = VK_NULL_HANDLE;
+        VkPipeline m_Pipeline3DCulled = VK_NULL_HANDLE;
+        VkPipeline m_Pipeline3DOffscreen = VK_NULL_HANDLE;
+        VkPipeline m_Pipeline3DOffscreenCulled = VK_NULL_HANDLE;
+        VkDescriptorSet m_DescriptorSet3D = VK_NULL_HANDLE;
+        bool m_Supports3D = false;
+        bool m_SupportsGpuMeshTransform = false;
+        std::unordered_map<std::string, int> m_Uniforms;
+        std::unordered_map<std::string, int> m_Attributes;
+        std::unordered_map<int, std::vector<uint8_t>> m_vUniformValues;
+        std::unordered_map<int, int> m_UniformTypes;
+        std::unordered_map<int, std::string> m_UniformNames;
+    };
 
-    uint32_t LoadProgram(const char* vsFile, const char* fsFile);
-    uint32_t CreateProgram(const char* vsSource, const char* fsSource);
-    void     DestroyProgram(uint32_t programId);
-    void     FreePipelines();
-    bool     IsProgramValid(uint32_t programId) const;
-    const VkShaderProgramData* GetProgram(uint32_t programId) const;
-    VkShaderProgramData* GetProgram(uint32_t programId);
+    class QuarkVkShaderCompiler
+    {
+    public:
+        void Initialize(VkDevice device);
+        void Shutdown();
+        bool IsInitialized() const;
 
-    std::unordered_map<uint32_t, VkShaderProgramData>& Programs() { return m_programs; }
+        uint32_t LoadProgram(const char* pVsFile, const char* pFsFile);
+        uint32_t CreateProgram(const char* pVsSource, const char* pFsSource);
+        void DestroyProgram(uint32_t programId);
+        void FreePipelines();
+        bool IsProgramValid(uint32_t programId) const;
+        const VkShaderProgramData* GetProgram(uint32_t programId) const;
+        VkShaderProgramData* GetProgram(uint32_t programId);
 
-    uint32_t CurrentProgramId() const;
-    void     SetCurrentProgram(uint32_t programId);
-    void     ClearCurrentProgram();
+        std::unordered_map<uint32_t, VkShaderProgramData>& Programs()
+        {
+            return m_Programs;
+        }
 
-    int  GetUniformLocation(uint32_t programId, const char* uniformName);
-    int  GetUniformLocation(uint32_t programId, ShaderLocationIndex locIndex);
-    int  GetAttributeLocation(uint32_t programId, const char* attribName);
+        uint32_t CurrentProgramId() const;
+        void SetCurrentProgram(uint32_t programId);
+        void ClearCurrentProgram();
 
-    void StoreUniformValue(uint32_t programId, int locIndex, int uniformType,
-                           const void* value, size_t bytesPerElement, int count);
+        int GetUniformLocation(uint32_t programId, const char* pUniformName);
+        int GetUniformLocation(uint32_t programId, ShaderLocationIndex locIndex);
+        int GetAttributeLocation(uint32_t programId, const char* pAttribName);
 
-private:
-    void DestroyProgramData(VkShaderProgramData& program);
-    VkShaderModule CreateModule(const std::vector<uint32_t>& spirv) const;
+        void StoreUniformValue(uint32_t programId, int locIndex, int uniformType,
+                               const void* pValue, size_t bytesPerElement, int count);
 
-    VkDevice m_device = VK_NULL_HANDLE;
-    uint32_t m_nextProgramId = 1;
-    uint32_t m_currentProgramId = 0;
-    std::unordered_map<uint32_t, VkShaderProgramData> m_programs;
-};
-} // namespace qci
+    private:
+        void DestroyProgramData(VkShaderProgramData& program);
+        VkShaderModule CreateModule(const std::vector<uint32_t>& vSpirv) const;
+
+        VkDevice m_Device = VK_NULL_HANDLE;
+        uint32_t m_NextProgramId = 1;
+        uint32_t m_CurrentProgramId = 0;
+        std::unordered_map<uint32_t, VkShaderProgramData> m_Programs;
+    };
+} // qci
 #endif // __QUARK_VK_SHADER_COMPILER__

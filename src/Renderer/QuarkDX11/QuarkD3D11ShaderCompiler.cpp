@@ -3,38 +3,39 @@
 #include <cstring>
 
 #if defined(_WIN32)
-namespace qci {
-Microsoft::WRL::ComPtr<ID3DBlob> D3D11ShaderCompiler::Compile(const char *source,
-                                                              const char *entryPoint,
-                                                              const char *profile) const
+namespace qci
 {
-    TraceLog(LogLevel::Trace,
-             "SHADER",
-             TextFormat("[D3D11] Compiling HLSL shader (Entry: %s, Profile: %s, Source: %zu bytes)",
-                        entryPoint,
-                        profile,
-                        std::strlen(source)));
-
-    Microsoft::WRL::ComPtr<ID3DBlob> bytecode;
-    Microsoft::WRL::ComPtr<ID3DBlob> errors;
-
-    const HRESULT result = D3DCompile(source, std::strlen(source), nullptr, nullptr, nullptr,
-                                      entryPoint, profile, 0, 0, &bytecode, &errors);
-
-    if (FAILED(result) && errors)
+    Microsoft::WRL::ComPtr<ID3DBlob> D3D11ShaderCompiler::Compile(const char* pSource,
+                                                                  const char* pEntryPoint,
+                                                                  const char* pProfile) const
     {
-        TraceLog(LogLevel::Error, "SHADER", static_cast<const char *>(errors->GetBufferPointer()));
+        TraceLog(LogLevel::Trace,
+                 "SHADER",
+                 TextFormat("[D3D11] Compiling HLSL shader (Entry: %s, Profile: %s, Source: %zu bytes)",
+                            pEntryPoint,
+                            pProfile,
+                            std::strlen(pSource)));
+
+        Microsoft::WRL::ComPtr<ID3DBlob> bytecode;
+        Microsoft::WRL::ComPtr<ID3DBlob> errors;
+
+        const HRESULT result = D3DCompile(pSource, std::strlen(pSource), nullptr, nullptr, nullptr,
+                                          pEntryPoint, pProfile, 0, 0, &bytecode, &errors);
+
+        if (FAILED(result) && errors)
+        {
+            TraceLog(LogLevel::Error, "SHADER", static_cast<const char*>(errors->GetBufferPointer()));
+        }
+
+        d3d11::ThrowIfFailed(result, "D3DCompile");
+
+        TraceLog(LogLevel::Info,
+                 "SHADER",
+                 TextFormat("[D3D11] HLSL shader compiled successfully (Profile: %s, Bytecode: %zu bytes)",
+                            pProfile,
+                            bytecode->GetBufferSize()));
+
+        return bytecode;
     }
-
-    d3d11::ThrowIfFailed(result, "D3DCompile");
-
-    TraceLog(LogLevel::Info,
-             "SHADER",
-             TextFormat("[D3D11] HLSL shader compiled successfully (Profile: %s, Bytecode: %zu bytes)",
-                        profile,
-                        bytecode->GetBufferSize()));
-
-    return bytecode;
-}
+} // qci
 #endif
-} // namespace qci

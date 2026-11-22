@@ -1,6 +1,6 @@
 /*
     ========================================================
-    
+
         Quark Light Module
         By Quark Engine Development Team
 
@@ -18,17 +18,19 @@
 #include "QuarkCore.hpp"
 #define QC_MAX_LIGHTS 4
 
-typedef enum {
+typedef enum
+{
     LIGHT_DIRECTIONAL = 0,
     LIGHT_POINT
 } LightType;
 
-struct Light {
+struct Light
+{
     int type = 0;
     bool enabled = false;
     Vec3 position{0.0f, 0.0f, 0.0f};
     Vec3 target{0.0f, 0.0f, 0.0f};
-    Color color{0,0,0,255};
+    Color color{0, 0, 0, 255};
     float attenuation = 1.0f;
 
     int enabledLoc = -1;

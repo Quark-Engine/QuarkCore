@@ -6,46 +6,81 @@
 #include <SDL3/SDL.h>
 #include <array>
 #include <cstdint>
-namespace qci {
-class QuarkGLDevice {
-public:
-    QuarkGLDevice() = default;
-    ~QuarkGLDevice();
 
-    void Init(SDL_Window* window, int width, int height);
-    void Shutdown();
+namespace qci
+{
+    class QuarkGLDevice
+    {
+    public:
+        QuarkGLDevice() = default;
+        ~QuarkGLDevice();
 
-    void RefreshViewport();
-    void BeginDrawing();
-    void EndDrawing();
-    void ClearBackground(Color color);
+        void Init(SDL_Window* pWindow, int width, int height);
+        void Shutdown();
 
-    void SetTargetFPS(int fps);
-    bool SetVSync(bool enabled);
+        void RefreshViewport();
+        void BeginDrawing();
+        void EndDrawing();
+        void ClearBackground(Color color);
 
-    static std::array<float, 4> ToNormColor(Color color);
+        void SetTargetFPS(int fps);
+        bool SetVSync(bool enabled);
 
-    SDL_Window* GetWindow() const { return m_window; }
-    SDL_GLContext GetContext() const { return m_context; }
-    int GetWidth() const { return m_width; }
-    int GetHeight() const { return m_height; }
-    bool IsDrawing() const { return m_drawing; }
-    float GetFrameTime() const { return m_frameTime; }
-    bool ShouldClose() const { return m_shouldClose; }
-    void SetShouldClose(bool value) { m_shouldClose = value; }
+        static std::array<float, 4> ToNormColor(Color color);
 
-private:
-    SDL_Window* m_window = nullptr;
-    SDL_GLContext m_context = nullptr;
-    int m_width = 0;
-    int m_height = 0;
-    int m_targetFps = 60;
-    bool m_vsync = true;
-    bool m_vsyncExplicitlySet = false;
-    float m_frameTime = 0.0f;
-    bool m_drawing = false;
-    bool m_shouldClose = false;
-    std::uint64_t m_lastFrameCounter = 0;
-};
-} // namespace qci
+        SDL_Window* GetWindow() const
+        {
+            return m_pWindow;
+        }
+
+        SDL_GLContext GetContext() const
+        {
+            return m_Context;
+        }
+
+        int GetWidth() const
+        {
+            return m_Width;
+        }
+
+        int GetHeight() const
+        {
+            return m_Height;
+        }
+
+        bool IsDrawing() const
+        {
+            return m_Drawing;
+        }
+
+        float GetFrameTime() const
+        {
+            return m_FrameTime;
+        }
+
+        bool ShouldClose() const
+        {
+            return m_ShouldClose;
+        }
+
+        void SetShouldClose(bool value)
+        {
+            m_ShouldClose = value;
+        }
+
+    private:
+        SDL_Window* m_pWindow = nullptr;
+        SDL_GLContext m_Context = nullptr;
+        int m_Width = 0;
+        int m_Height = 0;
+        int m_TargetFps = 60;
+        bool m_Vsync = true;
+        bool m_VsyncExplicitlySet = false;
+        float m_FrameTime = 0.0f;
+        bool m_Drawing = false;
+        bool m_ShouldClose = false;
+        std::uint64_t m_LastFrameCounter = 0;
+    };
+} // qci
+
 #endif // __QUARK_GL_DEVICE__

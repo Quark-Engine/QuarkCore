@@ -1,33 +1,38 @@
 #include "QuarkCore/QuarkCore.hpp"
 
-int main() {
+int main()
+{
     InitWindow(1280, 720, "QuarkCore File Operations Example", RendererType::OpenGL);
     SetLogLevel(LogLevel::Info);
 
-    const char* appDir = GetApplicationDirectory();
-    const char* workDir = GetWorkingDirectory();
+    const char* pAppDir = GetApplicationDirectory();
+    const char* pWorkDir = GetWorkingDirectory();
 
-    const char* testDir = "test_data";
-    MakeDirectory(testDir);
+    const char* pTestDir = "test_data";
+    MakeDirectory(pTestDir);
     MakeDirectory("test_data/subdirectory");
 
     FilePathList files = LoadDirectoryFiles(".");
     FilePathList droppedFiles{};
     bool hasDropped = false;
 
-    const char* testNames[] = { "valid_file.txt", "<invalid>.txt", "con", "file|name.txt" };
+    const char* testNames[] = {"valid_file.txt", "<invalid>.txt", "con", "file|name.txt"};
     bool testNamesValid[4];
     for (int i = 0; i < 4; ++i)
         testNamesValid[i] = IsFileNameValid(testNames[i]);
 
-    while (!WindowShouldClose()) {
-        if (IsFileDropped()) {
-            if (hasDropped) UnloadDroppedFiles(droppedFiles);
+    while (!WindowShouldClose())
+    {
+        if (IsFileDropped())
+        {
+            if (hasDropped)
+                UnloadDroppedFiles(droppedFiles);
             droppedFiles = LoadDroppedFiles();
             hasDropped = true;
         }
 
-        if (IsKeyPressed(KEY_SPACE)) {
+        if (IsKeyPressed(KEY_SPACE))
+        {
             UnloadDirectoryFiles(files);
             files = LoadDirectoryFiles(".");
         }
@@ -40,20 +45,22 @@ int main() {
         DrawText("QuarkCore File Operations Example", 20, y, 32, YELLOW);
         y += 50;
 
-        DrawText(TextFormat("App Directory: %s", appDir), 20, y, 20, WHITE);
+        DrawText(TextFormat("App Directory: %s", pAppDir), 20, y, 20, WHITE);
         y += 28;
 
-        DrawText(TextFormat("Working Directory: %s", workDir), 20, y, 20, WHITE);
+        DrawText(TextFormat("Working Directory: %s", pWorkDir), 20, y, 20, WHITE);
         y += 28;
 
         DrawText(TextFormat("Files in current directory: %d", files.count), 20, y, 20, WHITE);
         y += 28;
 
-        for (unsigned int i = 0; i < files.count && i < 5; ++i) {
+        for (unsigned int i = 0; i < files.count && i < 5; ++i)
+        {
             DrawText(TextFormat("  %s", files.paths[i]), 20, y, 18, LIGHTGRAY);
             y += 22;
         }
-        if (files.count > 5) {
+        if (files.count > 5)
+        {
             DrawText(TextFormat("  ... and %d more", files.count - 5), 20, y, 18, GRAY);
             y += 22;
         }
@@ -61,38 +68,41 @@ int main() {
 
         DrawText("Filename Validation:", 20, y, 20, WHITE);
         y += 26;
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < 4; ++i)
+        {
             DrawText(
                 TextFormat("  %s  ->  %s", testNames[i], testNamesValid[i] ? "valid" : "invalid"),
-                20, y, 18, testNamesValid[i] ? GREEN : RED
-            );
+                20, y, 18, testNamesValid[i] ? GREEN : RED);
             y += 22;
         }
         y += 10;
 
-        DrawText(TextFormat("test_data/ exists: %s", DirectoryExists(testDir) ? "yes" : "no"), 20, y, 20, SKYBLUE);
+        DrawText(TextFormat("test_data/ exists: %s", DirectoryExists(pTestDir) ? "yes" : "no"), 20, y, 20, SKYBLUE);
         y += 28;
 
-        DrawText(TextFormat("Parent directory: %s", GetPrevDirectoryPath(workDir)), 20, y, 20, WHITE);
+        DrawText(TextFormat("Parent directory: %s", GetPrevDirectoryPath(pWorkDir)), 20, y, 20, WHITE);
         y += 36;
 
-        if (hasDropped) {
+        if (hasDropped)
+        {
             DrawText("Dropped Files:", 20, y, 20, YELLOW);
             y += 26;
-            for (unsigned int i = 0; i < droppedFiles.count; ++i) {
-                const char* path = droppedFiles.paths[i];
-                DrawText(TextFormat("  %s", path), 20, y, 18, LIGHTGRAY);
+            for (unsigned int i = 0; i < droppedFiles.count; ++i)
+            {
+                const char* pPath = droppedFiles.paths[i];
+                DrawText(TextFormat("  %s", pPath), 20, y, 18, LIGHTGRAY);
                 y += 22;
-                DrawText(TextFormat("    size: %d bytes", GetFileLength(path)), 20, y, 16, GRAY);
+                DrawText(TextFormat("    size: %d bytes", GetFileLength(pPath)), 20, y, 16, GRAY);
                 y += 20;
-                DrawText(TextFormat("    ext:  %s", GetFileExtension(path)), 20, y, 16, GRAY);
+                DrawText(TextFormat("    ext:  %s", GetFileExtension(pPath)), 20, y, 16, GRAY);
                 y += 20;
-                DrawText(TextFormat("    name: %s", GetFileName(path)), 20, y, 16, GRAY);
+                DrawText(TextFormat("    name: %s", GetFileName(pPath)), 20, y, 16, GRAY);
                 y += 24;
             }
-        } 
-        
-        else {
+        }
+
+        else
+        {
             DrawText("Drag and drop files here to inspect them", 20, y, 20, GRAY);
             y += 28;
         }
@@ -103,7 +113,8 @@ int main() {
     }
 
     UnloadDirectoryFiles(files);
-    if (hasDropped) UnloadDroppedFiles(droppedFiles);
+    if (hasDropped)
+        UnloadDroppedFiles(droppedFiles);
     CloseWindow();
 
     return 0;

@@ -7,12 +7,13 @@ struct aiScene;
 struct aiBone;
 struct Model;
 
-void qcPopulateModelSkeleton(const aiScene* scene, ::Model& model);
+void qcPopulateModelSkeleton(const aiScene* pScene, ::Model& model);
 
-int qcFindSkeletonBoneIndex(const aiScene* scene, const ::Model& model, const aiBone* bone);
+int qcFindSkeletonBoneIndex(const aiScene* pScene, const ::Model& model, const aiBone* pBone);
 
 void qcSetMeshBoneOffset(::Mesh& mesh, unsigned int boneIndex, unsigned int boneCount,
                          const aiMatrix4x4& offset);
 
 void qcFreeModelSkeleton(::Model& model);
+
 #endif // __QUARK_MODEL_ANIM_H__

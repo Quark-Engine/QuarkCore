@@ -5,178 +5,202 @@
 #include "QuarkFont.hpp"
 #include "QuarkTexture.hpp"
 #include <cstdint>
-namespace qci {
-void RecordDebugRenderDraw(std::uint64_t vertexCount);
 
-class QCAPI IRenderer {
-public:
-    virtual ~IRenderer() = default;
+namespace qci
+{
+    void RecordDebugRenderDraw(std::uint64_t vertexCount);
 
-    virtual void  Init(SDL_Window* window, int width, int height) = 0;
-    virtual void  Shutdown() = 0;
-    virtual bool  ShouldClose() const = 0;
-    virtual void  SetTargetFPS(int fps) = 0;
-    virtual bool  SetVSync(bool enabled) = 0;
-    virtual float GetFrameTime() const = 0;
-    virtual int   GetScreenWidth() const = 0;
-    virtual int   GetScreenHeight() const = 0;
-    virtual void  RefreshViewport() = 0;
+    class QCAPI IRenderer
+    {
+    public:
+        virtual ~IRenderer() = default;
 
-    virtual void BeginDrawing() = 0;
-    virtual void EndDrawing() = 0;
+        virtual void Init(SDL_Window* pWindow, int width, int height) = 0;
+        virtual void Shutdown() = 0;
+        virtual bool ShouldClose() const = 0;
+        virtual void SetTargetFPS(int fps) = 0;
+        virtual bool SetVSync(bool enabled) = 0;
+        virtual float GetFrameTime() const = 0;
+        virtual int GetScreenWidth() const = 0;
+        virtual int GetScreenHeight() const = 0;
+        virtual void RefreshViewport() = 0;
 
-    virtual void ClearBackground(Color color) = 0;
+        virtual void BeginDrawing() = 0;
+        virtual void EndDrawing() = 0;
 
-    // Draw 2D
-    virtual void DrawRectangle(float x, float y, float width, float height, Color color)                            = 0;
-    virtual void DrawRectangle(const Rectangle& rectangle, Color color)                                             = 0;
-    virtual void DrawRectangleV(Vec2 position, Vec2 size, Color color)                                              = 0;
-    virtual void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color)                              = 0;
-    virtual void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments, Color color)              = 0;
-    virtual void DrawCircle(float centerX, float centerY, float radius, Color color)                                = 0;        
-    virtual void DrawCircleLines(float centerX, float centerY, float radius, Color color)                           = 0;
-    virtual void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Color color)               = 0;                    
-    virtual void DrawLine(float x1, float y1, float x2, float y2, Color color)                                      = 0;
-    virtual void DrawLineV(Vec2 start, Vec2 end, Color color)                                                       = 0;
-    virtual void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color)                                               = 0;
-    virtual void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color)                        = 0;
+        virtual void ClearBackground(Color color) = 0;
 
+        // Draw 2D
+        virtual void DrawRectangle(float x, float y, float width, float height, Color color) = 0;
+        virtual void DrawRectangle(const Rectangle& rectangle, Color color) = 0;
+        virtual void DrawRectangleV(Vec2 position, Vec2 size, Color color) = 0;
+        virtual void DrawRectangleLines(Rectangle rectangle, float lineWidth, Color color) = 0;
+        virtual void DrawRectangleRounded(Rectangle rectangle, float roundness, int segments, Color color) = 0;
+        virtual void DrawCircle(float centerX, float centerY, float radius, Color color) = 0;
+        virtual void DrawCircleLines(float centerX, float centerY, float radius, Color color) = 0;
+        virtual void DrawEllipse(float centerX, float centerY, float radiusH, float radiusV, Color color) = 0;
+        virtual void DrawLine(float x1, float y1, float x2, float y2, Color color) = 0;
+        virtual void DrawLineV(Vec2 start, Vec2 end, Color color) = 0;
+        virtual void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color) = 0;
+        virtual void DrawPoly(Vec2 center, int sides, float radius, float rotation, Color color) = 0;
 
-    // Draw 3D
-    virtual void Set3DView(const Mat4& view, const Mat4& projection) = 0;
-    virtual void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color) = 0;
-    virtual void DrawPlane(Vec3 center, Vec2 size, Color color) = 0;
-    virtual void DrawCube(Vec3 position, float width, float height, float length, Color color)   = 0;
-    virtual void DrawCubeV(Vec3 position, Vec3 size, Color color) = 0;
-    virtual void DrawCubeWires(Vec3 position, float width, float height, float length, Color color) = 0;
-    virtual void DrawCubeWiresV(Vec3 position, Vec3 size, Color color) = 0;
-    virtual void DrawSphere(Vec3 centerPos, float radius, Color color) = 0;
-    virtual void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color color) = 0;
-    virtual void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color color) = 0;
-    virtual void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color)      = 0;
-    virtual void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color)       = 0;
-    virtual void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color)  = 0;
-    virtual void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) = 0;
-    virtual void DrawGrid(int slices, float spacing, Color color)                                                             = 0;
+        // Draw 3D
+        virtual void Set3DView(const Mat4& view, const Mat4& projection) = 0;
+        virtual void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color) = 0;
+        virtual void DrawPlane(Vec3 center, Vec2 size, Color color) = 0;
+        virtual void DrawCube(Vec3 position, float width, float height, float length, Color color) = 0;
+        virtual void DrawCubeV(Vec3 position, Vec3 size, Color color) = 0;
+        virtual void DrawCubeWires(Vec3 position, float width, float height, float length, Color color) = 0;
+        virtual void DrawCubeWiresV(Vec3 position, Vec3 size, Color color) = 0;
+        virtual void DrawSphere(Vec3 centerPos, float radius, Color color) = 0;
+        virtual void DrawSphereEx(Vec3 centerPos, float radius, int rings, int slices, Color color) = 0;
+        virtual void DrawSphereWires(Vec3 centerPos, float radius, int rings, int slices, Color color) = 0;
+        virtual void DrawCylinder(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) = 0;
+        virtual void DrawCylinderEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int sides, Color color) = 0;
+        virtual void DrawCylinderWires(Vec3 position, float radiusTop, float radiusBottom, float height, int slices, Color color) = 0;
+        virtual void DrawCylinderWiresEx(Vec3 startPos, Vec3 endPos, float startRadius, float endRadius, int slices, Color color) = 0;
+        virtual void DrawGrid(int slices, float spacing, Color color) = 0;
 
-    virtual void DrawDebugText(const char* text, int x, int y, int fontSize, Color color)                         = 0;
-    virtual void DrawText(const char* text, int x, int y, int fontSize, Color color)                                = 0;
-    virtual void DrawTextEx(IFont font, const char* text, Vec2 position, float fontSize, float spacing, Color tint) = 0;
-    virtual Vec2 MeasureTextEx(IFont font, const char* text, float fontSize, float spacing)                         = 0;
-    virtual int MeasureText(const char* text, int fontSize)                                                         = 0;
-    virtual void FillFont(IFont font, Font& out)                                                                   = 0;
+        virtual void DrawDebugText(const char* pText, int x, int y, int fontSize, Color color) = 0;
+        virtual void DrawText(const char* pText, int x, int y, int fontSize, Color color) = 0;
+        virtual void DrawTextEx(IFont font, const char* pText, Vec2 position, float fontSize, float spacing, Color tint) = 0;
+        virtual Vec2 MeasureTextEx(IFont font, const char* pText, float fontSize, float spacing) = 0;
+        virtual int MeasureText(const char* pText, int fontSize) = 0;
+        virtual void FillFont(IFont font, Font& out) = 0;
 
-    virtual void DrawTexture(const ITexture& texture, float x, float y, Color tint)                                             = 0;
-    virtual void DrawTextureV(const ITexture& texture, Vec2 position, Color tint)                                               = 0;
-    virtual void DrawTextureEx(const ITexture& texture, Vec2 position, float rotation, float scale, Color tint)                 = 0;
-    virtual void DrawTextureRec(const ITexture& texture, Rectangle source, Vec2 position, Color tint)                           = 0;
-    virtual void DrawTexturePro(ITexture texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint)    = 0;
-    virtual void DrawTextureTiled(ITexture texture, float scale, Vec2 offset, Color tint)                                       = 0;
-    virtual void DrawTextureNPatch(ITexture texture, NPatchInfo nPatchInfo, Rectangle dest, Vec2 origin, float rotation, Color tint) = 0;
+        virtual void DrawTexture(const ITexture& texture, float x, float y, Color tint) = 0;
+        virtual void DrawTextureV(const ITexture& texture, Vec2 position, Color tint) = 0;
+        virtual void DrawTextureEx(const ITexture& texture, Vec2 position, float rotation, float scale, Color tint) = 0;
+        virtual void DrawTextureRec(const ITexture& texture, Rectangle source, Vec2 position, Color tint) = 0;
+        virtual void DrawTexturePro(ITexture texture, Rectangle source, Rectangle dest, Vec2 origin, float rotation, Color tint) = 0;
+        virtual void DrawTextureTiled(ITexture texture, float scale, Vec2 offset, Color tint) = 0;
+        virtual void DrawTextureNPatch(ITexture texture, NPatchInfo nPatchInfo, Rectangle dest, Vec2 origin, float rotation, Color tint) = 0;
 
-    // Camera 2D
-    virtual void BeginMode2D(const Camera2D& camera) = 0;
-    virtual void EndMode2D()                         = 0;
-    virtual Camera2D GetCamera2D() const             = 0;
+        // Camera 2D
+        virtual void BeginMode2D(const Camera2D& camera) = 0;
+        virtual void EndMode2D() = 0;
+        virtual Camera2D GetCamera2D() const = 0;
 
-    // Camera 3D
-    virtual void BeginMode3D(const Camera3D& camera) = 0;
-    virtual void EndMode3D()                         = 0;
-    virtual void Set3DLightEnabled(int index, bool enabled) { (void)index; (void)enabled; }
+        // Camera 3D
+        virtual void BeginMode3D(const Camera3D& camera) = 0;
+        virtual void EndMode3D() = 0;
+        virtual void Set3DLightEnabled(int index, bool enabled)
+        {
+            (void)index;
+            (void)enabled;
+        }
 
-    // Matrix stack & Transformations
-    virtual void PushMatrix() = 0;
-    virtual void PopMatrix()  = 0;
-    virtual void Translate(const Vec3& translation) = 0;
-    virtual void Rotate(float angle, const Vec3& axis) = 0;
-    virtual void Scale(const Vec3& scale) = 0;
-    virtual void MultMatrix(const Mat4& matrix) = 0;
-    virtual const float* GetMatrixModelview() = 0;
-    virtual const float* GetMatrixProjection() = 0;
+        // Matrix stack & Transformations
+        virtual void PushMatrix() = 0;
+        virtual void PopMatrix() = 0;
+        virtual void Translate(const Vec3& translation) = 0;
+        virtual void Rotate(float angle, const Vec3& axis) = 0;
+        virtual void Scale(const Vec3& scale) = 0;
+        virtual void MultMatrix(const Mat4& matrix) = 0;
+        virtual const float* GetMatrixModelview() = 0;
+        virtual const float* GetMatrixProjection() = 0;
 
-    virtual void EnableBackfaceCulling() = 0;
-    virtual void DisableBackfaceCulling() = 0;
+        virtual void EnableBackfaceCulling() = 0;
+        virtual void DisableBackfaceCulling() = 0;
 
-    // Models & Meshes
-    virtual Model  LoadModel(const char* filePath) = 0;
-    virtual void   UnloadModel(Model& model)        = 0;
-    virtual void   DrawModel(const Model& model, const Vec3& position, float scale, float rotationX, float rotationY, float rotationZ) = 0;
-    virtual void   DrawModelEx(const Model& model, const Mat4& transform) = 0;
-    virtual void   DrawModelEx(const Model& model, const Mat4& transform, Color tint) = 0;
+        // Models & Meshes
+        virtual Model LoadModel(const char* pFilePath) = 0;
+        virtual void UnloadModel(Model& model) = 0;
+        virtual void DrawModel(const Model& model, const Vec3& position, float scale, float rotationX, float rotationY, float rotationZ) = 0;
+        virtual void DrawModelEx(const Model& model, const Mat4& transform) = 0;
+        virtual void DrawModelEx(const Model& model, const Mat4& transform, Color tint) = 0;
 
-    virtual void   UploadMesh(Mesh& mesh, bool dynamic) = 0;
-    virtual void   UpdateMeshBuffer(Mesh& mesh, int index, const void* data, int dataSize, int offset) = 0;
-    virtual void   UnloadMesh(Mesh& mesh) = 0;
-    virtual void   DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) = 0;
-    virtual void   DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* transforms, int instances) = 0;
-    
-    // Texture
-    virtual void BeginTextureMode(IRenderTexture target)                                                = 0;
-    virtual void EndTextureMode()                                                                       = 0;
-    virtual void SetTextureFilterMode(TextureFilter mode) { (void)mode; }
-    virtual void SetTextureFilter(TextureFilter filter) { (void)filter; }
-    virtual void SetTextureWrap(int wrap) { (void)wrap; }
-    virtual void SetTextureWrap(uint32_t textureId, int wrap) {
-        (void)textureId;
-        SetTextureWrap(wrap);
-    }
-    virtual void BeginScissorMode(int x, int y, int width, int height) { (void)x; (void)y; (void)width; (void)height; }
-    virtual void EndScissorMode() { }
-    virtual void SetBlendMode(int mode) { (void)mode; }
-    virtual ITexture LoadTexture(const char* filePath)                                                  = 0;
-    virtual ITexture LoadTextureFromImage(const Image& image)                                            = 0;
-    virtual ITexture LoadTextureCubemap(const unsigned char* rgbaFaces, int faceSize)                    = 0;
-    virtual ITexture GetRenderTextureTexture(IRenderTexture target)                                     = 0;
-    virtual void UnloadTexture(ITexture& texture)                                                       = 0;
-    virtual bool UpdateTexture(const ITexture& texture, const void* pixels)                             = 0;
-    virtual bool UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pixels)    = 0;
-    virtual IRenderTexture LoadRenderTexture(int width, int height)                                     = 0;
-    virtual void UnloadRenderTexture(IRenderTexture target)                                             = 0;
-    virtual ITexture GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB) = 0;
-    virtual bool isTextureValid(ITexture& texture)                                                      = 0;
-    virtual bool isRenderTextureValid(IRenderTexture& target)                                           = 0;
-    virtual Image ReadTextureImage(const ITexture& texture)                                             = 0;
-    virtual Image ReadScreenImage()                                                                     = 0;
+        virtual void UploadMesh(Mesh& mesh, bool dynamic) = 0;
+        virtual void UpdateMeshBuffer(Mesh& mesh, int index, const void* pData, int dataSize, int offset) = 0;
+        virtual void UnloadMesh(Mesh& mesh) = 0;
+        virtual void DrawMesh(const Mesh& mesh, const Material& material, const Mat4& transform) = 0;
+        virtual void DrawMeshInstanced(const Mesh& mesh, const Material& material, const Mat4* pTransforms, int instances) = 0;
 
-    // Font
-    virtual IFont LoadFont(const char* filePath, int fontSize,
-                           const int* codepoints, int codepointCount) = 0;
-    virtual IFont LoadFontFromMemory(const char* fileType, const unsigned char* fileData, int dataSize,
-                                     int fontSize, const int* codepoints, int codepointCount) = 0;
-    virtual void UnloadFont(IFont& font)                       = 0;
+        // Texture
+        virtual void BeginTextureMode(IRenderTexture target) = 0;
+        virtual void EndTextureMode() = 0;
+        virtual void SetTextureFilterMode(TextureFilter mode)
+        {
+            (void)mode;
+        }
+        virtual void SetTextureFilter(TextureFilter filter)
+        {
+            (void)filter;
+        }
+        virtual void SetTextureWrap(int wrap)
+        {
+            (void)wrap;
+        }
+        virtual void SetTextureWrap(uint32_t textureId, int wrap)
+        {
+            (void)textureId;
+            SetTextureWrap(wrap);
+        }
+        virtual void BeginScissorMode(int x, int y, int width, int height)
+        {
+            (void)x;
+            (void)y;
+            (void)width;
+            (void)height;
+        }
+        virtual void EndScissorMode()
+        {
+        }
+        virtual void SetBlendMode(int mode)
+        {
+            (void)mode;
+        }
+        virtual ITexture LoadTexture(const char* pFilePath) = 0;
+        virtual ITexture LoadTextureFromImage(const Image& image) = 0;
+        virtual ITexture LoadTextureCubemap(const unsigned char* pRgbaFaces, int faceSize) = 0;
+        virtual ITexture GetRenderTextureTexture(IRenderTexture target) = 0;
+        virtual void UnloadTexture(ITexture& texture) = 0;
+        virtual bool UpdateTexture(const ITexture& texture, const void* pPixels) = 0;
+        virtual bool UpdateTextureRegion(const ITexture& texture, Rectangle region, const void* pPixels) = 0;
+        virtual IRenderTexture LoadRenderTexture(int width, int height) = 0;
+        virtual void UnloadRenderTexture(IRenderTexture target) = 0;
+        virtual ITexture GenCheckerTexture(int width, int height, int cellSize, Color colorA, Color colorB) = 0;
+        virtual bool isTextureValid(ITexture& texture) = 0;
+        virtual bool isRenderTextureValid(IRenderTexture& target) = 0;
+        virtual Image ReadTextureImage(const ITexture& texture) = 0;
+        virtual Image ReadScreenImage() = 0;
 
+        // Font
+        virtual IFont LoadFont(const char* pFilePath, int fontSize,
+                               const int* pCodepoints, int codepointCount) = 0;
+        virtual IFont LoadFontFromMemory(const char* pFileType, const unsigned char* pFileData, int dataSize,
+                                         int fontSize, const int* pCodepoints, int codepointCount) = 0;
+        virtual void UnloadFont(IFont& font) = 0;
 
-    // Shaders
-    virtual void BeginShaderMode(const Shader& shader)                                            = 0;
-    virtual void EndShaderMode()                                                                  = 0;
-    virtual Shader LoadShader(const char* vsFileName, const char* fsFileName)                     = 0;
-    virtual Shader LoadShaderFromMemory(const char* vsSource, const char* fsSource)               = 0;
-    virtual void UnloadShader(Shader& shader)                                                     = 0;
-    virtual bool isShaderValid(Shader& shader)                                                    = 0;
-    virtual int GetShaderLocation(const Shader& shader, const char* uniformName)                  = 0;
-    virtual int GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex)             = 0;
-    virtual int GetShaderAttributeLocation(const Shader& shader, const char* attribName)          = 0;
+        // Shaders
+        virtual void BeginShaderMode(const Shader& shader) = 0;
+        virtual void EndShaderMode() = 0;
+        virtual Shader LoadShader(const char* pVsFileName, const char* pFsFileName) = 0;
+        virtual Shader LoadShaderFromMemory(const char* pVsSource, const char* pFsSource) = 0;
+        virtual void UnloadShader(Shader& shader) = 0;
+        virtual bool isShaderValid(Shader& shader) = 0;
+        virtual int GetShaderLocation(const Shader& shader, const char* pUniformName) = 0;
+        virtual int GetShaderLocation(const Shader& shader, ShaderLocationIndex locIndex) = 0;
+        virtual int GetShaderAttributeLocation(const Shader& shader, const char* pAttribName) = 0;
 
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, float value)           = 0;
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, int value)             = 0;
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Color& value)    = 0;
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Vec2& value) = 0;
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Vec3& value) = 0;
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Vec4& value) = 0;
+        virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, float value) = 0;
+        virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, int value) = 0;
+        virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Color& value) = 0;
+        virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Vec2& value) = 0;
+        virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Vec3& value) = 0;
+        virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const Vec4& value) = 0;
 
-    virtual void SetShaderValueMatrix([[maybe_unused]] const Shader& shader, int locIndex, const float* mat) = 0;
-    virtual void SetShaderValueSampler([[maybe_unused]] const Shader& shader, int locIndex, int textureUnit) = 0;
+        virtual void SetShaderValueMatrix([[maybe_unused]] const Shader& shader, int locIndex, const float* pMat) = 0;
+        virtual void SetShaderValueSampler([[maybe_unused]] const Shader& shader, int locIndex, int textureUnit) = 0;
 
-    virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const void* value, int uniformType) = 0;
-    virtual void SetShaderValueV([[maybe_unused]] const Shader& shader, int locIndex, const void* value, int uniformType, int count) = 0;
-    virtual void SetShaderValueMatrix([[maybe_unused]] const Shader& shader, int locIndex, const Matrix& mat) = 0;
-    virtual void SetShaderValueTexture([[maybe_unused]] const Shader& shader, int locIndex, const ITexture& texture) = 0;
-    virtual void SetShaderValueTextureUnit([[maybe_unused]] const Shader& shader, int locIndex, const ITexture& texture, int textureUnit) = 0;
+        virtual void SetShaderValue([[maybe_unused]] const Shader& shader, int locIndex, const void* pValue, int uniformType) = 0;
+        virtual void SetShaderValueV([[maybe_unused]] const Shader& shader, int locIndex, const void* pValue, int uniformType, int count) = 0;
+        virtual void SetShaderValueMatrix([[maybe_unused]] const Shader& shader, int locIndex, const Matrix& mat) = 0;
+        virtual void SetShaderValueTexture([[maybe_unused]] const Shader& shader, int locIndex, const ITexture& texture) = 0;
+        virtual void SetShaderValueTextureUnit([[maybe_unused]] const Shader& shader, int locIndex, const ITexture& texture, int textureUnit) = 0;
 
+        virtual RendererType GetType() const = 0;
+    };
+} // qci
 
-
-    virtual RendererType GetType() const = 0;
-};
-
-} // namespace qci
 #endif // __QUARK_I_RENDERER__

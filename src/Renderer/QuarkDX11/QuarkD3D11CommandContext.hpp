@@ -8,209 +8,247 @@
 #include <d3d11_1.h>
 #include <cstdint>
 #include <vector>
-namespace qci {
-class D3D11CommandContext {
-public:
-    struct ShaderOverride {
-        ID3D11VertexShader *vertexShader = nullptr;
-        ID3D11PixelShader *pixelShader = nullptr;
-        ID3D11InputLayout *inputLayout = nullptr;
-        ID3D11Buffer *constantBuffer = nullptr;
-        const uint8_t *constantData = nullptr;
-        uint32_t constantDataSize = 0;
-        ID3D11ShaderResourceView *shaderResources[10] = {};
-        UINT strideBytes = 0;
-        UINT positionOffset = 0;
-        UINT texCoordOffset = 0xFFFFFFFFu;
-        UINT colorOffset = 0xFFFFFFFFu;
 
-        bool Active() const { return vertexShader != nullptr && pixelShader != nullptr &&
-                                     inputLayout != nullptr && strideBytes > 0; }
+namespace qci
+{
+    class D3D11CommandContext
+    {
+    public:
+        struct ShaderOverride
+        {
+            ID3D11VertexShader* m_pVertexShader = nullptr;
+            ID3D11PixelShader* m_pPixelShader = nullptr;
+            ID3D11InputLayout* m_pInputLayout = nullptr;
+            ID3D11Buffer* m_pConstantBuffer = nullptr;
+            const uint8_t* m_pConstantData = nullptr;
+            uint32_t m_ConstantDataSize = 0;
+            ID3D11ShaderResourceView* m_apShaderResources[10] = {};
+            UINT m_StrideBytes = 0;
+            UINT m_PositionOffset = 0;
+            UINT m_TexCoordOffset = 0xFFFFFFFFu;
+            UINT m_ColorOffset = 0xFFFFFFFFu;
+
+            bool Active() const
+            {
+                return m_pVertexShader != nullptr && m_pPixelShader != nullptr &&
+                       m_pInputLayout != nullptr && m_StrideBytes > 0;
+            }
+        };
+
+        void Initialize(const D3D11Device& device, D3D11SwapChain& swapChain, D3D11Pipeline& pipeline,
+                        D3D11Resources& resources, int width, int height,
+                        QuarkRenderThreadPool* pThreadPool = nullptr);
+        void Shutdown();
+        void RefreshViewport(int width, int height);
+        void SetDefaultViewportSize(int width, int height);
+        void BeginDrawing();
+        void Flush3DBatch();
+        void FlushBatch();
+        void FlushDebugOverlay();
+        void SetDrawingDebugOverlay(bool enabled)
+        {
+            m_DrawingDebugOverlay = enabled;
+        }
+        bool IsDrawingDebugOverlay() const
+        {
+            return m_DrawingDebugOverlay;
+        }
+        void Present(bool vsync);
+        void Clear(Color color);
+        void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, int width, int height);
+        void DrawTextureQuad(const ITexture& texture,
+                             Rectangle source,
+                             Rectangle destination,
+                             Vec2 origin,
+                             float rotation,
+                             Color tint,
+                             int width,
+                             int height);
+        size_t Allocate3DVertexSlice(UINT vertexCount, UINT strideFloats);
+        float* Get3DVertexPtr(size_t offsetFloats)
+        {
+            return m_vQueued3DVertices.data() + offsetFloats;
+        }
+        void SubmitQueued3D(size_t vertexOffsetFloats, UINT vertexCount, D3D_PRIMITIVE_TOPOLOGY topology);
+        void SubmitQueued3DTextured(size_t vertexOffsetFloats, UINT vertexCount,
+                                    ID3D11ShaderResourceView* pShaderResource,
+                                    ID3D11ShaderResourceView* pNormalResource);
+        void SubmitQueued3DShader(size_t vertexOffsetFloats, UINT vertexCount,
+                                  const ShaderOverride& shaderOverride);
+        struct InstanceTransform
+        {
+            float m_aModel[16];
+            float m_aMvp[16];
+            float m_aNormalMatrix[16];
+        };
+
+        UINT Append3DInstances(const InstanceTransform* pInstances, UINT count);
+        void SubmitQueued3DStaticMesh(ID3D11Buffer* pStaticVertexBuffer,
+                                      ID3D11Buffer* pStaticIndexBuffer,
+                                      UINT vertexCount, UINT indexCount, bool indexed,
+                                      const ShaderOverride& shaderOverride,
+                                      UINT instanceCount = 1,
+                                      const uint8_t* pBatchedConstantData = nullptr,
+                                      uint32_t singleConstantBytes = 0,
+                                      bool useGpuInstancing = false);
+        void Draw3D(const float* pVertices, UINT vertexCount, D3D_PRIMITIVE_TOPOLOGY topology);
+        void Draw3DTextured(const float* pVertices, UINT vertexCount,
+                            ID3D11ShaderResourceView* pShaderResource,
+                            ID3D11ShaderResourceView* pNormalResource);
+        void Draw3DShader(const float* pVertices, UINT vertexCount,
+                          const ShaderOverride& shaderOverride);
+        void ClearDepthStencil();
+        void ReleaseRenderTargets();
+        void BeginTextureMode(const IRenderTexture& target);
+        void EndTextureMode(int width, int height);
+        int ActiveWidth() const
+        {
+            return m_ActiveWidth;
+        }
+        int ActiveHeight() const
+        {
+            return m_ActiveHeight;
+        }
+        void BeginMode2D(const Camera2D& camera);
+        void EndMode2D();
+        Camera2D GetCamera2D() const
+        {
+            return m_Camera2D;
+        }
+        void SetShaderOverride(const ShaderOverride& shaderOverride)
+        {
+            m_ShaderOverride = shaderOverride;
+        }
+        const ShaderOverride& GetShaderOverride() const
+        {
+            return m_ShaderOverride;
+        }
+
+    private:
+        static constexpr UINT BATCH_MAX_VERTICES = 8192 * 4;
+        static constexpr size_t MAX_3D_BUFFER_BYTES = 8 * 1024 * 1024;
+        static constexpr size_t MAX_WORKER_CONSTANT_BUFFER_BYTES = 65536;
+        static constexpr size_t RING_CONSTANT_BUFFER_BYTES = 4 * 1024 * 1024;
+        static constexpr size_t CONSTANT_BUFFER_ALIGNMENT = 256;
+
+        struct BatchVertex
+        {
+            float m_X, m_Y;
+            float m_U, m_V;
+            float m_R, m_G, m_B, m_A;
+        };
+
+        struct DrawItem
+        {
+            UINT m_IndexStart = 0;
+            UINT m_IndexCount = 0;
+            ID3D11ShaderResourceView* m_pShaderResource = nullptr;
+        };
+
+        enum class Queued3DMode : uint8_t
+        {
+            Untextured = 0,
+            Textured = 1,
+            CustomShader = 2,
+        };
+
+        struct Queued3DDraw
+        {
+            Queued3DMode m_Mode = Queued3DMode::Untextured;
+            size_t m_VertexOffsetFloats = 0;
+            UINT m_VertexCount = 0;
+            D3D_PRIMITIVE_TOPOLOGY m_Topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+            ID3D11ShaderResourceView* m_pShaderResource = nullptr;
+            ID3D11ShaderResourceView* m_pNormalResource = nullptr;
+            ShaderOverride m_ShaderOverride{};
+            size_t m_ConstantOffsetBytes = 0;
+            uint32_t m_ConstantSizeBytes = 0;
+            ID3D11Buffer* m_pStaticVertexBuffer = nullptr;
+            ID3D11Buffer* m_pStaticIndexBuffer = nullptr;
+            UINT m_IndexCount = 0;
+            UINT m_InstanceCount = 1;
+            bool m_Indexed = false;
+            bool m_UseGpuInstancing = false;
+            bool m_BackfaceCulling = false;
+        };
+
+        struct DeferredWorkerContext
+        {
+            Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_DeferredContext;
+            Microsoft::WRL::ComPtr<ID3D11DeviceContext1> m_DeferredContext1;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> m_VertexBuffer3D;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> m_ConstantBuffer;
+            Microsoft::WRL::ComPtr<ID3D11CommandList> m_CommandList;
+        };
+
+        struct DrawStateCache
+        {
+            ID3D11InputLayout* m_pInputLayout = nullptr;
+            ID3D11Buffer* m_pVertexBuffer = nullptr;
+            UINT m_VertexStride = 0;
+            ID3D11Buffer* m_pIndexBuffer = nullptr;
+            D3D_PRIMITIVE_TOPOLOGY m_Topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+            ID3D11RasterizerState* m_pRasterizer = nullptr;
+            ID3D11VertexShader* m_pVertexShader = nullptr;
+            ID3D11PixelShader* m_pPixelShader = nullptr;
+            ID3D11Buffer* m_pVsConstantBuffer0 = nullptr;
+            ID3D11Buffer* m_pPsConstantBuffer0 = nullptr;
+            ID3D11Buffer* m_pPsLightConstantBuffer = nullptr;
+            ID3D11SamplerState* m_pSampler0 = nullptr;
+            ID3D11DepthStencilState* m_pDepthStencil = nullptr;
+            ID3D11BlendState* m_pBlendState = nullptr;
+            ID3D11ShaderResourceView* m_apSrvs[10] = {};
+            bool m_SrvsValid = false;
+        };
+
+        void Flush2DBatch();
+        void ExecuteQueued3DDrawOnContext(ID3D11DeviceContext* pCtx, ID3D11DeviceContext1* pCtx1,
+                                          bool useRingConstantBuffer,
+                                          ID3D11Buffer* pVertexBuffer3D,
+                                          ID3D11Buffer* pWorkerConstantBuffer, size_t& vbByteOffset,
+                                          const Queued3DDraw& draw, DrawStateCache& stateCache);
+        void BindOverride(ID3D11ShaderResourceView* pDrawnResource);
+        void BatchTriangle(const BatchVertex aVertices[3]);
+        void BatchQuad(const BatchVertex aVertices[4], ID3D11ShaderResourceView* pShaderResource);
+
+        ID3D11DeviceContext* m_pContext = nullptr;
+        Microsoft::WRL::ComPtr<ID3D11DeviceContext1> m_Context1;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> m_RingConstantBuffer;
+        D3D11SwapChain* m_pSwapChain = nullptr;
+        D3D11Pipeline* m_pPipeline = nullptr;
+        D3D11Resources* m_pResources = nullptr;
+        QuarkRenderThreadPool* m_pThreadPool = nullptr;
+        ID3D11RenderTargetView* m_pActiveRenderTarget = nullptr;
+        ID3D11DepthStencilView* m_pActiveDepthStencil = nullptr;
+        int m_DefaultWidth = 0;
+        int m_DefaultHeight = 0;
+        int m_ActiveWidth = 0;
+        int m_ActiveHeight = 0;
+        Camera2D m_Camera2D{};
+        bool m_Camera2DActive = false;
+        ShaderOverride m_ShaderOverride{};
+
+        Microsoft::WRL::ComPtr<ID3D11Buffer> m_BatchVertexBuffer;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> m_BatchIndexBuffer;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> m_WhiteTexture;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_WhiteShaderResource;
+        std::vector<BatchVertex> m_vBatchVertices;
+        std::vector<uint32_t> m_vBatchIndices;
+        std::vector<DrawItem> m_vBatchDrawItems;
+        bool m_DrawingDebugOverlay = false;
+        std::vector<BatchVertex> m_vOverlayVertices;
+        std::vector<uint32_t> m_vOverlayIndices;
+        std::vector<DrawItem> m_vOverlayDrawItems;
+
+        static constexpr UINT MAX_3D_INSTANCES = 4096;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> m_InstanceBuffer;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_InstanceSRV;
+        std::vector<InstanceTransform> m_vQueued3DInstances;
+        std::vector<DeferredWorkerContext> m_vWorkers;
+        std::vector<float> m_vQueued3DVertices;
+        std::vector<uint8_t> m_vQueued3DConstants;
+        std::vector<Queued3DDraw> m_vQueued3DDraws;
     };
-
-    void Initialize(const D3D11Device &device, D3D11SwapChain &swapChain, D3D11Pipeline &pipeline,
-                    D3D11Resources &resources, int width, int height,
-                    QuarkRenderThreadPool *threadPool = nullptr);
-    void Shutdown();
-    void RefreshViewport(int width, int height);
-    void SetDefaultViewportSize(int width, int height);
-    void BeginDrawing();
-    void Flush3DBatch();
-    void FlushBatch();
-    void FlushDebugOverlay();
-    void SetDrawingDebugOverlay(bool enabled) { m_drawingDebugOverlay = enabled; }
-    bool IsDrawingDebugOverlay() const { return m_drawingDebugOverlay; }
-    void Present(bool vsync);
-    void Clear(Color color);
-    void DrawTriangle(Vec2 v1, Vec2 v2, Vec2 v3, Color color, int width, int height);
-    void DrawTextureQuad(const ITexture& texture,
-                         Rectangle source,
-                         Rectangle destination,
-                         Vec2 origin,
-                         float rotation,
-                         Color tint,
-                         int width,
-                         int height);
-    size_t Allocate3DVertexSlice(UINT vertexCount, UINT strideFloats);
-    float *Get3DVertexPtr(size_t offsetFloats) { return m_queued3DVertices.data() + offsetFloats; }
-    void SubmitQueued3D(size_t vertexOffsetFloats, UINT vertexCount, D3D_PRIMITIVE_TOPOLOGY topology);
-    void SubmitQueued3DTextured(size_t vertexOffsetFloats, UINT vertexCount,
-                                ID3D11ShaderResourceView *shaderResource,
-                                ID3D11ShaderResourceView *normalResource);
-    void SubmitQueued3DShader(size_t vertexOffsetFloats, UINT vertexCount,
-                              const ShaderOverride &shaderOverride);
-    struct InstanceTransform {
-        float model[16];
-        float mvp[16];
-        float normalMatrix[16];
-    };
-
-    UINT Append3DInstances(const InstanceTransform *instances, UINT count);
-    void SubmitQueued3DStaticMesh(ID3D11Buffer *staticVertexBuffer,
-                                  ID3D11Buffer *staticIndexBuffer,
-                                  UINT vertexCount, UINT indexCount, bool indexed,
-                                  const ShaderOverride &shaderOverride,
-                                  UINT instanceCount = 1,
-                                  const uint8_t *batchedConstantData = nullptr,
-                                  uint32_t singleConstantBytes = 0,
-                                  bool useGpuInstancing = false);
-    void Draw3D(const float *vertices, UINT vertexCount, D3D_PRIMITIVE_TOPOLOGY topology);
-    void Draw3DTextured(const float *vertices, UINT vertexCount,
-                        ID3D11ShaderResourceView *shaderResource,
-                        ID3D11ShaderResourceView *normalResource);
-    void Draw3DShader(const float *vertices, UINT vertexCount,
-                      const ShaderOverride &shaderOverride);
-    void ClearDepthStencil();
-    void ReleaseRenderTargets();
-    void BeginTextureMode(const IRenderTexture& target);
-    void EndTextureMode(int width, int height);
-    int ActiveWidth() const { return m_activeWidth; }
-    int ActiveHeight() const { return m_activeHeight; }
-    void BeginMode2D(const Camera2D& camera);
-    void EndMode2D();
-    Camera2D GetCamera2D() const { return m_camera2D; }
-    void SetShaderOverride(const ShaderOverride &shaderOverride) { m_shaderOverride = shaderOverride; }
-    const ShaderOverride &GetShaderOverride() const { return m_shaderOverride; }
-
-private:
-    static constexpr UINT kBatchMaxVertices = 8192 * 4;
-    static constexpr size_t kMax3DBufferBytes = 8 * 1024 * 1024;
-    static constexpr size_t kMaxWorkerConstantBufferBytes = 65536;
-    static constexpr size_t kRingConstantBufferBytes = 4 * 1024 * 1024;
-    static constexpr size_t kConstantBufferAlignment = 256;
-
-    struct BatchVertex {
-        float x, y;
-        float u, v;
-        float r, g, b, a;
-    };
-
-    struct DrawItem {
-        UINT indexStart = 0;
-        UINT indexCount = 0;
-        ID3D11ShaderResourceView *shaderResource = nullptr;
-    };
-
-    enum class Queued3DMode : uint8_t {
-        Untextured = 0,
-        Textured = 1,
-        CustomShader = 2,
-    };
-
-    struct Queued3DDraw {
-        Queued3DMode mode = Queued3DMode::Untextured;
-        size_t vertexOffsetFloats = 0;
-        UINT vertexCount = 0;
-        D3D_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-        ID3D11ShaderResourceView *shaderResource = nullptr;
-        ID3D11ShaderResourceView *normalResource = nullptr;
-        ShaderOverride shaderOverride{};
-        size_t constantOffsetBytes = 0;
-        uint32_t constantSizeBytes = 0;
-        ID3D11Buffer *staticVertexBuffer = nullptr;
-        ID3D11Buffer *staticIndexBuffer = nullptr;
-        UINT indexCount = 0;
-        UINT instanceCount = 1;
-        bool indexed = false;
-        bool useGpuInstancing = false;
-        bool backfaceCulling = false;
-    };
-
-    struct DeferredWorkerContext {
-        Microsoft::WRL::ComPtr<ID3D11DeviceContext> deferredContext;
-        Microsoft::WRL::ComPtr<ID3D11DeviceContext1> deferredContext1;
-        Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer3D;
-        Microsoft::WRL::ComPtr<ID3D11Buffer> constantBuffer;
-        Microsoft::WRL::ComPtr<ID3D11CommandList> commandList;
-    };
-
-    struct DrawStateCache {
-        ID3D11InputLayout *inputLayout = nullptr;
-        ID3D11Buffer *vertexBuffer = nullptr;
-        UINT vertexStride = 0;
-        ID3D11Buffer *indexBuffer = nullptr;
-        D3D_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
-        ID3D11RasterizerState *rasterizer = nullptr;
-        ID3D11VertexShader *vertexShader = nullptr;
-        ID3D11PixelShader *pixelShader = nullptr;
-        ID3D11Buffer *vsConstantBuffer0 = nullptr;
-        ID3D11Buffer *psConstantBuffer0 = nullptr;
-        ID3D11Buffer *psLightConstantBuffer = nullptr;
-        ID3D11SamplerState *sampler0 = nullptr;
-        ID3D11DepthStencilState *depthStencil = nullptr;
-        ID3D11BlendState *blendState = nullptr;
-        ID3D11ShaderResourceView *srvs[10] = {};
-        bool srvsValid = false;
-    };
-
-    void Flush2DBatch();
-    void ExecuteQueued3DDrawOnContext(ID3D11DeviceContext *ctx, ID3D11DeviceContext1 *ctx1,
-                                      bool useRingConstantBuffer,
-                                      ID3D11Buffer *vertexBuffer3D,
-                                      ID3D11Buffer *workerConstantBuffer, size_t &vbByteOffset,
-                                      const Queued3DDraw &draw, DrawStateCache &stateCache);
-    void BindOverride(ID3D11ShaderResourceView *drawnResource);
-    void BatchTriangle(const BatchVertex v[3]);
-    void BatchQuad(const BatchVertex v[4], ID3D11ShaderResourceView *shaderResource);
-
-    ID3D11DeviceContext *m_context = nullptr;
-    Microsoft::WRL::ComPtr<ID3D11DeviceContext1> m_context1;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> m_ringConstantBuffer;
-    D3D11SwapChain *m_swapChain = nullptr;
-    D3D11Pipeline *m_pipeline = nullptr;
-    D3D11Resources *m_resources = nullptr;
-    QuarkRenderThreadPool *m_threadPool = nullptr;
-    ID3D11RenderTargetView *m_activeRenderTarget = nullptr;
-    ID3D11DepthStencilView *m_activeDepthStencil = nullptr;
-    int m_defaultWidth = 0;
-    int m_defaultHeight = 0;
-    int m_activeWidth = 0;
-    int m_activeHeight = 0;
-    Camera2D m_camera2D{};
-    bool m_camera2DActive = false;
-    ShaderOverride m_shaderOverride{};
-
-    Microsoft::WRL::ComPtr<ID3D11Buffer> m_batchVertexBuffer;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> m_batchIndexBuffer;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> m_whiteTexture;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_whiteShaderResource;
-    std::vector<BatchVertex> m_batchVertices;
-    std::vector<uint32_t> m_batchIndices;
-    std::vector<DrawItem> m_batchDrawItems;
-    bool m_drawingDebugOverlay = false;
-    std::vector<BatchVertex> m_overlayVertices;
-    std::vector<uint32_t> m_overlayIndices;
-    std::vector<DrawItem> m_overlayDrawItems;
-
-    static constexpr UINT kMax3DInstances = 4096;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> m_instanceBuffer;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_instanceSRV;
-    std::vector<InstanceTransform> m_queued3DInstances;
-    std::vector<DeferredWorkerContext> m_workers;
-    std::vector<float> m_queued3DVertices;
-    std::vector<uint8_t> m_queued3DConstants;
-    std::vector<Queued3DDraw> m_queued3DDraws;
-};
-} // namespace qci
+} // qci
 #endif
 #endif // __QUARK_D3D11_COMMAND_CONTEXT__

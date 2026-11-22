@@ -1,6 +1,6 @@
 /*
     ========================================================
-    
+
         Quark 3D Module
         By Quark Engine Development Team
 
@@ -34,7 +34,8 @@ struct Image;
 /**
  * @brief Vertex data for 3D meshes.
  */
-struct Vertex3D {
+struct Vertex3D
+{
     Vec3 position;
     Vec3 normal;
     Vec2 texCoord;
@@ -43,12 +44,14 @@ struct Vertex3D {
 /**
  * @brief Ray for raycasting operations.
  */
-struct Ray {
-    Vec3 position{0.0f, 0.0f, 0.0f};     // Ray starting point
-    Vec3 direction{0.0f, 0.0f, 1.0f};  // Ray direction (normalized)
+struct Ray
+{
+    Vec3 position{0.0f, 0.0f, 0.0f};  // Ray starting point
+    Vec3 direction{0.0f, 0.0f, 1.0f}; // Ray direction (normalized)
 };
 
-struct RayCollision {
+struct RayCollision
+{
     bool hit = false;
     float distance = 0.0f;
     Vec3 point{0.0f, 0.0f, 0.0f};
@@ -58,35 +61,38 @@ struct RayCollision {
 /**
  * @brief Material map index.
  */
-enum MaterialMapIndex {
-    MATERIAL_MAP_ALBEDO = 0,        // Albedo material (same as: MATERIAL_MAP_DIFFUSE)
-    MATERIAL_MAP_METALNESS,         // Metalness material (same as: MATERIAL_MAP_SPECULAR)
-    MATERIAL_MAP_NORMAL,            // Normal material
-    MATERIAL_MAP_ROUGHNESS,         // Roughness material
-    MATERIAL_MAP_OCCLUSION,         // Ambient occlusion material
-    MATERIAL_MAP_EMISSION,          // Emission material
-    MATERIAL_MAP_HEIGHT,            // Heightmap material
-    MATERIAL_MAP_CUBEMAP,           // Cubemap material (NOTE: Uses GL_TEXTURE_CUBE_MAP)
-    MATERIAL_MAP_IRRADIANCE,        // Irradiance material (NOTE: Uses GL_TEXTURE_CUBE_MAP)
-    MATERIAL_MAP_PREFILTER,         // Prefilter material (NOTE: Uses GL_TEXTURE_CUBE_MAP)
-    MATERIAL_MAP_BRDF               // Brdf material
+enum MaterialMapIndex
+{
+    MATERIAL_MAP_ALBEDO = 0, // Albedo material (same as: MATERIAL_MAP_DIFFUSE)
+    MATERIAL_MAP_METALNESS,  // Metalness material (same as: MATERIAL_MAP_SPECULAR)
+    MATERIAL_MAP_NORMAL,     // Normal material
+    MATERIAL_MAP_ROUGHNESS,  // Roughness material
+    MATERIAL_MAP_OCCLUSION,  // Ambient occlusion material
+    MATERIAL_MAP_EMISSION,   // Emission material
+    MATERIAL_MAP_HEIGHT,     // Heightmap material
+    MATERIAL_MAP_CUBEMAP,    // Cubemap material (NOTE: Uses GL_TEXTURE_CUBE_MAP)
+    MATERIAL_MAP_IRRADIANCE, // Irradiance material (NOTE: Uses GL_TEXTURE_CUBE_MAP)
+    MATERIAL_MAP_PREFILTER,  // Prefilter material (NOTE: Uses GL_TEXTURE_CUBE_MAP)
+    MATERIAL_MAP_BRDF        // Brdf material
 };
 
 /**
  * @brief Material map.
  */
-struct MaterialMap {
-    Texture2D texture;      // Material map texture
-    Color color;            // Material map color
-    float value = 0.0f;     // Material map value
+struct MaterialMap
+{
+    Texture2D texture;  // Material map texture
+    Color color;        // Material map color
+    float value = 0.0f; // Material map value
 };
 
 /**
  * @brief Material properties.
  */
-struct Material {
-    Shader* shader = nullptr;       // Material shader
-    MaterialMap* maps = nullptr;    // Material maps array (MAX_MATERIAL_MAPS)
+struct Material
+{
+    Shader* shader = nullptr;                   // Material shader
+    MaterialMap* maps = nullptr;                // Material maps array (MAX_MATERIAL_MAPS)
     float params[4] = {0.0f, 0.0f, 0.0f, 0.0f}; // Material generic parameters (if required)
 };
 
@@ -99,16 +105,16 @@ struct Material {
  */
 QCAPI void SetMaterialColor(Material& material, int mapIndex, Color color);
 
-QCAPI void UploadMesh(Mesh* mesh, bool dynamic);
-QCAPI void UpdateMeshBuffer(Mesh mesh, int index, const void* data, int dataSize, int offset);
+QCAPI void UploadMesh(Mesh* pMesh, bool dynamic);
+QCAPI void UpdateMeshBuffer(Mesh mesh, int index, const void* pData, int dataSize, int offset);
 QCAPI void UnloadMesh(Mesh mesh);
 QCAPI void DrawMesh(Mesh mesh, Material material, Matrix transform);
-QCAPI void DrawMeshInstanced(Mesh mesh, Material material, const Matrix* transforms, int instances);
+QCAPI void DrawMeshInstanced(Mesh mesh, Material material, const Matrix* pTransforms, int instances);
 QCAPI BoundingBox GetMeshBoundingBox(Mesh mesh);
 QCAPI BoundingBox GetModelBoundingBox(Model model);
-QCAPI void GenMeshTangents(Mesh* mesh);
-QCAPI bool ExportMesh(Mesh mesh, const char* fileName);
-QCAPI bool ExportMeshAsCode(Mesh mesh, const char* fileName);
+QCAPI void GenMeshTangents(Mesh* pMesh);
+QCAPI bool ExportMesh(Mesh mesh, const char* pFileName);
+QCAPI bool ExportMeshAsCode(Mesh mesh, const char* pFileName);
 
 QCAPI Mesh GenMeshPoly(int sides, float radius);
 QCAPI Mesh GenMeshPlane(float width, float length, int resX, int resZ);
@@ -123,14 +129,15 @@ QCAPI Mesh GenMeshHeightmap(Image heightmap, Vec3 size);
 QCAPI Mesh GenMeshCubicmap(Image cubicmap, Vec3 cubeSize);
 
 // Backward compatibility
-#define MATERIAL_MAP_DIFFUSE      MATERIAL_MAP_ALBEDO
-#define MATERIAL_MAP_SPECULAR     MATERIAL_MAP_METALNESS
-#define MAX_MESH_VERTEX_BUFFERS   9
+#define MATERIAL_MAP_DIFFUSE MATERIAL_MAP_ALBEDO
+#define MATERIAL_MAP_SPECULAR MATERIAL_MAP_METALNESS
+#define MAX_MESH_VERTEX_BUFFERS 9
 
 /**
  * @brief Transform, vertex transformation data.
  */
-struct Transform {
+struct Transform
+{
     Vec3 translation{0.0f, 0.0f, 0.0f};
     Quaternion rotation{0.0f, 0.0f, 0.0f, 1.0f};
     Vec3 scale{1.0f, 1.0f, 1.0f};
@@ -139,7 +146,8 @@ struct Transform {
 /**
  * @brief Bone information.
  */
-struct BoneInfo {
+struct BoneInfo
+{
     char name[32] = {0};
     int parent = -1;
 };
@@ -150,7 +158,8 @@ using ModelAnimPose = Transform*;
 /**
  * @brief Skeleton with bone hierarchy and bind pose.
  */
-struct ModelSkeleton {
+struct ModelSkeleton
+{
     unsigned int boneCount = 0;
     BoneInfo* bones = nullptr;
     ModelAnimPose bindPose = nullptr;
@@ -159,7 +168,8 @@ struct ModelSkeleton {
 /**
  * @brief Model animation sequence data.
  */
-struct ModelAnimation {
+struct ModelAnimation
+{
     char name[32] = {0};
     unsigned int boneCount = 0;
     int keyframeCount = 0;
@@ -169,9 +179,10 @@ struct ModelAnimation {
 /**
  * @brief Mesh structure containing vertices and indices.
  */
-struct Mesh {
-    int vertexCount = 0;        // Number of vertices stored in arrays
-    int triangleCount = 0;      // Number of triangles stored (indexed or not)
+struct Mesh
+{
+    int vertexCount = 0;   // Number of vertices stored in arrays
+    int triangleCount = 0; // Number of triangles stored (indexed or not)
 
     float* vertices = nullptr;  // Vertex position (XYZ - 3 components per vertex)
     float* texcoords = nullptr; // Vertex texture coordinates (UV - 2 components per vertex)
@@ -181,7 +192,7 @@ struct Mesh {
     unsigned char* colors = nullptr;
     unsigned short* indices = nullptr;
 
-    int boneCount = 0;          // Number of bones (MAX: 256 bones)
+    int boneCount = 0; // Number of bones (MAX: 256 bones)
     unsigned char* boneIndices = nullptr;
     float* boneWeights = nullptr;
     Matrix* boneOffsets = nullptr;
@@ -192,15 +203,16 @@ struct Mesh {
     float* bindVertices = nullptr;
     float* bindNormals = nullptr;
 
-    unsigned int vaoId = 0;         // OpenGL Vertex Array Object ID
-    unsigned int vboId = 0;         // OpenGL Vertex Buffer Object ID
-    unsigned int eboId = 0;         // OpenGL Element Buffer Object ID
+    unsigned int vaoId = 0; // OpenGL Vertex Array Object ID
+    unsigned int vboId = 0; // OpenGL Vertex Buffer Object ID
+    unsigned int eboId = 0; // OpenGL Element Buffer Object ID
 };
 
 /**
  * @brief 3D Model loaded from file.
  */
-struct Model {
+struct Model
+{
     Matrix transform = Matrix(); // Local transform matrix
 
     int meshCount = 0;
@@ -223,27 +235,27 @@ struct Model {
  *
  * Supported formats: obj, fbx, gltf, glb, dae, blend, 3ds, ase, ply, and more.
  *
- * @param filePath Path to the model file.
+ * @param pFilePath Path to the model file.
  * @return Loaded model.
  * @return Empty model on failure.
  */
-QCAPI Model LoadModel(const char* filePath);
+QCAPI Model LoadModel(const char* pFilePath);
 
 /** * @brief Create a model from a single mesh.
  *
- * @param name Name identifier for the model.
+ * @param pName Name identifier for the model.
  * @param mesh Mesh to create model from.
  * @return Loaded model.
  */
-QCAPI Model LoadModelFromMesh(const char* name, Mesh mesh);
+QCAPI Model LoadModelFromMesh(const char* pName, Mesh mesh);
 QCAPI Model LoadModelFromMesh(Mesh mesh);
 QCAPI Material LoadMaterialDefault();
 QCAPI bool IsModelValid(Model model);
-QCAPI Material* LoadMaterials(const char* fileName, int* materialCount);
+QCAPI Material* LoadMaterials(const char* pFileName, int* pMaterialCount);
 QCAPI bool IsMaterialValid(Material material);
 QCAPI void UnloadMaterial(Material material);
-QCAPI void SetMaterialTexture(Material* material, int mapType, Texture2D texture);
-QCAPI void SetModelMeshMaterial(Model* model, int meshId, int materialId);
+QCAPI void SetMaterialTexture(Material* pMaterial, int mapType, Texture2D texture);
+QCAPI void SetModelMeshMaterial(Model* pModel, int meshId, int materialId);
 
 /** * @brief Unload a model and free its resources.
  *
@@ -254,11 +266,11 @@ QCAPI void UnloadModel(Model& model);
 /**
  * @brief Load model animations from file (release with UnloadModelAnimations).
  *
- * @param fileName Path to the animated model file (fbx, gltf, glb, dae, ...).
- * @param animCount Output number of loaded animations.
+ * @param pFileName Path to the animated model file (fbx, gltf, glb, dae, ...).
+ * @param pAnimCount Output number of loaded animations.
  * @return Allocated array of ModelAnimation.
  */
-QCAPI ModelAnimation* LoadModelAnimations(const char* fileName, int* animCount);
+QCAPI ModelAnimation* LoadModelAnimations(const char* pFileName, int* pAnimCount);
 
 /**
  * @brief Update the model animation pose at a given frame (CPU/GPU skinning + bone matrices).
@@ -293,10 +305,10 @@ QCAPI bool IsModelAnimationValid(Model model, ModelAnimation anim);
 /**
  * @brief Unload an array of ModelAnimation loaded with LoadModelAnimations.
  *
- * @param animations Allocated ModelAnimation array.
+ * @param pAnimations Allocated ModelAnimation array.
  * @param animCount Number of animations in the array.
  */
-QCAPI void UnloadModelAnimations(ModelAnimation* animations, int animCount);
+QCAPI void UnloadModelAnimations(ModelAnimation* pAnimations, int animCount);
 
 /**
  * @brief Draw a model (with texture if set).
@@ -319,7 +331,7 @@ QCAPI void DrawModel(Model model, Vec3 position, float scale, Color tint);
  * @param tint Color tint.
  */
 QCAPI void DrawModelEx(Model model, Vec3 position, Vec3 rotationAxis,
-               float rotationAngle, Vec3 scale, Color tint);
+                       float rotationAngle, Vec3 scale, Color tint);
 
 /**
  * @brief Draw a model wires (with texture if set).
@@ -342,7 +354,7 @@ QCAPI void DrawModelWires(Model model, Vec3 position, float scale, Color tint);
  * @param tint Color tint.
  */
 QCAPI void DrawModelWiresEx(Model model, Vec3 position, Vec3 rotationAxis,
-               float rotationAngle, Vec3 scale, Color tint);
+                            float rotationAngle, Vec3 scale, Color tint);
 
 /**
  * @brief Draw a model with extended parameters.
@@ -361,19 +373,19 @@ QCAPI void DrawBoundingBox(BoundingBox box, Color color);
  * @brief Draw a billboard texture.
  */
 QCAPI void DrawBillboard(const Camera3D& camera, Texture2D texture, Vec3 position,
-               float scale, Color tint);
+                         float scale, Color tint);
 
 /**
  * @brief Draw a billboard texture with source rectangle.
  */
 QCAPI void DrawBillboardRec(const Camera3D& camera, Texture2D texture, Rectangle source,
-               Vec3 position, Vec2 size, Color tint);
+                            Vec3 position, Vec2 size, Color tint);
 
 /**
  * @brief Draw a billboard with advanced parameters.
  */
 QCAPI void DrawBillboardPro(const Camera3D& camera, Texture2D texture, Rectangle source,
-               Vec3 position, Vec3 up, Vec2 size, Vec2 origin, float rotation, Color tint);
+                            Vec3 position, Vec3 up, Vec2 size, Vec2 origin, float rotation, Color tint);
 
 /**
  * @brief Set the view and projection matrices for 3D rendering.
@@ -447,7 +459,7 @@ QCAPI void DrawLine3D(Vec3 startPos, Vec3 endPos, Color color);
 QCAPI void DrawPoint3D(Vec3 position, Color color);
 QCAPI void DrawCircle3D(Vec3 center, float radius, Vec3 rotationAxis, float rotationAngle, Color color);
 QCAPI void DrawTriangle3D(Vec3 v1, Vec3 v2, Vec3 v3, Color color);
-QCAPI void DrawTriangleStrip3D(const Vec3* points, int pointCount, Color color);
+QCAPI void DrawTriangleStrip3D(const Vec3* pPoints, int pointCount, Color color);
 QCAPI void DrawCapsule(Vec3 startPos, Vec3 endPos, float radius, int rings, int slices, Color color);
 QCAPI void DrawCapsuleWires(Vec3 startPos, Vec3 endPos, float radius, int rings, int slices, Color color);
 QCAPI void DrawRay(Ray ray, Color color);
@@ -459,7 +471,8 @@ QCAPI void DrawRay(Ray ray, Color color);
  */
 QCAPI void DrawGrid(int slices, float spacing, Color color = GRAY);
 
-inline RayCollision GetRayCollisionTriangle(Ray ray, Vec3 a, Vec3 b, Vec3 c) {
+inline RayCollision GetRayCollisionTriangle(Ray ray, Vec3 a, Vec3 b, Vec3 c)
+{
     RayCollision result{};
 
     const Vec3 edge1 = b - a;
@@ -467,25 +480,29 @@ inline RayCollision GetRayCollisionTriangle(Ray ray, Vec3 a, Vec3 b, Vec3 c) {
     const Vec3 p = ray.direction.cross(edge2);
     const float det = edge1.dot(p);
 
-    if (std::fabs(det) <= EPSILON) {
+    if (std::fabs(det) <= EPSILON)
+    {
         return result;
     }
 
     const float invDet = 1.0f / det;
     const Vec3 t = ray.position - a;
     const float u = t.dot(p) * invDet;
-    if (u < 0.0f || u > 1.0f) {
+    if (u < 0.0f || u > 1.0f)
+    {
         return result;
     }
 
     const Vec3 q = t.cross(edge1);
     const float v = ray.direction.dot(q) * invDet;
-    if (v < 0.0f || (u + v) > 1.0f) {
+    if (v < 0.0f || (u + v) > 1.0f)
+    {
         return result;
     }
 
     const float distance = edge2.dot(q) * invDet;
-    if (distance < 0.0f) {
+    if (distance < 0.0f)
+    {
         return result;
     }
 
@@ -496,10 +513,12 @@ inline RayCollision GetRayCollisionTriangle(Ray ray, Vec3 a, Vec3 b, Vec3 c) {
     return result;
 }
 
-inline RayCollision GetRayCollisionBox(Ray ray, BoundingBox box) {
+inline RayCollision GetRayCollisionBox(Ray ray, BoundingBox box)
+{
     RayCollision result{};
 
-    const auto safeInv = [](float value) {
+    const auto safeInv = [](float value)
+    {
         return (std::fabs(value) <= EPSILON) ? INFINITY : (1.0f / value);
     };
 
@@ -509,32 +528,56 @@ inline RayCollision GetRayCollisionBox(Ray ray, BoundingBox box) {
 
     float tmin = (box.min.x - ray.position.x) * invX;
     float tmax = (box.max.x - ray.position.x) * invX;
-    if (tmin > tmax) std::swap(tmin, tmax);
+    if (tmin > tmax)
+    {
+        std::swap(tmin, tmax);
+    }
 
     float tymin = (box.min.y - ray.position.y) * invY;
     float tymax = (box.max.y - ray.position.y) * invY;
-    if (tymin > tymax) std::swap(tymin, tymax);
+    if (tymin > tymax)
+    {
+        std::swap(tymin, tymax);
+    }
 
-    if ((tmin > tymax) || (tymin > tmax)) {
+    if ((tmin > tymax) || (tymin > tmax))
+    {
         return result;
     }
 
-    if (tymin > tmin) tmin = tymin;
-    if (tymax < tmax) tmax = tymax;
+    if (tymin > tmin)
+    {
+        tmin = tymin;
+    }
+    if (tymax < tmax)
+    {
+        tmax = tymax;
+    }
 
     float tzmin = (box.min.z - ray.position.z) * invZ;
     float tzmax = (box.max.z - ray.position.z) * invZ;
-    if (tzmin > tzmax) std::swap(tzmin, tzmax);
+    if (tzmin > tzmax)
+    {
+        std::swap(tzmin, tzmax);
+    }
 
-    if ((tmin > tzmax) || (tzmin > tmax)) {
+    if ((tmin > tzmax) || (tzmin > tmax))
+    {
         return result;
     }
 
-    if (tzmin > tmin) tmin = tzmin;
-    if (tzmax < tmax) tmax = tzmax;
+    if (tzmin > tmin)
+    {
+        tmin = tzmin;
+    }
+    if (tzmax < tmax)
+    {
+        tmax = tzmax;
+    }
 
     const float distance = (tmin >= 0.0f) ? tmin : tmax;
-    if (distance < 0.0f || !std::isfinite(distance)) {
+    if (distance < 0.0f || !std::isfinite(distance))
+    {
         return result;
     }
 

@@ -34,9 +34,12 @@ static_assert(std::is_same_v<decltype(Vec3{}), Vec3f>);
 static_assert(std::is_same_v<decltype(Vec4{}), Vec4f>);
 static_assert(std::is_same_v<Rectangle, Rectf>);
 
-void AcceptFloatVectors(Vec2, Vec3, Vec4) {}
+void AcceptFloatVectors(Vec2, Vec3, Vec4)
+{
+}
 
-int main() {
+int main()
+{
     const Vec2 default2{1.0f, 2.0f};
     const Vec3 default3{1.0f, 2.0f, 3.0f};
     const Vec4 default4{1.0f, 2.0f, 3.0f, 4.0f};
@@ -149,12 +152,12 @@ int main() {
     const Vec3i perpendicular3 = Vec3Perpendicular(Vec3i{1, 0, 0});
     const Vec3i moved3 = Vec3MoveTowards(Vec3i{0, 0, 0}, Vec3i{1, 2, 3}, 1);
     const Vec3i hermite3 = Vec3CubicHermite(Vec3i{0, 0, 0}, Vec3i{1, 1, 1},
-                                             Vec3i{2, 2, 2}, Vec3i{1, 1, 1}, 0.5f);
+                                            Vec3i{2, 2, 2}, Vec3i{1, 1, 1}, 0.5f);
     const Vec3d reflected3 = Vec3Reflect(Vec3d{1.0, -1.0, 0.0}, Vec3d{0.0, 1.0, 0.0});
     const Vec3u min3 = Vec3Min(Vec3u{1U, 5U, 2U}, Vec3u{2U, 4U, 3U});
     const Vec3u max3 = Vec3Max(Vec3u{1U, 5U, 2U}, Vec3u{2U, 4U, 3U});
     const Vec3d barycenter3 = Vec3Barycenter(Vec3d{0.25, 0.25, 0.0},
-        Vec3d{0.0, 0.0, 0.0}, Vec3d{1.0, 0.0, 0.0}, Vec3d{0.0, 1.0, 0.0});
+                                             Vec3d{0.0, 0.0, 0.0}, Vec3d{1.0, 0.0, 0.0}, Vec3d{0.0, 1.0, 0.0});
     const Vec3i refracted3 = Vec3Refract(Vec3i{1, 0, 0}, Vec3i{0, 1, 0}, 1);
     const Vec3d inverted3 = Vec3Invert(Vec3d{1.0, 2.0, 4.0});
     const Vec3u clamped3 = Vec3Clamp(Vec3u{4U, 5U, 6U}, Vec3u{1U, 2U, 3U}, Vec3u{3U, 4U, 5U});

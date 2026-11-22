@@ -1,6 +1,7 @@
 #include "QuarkCore/QuarkCore.hpp"
 
-int main() {
+int main()
+{
     InitWindow(1280, 720, "QuarkCore D3D11 Sandbox", RendererType::D3D11);
     SetWindowMinimumSize(800, 450);
     StartTextInput();
@@ -10,27 +11,25 @@ int main() {
     TraceLog(
         LogLevel::Info,
         "CORE",
-        TextFormat("Current monitor refresh rate: %.2f Hz", GetCurrentMonitorRefreshRate())
-    );
+        TextFormat("Current monitor refresh rate: %.2f Hz", GetCurrentMonitorRefreshRate()));
 
     Texture2D checker = GenCheckerTexture(
         160,
         160,
         20,
         Color{245, 245, 245, 255},
-        Color{40, 120, 210, 255}
-    );
+        Color{40, 120, 210, 255});
     Texture2D directx11 = LoadTexture("resources/directx11.png");
 
     Camera2D camera2d;
-    camera2d.target = { 220.0f, 340.0f };
-    camera2d.offset = { 1280 / 2.0f, 720 / 2.0f };
+    camera2d.target = {220.0f, 340.0f};
+    camera2d.offset = {1280 / 2.0f, 720 / 2.0f};
     camera2d.zoom = 1.0f;
 
     Camera3D camera3d;
-    camera3d.position = { 0.0f, 10.0f, 10.0f };
-    camera3d.target = { 0.0f, 0.0f, 0.0f };
-    camera3d.up = { 0.0f, 1.0f, 0.0f };
+    camera3d.position = {0.0f, 10.0f, 10.0f};
+    camera3d.target = {0.0f, 0.0f, 0.0f};
+    camera3d.up = {0.0f, 1.0f, 0.0f};
     camera3d.fovy = 45.0f;
     camera3d.projection = CAMERA_PERSPECTIVE;
 
@@ -40,37 +39,38 @@ int main() {
 
     Font defaultFont = GetDefaultFont();
 
-    while (!WindowShouldClose()) {
-        if (IsKeyPressed(KEY_SPACE)) {
+    while (!WindowShouldClose())
+    {
+        if (IsKeyPressed(KEY_SPACE))
+        {
             TraceLog(
                 LogLevel::Info,
                 "INPUT",
-                TextFormat("Space pressed | fps=%d dt=%.4f", GetFPS(), GetDeltaTime())
-            );
+                TextFormat("Space pressed | fps=%d dt=%.4f", GetFPS(), GetDeltaTime()));
         }
 
         BeginDrawing();
         ClearBackground(Color{20, 24, 32, 255});
 
         BeginTextureMode(target);
-            ClearBackground(WHITE);
-            DrawRectangle(10, 10, 100, 100, RED);
-            DrawCircle(160, 120, 40, BLUE);
+        ClearBackground(WHITE);
+        DrawRectangle(10, 10, 100, 100, RED);
+        DrawCircle(160, 120, 40, BLUE);
         EndTextureMode();
 
         BeginMode2D(camera2d);
-            DrawGrid(100, 64);
-            DrawRectangleV(camera2d.target, { 50, 50 }, RED);
-            DrawCircle(600, 400, 40, BLUE);
-            DrawRectangle(800, 200, 120, 80, GREEN);
+        DrawGrid(100, 64);
+        DrawRectangleV(camera2d.target, {50, 50}, RED);
+        DrawCircle(600, 400, 40, BLUE);
+        DrawRectangle(800, 200, 120, 80, GREEN);
         EndMode2D();
 
         BeginMode3D(camera3d);
-            DrawPlane({ 0, 0, 0 }, { 32, 32 }, LIGHTGRAY);
-            DrawCube({ 0, 1, 0 }, 2, 2, 2, RED);
-            DrawGrid(20, 1.0f);
-            DrawModelEx(model, Mat4::rotationZ(GetTime()));
-            DrawModel(model, { 3, 0, 0 }, 1.0f, GREEN);
+        DrawPlane({0, 0, 0}, {32, 32}, LIGHTGRAY);
+        DrawCube({0, 1, 0}, 2, 2, 2, RED);
+        DrawGrid(20, 1.0f);
+        DrawModelEx(model, Mat4::rotationZ(GetTime()));
+        DrawModel(model, {3, 0, 0}, 1.0f, GREEN);
         EndMode3D();
 
         constexpr float directx11Scale = 0.25f;
@@ -79,21 +79,18 @@ int main() {
             directx11,
             Vec2{
                 static_cast<float>(GetScreenWidth()) - directx11.width * directx11Scale,
-                directx11TopMargin
-            },
+                directx11TopMargin},
             0.0f,
             directx11Scale,
-            WHITE
-        );
+            WHITE);
 
         DrawTexturePro(
             target.texture,
-            Rectangle{ 0, (float)target.texture.height, (float)target.texture.width, -(float)target.texture.height },
-            Rectangle{ 20, 20, 320, 240 },
-            Vec2{ 0, 0 },
+            Rectangle{0, (float)target.texture.height, (float)target.texture.width, -(float)target.texture.height},
+            Rectangle{20, 20, 320, 240},
+            Vec2{0, 0},
             0.0f,
-            WHITE
-        );
+            WHITE);
 
         DrawText("Hello, QuarkCore!", 360, 40, 32, WHITE);
 

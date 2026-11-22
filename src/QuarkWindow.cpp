@@ -4,571 +4,704 @@
 #include "Renderer/QuarkIRenderer.hpp"
 
 #include <cstring>
-extern qci::IRenderer* gRendererPtr;
 
-static bool CheckWindowCall(bool result, const char* operation) {
-    if (!result) {
-        TraceLog(LogLevel::Warn, "WINDOW", (std::string(operation) + " failed: " + SDL_GetError()).c_str());
+extern qci::IRenderer* g_pRenderer;
+
+static bool CheckWindowCall(bool result, const char* pOperation)
+{
+    if (!result)
+    {
+        TraceLog(LogLevel::Warn, "WINDOW", (std::string(pOperation) + " failed: " + SDL_GetError()).c_str());
     }
     return result;
 }
 
-bool SetWindowTitle(const char* title) {
+bool SetWindowTitle(const char* pTitle)
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_SetWindowTitle(gWin.window, title != nullptr ? title : ""), "SDL_SetWindowTitle");
+    return CheckWindowCall(SDL_SetWindowTitle(g_Win.m_pWindow, pTitle != nullptr ? pTitle : ""), "SDL_SetWindowTitle");
 }
 
-const char* GetWindowTitle() {
+const char* GetWindowTitle()
+{
     EnsureInitialized();
-    return SDL_GetWindowTitle(gWin.window);
+    return SDL_GetWindowTitle(g_Win.m_pWindow);
 }
 
-bool SetWindowPosition(int x, int y) {
+bool SetWindowPosition(int x, int y)
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_SetWindowPosition(gWin.window, x, y), "SDL_SetWindowPosition");
+    return CheckWindowCall(SDL_SetWindowPosition(g_Win.m_pWindow, x, y), "SDL_SetWindowPosition");
 }
 
-Vec2i GetWindowPosition() {
+Vec2i GetWindowPosition()
+{
     EnsureInitialized();
     Vec2i position{};
-    SDL_GetWindowPosition(gWin.window, &position.x, &position.y);
+    SDL_GetWindowPosition(g_Win.m_pWindow, &position.x, &position.y);
     return position;
 }
 
-bool SetWindowSize(int width, int height) {
+bool SetWindowSize(int width, int height)
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_SetWindowSize(gWin.window, width, height), "SDL_SetWindowSize");
+    return CheckWindowCall(SDL_SetWindowSize(g_Win.m_pWindow, width, height), "SDL_SetWindowSize");
 }
 
-Vec2i GetWindowSize() {
+Vec2i GetWindowSize()
+{
     EnsureInitialized();
     Vec2i size{};
-    SDL_GetWindowSize(gWin.window, &size.x, &size.y);
+    SDL_GetWindowSize(g_Win.m_pWindow, &size.x, &size.y);
     return size;
 }
 
-Vec2i GetWindowSizeInPixels() {
+Vec2i GetWindowSizeInPixels()
+{
     EnsureInitialized();
     Vec2i size{};
-    SDL_GetWindowSizeInPixels(gWin.window, &size.x, &size.y);
+    SDL_GetWindowSizeInPixels(g_Win.m_pWindow, &size.x, &size.y);
     return size;
 }
 
-bool SetWindowMinimumSize(int width, int height) {
+bool SetWindowMinimumSize(int width, int height)
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_SetWindowMinimumSize(gWin.window, width, height), "SDL_SetWindowMinimumSize");
+    return CheckWindowCall(SDL_SetWindowMinimumSize(g_Win.m_pWindow, width, height), "SDL_SetWindowMinimumSize");
 }
 
-Vec2i GetWindowMinimumSize() {
+Vec2i GetWindowMinimumSize()
+{
     EnsureInitialized();
     Vec2i size{};
-    SDL_GetWindowMinimumSize(gWin.window, &size.x, &size.y);
+    SDL_GetWindowMinimumSize(g_Win.m_pWindow, &size.x, &size.y);
     return size;
 }
 
-bool SetWindowMaximumSize(int width, int height) {
+bool SetWindowMaximumSize(int width, int height)
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_SetWindowMaximumSize(gWin.window, width, height), "SDL_SetWindowMaximumSize");
+    return CheckWindowCall(SDL_SetWindowMaximumSize(g_Win.m_pWindow, width, height), "SDL_SetWindowMaximumSize");
 }
 
-Vec2i GetWindowMaximumSize() {
+Vec2i GetWindowMaximumSize()
+{
     EnsureInitialized();
     Vec2i size{};
-    SDL_GetWindowMaximumSize(gWin.window, &size.x, &size.y);
+    SDL_GetWindowMaximumSize(g_Win.m_pWindow, &size.x, &size.y);
     return size;
 }
 
-bool SetWindowResizable(bool resizable) {
+bool SetWindowResizable(bool resizable)
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_SetWindowResizable(gWin.window, resizable), "SDL_SetWindowResizable");
+    return CheckWindowCall(SDL_SetWindowResizable(g_Win.m_pWindow, resizable), "SDL_SetWindowResizable");
 }
 
-bool SetWindowBordered(bool bordered) {
+bool SetWindowBordered(bool bordered)
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_SetWindowBordered(gWin.window, bordered), "SDL_SetWindowBordered");
+    return CheckWindowCall(SDL_SetWindowBordered(g_Win.m_pWindow, bordered), "SDL_SetWindowBordered");
 }
 
-bool SetWindowFullscreen(bool fullscreen) {
+bool SetWindowFullscreen(bool fullscreen)
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_SetWindowFullscreen(gWin.window, fullscreen), "SDL_SetWindowFullscreen");
+    return CheckWindowCall(SDL_SetWindowFullscreen(g_Win.m_pWindow, fullscreen), "SDL_SetWindowFullscreen");
 }
 
-bool ToggleFullscreen() {
+bool ToggleFullscreen()
+{
     EnsureInitialized();
     return SetWindowFullscreen(!IsWindowFullscreen());
 }
 
-bool ShowWindow() {
+bool ShowWindow()
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_ShowWindow(gWin.window), "SDL_ShowWindow");
+    return CheckWindowCall(SDL_ShowWindow(g_Win.m_pWindow), "SDL_ShowWindow");
 }
 
-bool HideWindow() {
+bool HideWindow()
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_HideWindow(gWin.window), "SDL_HideWindow");
+    return CheckWindowCall(SDL_HideWindow(g_Win.m_pWindow), "SDL_HideWindow");
 }
 
-bool RaiseWindow() {
+bool RaiseWindow()
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_RaiseWindow(gWin.window), "SDL_RaiseWindow");
+    return CheckWindowCall(SDL_RaiseWindow(g_Win.m_pWindow), "SDL_RaiseWindow");
 }
 
-bool MaximizeWindow() {
+bool MaximizeWindow()
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_MaximizeWindow(gWin.window), "SDL_MaximizeWindow");
+    return CheckWindowCall(SDL_MaximizeWindow(g_Win.m_pWindow), "SDL_MaximizeWindow");
 }
 
-bool MinimizeWindow() {
+bool MinimizeWindow()
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_MinimizeWindow(gWin.window), "SDL_MinimizeWindow");
+    return CheckWindowCall(SDL_MinimizeWindow(g_Win.m_pWindow), "SDL_MinimizeWindow");
 }
 
-bool RestoreWindow() {
+bool RestoreWindow()
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_RestoreWindow(gWin.window), "SDL_RestoreWindow");
+    return CheckWindowCall(SDL_RestoreWindow(g_Win.m_pWindow), "SDL_RestoreWindow");
 }
 
-bool SyncWindow() {
+bool SyncWindow()
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_SyncWindow(gWin.window), "SDL_SyncWindow");
+    return CheckWindowCall(SDL_SyncWindow(g_Win.m_pWindow), "SDL_SyncWindow");
 }
 
-bool IsWindowFullscreen() {
+bool IsWindowFullscreen()
+{
     EnsureInitialized();
-    return (SDL_GetWindowFlags(gWin.window) & SDL_WINDOW_FULLSCREEN) != 0;
+    return (SDL_GetWindowFlags(g_Win.m_pWindow) & SDL_WINDOW_FULLSCREEN) != 0;
 }
 
-bool IsWindowHidden() {
+bool IsWindowHidden()
+{
     EnsureInitialized();
-    return (SDL_GetWindowFlags(gWin.window) & SDL_WINDOW_HIDDEN) != 0;
+    return (SDL_GetWindowFlags(g_Win.m_pWindow) & SDL_WINDOW_HIDDEN) != 0;
 }
 
-bool IsWindowMinimized() {
+bool IsWindowMinimized()
+{
     EnsureInitialized();
-    return (SDL_GetWindowFlags(gWin.window) & SDL_WINDOW_MINIMIZED) != 0;
+    return (SDL_GetWindowFlags(g_Win.m_pWindow) & SDL_WINDOW_MINIMIZED) != 0;
 }
 
-bool IsWindowMaximized() {
+bool IsWindowMaximized()
+{
     EnsureInitialized();
-    return (SDL_GetWindowFlags(gWin.window) & SDL_WINDOW_MAXIMIZED) != 0;
+    return (SDL_GetWindowFlags(g_Win.m_pWindow) & SDL_WINDOW_MAXIMIZED) != 0;
 }
 
-bool IsWindowFocused() {
+bool IsWindowFocused()
+{
     EnsureInitialized();
-    return (SDL_GetWindowFlags(gWin.window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    return (SDL_GetWindowFlags(g_Win.m_pWindow) & SDL_WINDOW_INPUT_FOCUS) != 0;
 }
 
-bool IsWindowMouseFocused() {
+bool IsWindowMouseFocused()
+{
     EnsureInitialized();
-    return (SDL_GetWindowFlags(gWin.window) & SDL_WINDOW_MOUSE_FOCUS) != 0;
+    return (SDL_GetWindowFlags(g_Win.m_pWindow) & SDL_WINDOW_MOUSE_FOCUS) != 0;
 }
 
-bool IsWindowResizable() {
+bool IsWindowResizable()
+{
     EnsureInitialized();
-    return (SDL_GetWindowFlags(gWin.window) & SDL_WINDOW_RESIZABLE) != 0;
+    return (SDL_GetWindowFlags(g_Win.m_pWindow) & SDL_WINDOW_RESIZABLE) != 0;
 }
 
-bool IsWindowBorderless() {
+bool IsWindowBorderless()
+{
     EnsureInitialized();
-    return (SDL_GetWindowFlags(gWin.window) & SDL_WINDOW_BORDERLESS) != 0;
+    return (SDL_GetWindowFlags(g_Win.m_pWindow) & SDL_WINDOW_BORDERLESS) != 0;
 }
 
-float GetWindowDisplayScale() {
+float GetWindowDisplayScale()
+{
     EnsureInitialized();
-    return SDL_GetWindowDisplayScale(gWin.window);
+    return SDL_GetWindowDisplayScale(g_Win.m_pWindow);
 }
 
-float GetWindowPixelDensity() {
+float GetWindowPixelDensity()
+{
     EnsureInitialized();
-    return SDL_GetWindowPixelDensity(gWin.window);
+    return SDL_GetWindowPixelDensity(g_Win.m_pWindow);
 }
 
-void SetWindowIcon(Image image) {
+void SetWindowIcon(Image image)
+{
     EnsureInitialized();
 
-    if (!IsImageValid(image) || image.width <= 0 || image.height <= 0) {
+    if (!IsImageValid(image) || image.width <= 0 || image.height <= 0)
+    {
         TraceLog(LogLevel::Warn, "WINDOW", "SetWindowIcon: invalid image");
         return;
     }
 
-    Color* colors = LoadImageColors(image);
-    if (!colors) {
+    Color* pColors = LoadImageColors(image);
+    if (!pColors)
+    {
         TraceLog(LogLevel::Warn, "WINDOW", "SetWindowIcon: failed to read image colors");
         return;
     }
 
-    const int w = image.width, h = image.height;
-    std::vector<unsigned char> rgba(static_cast<size_t>(w) * h * 4);
-    for (int i = 0; i < w * h; ++i) {
-        rgba[static_cast<size_t>(i) * 4 + 0] = colors[i].r;
-        rgba[static_cast<size_t>(i) * 4 + 1] = colors[i].g;
-        rgba[static_cast<size_t>(i) * 4 + 2] = colors[i].b;
-        rgba[static_cast<size_t>(i) * 4 + 3] = colors[i].a;
+    const int w = image.width;
+    const int h = image.height;
+    std::vector<unsigned char> vRgba(static_cast<size_t>(w) * h * 4);
+    for (int i = 0; i < w * h; ++i)
+    {
+        vRgba[static_cast<size_t>(i) * 4 + 0] = pColors[i].r;
+        vRgba[static_cast<size_t>(i) * 4 + 1] = pColors[i].g;
+        vRgba[static_cast<size_t>(i) * 4 + 2] = pColors[i].b;
+        vRgba[static_cast<size_t>(i) * 4 + 3] = pColors[i].a;
     }
-    UnloadImageColors(colors);
+    UnloadImageColors(pColors);
 
-    SDL_Surface* surface = SDL_CreateSurfaceFrom(
-        w, h, SDL_PIXELFORMAT_RGBA8888, rgba.data(), w * 4);
-    if (surface == nullptr) {
+    SDL_Surface* pSurface = SDL_CreateSurfaceFrom(
+        w, h, SDL_PIXELFORMAT_RGBA8888, vRgba.data(), w * 4);
+    if (pSurface == nullptr)
+    {
         TraceLog(LogLevel::Warn, "WINDOW", (std::string("SDL_CreateSurfaceFrom failed: ") + SDL_GetError()).c_str());
         return;
     }
 
-    CheckWindowCall(SDL_SetWindowIcon(gWin.window, surface), "SDL_SetWindowIcon");
-    SDL_DestroySurface(surface);
+    CheckWindowCall(SDL_SetWindowIcon(g_Win.m_pWindow, pSurface), "SDL_SetWindowIcon");
+    SDL_DestroySurface(pSurface);
 }
 
-bool IsWindowResized() {
+bool IsWindowResized()
+{
     EnsureInitialized();
-    return gWin.windowResized;
+    return g_Win.m_WindowResized;
 }
 
-bool IsWindowState(unsigned int flag) {
+bool IsWindowState(unsigned int flag)
+{
     EnsureInitialized();
-    return (SDL_GetWindowFlags(gWin.window) & static_cast<Uint32>(flag)) != 0;
+    return (SDL_GetWindowFlags(g_Win.m_pWindow) & static_cast<Uint32>(flag)) != 0;
 }
 
-void SetWindowState(unsigned int flags) {
+void SetWindowState(unsigned int flags)
+{
     EnsureInitialized();
-    if ((flags & SDL_WINDOW_FULLSCREEN) != 0) {
-        SDL_SetWindowFullscreen(gWin.window, true);
+    if ((flags & SDL_WINDOW_FULLSCREEN) != 0)
+    {
+        SDL_SetWindowFullscreen(g_Win.m_pWindow, true);
     }
-    if ((flags & SDL_WINDOW_MAXIMIZED) != 0) {
+    if ((flags & SDL_WINDOW_MAXIMIZED) != 0)
+    {
         MaximizeWindow();
     }
-    if ((flags & SDL_WINDOW_HIDDEN) != 0) {
+    if ((flags & SDL_WINDOW_HIDDEN) != 0)
+    {
         HideWindow();
     }
-    if ((flags & SDL_WINDOW_RESIZABLE) != 0) {
+    if ((flags & SDL_WINDOW_RESIZABLE) != 0)
+    {
         SetWindowResizable(true);
     }
-    if ((flags & SDL_WINDOW_BORDERLESS) != 0) {
+    if ((flags & SDL_WINDOW_BORDERLESS) != 0)
+    {
         SetWindowBordered(false);
     }
 }
 
-void ClearWindowState(unsigned int flags) {
+void ClearWindowState(unsigned int flags)
+{
     EnsureInitialized();
-    if ((flags & SDL_WINDOW_FULLSCREEN) != 0) {
-        SDL_SetWindowFullscreen(gWin.window, false);
+    if ((flags & SDL_WINDOW_FULLSCREEN) != 0)
+    {
+        SDL_SetWindowFullscreen(g_Win.m_pWindow, false);
     }
-    if ((flags & SDL_WINDOW_MAXIMIZED) != 0) {
+    if ((flags & SDL_WINDOW_MAXIMIZED) != 0)
+    {
         RestoreWindow();
     }
-    if ((flags & SDL_WINDOW_HIDDEN) != 0) {
+    if ((flags & SDL_WINDOW_HIDDEN) != 0)
+    {
         ShowWindow();
     }
-    if ((flags & SDL_WINDOW_RESIZABLE) != 0) {
+    if ((flags & SDL_WINDOW_RESIZABLE) != 0)
+    {
         SetWindowResizable(false);
     }
-    if ((flags & SDL_WINDOW_BORDERLESS) != 0) {
+    if ((flags & SDL_WINDOW_BORDERLESS) != 0)
+    {
         SetWindowBordered(true);
     }
 }
 
-void ToggleBorderlessWindowed() {
+void ToggleBorderlessWindowed()
+{
     EnsureInitialized();
     SetWindowBordered(!IsWindowBorderless());
 }
 
-void SetWindowIcons(Image* images, int count) {
-    if (images == nullptr || count <= 0) {
+void SetWindowIcons(Image* pImages, int count)
+{
+    if (pImages == nullptr || count <= 0)
+    {
         return;
     }
-    SetWindowIcon(images[0]);
+    SetWindowIcon(pImages[0]);
 }
 
-void SetWindowMonitor(int monitor) {
+void SetWindowMonitor(int monitor)
+{
     EnsureInitialized();
     int displayCount = 0;
-    SDL_DisplayID* displays = SDL_GetDisplays(&displayCount);
-    if (displays == nullptr || displayCount <= 0 || monitor < 0 || monitor >= displayCount) {
-        if (displays) {
-            SDL_free(displays);
+    SDL_DisplayID* pDisplays = SDL_GetDisplays(&displayCount);
+    if (pDisplays == nullptr || displayCount <= 0 || monitor < 0 || monitor >= displayCount)
+    {
+        if (pDisplays)
+        {
+            SDL_free(pDisplays);
         }
         return;
     }
 
     SDL_Rect rect{};
-    if (SDL_GetDisplayBounds(displays[monitor], &rect)) {
-        SDL_SetWindowPosition(gWin.window, rect.x, rect.y);
+    if (SDL_GetDisplayBounds(pDisplays[monitor], &rect))
+    {
+        SDL_SetWindowPosition(g_Win.m_pWindow, rect.x, rect.y);
     }
-    SDL_free(displays);
+    SDL_free(pDisplays);
 }
 
-void SetWindowOpacity(float opacity) {
+void SetWindowOpacity(float opacity)
+{
     EnsureInitialized();
-    SDL_SetWindowOpacity(gWin.window, opacity);
+    SDL_SetWindowOpacity(g_Win.m_pWindow, opacity);
 }
 
-void SetWindowFocused() {
+void SetWindowFocused()
+{
     EnsureInitialized();
-    SDL_RaiseWindow(gWin.window);
+    SDL_RaiseWindow(g_Win.m_pWindow);
 }
 
-int GetRenderWidth() {
+int GetRenderWidth()
+{
     EnsureInitialized();
     return GetWindowSizeInPixels().x;
 }
 
-int GetRenderHeight() {
+int GetRenderHeight()
+{
     EnsureInitialized();
     return GetWindowSizeInPixels().y;
 }
 
-int GetMonitorCount() {
+int GetMonitorCount()
+{
     int count = 0;
     SDL_GetDisplays(&count);
     return count;
 }
 
-int GetCurrentMonitor() {
+int GetCurrentMonitor()
+{
     EnsureInitialized();
-    const SDL_DisplayID displayId = SDL_GetDisplayForWindow(gWin.window);
+    const SDL_DisplayID displayId = SDL_GetDisplayForWindow(g_Win.m_pWindow);
     int count = 0;
-    SDL_DisplayID* displays = SDL_GetDisplays(&count);
-    if (!displays) {
+    SDL_DisplayID* pDisplays = SDL_GetDisplays(&count);
+    if (!pDisplays)
+    {
         return 0;
     }
-    for (int i = 0; i < count; ++i) {
-        if (displays[i] == displayId) {
-            SDL_free(displays);
+    for (int i = 0; i < count; ++i)
+    {
+        if (pDisplays[i] == displayId)
+        {
+            SDL_free(pDisplays);
             return i;
         }
     }
-    SDL_free(displays);
+    SDL_free(pDisplays);
     return 0;
 }
 
-Vec2 GetMonitorPosition(int monitor) {
+Vec2 GetMonitorPosition(int monitor)
+{
     EnsureInitialized();
     int count = 0;
-    SDL_DisplayID* displays = SDL_GetDisplays(&count);
-    if (!displays || monitor < 0 || monitor >= count) {
-        if (displays) SDL_free(displays);
+    SDL_DisplayID* pDisplays = SDL_GetDisplays(&count);
+    if (!pDisplays || monitor < 0 || monitor >= count)
+    {
+        if (pDisplays)
+        {
+            SDL_free(pDisplays);
+        }
         return Vec2{};
     }
 
     SDL_Rect rect{};
     Vec2 result{};
-    if (SDL_GetDisplayBounds(displays[monitor], &rect)) {
+    if (SDL_GetDisplayBounds(pDisplays[monitor], &rect))
+    {
         result = Vec2(static_cast<float>(rect.x), static_cast<float>(rect.y));
     }
-    SDL_free(displays);
+    SDL_free(pDisplays);
     return result;
 }
 
-int GetMonitorWidth(int monitor) {
+int GetMonitorWidth(int monitor)
+{
     int count = 0;
-    SDL_DisplayID* displays = SDL_GetDisplays(&count);
-    if (!displays || monitor < 0 || monitor >= count) {
-        if (displays) SDL_free(displays);
+    SDL_DisplayID* pDisplays = SDL_GetDisplays(&count);
+    if (!pDisplays || monitor < 0 || monitor >= count)
+    {
+        if (pDisplays)
+        {
+            SDL_free(pDisplays);
+        }
         return 0;
     }
 
     SDL_Rect rect{};
     int value = 0;
-    if (SDL_GetDisplayBounds(displays[monitor], &rect)) {
+    if (SDL_GetDisplayBounds(pDisplays[monitor], &rect))
+    {
         value = rect.w;
     }
-    SDL_free(displays);
+    SDL_free(pDisplays);
     return value;
 }
 
-int GetMonitorHeight(int monitor) {
+int GetMonitorHeight(int monitor)
+{
     int count = 0;
-    SDL_DisplayID* displays = SDL_GetDisplays(&count);
-    if (!displays || monitor < 0 || monitor >= count) {
-        if (displays) SDL_free(displays);
+    SDL_DisplayID* pDisplays = SDL_GetDisplays(&count);
+    if (!pDisplays || monitor < 0 || monitor >= count)
+    {
+        if (pDisplays)
+        {
+            SDL_free(pDisplays);
+        }
         return 0;
     }
 
     SDL_Rect rect{};
     int value = 0;
-    if (SDL_GetDisplayBounds(displays[monitor], &rect)) {
+    if (SDL_GetDisplayBounds(pDisplays[monitor], &rect))
+    {
         value = rect.h;
     }
-    SDL_free(displays);
+    SDL_free(pDisplays);
     return value;
 }
 
-int GetMonitorPhysicalWidth(int monitor) {
+int GetMonitorPhysicalWidth(int monitor)
+{
     return GetMonitorWidth(monitor);
 }
 
-int GetMonitorPhysicalHeight(int monitor) {
+int GetMonitorPhysicalHeight(int monitor)
+{
     return GetMonitorHeight(monitor);
 }
 
-const char* GetMonitorName(int monitor) {
+const char* GetMonitorName(int monitor)
+{
     int count = 0;
-    SDL_DisplayID* displays = SDL_GetDisplays(&count);
-    if (!displays || monitor < 0 || monitor >= count) {
-        if (displays) SDL_free(displays);
+    SDL_DisplayID* pDisplays = SDL_GetDisplays(&count);
+    if (!pDisplays || monitor < 0 || monitor >= count)
+    {
+        if (pDisplays)
+        {
+            SDL_free(pDisplays);
+        }
         return "";
     }
 
-    const char* name = SDL_GetDisplayName(displays[monitor]);
-    SDL_free(displays);
-    return name ? name : "";
+    const char* pName = SDL_GetDisplayName(pDisplays[monitor]);
+    SDL_free(pDisplays);
+    return pName ? pName : "";
 }
 
-void SetClipboardText(const char* text) {
-    if (text == nullptr) {
+void SetClipboardText(const char* pText)
+{
+    if (pText == nullptr)
+    {
         return;
     }
-    SDL_SetClipboardText(text);
+    SDL_SetClipboardText(pText);
 }
 
-const char* GetClipboardText() {
-    static thread_local std::string clipboardText;
-    char* text = SDL_GetClipboardText();
-    clipboardText = text ? text : "";
-    SDL_free(text);
-    return clipboardText.c_str();
+const char* GetClipboardText()
+{
+    static thread_local std::string s_ClipboardText;
+    char* pText = SDL_GetClipboardText();
+    s_ClipboardText = pText ? pText : "";
+    SDL_free(pText);
+    return s_ClipboardText.c_str();
 }
 
-Image GetClipboardImage() {
+Image GetClipboardImage()
+{
     return Image{};
 }
 
 #if defined(_WIN32)
-extern "C" {
+extern "C"
+{
     __declspec(dllimport) void* __stdcall CreateSolidBrush(unsigned long color);
-    __declspec(dllimport) long long __stdcall SetClassLongPtrW(void* hWnd, int nIndex, long long dwNewLong);
+    __declspec(dllimport) long long __stdcall SetClassLongPtrW(void* pHWnd, int nIndex, long long dwNewLong);
 }
 #endif
 
-void ApplyPlatformDarkWindowBackground(SDL_Window* window) {
+void ApplyPlatformDarkWindowBackground(SDL_Window* pWindow)
+{
 #if defined(_WIN32)
-    if (!window) {
+    if (!pWindow)
+    {
         return;
     }
-    const SDL_PropertiesID props = SDL_GetWindowProperties(window);
-    void* hwnd = SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
-    if (!hwnd) {
+    const SDL_PropertiesID props = SDL_GetWindowProperties(pWindow);
+    void* pHwnd = SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+    if (!pHwnd)
+    {
         return;
     }
-    static void* sDarkBrush = CreateSolidBrush(24u | (24u << 8) | (28u << 16));
-    if (sDarkBrush) {
-        constexpr int kGclpHbrBackground = -10;
-        SetClassLongPtrW(hwnd, kGclpHbrBackground, reinterpret_cast<long long>(sDarkBrush));
+    static void* s_pDarkBrush = CreateSolidBrush(24u | (24u << 8) | (28u << 16));
+    if (s_pDarkBrush)
+    {
+        constexpr int GCLP_HBRBACKGROUND = -10;
+        SetClassLongPtrW(pHwnd, GCLP_HBRBACKGROUND, reinterpret_cast<long long>(s_pDarkBrush));
     }
 #else
-    (void)window;
+    (void)pWindow;
 #endif
 }
 
-void SetConfigFlags(unsigned int flags) {
-    if (gWin.window == nullptr) {
-        gWin.pendingConfigFlags |= flags;
-        if ((flags & FLAG_VSYNC_HINT) != 0u) {
-            gWin.vsync = true;
-            gWin.vsyncSet = true;
+void SetConfigFlags(unsigned int flags)
+{
+    if (g_Win.m_pWindow == nullptr)
+    {
+        g_Win.m_PendingConfigFlags |= flags;
+        if ((flags & FLAG_VSYNC_HINT) != 0u)
+        {
+            g_Win.m_Vsync = true;
+            g_Win.m_VsyncSet = true;
         }
         return;
     }
-    if ((flags & FLAG_VSYNC_HINT) != 0u) {
+    if ((flags & FLAG_VSYNC_HINT) != 0u)
+    {
         SetVSync(true);
     }
-    if ((flags & FLAG_FULLSCREEN_MODE) != 0u) {
+    if ((flags & FLAG_FULLSCREEN_MODE) != 0u)
+    {
         SetWindowFullscreen(true);
     }
-    if ((flags & FLAG_WINDOW_RESIZABLE) != 0u) {
+    if ((flags & FLAG_WINDOW_RESIZABLE) != 0u)
+    {
         SetWindowResizable(true);
     }
-    if ((flags & FLAG_BORDERLESS_WINDOWED_MODE) != 0u) {
+    if ((flags & FLAG_BORDERLESS_WINDOWED_MODE) != 0u)
+    {
         SetWindowBordered(false);
     }
-    if ((flags & FLAG_WINDOW_HIDDEN) != 0u) {
+    if ((flags & FLAG_WINDOW_HIDDEN) != 0u)
+    {
         HideWindow();
     }
-    if ((flags & FLAG_WINDOW_MAXIMIZED) != 0u) {
+    if ((flags & FLAG_WINDOW_MAXIMIZED) != 0u)
+    {
         MaximizeWindow();
     }
-    if ((flags & FLAG_WINDOW_UNDECORATED) != 0u) {
+    if ((flags & FLAG_WINDOW_UNDECORATED) != 0u)
+    {
         SetWindowBordered(false);
     }
 }
 
-void SwapScreenBuffer() {
+void SwapScreenBuffer()
+{
 #if defined(QC_ENABLE_OPENGL)
-    if (gRendererPtr && gRendererPtr->GetRendererType() == RendererType::OpenGL) {
-        SDL_GL_SwapWindow(gWin.window);
+    if (g_pRenderer && g_pRenderer->GetRendererType() == RendererType::OpenGL)
+    {
+        SDL_GL_SwapWindow(g_Win.pWindow);
     }
 #else
-    (void)gWin;
+    (void)g_Win;
 #endif
 }
 
-void PollInputEvents() {
+void PollInputEvents()
+{
     EnsureInitialized();
     SDL_PumpEvents();
     PumpInput();
 }
 
-void TakeScreenshot(const char* fileName) {
-    if (!fileName || std::strlen(fileName) == 0) {
+void TakeScreenshot(const char* pFileName)
+{
+    if (!pFileName || std::strlen(pFileName) == 0)
+    {
         return;
     }
     Image screenshot = LoadImageFromScreen();
-    if (IsImageValid(screenshot)) {
-        ExportImage(screenshot, fileName);
+    if (IsImageValid(screenshot))
+    {
+        ExportImage(screenshot, pFileName);
         UnloadImage(screenshot);
     }
 }
 
-bool OpenURL(const char* url) {
-    if (url == nullptr || url[0] == '\0') {
+bool OpenURL(const char* pUrl)
+{
+    if (pUrl == nullptr || pUrl[0] == '\0')
+    {
         return false;
     }
-    return SDL_OpenURL(url);
+    return SDL_OpenURL(pUrl);
 }
 
-SDL_Window* GetNativeWindow() {
+SDL_Window* GetNativeWindow()
+{
     EnsureInitialized();
-    return gWin.window;
+    return g_Win.m_pWindow;
 }
 
-int GetFPS() {
-    if (!gRendererPtr || gRendererPtr->GetFrameTime() <= 0.0f) {
+int GetFPS()
+{
+    if (!g_pRenderer || g_pRenderer->GetFrameTime() <= 0.0f)
+    {
         return 0;
     }
 
-    return static_cast<int>(std::round(1.0f / gRendererPtr->GetFrameTime()));
+    return static_cast<int>(std::round(1.0f / g_pRenderer->GetFrameTime()));
 }
 
-float GetCurrentMonitorRefreshRate() {
+float GetCurrentMonitorRefreshRate()
+{
     EnsureInitialized();
 
-    const SDL_DisplayID displayId = SDL_GetDisplayForWindow(gWin.window);
-    if (displayId == 0) {
+    const SDL_DisplayID displayId = SDL_GetDisplayForWindow(g_Win.m_pWindow);
+    if (displayId == 0)
+    {
         return 0.0f;
     }
 
-    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(displayId);
-    if (mode == nullptr) {
+    const SDL_DisplayMode* pMode = SDL_GetCurrentDisplayMode(displayId);
+    if (pMode == nullptr)
+    {
         return 0.0f;
     }
 
-    if (mode->refresh_rate > 0.0f) {
-        return mode->refresh_rate;
+    if (pMode->refresh_rate > 0.0f)
+    {
+        return pMode->refresh_rate;
     }
 
-    if (mode->refresh_rate_numerator > 0 && mode->refresh_rate_denominator > 0) {
-        return static_cast<float>(mode->refresh_rate_numerator) /
-               static_cast<float>(mode->refresh_rate_denominator);
+    if (pMode->refresh_rate_numerator > 0 && pMode->refresh_rate_denominator > 0)
+    {
+        return static_cast<float>(pMode->refresh_rate_numerator) /
+               static_cast<float>(pMode->refresh_rate_denominator);
     }
 
     return 0.0f;
 }
 
-bool StartTextInput() {
+bool StartTextInput()
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_StartTextInput(gWin.window), "SDL_StartTextInput");
+    return CheckWindowCall(SDL_StartTextInput(g_Win.m_pWindow), "SDL_StartTextInput");
 }
 
-bool StopTextInput() {
+bool StopTextInput()
+{
     EnsureInitialized();
-    return CheckWindowCall(SDL_StopTextInput(gWin.window), "SDL_StopTextInput");
+    return CheckWindowCall(SDL_StopTextInput(g_Win.m_pWindow), "SDL_StopTextInput");
 }

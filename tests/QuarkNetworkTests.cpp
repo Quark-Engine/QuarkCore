@@ -25,53 +25,55 @@
 #include <string>
 #include <thread>
 
-namespace {
-
+namespace
+{
 #if defined(_WIN32)
-using TestSocket = SOCKET;
-constexpr TestSocket INVALID_TEST_SOCKET = INVALID_SOCKET;
+    using TestSocket = SOCKET;
+    constexpr TestSocket INVALID_TEST_SOCKET = INVALID_SOCKET;
 
-void CloseSocket(TestSocket socket)
-{
-    closesocket(socket);
-}
-#else
-using TestSocket = int;
-constexpr TestSocket INVALID_TEST_SOCKET = -1;
-
-void CloseSocket(TestSocket socket)
-{
-    close(socket);
-}
-#endif
-
-bool SendAll(TestSocket socket, const char* data, size_t size)
-{
-    size_t sent = 0;
-    while (sent < size) {
-#if defined(_WIN32)
-        const int count = send(socket, data + sent, static_cast<int>(size - sent), 0);
-#else
-        const ssize_t count = send(socket, data + sent, size - sent, 0);
-#endif
-        if (count <= 0) {
-            return false;
-        }
-        sent += static_cast<size_t>(count);
+    void CloseSocket(TestSocket socket)
+    {
+        closesocket(socket);
     }
-    return true;
-}
+#else
+    using TestSocket = int;
+    constexpr TestSocket INVALID_TEST_SOCKET = -1;
 
-bool IsFinished(NetworkRequestState state)
-{
-    return state == NETWORK_REQUEST_COMPLETED ||
-           state == NETWORK_REQUEST_FAILED ||
-           state == NETWORK_REQUEST_CANCELLED;
-}
+    void CloseSocket(TestSocket socket)
+    {
+        close(socket);
+    }
+#endif
 
-} // namespace
+    bool SendAll(TestSocket socket, const char* pData, size_t size)
+    {
+        size_t sent = 0;
+        while (sent < size)
+        {
+#if defined(_WIN32)
+            const int count = send(socket, pData + sent, static_cast<int>(size - sent), 0);
+#else
+            const ssize_t count = send(socket, pData + sent, size - sent, 0);
+#endif
+            if (count <= 0)
+            {
+                return false;
+            }
+            sent += static_cast<size_t>(count);
+        }
+        return true;
+    }
+
+    bool IsFinished(NetworkRequestState state)
+    {
+        return state == NETWORK_REQUEST_COMPLETED ||
+               state == NETWORK_REQUEST_FAILED ||
+               state == NETWORK_REQUEST_CANCELLED;
+    }
+} // anonymous
 
 int main()
+
 {
 #if defined(_WIN32)
     WSADATA winsockData{};
@@ -85,37 +87,37 @@ int main()
     UnloadHttpRequest(nullptr);
 
     HttpRequest emptyUrl{};
-    NetworkRequestHandle* request = SendHttpRequestAsync(&emptyUrl);
-    assert(request != nullptr);
-    assert(GetHttpRequestState(request) == NETWORK_REQUEST_FAILED);
-    const char* error = GetHttpRequestError(request);
-    assert(error != nullptr && std::strstr(error, "URL") != nullptr);
+    NetworkRequestHandle* pRequest = SendHttpRequestAsync(&emptyUrl);
+    assert(pRequest != nullptr);
+    assert(GetHttpRequestState(pRequest) == NETWORK_REQUEST_FAILED);
+    const char* pError = GetHttpRequestError(pRequest);
+    assert(pError != nullptr && std::strstr(pError, "URL") != nullptr);
 
     HttpResponse response{};
-    assert(!TryGetHttpResponse(request, &response));
-    UnloadHttpRequest(request);
+    assert(!TryGetHttpResponse(pRequest, &response));
+    UnloadHttpRequest(pRequest);
 
     HttpRequest invalidMethod{};
     invalidMethod.url = "https://example.invalid/";
     invalidMethod.method = "GET\r\nInjected: header";
-    request = SendHttpRequestAsync(&invalidMethod);
-    assert(request != nullptr);
-    assert(GetHttpRequestState(request) == NETWORK_REQUEST_FAILED);
-    error = GetHttpRequestError(request);
-    assert(error != nullptr && std::strstr(error, "method") != nullptr);
-    UnloadHttpRequest(request);
+    pRequest = SendHttpRequestAsync(&invalidMethod);
+    assert(pRequest != nullptr);
+    assert(GetHttpRequestState(pRequest) == NETWORK_REQUEST_FAILED);
+    pError = GetHttpRequestError(pRequest);
+    assert(pError != nullptr && std::strstr(pError, "method") != nullptr);
+    UnloadHttpRequest(pRequest);
 
     const HttpHeader invalidHeader{"Invalid Header", "value"};
     HttpRequest invalidHeaders{};
     invalidHeaders.url = "https://example.invalid/";
     invalidHeaders.headers = &invalidHeader;
     invalidHeaders.headerCount = 1;
-    request = SendHttpRequestAsync(&invalidHeaders);
-    assert(request != nullptr);
-    assert(GetHttpRequestState(request) == NETWORK_REQUEST_FAILED);
-    error = GetHttpRequestError(request);
-    assert(error != nullptr && std::strstr(error, "header") != nullptr);
-    UnloadHttpRequest(request);
+    pRequest = SendHttpRequestAsync(&invalidHeaders);
+    assert(pRequest != nullptr);
+    assert(GetHttpRequestState(pRequest) == NETWORK_REQUEST_FAILED);
+    pError = GetHttpRequestError(pRequest);
+    assert(pError != nullptr && std::strstr(pError, "header") != nullptr);
+    UnloadHttpRequest(pRequest);
 
     const TestSocket server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     assert(server != INVALID_TEST_SOCKET);
@@ -134,60 +136,64 @@ int main()
 #endif
     assert(getsockname(server, reinterpret_cast<sockaddr*>(&serverAddress), &addressSize) == 0);
 
-    std::thread serverThread([server] {
-        const TestSocket client = accept(server, nullptr, nullptr);
-        assert(client != INVALID_TEST_SOCKET);
+    std::thread serverThread([server]
+                             {
+                                 const TestSocket client = accept(server, nullptr, nullptr);
+                                 assert(client != INVALID_TEST_SOCKET);
 
-        char requestBuffer[2048];
+                                 char requestBuffer[2048];
 #if defined(_WIN32)
-        const int received = recv(client, requestBuffer, sizeof(requestBuffer), 0);
+                                 const int received = recv(client, requestBuffer, sizeof(requestBuffer), 0);
 #else
-        const ssize_t received = recv(client, requestBuffer, sizeof(requestBuffer), 0);
+                                 const ssize_t received = recv(client, requestBuffer, sizeof(requestBuffer), 0);
 #endif
-        assert(received > 0);
+                                 assert(received > 0);
 
-        constexpr char responseText[] =
-            "HTTP/1.1 404 Not Found\r\n"
-            "Content-Length: 5\r\n"
-            "X-Test: quark\r\n"
-            "Connection: close\r\n\r\n"
-            "hello";
-        assert(SendAll(client, responseText, sizeof(responseText) - 1));
-        CloseSocket(client);
-        CloseSocket(server);
-    });
+                                 constexpr char responseText[] =
+                                     "HTTP/1.1 404 Not Found\r\n"
+                                     "Content-Length: 5\r\n"
+                                     "X-Test: quark\r\n"
+                                     "Connection: close\r\n\r\n"
+                                     "hello";
+                                 assert(SendAll(client, responseText, sizeof(responseText) - 1));
+                                 CloseSocket(client);
+                                 CloseSocket(server);
+                             });
 
     const std::string url = "http://127.0.0.1:" +
-        std::to_string(ntohs(serverAddress.sin_port)) + "/test";
+                            std::to_string(ntohs(serverAddress.sin_port)) + "/test";
     HttpRequest httpRequest{};
     httpRequest.url = url.c_str();
     httpRequest.timeoutMs = 5000;
-    request = SendHttpRequestAsync(&httpRequest);
-    assert(request != nullptr);
+    pRequest = SendHttpRequestAsync(&httpRequest);
+    assert(pRequest != nullptr);
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (!IsFinished(GetHttpRequestState(request)) &&
-           std::chrono::steady_clock::now() < deadline) {
+    while (!IsFinished(GetHttpRequestState(pRequest)) &&
+           std::chrono::steady_clock::now() < deadline)
+    {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    assert(GetHttpRequestState(request) == NETWORK_REQUEST_COMPLETED);
-    assert(TryGetHttpResponse(request, &response));
+    assert(GetHttpRequestState(pRequest) == NETWORK_REQUEST_COMPLETED);
+    assert(TryGetHttpResponse(pRequest, &response));
     assert(response.statusCode == 404);
     assert(response.bodySize == 5);
     assert(std::memcmp(response.body, "hello", response.bodySize) == 0);
 
     bool foundHeader = false;
-    for (size_t index = 0; index < response.headerCount; ++index) {
+    for (size_t index = 0; index < response.headerCount; ++index)
+    {
         if (std::strcmp(response.headers[index].name, "X-Test") == 0 &&
-            std::strcmp(response.headers[index].value, "quark") == 0) {
+            std::strcmp(response.headers[index].value, "quark") == 0)
+        {
             foundHeader = true;
             break;
         }
     }
     assert(foundHeader);
 
-    UnloadHttpRequest(request);
+    UnloadHttpRequest(pRequest);
     serverThread.join();
 #if defined(_WIN32)
     WSACleanup();

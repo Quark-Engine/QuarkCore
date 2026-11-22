@@ -144,34 +144,37 @@ float4 main(PSInput input) : SV_TARGET {
 }
 )";
 
-int main() {
+int main()
+{
     InitWindow(1280, 720, "QuarkCore D3D11 Shaders Example", RendererType::D3D11);
     SetTargetFPS(60);
 
     Texture2D checker = GenCheckerTexture(
         512, 512, 32,
         Color{220, 80, 80, 255},
-        Color{80, 80, 220, 255}
-    );
+        Color{80, 80, 220, 255});
 
     Shader shaderChromatic = LoadShaderFromMemory(D3D11_VS, CHROMATIC_PS);
-    Shader shaderPixelate  = LoadShaderFromMemory(D3D11_VS, PIXELATE_PS);
-    Shader shaderVignette  = LoadShaderFromMemory(D3D11_VS, VIGNETTE_PS);
+    Shader shaderPixelate = LoadShaderFromMemory(D3D11_VS, PIXELATE_PS);
+    Shader shaderVignette = LoadShaderFromMemory(D3D11_VS, VIGNETTE_PS);
     Shader shaderScanlines = LoadShaderFromMemory(D3D11_VS, SCANLINES_PS);
-    Shader shaderTint      = LoadShaderFromMemory(D3D11_VS, TINT_PS);
+    Shader shaderTint = LoadShaderFromMemory(D3D11_VS, TINT_PS);
 
-    if (!IsShaderValid(shaderChromatic)) TraceLog(LogLevel::Warn, "SHADER", "chromatic invalid");
-    if (!IsShaderValid(shaderPixelate))  TraceLog(LogLevel::Warn, "SHADER", "pixelate invalid");
-    if (!IsShaderValid(shaderScanlines)) TraceLog(LogLevel::Warn, "SHADER", "scanlines invalid");
+    if (!IsShaderValid(shaderChromatic))
+        TraceLog(LogLevel::Warn, "SHADER", "chromatic invalid");
+    if (!IsShaderValid(shaderPixelate))
+        TraceLog(LogLevel::Warn, "SHADER", "pixelate invalid");
+    if (!IsShaderValid(shaderScanlines))
+        TraceLog(LogLevel::Warn, "SHADER", "scanlines invalid");
 
-    int locStrength    = GetShaderLocation(shaderChromatic, "uStrength");
-    int locPixelSize   = GetShaderLocation(shaderPixelate,  "uPixelSize");
-    int locPixelScreen = GetShaderLocation(shaderPixelate,  "uScreenSize");
-    int locVigRadius   = GetShaderLocation(shaderVignette,  "uRadius");
-    int locVigSoft     = GetShaderLocation(shaderVignette,  "uSoftness");
-    int locScanScreen  = GetShaderLocation(shaderScanlines, "uScreenSize");
-    int locScanIntens  = GetShaderLocation(shaderScanlines, "uIntensity");
-    int locTime        = GetShaderLocation(shaderTint,      "uTime");
+    int locStrength = GetShaderLocation(shaderChromatic, "uStrength");
+    int locPixelSize = GetShaderLocation(shaderPixelate, "uPixelSize");
+    int locPixelScreen = GetShaderLocation(shaderPixelate, "uScreenSize");
+    int locVigRadius = GetShaderLocation(shaderVignette, "uRadius");
+    int locVigSoft = GetShaderLocation(shaderVignette, "uSoftness");
+    int locScanScreen = GetShaderLocation(shaderScanlines, "uScreenSize");
+    int locScanIntens = GetShaderLocation(shaderScanlines, "uIntensity");
+    int locTime = GetShaderLocation(shaderTint, "uTime");
 
     int locMapAlbedo = GetShaderLocation(shaderTint, SHADER_LOC_MAP_ALBEDO);
     (void)locMapAlbedo;
@@ -180,39 +183,56 @@ int main() {
     (void)attrPos;
 
     float chromaStrength = 0.005f;
-    float pixelSize      = 8.0f;
-    float vigRadius      = 0.6f;
-    float scanIntensity  = 0.3f;
-    float elapsed        = 0.0f;
+    float pixelSize = 8.0f;
+    float vigRadius = 0.6f;
+    float scanIntensity = 0.3f;
+    float elapsed = 0.0f;
 
     int activeShader = 0;
-    const char* names[] = { "none", "chromatic aberration", "pixelate", "vignette", "scanlines", "tint (time)" };
+    const char* names[] = {"none", "chromatic aberration", "pixelate", "vignette", "scanlines", "tint (time)"};
 
-    while (!WindowShouldClose()) {
-        if (IsKeyDown(KEY_ONE)) activeShader = 0;
-        else if (IsKeyDown(KEY_TWO)) activeShader = 1;
-        else if (IsKeyDown(KEY_THREE)) activeShader = 2;
-        else if (IsKeyDown(KEY_FOUR)) activeShader = 3;
-        else if (IsKeyDown(KEY_FIVE)) activeShader = 4;
-        else if (IsKeyDown(KEY_SIX)) activeShader = 5;
+    while (!WindowShouldClose())
+    {
+        if (IsKeyDown(KEY_ONE))
+            activeShader = 0;
+        else if (IsKeyDown(KEY_TWO))
+            activeShader = 1;
+        else if (IsKeyDown(KEY_THREE))
+            activeShader = 2;
+        else if (IsKeyDown(KEY_FOUR))
+            activeShader = 3;
+        else if (IsKeyDown(KEY_FIVE))
+            activeShader = 4;
+        else if (IsKeyDown(KEY_SIX))
+            activeShader = 5;
 
-        if (IsKeyDown(KEY_UP)) {
-            if (activeShader == 1) chromaStrength += 0.001f;
-            if (activeShader == 2) pixelSize      += 0.5f;
-            if (activeShader == 3) vigRadius      += 0.01f;
-            if (activeShader == 4) scanIntensity  += 0.02f;
+        if (IsKeyDown(KEY_UP))
+        {
+            if (activeShader == 1)
+                chromaStrength += 0.001f;
+            if (activeShader == 2)
+                pixelSize += 0.5f;
+            if (activeShader == 3)
+                vigRadius += 0.01f;
+            if (activeShader == 4)
+                scanIntensity += 0.02f;
         }
-        if (IsKeyDown(KEY_DOWN)) {
-            if (activeShader == 1) chromaStrength -= 0.001f;
-            if (activeShader == 2) pixelSize      -= 0.5f;
-            if (activeShader == 3) vigRadius      -= 0.01f;
-            if (activeShader == 4) scanIntensity  -= 0.02f;
+        if (IsKeyDown(KEY_DOWN))
+        {
+            if (activeShader == 1)
+                chromaStrength -= 0.001f;
+            if (activeShader == 2)
+                pixelSize -= 0.5f;
+            if (activeShader == 3)
+                vigRadius -= 0.01f;
+            if (activeShader == 4)
+                scanIntensity -= 0.02f;
         }
 
         chromaStrength = std::clamp(chromaStrength, 0.0f, 0.05f);
-        pixelSize      = std::clamp(pixelSize, 1.0f, 64.0f);
-        vigRadius      = std::clamp(vigRadius, 0.1f, 1.0f);
-        scanIntensity  = std::clamp(scanIntensity, 0.0f, 1.0f);
+        pixelSize = std::clamp(pixelSize, 1.0f, 64.0f);
+        vigRadius = std::clamp(vigRadius, 0.1f, 1.0f);
+        scanIntensity = std::clamp(scanIntensity, 0.0f, 1.0f);
 
         elapsed += GetDeltaTime();
         float sw = static_cast<float>(GetScreenWidth());
@@ -222,51 +242,58 @@ int main() {
         ClearBackground(Color{20, 20, 30, 255});
 
         bool hasShader = false;
-        switch (activeShader) {
-            case 1:
-                if (IsShaderValid(shaderChromatic)) {
-                    BeginShaderMode(shaderChromatic);
-                    SetShaderValue(shaderChromatic, locStrength, chromaStrength);
-                    hasShader = true;
-                }
-                break;
-            case 2:
-                if (IsShaderValid(shaderPixelate)) {
-                    BeginShaderMode(shaderPixelate);
-                    SetShaderValue(shaderPixelate, locPixelScreen, Vec2{sw, sh});
-                    SetShaderValue(shaderPixelate, locPixelSize,   pixelSize);
-                    hasShader = true;
-                }
-                break;
-            case 3:
-                if (IsShaderValid(shaderVignette)) {
-                    BeginShaderMode(shaderVignette);
-                    SetShaderValue(shaderVignette, locVigRadius, vigRadius);
-                    SetShaderValue(shaderVignette, locVigSoft,   0.3f);
-                    hasShader = true;
-                }
-                break;
-            case 4:
-                if (IsShaderValid(shaderScanlines)) {
-                    BeginShaderMode(shaderScanlines);
-                    SetShaderValue(shaderScanlines, locScanScreen, Vec2{sw, sh});
-                    SetShaderValue(shaderScanlines, locScanIntens, scanIntensity);
-                    hasShader = true;
-                }
-                break;
-            case 5:
-                if (IsShaderValid(shaderTint)) {
-                    BeginShaderMode(shaderTint);
-                    SetShaderValue(shaderTint, locTime, elapsed);
-                    hasShader = true;
-                }
+        switch (activeShader)
+        {
+        case 1:
+            if (IsShaderValid(shaderChromatic))
+            {
+                BeginShaderMode(shaderChromatic);
+                SetShaderValue(shaderChromatic, locStrength, chromaStrength);
+                hasShader = true;
+            }
+            break;
+        case 2:
+            if (IsShaderValid(shaderPixelate))
+            {
+                BeginShaderMode(shaderPixelate);
+                SetShaderValue(shaderPixelate, locPixelScreen, Vec2{sw, sh});
+                SetShaderValue(shaderPixelate, locPixelSize, pixelSize);
+                hasShader = true;
+            }
+            break;
+        case 3:
+            if (IsShaderValid(shaderVignette))
+            {
+                BeginShaderMode(shaderVignette);
+                SetShaderValue(shaderVignette, locVigRadius, vigRadius);
+                SetShaderValue(shaderVignette, locVigSoft, 0.3f);
+                hasShader = true;
+            }
+            break;
+        case 4:
+            if (IsShaderValid(shaderScanlines))
+            {
+                BeginShaderMode(shaderScanlines);
+                SetShaderValue(shaderScanlines, locScanScreen, Vec2{sw, sh});
+                SetShaderValue(shaderScanlines, locScanIntens, scanIntensity);
+                hasShader = true;
+            }
+            break;
+        case 5:
+            if (IsShaderValid(shaderTint))
+            {
+                BeginShaderMode(shaderTint);
+                SetShaderValue(shaderTint, locTime, elapsed);
+                hasShader = true;
+            }
         }
 
         DrawTexture(checker, 384, 104, WHITE);
         DrawRectangle(100, 150, 250, 400, Color{200, 160, 60, 255});
         DrawCircle(950, 360, 150, Color{60, 180, 160, 255});
 
-        if (hasShader) EndShaderMode();
+        if (hasShader)
+            EndShaderMode();
 
         DrawRectangle(10, 10, 520, 170, Color{0, 0, 0, 180});
         DrawText(TextFormat("Shader : %s", names[activeShader]), 20, 20, 20, WHITE);
@@ -275,18 +302,44 @@ int main() {
         DrawText(TextFormat("%d", GetFPS()), 310, 65, 18, YELLOW);
 
         float param = 0.0f;
-        const char* paramName = "";
-        if (activeShader == 1) { param = chromaStrength; paramName = "strength"; }
-        if (activeShader == 2) { param = pixelSize;      paramName = "pixel size"; }
-        if (activeShader == 3) { param = vigRadius;      paramName = "radius"; }
-        if (activeShader == 4) { param = scanIntensity;  paramName = "intensity"; }
-        if (activeShader == 5) { param = elapsed;        paramName = "uTime"; }
-        if (activeShader != 0) {
-            DrawText(TextFormat("%s: %.3f", paramName, param), 20, 90, 18, SKYBLUE);
-            DrawText(TextFormat("loc: %d", 
-                activeShader==1?locStrength: activeShader==2?locPixelSize: activeShader==3?locVigRadius: activeShader==4?locScanIntens: locTime),
-                20, 115, 18, GRAY);
-        } else {
+        const char* pParamName = "";
+        if (activeShader == 1)
+        {
+            param = chromaStrength;
+            pParamName = "strength";
+        }
+        if (activeShader == 2)
+        {
+            param = pixelSize;
+            pParamName = "pixel size";
+        }
+        if (activeShader == 3)
+        {
+            param = vigRadius;
+            pParamName = "radius";
+        }
+        if (activeShader == 4)
+        {
+            param = scanIntensity;
+            pParamName = "intensity";
+        }
+        if (activeShader == 5)
+        {
+            param = elapsed;
+            pParamName = "uTime";
+        }
+        if (activeShader != 0)
+        {
+            DrawText(TextFormat("%s: %.3f", pParamName, param), 20, 90, 18, SKYBLUE);
+            DrawText(TextFormat("loc: %d",
+                                activeShader == 1 ? locStrength : activeShader == 2 ? locPixelSize
+                                                              : activeShader == 3   ? locVigRadius
+                                                              : activeShader == 4   ? locScanIntens
+                                                                                    : locTime),
+                     20, 115, 18, GRAY);
+        }
+        else
+        {
             DrawText("No shader — solid primitives visible", 20, 90, 18, GRAY);
         }
 
