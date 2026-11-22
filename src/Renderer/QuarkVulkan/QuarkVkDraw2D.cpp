@@ -245,13 +245,15 @@ namespace qci
         if (!pDrawItems->empty() &&
             pDrawItems->back().m_DescriptorSet == whiteDs &&
             pDrawItems->back().m_ShaderProgramId == m_VkShaderCompiler.CurrentProgramId() &&
+            pDrawItems->back().m_BlendMode == m_VkPipeline.GetBlendMode() &&
             pDrawItems->back().m_FirstIndex + pDrawItems->back().m_IndexCount == firstIndex)
         {
             pDrawItems->back().m_IndexCount += 3;
         }
         else
         {
-            pDrawItems->push_back({0, m_VkShaderCompiler.CurrentProgramId(), whiteDs, firstIndex, 3});
+            pDrawItems->push_back({0, m_VkShaderCompiler.CurrentProgramId(), whiteDs, firstIndex, 3,
+                                   false, m_VkPipeline.GetBlendMode()});
         }
     }
 

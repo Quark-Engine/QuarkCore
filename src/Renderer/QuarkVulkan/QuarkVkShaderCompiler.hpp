@@ -15,6 +15,7 @@ namespace qci
         VkShaderModule m_VertexModule = VK_NULL_HANDLE;
         VkShaderModule m_FragmentModule = VK_NULL_HANDLE;
         VkPipeline m_Pipeline = VK_NULL_HANDLE;
+        VkPipeline m_PipelineOffscreen = VK_NULL_HANDLE;
         VkPipeline m_Pipeline3D = VK_NULL_HANDLE;
         VkPipeline m_Pipeline3DCulled = VK_NULL_HANDLE;
         VkPipeline m_Pipeline3DOffscreen = VK_NULL_HANDLE;

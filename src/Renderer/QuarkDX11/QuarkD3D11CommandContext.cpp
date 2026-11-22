@@ -593,7 +593,7 @@ namespace qci
                 pCtx->OMSetDepthStencilState(pDsState, 0);
                 stateCache.m_pDepthStencil = pDsState;
             }
-            ID3D11BlendState* pBlend = m_pPipeline->Blend();
+            ID3D11BlendState* pBlend = m_pActiveBlendState ? m_pActiveBlendState : m_pPipeline->Blend();
             if (stateCache.m_pBlendState != pBlend)
             {
                 pCtx->OMSetBlendState(pBlend, aBlendFactor, 0xFFFFFFFF);
@@ -1371,6 +1371,11 @@ namespace qci
         m_pContext->Unmap(m_BatchIndexBuffer.Get(), 0);
 
         m_pPipeline->BindBatch(m_pContext, m_BatchVertexBuffer.Get(), m_BatchIndexBuffer.Get());
+        if (m_pActiveBlendState)
+        {
+            const float aBlendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+            m_pContext->OMSetBlendState(m_pActiveBlendState, aBlendFactor, 0xFFFFFFFF);
+        }
 
         ID3D11ShaderResourceView* pBoundSRV = nullptr;
         for (const DrawItem& item : m_vBatchDrawItems)
@@ -1532,7 +1537,8 @@ namespace qci
 
         const float aBlendFactor[] = {0.0f, 0.0f, 0.0f, 0.0f};
         m_pContext->OMSetDepthStencilState(m_pPipeline->DepthStencilDisabledState(), 0);
-        m_pContext->OMSetBlendState(m_pPipeline->Blend(), aBlendFactor, 0xFFFFFFFF);
+        ID3D11BlendState* pBlend = m_pActiveBlendState ? m_pActiveBlendState : m_pPipeline->Blend();
+        m_pContext->OMSetBlendState(pBlend, aBlendFactor, 0xFFFFFFFF);
     }
 
     void D3D11CommandContext::BeginTextureMode(const IRenderTexture& target)

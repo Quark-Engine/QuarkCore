@@ -993,6 +993,11 @@ void RequestWindowClose()
     g_Win.m_ShouldClose = true;
 }
 
+void CancelWindowClose()
+{
+    g_Win.m_ShouldClose = false;
+}
+
 bool IsWindowReady()
 {
     return g_Win.m_pWindow != nullptr;

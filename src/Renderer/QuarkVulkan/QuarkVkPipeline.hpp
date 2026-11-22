@@ -96,13 +96,23 @@ namespace qci
             return m_Layout3D;
         }
 
-        VkPipeline Get2D() const
+        VkPipeline Get2D(int blendMode = BLEND_ALPHA) const
         {
+            if ((blendMode == BLEND_ADDITIVE || blendMode == BLEND_ADD_COLORS) &&
+                m_Pipeline2DAdditive != VK_NULL_HANDLE)
+            {
+                return m_Pipeline2DAdditive;
+            }
             return m_Pipeline2D;
         }
 
-        VkPipeline GetOffscreen2D() const
+        VkPipeline GetOffscreen2D(int blendMode = BLEND_ALPHA) const
         {
+            if ((blendMode == BLEND_ADDITIVE || blendMode == BLEND_ADD_COLORS) &&
+                m_OffscreenPipeline2DAdditive != VK_NULL_HANDLE)
+            {
+                return m_OffscreenPipeline2DAdditive;
+            }
             return m_OffscreenPipeline2D;
         }
 
@@ -138,7 +148,8 @@ namespace qci
 
         VkPipeline Create2DPipeline(VkRenderPass renderPass,
                                     VkShaderModule vertexModule = VK_NULL_HANDLE,
-                                    VkShaderModule fragmentModule = VK_NULL_HANDLE);
+                                    VkShaderModule fragmentModule = VK_NULL_HANDLE,
+                                    int blendMode = BLEND_ALPHA);
         VkPipeline Create3DPipeline(VkRenderPass renderPass,
                                     VkPrimitiveTopology topology,
                                     VkShaderModule vertexModule = VK_NULL_HANDLE,
@@ -162,7 +173,9 @@ namespace qci
         VkPipelineLayout m_Layout3D = VK_NULL_HANDLE;
 
         VkPipeline m_Pipeline2D = VK_NULL_HANDLE;
+        VkPipeline m_Pipeline2DAdditive = VK_NULL_HANDLE;
         VkPipeline m_OffscreenPipeline2D = VK_NULL_HANDLE;
+        VkPipeline m_OffscreenPipeline2DAdditive = VK_NULL_HANDLE;
         VkPipeline m_Pipeline3DTri = VK_NULL_HANDLE;
         VkPipeline m_Pipeline3DTriCulled = VK_NULL_HANDLE;
         VkPipeline m_Pipeline3DLines = VK_NULL_HANDLE;

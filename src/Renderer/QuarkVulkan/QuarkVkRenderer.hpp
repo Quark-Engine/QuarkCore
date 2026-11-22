@@ -118,6 +118,7 @@ namespace qci
         uint32_t m_FirstIndex = 0;
         uint32_t m_IndexCount = 0;
         bool m_DebugOverlay = false;
+        int m_BlendMode = BLEND_ALPHA;
     };
 
     struct Vk3DDrawItem
@@ -655,6 +656,7 @@ namespace qci
 
         uint32_t m_NextRenderTargetId = 1;
         std::unordered_map<uint32_t, VkRenderTargetData> m_RenderTargets;
+        std::vector<uint32_t> m_vRenderTargetOrder;
         uint32_t m_ActiveRenderTargetId = 0;
 
         std::vector<VkBatchVertex> m_vBatchVertices;

@@ -402,6 +402,7 @@ namespace qci
             auto cachedIt = m_BlendStateCache.find(mode);
             if (cachedIt != m_BlendStateCache.end() && cachedIt->second)
             {
+                m_Commands.SetBlendState(cachedIt->second.Get());
                 m_Device.Context()->OMSetBlendState(cachedIt->second.Get(), blendFactor, 0xFFFFFFFF);
                 return;
             }
@@ -411,11 +412,13 @@ namespace qci
             if (SUCCEEDED(hr))
             {
                 m_BlendStateCache[mode] = customBlend;
+                m_Commands.SetBlendState(customBlend.Get());
                 m_Device.Context()->OMSetBlendState(customBlend.Get(), blendFactor, 0xFFFFFFFF);
             }
             return;
         }
 
+        m_Commands.SetBlendState(pBlendState);
         m_Device.Context()->OMSetBlendState(pBlendState, blendFactor, 0xFFFFFFFF);
     }
 

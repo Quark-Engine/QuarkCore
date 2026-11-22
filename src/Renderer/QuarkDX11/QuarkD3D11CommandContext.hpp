@@ -119,6 +119,10 @@ namespace qci
         {
             m_ShaderOverride = shaderOverride;
         }
+        void SetBlendState(ID3D11BlendState* pBlendState)
+        {
+            m_pActiveBlendState = pBlendState;
+        }
         const ShaderOverride& GetShaderOverride() const
         {
             return m_ShaderOverride;
@@ -219,6 +223,7 @@ namespace qci
         D3D11Resources* m_pResources = nullptr;
         QuarkRenderThreadPool* m_pThreadPool = nullptr;
         ID3D11RenderTargetView* m_pActiveRenderTarget = nullptr;
+        ID3D11BlendState* m_pActiveBlendState = nullptr;
         ID3D11DepthStencilView* m_pActiveDepthStencil = nullptr;
         int m_DefaultWidth = 0;
         int m_DefaultHeight = 0;

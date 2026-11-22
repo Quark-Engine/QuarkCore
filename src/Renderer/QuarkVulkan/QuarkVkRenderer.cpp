@@ -388,6 +388,7 @@ namespace qci
         m_WhiteTextureId = 0;
         m_NextRenderTargetId = 1;
         m_ActiveRenderTargetId = 0;
+        m_vRenderTargetOrder.clear();
         m_GraphicsQueueFamily = UINT32_MAX;
         m_MsaaSamples = VK_SAMPLE_COUNT_1_BIT;
         m_RequestedMsaaSamples = 1;
@@ -407,6 +408,7 @@ namespace qci
         }
 
         m_ActiveRenderTargetId = 0;
+        m_vRenderTargetOrder.clear();
         if (m_LastFrameCounter == 0)
         {
             m_LastFrameCounter = SDL_GetPerformanceCounter();
@@ -1900,6 +1902,7 @@ namespace qci
         if (m_ActiveRenderTargetId == renderTargetId)
         {
             m_ActiveRenderTargetId = 0;
+        m_vRenderTargetOrder.clear();
         }
         m_VkResources.DestroyTexture(textureId);
     }
@@ -1926,8 +1929,22 @@ namespace qci
         m_vFrameLineVertices3D.clear();
         m_Frame3DShaderProgramId = 0;
 
-        for (auto& [id, rt] : m_RenderTargets)
+        std::vector<uint32_t> vOrderedTargets = m_vRenderTargetOrder;
+        for (const auto& [id, rt] : m_RenderTargets)
         {
+            (void)rt;
+            if (std::find(vOrderedTargets.begin(), vOrderedTargets.end(), id) == vOrderedTargets.end())
+            {
+                vOrderedTargets.push_back(id);
+            }
+        }
+
+        for (uint32_t id : vOrderedTargets)
+        {
+            auto rtIt = m_RenderTargets.find(id);
+            if (rtIt == m_RenderTargets.end())
+                continue;
+            VkRenderTargetData& rt = rtIt->second;
             const bool has2D = !rt.m_vDrawItems.empty();
             const bool has3D = !rt.m_vTriangleVertices3D.empty() || !rt.m_vTriangleIndices3D.empty() ||
                                !rt.m_vLineVertices3D.empty() || !rt.m_vDrawItems3D.empty();
@@ -2144,6 +2161,7 @@ namespace qci
             vDrawItems.back().m_DescriptorSet == ds &&
             vDrawItems.back().m_ShaderProgramId == m_VkShaderCompiler.CurrentProgramId() &&
             vDrawItems.back().m_DebugOverlay == m_DrawingDebugOverlay &&
+            vDrawItems.back().m_BlendMode == m_VkPipeline.GetBlendMode() &&
             vDrawItems.back().m_FirstIndex + vDrawItems.back().m_IndexCount == firstIndex)
         {
             vDrawItems.back().m_IndexCount += 6;
@@ -2151,7 +2169,7 @@ namespace qci
         else
         {
             vDrawItems.push_back({0, m_VkShaderCompiler.CurrentProgramId(), ds, firstIndex, 6,
-                                 m_DrawingDebugOverlay});
+                                 m_DrawingDebugOverlay, m_VkPipeline.GetBlendMode()});
         }
     }
 
@@ -2708,15 +2726,28 @@ namespace qci
 
                 if (task.m_IsOffscreen)
                 {
-                    if (m_VkPipeline.GetOffscreen2D() != VK_NULL_HANDLE)
-                    {
-                        vkCmdBindPipeline(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_VkPipeline.GetOffscreen2D());
-                    }
+                    VkPipeline boundPipeline = VK_NULL_HANDLE;
                     for (uint32_t i = task.m_ChunkBegin; i < task.m_ChunkEnd; ++i)
                     {
                         const VkDrawItem& item = m_vFrameDrawItems[pass.m_FirstDrawItem + i];
                         if (item.m_DescriptorSet == VK_NULL_HANDLE || item.m_DebugOverlay)
                             continue;
+                        VkPipeline itemPipeline = m_VkPipeline.GetOffscreen2D(item.m_BlendMode);
+                        if (item.m_ShaderProgramId != 0)
+                        {
+                            const VkShaderProgramData* pShaderProgram = m_VkShaderCompiler.GetProgram(item.m_ShaderProgramId);
+                            if (pShaderProgram != nullptr && pShaderProgram->m_PipelineOffscreen != VK_NULL_HANDLE)
+                            {
+                                itemPipeline = pShaderProgram->m_PipelineOffscreen;
+                            }
+                        }
+                        if (itemPipeline == VK_NULL_HANDLE)
+                            continue;
+                        if (itemPipeline != boundPipeline)
+                        {
+                            vkCmdBindPipeline(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, itemPipeline);
+                            boundPipeline = itemPipeline;
+                        }
                         vkCmdBindDescriptorSets(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                                 m_VkPipeline.GetLayout2D(), 0, 1, &item.m_DescriptorSet, 0, nullptr);
                         vkCmdDrawIndexed(secCmd, item.m_IndexCount, 1, item.m_FirstIndex, 0, 0);
@@ -2737,7 +2768,9 @@ namespace qci
                         if (item.m_DescriptorSet == VK_NULL_HANDLE || item.m_DebugOverlay)
                             continue;
 
-                        VkPipeline itemPipeline = defaultMainPipeline2D;
+                        VkPipeline itemPipeline = (item.m_BlendMode == BLEND_ADDITIVE || item.m_BlendMode == BLEND_ADD_COLORS)
+                            ? m_VkPipeline.Get2D(item.m_BlendMode)
+                            : defaultMainPipeline2D;
                         if (item.m_ShaderProgramId != 0)
                         {
                             const VkShaderProgramData* pShaderProgram = m_VkShaderCompiler.GetProgram(item.m_ShaderProgramId);

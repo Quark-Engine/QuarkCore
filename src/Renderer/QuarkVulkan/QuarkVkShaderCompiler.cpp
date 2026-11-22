@@ -338,6 +338,11 @@ namespace qci
             vkDestroyPipeline(m_Device, program.m_Pipeline, nullptr);
             program.m_Pipeline = VK_NULL_HANDLE;
         }
+        if (program.m_PipelineOffscreen != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(m_Device, program.m_PipelineOffscreen, nullptr);
+            program.m_PipelineOffscreen = VK_NULL_HANDLE;
+        }
         if (program.m_Pipeline3D != VK_NULL_HANDLE)
         {
             vkDestroyPipeline(m_Device, program.m_Pipeline3D, nullptr);
@@ -379,6 +384,11 @@ namespace qci
             {
                 vkDestroyPipeline(m_Device, program.m_Pipeline, nullptr);
                 program.m_Pipeline = VK_NULL_HANDLE;
+            }
+            if (program.m_PipelineOffscreen != VK_NULL_HANDLE)
+            {
+                vkDestroyPipeline(m_Device, program.m_PipelineOffscreen, nullptr);
+                program.m_PipelineOffscreen = VK_NULL_HANDLE;
             }
             if (program.m_Pipeline3D != VK_NULL_HANDLE)
             {

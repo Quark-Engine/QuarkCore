@@ -487,6 +487,11 @@ namespace qci
         if (target.m_Id != 0 && m_RenderTargets.find(target.m_Id) != m_RenderTargets.end())
         {
             m_ActiveRenderTargetId = target.m_Id;
+            if (std::find(m_vRenderTargetOrder.begin(), m_vRenderTargetOrder.end(), target.m_Id) ==
+                m_vRenderTargetOrder.end())
+            {
+                m_vRenderTargetOrder.push_back(target.m_Id);
+            }
             m_FrameGeometryPending = true;
         }
     }

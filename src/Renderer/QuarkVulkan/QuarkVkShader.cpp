@@ -120,6 +120,12 @@ namespace qci
             programData.m_Pipeline = m_VkPipeline.Create2DPipeline(m_VkRenderPass.Get(),
                                                                  programData.m_VertexModule,
                                                                  programData.m_FragmentModule);
+            if (m_VkRenderTarget.RenderPass() != VK_NULL_HANDLE)
+            {
+                programData.m_PipelineOffscreen = m_VkPipeline.Create2DPipeline(m_VkRenderTarget.RenderPass(),
+                                                                                programData.m_VertexModule,
+                                                                                programData.m_FragmentModule);
+            }
         }
         TraceLog(LogLevel::Info, "SHADER", TextFormat("[Vulkan] Shader program created successfully (ID: %u, Attributes: %zu, Uniforms: %zu, Pipeline: %p)", shaderId, programData.m_Attributes.size(), programData.m_Uniforms.size(), (void*)programData.m_Pipeline));
         return Shader{shaderId};

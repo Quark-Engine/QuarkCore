@@ -305,12 +305,6 @@ namespace qci
     void QuarkVkPipeline::SetBlendMode(int mode)
     {
         m_BlendMode = mode;
-        if (m_Device == VK_NULL_HANDLE || m_RenderPass == VK_NULL_HANDLE)
-        {
-            return;
-        }
-
-        CreatePipelines(m_RenderPass, m_OffscreenRenderPass, m_MsaaSamples);
     }
 
     void QuarkVkPipeline::CreatePipelines(VkRenderPass renderPass,
@@ -328,10 +322,12 @@ namespace qci
             return;
         }
 
-        m_Pipeline2D = Create2DPipeline(renderPass);
+        m_Pipeline2D = Create2DPipeline(renderPass, VK_NULL_HANDLE, VK_NULL_HANDLE, BLEND_ALPHA);
+        m_Pipeline2DAdditive = Create2DPipeline(renderPass, VK_NULL_HANDLE, VK_NULL_HANDLE, BLEND_ADDITIVE);
         if (offscreenRenderPass != VK_NULL_HANDLE)
         {
-            m_OffscreenPipeline2D = Create2DPipeline(offscreenRenderPass);
+            m_OffscreenPipeline2D = Create2DPipeline(offscreenRenderPass, VK_NULL_HANDLE, VK_NULL_HANDLE, BLEND_ALPHA);
+            m_OffscreenPipeline2DAdditive = Create2DPipeline(offscreenRenderPass, VK_NULL_HANDLE, VK_NULL_HANDLE, BLEND_ADDITIVE);
         }
         m_Pipeline3DTri = Create3DPipeline(renderPass, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                            VK_NULL_HANDLE, VK_NULL_HANDLE, false, false);
@@ -355,6 +351,11 @@ namespace qci
             return;
         }
 
+        if (m_OffscreenPipeline2DAdditive != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(m_Device, m_OffscreenPipeline2DAdditive, nullptr);
+            m_OffscreenPipeline2DAdditive = VK_NULL_HANDLE;
+        }
         if (m_OffscreenPipeline2D != VK_NULL_HANDLE)
         {
             vkDestroyPipeline(m_Device, m_OffscreenPipeline2D, nullptr);
@@ -374,6 +375,11 @@ namespace qci
         {
             vkDestroyPipeline(m_Device, m_OffscreenPipeline3DTri, nullptr);
             m_OffscreenPipeline3DTri = VK_NULL_HANDLE;
+        }
+        if (m_Pipeline2DAdditive != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(m_Device, m_Pipeline2DAdditive, nullptr);
+            m_Pipeline2DAdditive = VK_NULL_HANDLE;
         }
         if (m_Pipeline2D != VK_NULL_HANDLE)
         {
@@ -432,7 +438,8 @@ namespace qci
 
     VkPipeline QuarkVkPipeline::Create2DPipeline(VkRenderPass renderPass,
                                                  VkShaderModule vertexModule,
-                                                 VkShaderModule fragmentModule)
+                                                 VkShaderModule fragmentModule,
+                                                 int blendMode)
     {
         if (m_Device == VK_NULL_HANDLE || renderPass == VK_NULL_HANDLE)
         {
@@ -536,7 +543,7 @@ namespace qci
                                               VK_COLOR_COMPONENT_A_BIT;
         colorBlendAttachment.blendEnable = VK_TRUE;
 
-        switch (m_BlendMode)
+        switch (blendMode)
         {
         case BLEND_ADDITIVE:
         case BLEND_ADD_COLORS:

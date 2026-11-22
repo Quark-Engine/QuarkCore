@@ -2002,6 +2002,7 @@ namespace qci
 
     void QuarkGLRenderer::SetBlendMode(int mode)
     {
+        m_Batch.Flush();
         glEnable(GL_BLEND);
 
         switch (mode)

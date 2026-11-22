@@ -681,6 +681,10 @@ QCAPI bool WindowShouldClose();
  */
 QCAPI void RequestWindowClose();
 /**
+ * @brief Cancel a pending window close request.
+ */
+QCAPI void CancelWindowClose();
+/**
  * @brief Close and destroy the application window.
  */
 QCAPI void CloseWindow();
